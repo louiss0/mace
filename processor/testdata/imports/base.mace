@@ -1,0 +1,6 @@
+|===|
+type Name = string;
+schema User = { name: Name; age: int; };
+int local = 1;
+|===|
+[output = data] {}
