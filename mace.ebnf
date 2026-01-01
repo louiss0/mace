@@ -1,0 +1,270 @@
+(* ===================================================== *)
+(* 1. LEXICAL STRUCTURE                                  *)
+(* ===================================================== *)
+
+whitespace        = " " | "\t" | newline ;
+newline           = "\n" | "\r\n" ;
+
+comment            = line_comment | block_comment ;
+line_comment       = "/=" , { character - newline } ;
+block_comment      = "/=" , { character } , "=/" ;
+
+ws0                = { whitespace | comment } ;
+ws1                = ( whitespace | comment ) , ws0 ;
+
+letter             = "A"…"Z" | "a"…"z" ;
+digit              = "0"…"9" ;
+
+identifier         = letter , { letter | digit | "_" } ;
+
+string_literal     = '"' , { character - '"' } , '"' ;
+int_literal        = digit , { digit } ;
+float_literal      = digit , { digit } , "." , digit , { digit } ;
+boolean_literal    = "true" | "false" ;
+
+character          = ? any Unicode scalar value ? ;
+
+(* ===================================================== *)
+(* 2. TOP-LEVEL STRUCTURE                                *)
+(* ===================================================== *)
+
+mace_file
+  = ws0 ,
+    { import_declaration , ws0 } ,
+    [ script_block , ws0 ] ,
+    output_block ,
+    ws0 ;
+
+(* ===================================================== *)
+(* 3. IMPORTS                                           *)
+(* ===================================================== *)
+
+import_declaration
+  = "from" , ws1 , string_literal , ws1 ,
+    "import" , ws1 , import_list ,
+    ws0 , ";" ;
+
+import_list
+  = identifier , { ws0 , "," , ws0 , identifier } ;
+
+(* ===================================================== *)
+(* 4. SCRIPT BLOCK                                      *)
+(* ===================================================== *)
+
+script_block
+  = script_delimiter ,
+    ws0 ,
+    { script_item , ws0 } ,
+    script_delimiter ;
+
+script_delimiter
+  = "|" , "=" , "=" , "=" , { "=" } , "|" ;
+
+script_item
+  = declaration ;
+
+declaration
+  = variable_declaration
+  | type_declaration
+  | schema_declaration ;
+
+(* ===================================================== *)
+(* 5. VARIABLE DECLARATIONS                             *)
+(* ===================================================== *)
+
+variable_declaration
+  = [ "injectable" , ws1 ] ,
+    type_reference , ws1 ,
+    identifier , ws0 ,
+    "=" , ws0 ,
+    expression ,
+    ws0 , ";" ;
+
+(* ===================================================== *)
+(* 6. TYPE DECLARATIONS                                 *)
+(* ===================================================== *)
+
+type_declaration
+  = "type" , ws1 ,
+    identifier , ws0 ,
+    "=" , ws0 ,
+    type_reference ,
+    ws0 , ";" ;
+
+(* ===================================================== *)
+(* 7. SCHEMA DECLARATIONS                               *)
+(* ===================================================== *)
+
+schema_declaration
+  = "schema" , ws1 ,
+    identifier , ws0 ,
+    "=" , ws0 ,
+    record_type ,
+    ws0 , ";" ;
+
+record_type
+  = "{" , ws0 ,
+    { schema_field , ws0 } ,
+    "}" ;
+
+schema_field
+  = identifier , [ "?" ] , ws0 ,
+    ":" , ws0 ,
+    type_reference ,
+    ws0 , ";" ;
+
+(* ===================================================== *)
+(* 8. TYPE REFERENCES                                   *)
+(* ===================================================== *)
+
+type_reference
+  = primitive_type
+  | array_type
+  | identifier ;
+
+primitive_type
+  = "string" | "int" | "float" | "boolean" ;
+
+array_type
+  = "array" , ws0 , "<" , ws0 ,
+    type_reference ,
+    ws0 , ">" ;
+
+(* ===================================================== *)
+(* 9. OUTPUT BLOCK                                      *)
+(* ===================================================== *)
+
+output_block
+  = output_directive ,
+    ws0 ,
+    "{" , ws0 ,
+    { output_item , ws0 } ,
+    "}" ;
+
+output_directive
+  = "[" , ws0 ,
+    directive_pair , { ws0 , "," , ws0 , directive_pair } ,
+    ws0 , "]" ;
+
+directive_pair
+  = "output" , ws0 , "=" , ws0 , ( "data" | "schema" )
+  | "schema_file" , ws0 , "=" , ws0 , string_literal
+  | "schema" , ws0 , "=" , ws0 , identifier ;
+
+output_item
+  = output_field ;
+
+output_field
+  = identifier , [ "?" ] , ws0 ,
+    ":" , ws0 ,
+    expression ,
+    ws0 , ";" ;
+
+(* ===================================================== *)
+(* 10. EXPRESSIONS (JS-LIKE, PURE, WITH PRECEDENCE)      *)
+(* ===================================================== *)
+
+expression
+  = conditional_expression ;
+
+primary_expression
+  = identifier
+  | int_literal
+  | float_literal
+  | string_literal
+  | boolean_literal
+  | array_literal
+  | record_literal
+  | self_reference
+  | "(" , expression , ")" ;
+
+self_reference
+  = "$self" , "." , identifier , { "." , identifier } ;
+
+unary_expression
+  = primary_expression
+  | "!" unary_expression
+  | "~" unary_expression
+  | "+" unary_expression
+  | "-" unary_expression ;
+
+exponent_expression
+  = unary_expression
+  | unary_expression "**" exponent_expression ;
+
+multiplicative_expression
+  = exponent_expression
+  | multiplicative_expression "*" exponent_expression
+  | multiplicative_expression "/" exponent_expression
+  | multiplicative_expression "%" exponent_expression ;
+
+additive_expression
+  = multiplicative_expression
+  | additive_expression "+" multiplicative_expression
+  | additive_expression "-" multiplicative_expression ;
+
+shift_expression
+  = additive_expression
+  | shift_expression "<<" additive_expression
+  | shift_expression ">>" additive_expression
+  | shift_expression ">>>" additive_expression ;
+
+relational_expression
+  = shift_expression
+  | relational_expression "<" shift_expression
+  | relational_expression "<=" shift_expression
+  | relational_expression ">" shift_expression
+  | relational_expression ">=" shift_expression ;
+
+equality_expression
+  = relational_expression
+  | equality_expression "==" relational_expression
+  | equality_expression "!=" relational_expression
+  | equality_expression "===" relational_expression
+  | equality_expression "!==" relational_expression ;
+
+bitwise_and_expression
+  = equality_expression
+  | bitwise_and_expression "&" equality_expression ;
+
+bitwise_xor_expression
+  = bitwise_and_expression
+  | bitwise_xor_expression "^" bitwise_and_expression ;
+
+bitwise_or_expression
+  = bitwise_xor_expression
+  | bitwise_or_expression "|" bitwise_xor_expression ;
+
+logical_and_expression
+  = bitwise_or_expression
+  | logical_and_expression "&&" bitwise_or_expression ;
+
+logical_or_expression
+  = logical_and_expression
+  | logical_or_expression "||" logical_and_expression ;
+
+conditional_expression
+  = logical_or_expression
+  | logical_or_expression , ws0 , "?" , ws0 ,
+    expression , ws0 , ":" , ws0 ,
+    conditional_expression ;
+
+(* ===================================================== *)
+(* 11. LITERALS                                         *)
+(* ===================================================== *)
+
+array_literal
+  = "[" , ws0 ,
+    [ expression , { ws0 , "," , ws0 , expression } ] ,
+    ws0 , "]" ;
+
+record_literal
+  = "{" , ws0 ,
+    { record_field , ws0 } ,
+    "}" ;
+
+record_field
+  = identifier , [ "?" ] , ws0 ,
+    ":" , ws0 ,
+    expression ,
+    ws0 , ";" ;
