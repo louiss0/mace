@@ -36,6 +36,24 @@ type BooleanLiteral struct {
 
 func (BooleanLiteral) expressionNode() {}
 
+type ArrayLiteral struct {
+	Elements []Expression
+}
+
+func (ArrayLiteral) expressionNode() {}
+
+type RecordLiteral struct {
+	Fields []RecordField
+}
+
+func (RecordLiteral) expressionNode() {}
+
+type RecordField struct {
+	Name     string
+	Optional bool
+	Value    Expression
+}
+
 type PrefixExpression struct {
 	Operator lexer.TokenType
 	Right    Expression
@@ -59,6 +77,106 @@ type ConditionalExpression struct {
 
 func (ConditionalExpression) expressionNode() {}
 
+type SelfReference struct {
+	Path []string
+}
+
+func (SelfReference) expressionNode() {}
+
 type File struct {
-	Expression Expression
+	Imports []ImportDeclaration
+	Script  *ScriptBlock
+	Output  OutputBlock
+}
+
+type ImportDeclaration struct {
+	Path        StringLiteral
+	Identifiers []string
+}
+
+type ScriptBlock struct {
+	Items []Declaration
+}
+
+type Declaration interface {
+	declarationNode()
+}
+
+type VariableDeclaration struct {
+	Injectable bool
+	Type       TypeReference
+	Name       string
+	Value      Expression
+}
+
+func (VariableDeclaration) declarationNode() {}
+
+type TypeDeclaration struct {
+	Name string
+	Type TypeReference
+}
+
+func (TypeDeclaration) declarationNode() {}
+
+type SchemaDeclaration struct {
+	Name string
+	Type RecordType
+}
+
+func (SchemaDeclaration) declarationNode() {}
+
+type TypeReference interface {
+	typeReferenceNode()
+}
+
+type PrimitiveType struct {
+	Name string
+}
+
+func (PrimitiveType) typeReferenceNode() {}
+
+type ArrayType struct {
+	Element TypeReference
+}
+
+func (ArrayType) typeReferenceNode() {}
+
+type NamedType struct {
+	Name string
+}
+
+func (NamedType) typeReferenceNode() {}
+
+type RecordType struct {
+	Fields []SchemaField
+}
+
+type SchemaField struct {
+	Name     string
+	Optional bool
+	Type     TypeReference
+}
+
+type OutputBlock struct {
+	Directives []OutputDirective
+	Items      []OutputField
+}
+
+type OutputDirectiveKind int
+
+const (
+	OutputDirectiveOutput OutputDirectiveKind = iota
+	OutputDirectiveSchemaFile
+	OutputDirectiveSchema
+)
+
+type OutputDirective struct {
+	Kind  OutputDirectiveKind
+	Value string
+}
+
+type OutputField struct {
+	Name     string
+	Optional bool
+	Value    Expression
 }

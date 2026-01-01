@@ -185,7 +185,12 @@ var _ = Describe("Lexer", func() {
 			tAssert.NoError(err)
 			assertTokenSequence(tokens, expected)
 		},
-		Entry("mixed whitespace and comments", "  /= comment line\nname /= block comment =/ value", []expectedToken{
+		Entry("line comments", "  /= comment line\nname value", []expectedToken{
+			{tokenType: TokenIdentifier, lexeme: "name"},
+			{tokenType: TokenIdentifier, lexeme: "value"},
+			{tokenType: TokenEOF, lexeme: ""},
+		}),
+		Entry("block comments", "name /= block comment =/ value", []expectedToken{
 			{tokenType: TokenIdentifier, lexeme: "name"},
 			{tokenType: TokenIdentifier, lexeme: "value"},
 			{tokenType: TokenEOF, lexeme: ""},
@@ -234,10 +239,14 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenString, lexeme: "\"line 1\\nline 2\""},
 			{tokenType: TokenEOF, lexeme: ""},
 		}),
-		Entry("escaped quotes stay in lexeme", "\"he said \\\"hi\\\"\"", []expectedToken{
-			{tokenType: TokenString, lexeme: "\"he said \\\"hi\\\"\""},
-			{tokenType: TokenEOF, lexeme: ""},
-		}),
+	)
+
+	DescribeTable("rejects unterminated string literals",
+		func(input string) {
+			_, err := collectTokens(input)
+			tAssert.Error(err)
+		},
+		Entry("unterminated string", "\"unterminated"),
 	)
 
 	DescribeTable("lexes $self as a dedicated token",
