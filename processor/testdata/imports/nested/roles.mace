@@ -1,0 +1,5 @@
+|===|
+schema Role = { name: string; level: int; };
+|===|
+
+[output = data] {}
