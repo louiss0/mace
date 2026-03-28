@@ -5,9 +5,10 @@
 whitespace        = " " | "\t" | newline ;
 newline           = "\n" | "\r\n" ;
 
-comment            = line_comment | block_comment ;
-line_comment       = "/=" , { character - newline } ;
-block_comment      = "/=" , { character } , "=/" ;
+comment            = "/=" , comment_body ;
+comment_body       = block_comment_body | line_comment_body ;
+block_comment_body = ? a comment body whose nearest terminator is "=/" before newline ? ;
+line_comment_body  = ? a comment body that ends at the next newline when no "=/" appears first ? ;
 
 ws0                = { whitespace | comment } ;
 ws1                = ( whitespace | comment ) , ws0 ;
@@ -150,6 +151,10 @@ directive_pair
   = "output" , ws0 , "=" , ws0 , ( "data" | "schema" )
   | "schema_file" , ws0 , "=" , ws0 , string_literal
   | "schema" , ws0 , "=" , ws0 , identifier ;
+
+(* The parser accepts all directive forms above.
+   The current processor only executes `output = data`
+   with an optional `schema = <identifier>` validator. *)
 
 output_item
   = output_field ;

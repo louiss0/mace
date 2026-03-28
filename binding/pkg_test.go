@@ -6,9 +6,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/louiss0/mace/lexer"
-	"github.com/louiss0/mace/parser"
-	"github.com/louiss0/mace/parser/ast"
 	"github.com/louiss0/mace/processor"
 )
 
@@ -19,23 +16,17 @@ func TestBinding(t *testing.T) {
 	RunSpecs(t, "Binding Suite")
 }
 
-func parseFile(input string) (ast.File, error) {
-	lexerInstance := lexer.New(input)
-	tokens := []lexer.Token{}
+type userProfile struct {
+	Nickname string `json:"nickname,omitempty"`
+	Level    int    `json:"level"`
+}
 
-	for {
-		token, err := lexerInstance.NextToken()
-		if err != nil {
-			return ast.File{}, err
-		}
-
-		tokens = append(tokens, token)
-		if token.Type == lexer.TokenEOF {
-			break
-		}
-	}
-
-	return parser.New(tokens).ParseFile()
+type userConfig struct {
+	Name    string      `json:"name"`
+	Enabled bool        `json:"enabled"`
+	Profile userProfile `json:"profile"`
+	Scores  []int       `json:"scores,omitempty"`
+	private string
 }
 
 var _ = Describe("OutputMap", func() {
@@ -63,39 +54,65 @@ int age = 27;
 	})
 })
 
-var _ = Describe("GenerateStructs", func() {
-	It("generates Go structs from schemas and type aliases", func() {
-		file, err := parseFile(`|===|
-type Name = string;
-type Scores = array<int>;
-schema Profile = { nickname?: Name; scores: Scores; };
-schema User = { name: Name; profile: Profile; enabled?: boolean; };
-|===|
-[output = data] {}`)
+var _ = Describe("Marshal", func() {
+	It("marshals native Go maps into canonical Mace records", func() {
+		source, err := Marshal(map[string]any{
+			"name":   "Ada",
+			"active": true,
+			"scores": []int{1, 2, 3},
+			"profile": map[string]any{
+				"level": 2,
+			},
+		})
 		tAssert.NoError(err)
-
-		source, err := GenerateStructs(file, "models")
-		tAssert.NoError(err)
-		tAssert.Equal(`package models
-
-type Profile struct {
-	Nickname *string `+"`json:\"nickname,omitempty\"`"+`
-	Scores   []int64 `+"`json:\"scores\"`"+`
-}
-
-type User struct {
-	Name    string  `+"`json:\"name\"`"+`
-	Profile Profile `+"`json:\"profile\"`"+`
-	Enabled *bool   `+"`json:\"enabled,omitempty\"`"+`
-}
-`, source)
+		tAssert.Equal(`{
+  active: true;
+  name: "Ada";
+  profile: {
+    level: 2;
+  };
+  scores: [1, 2, 3];
+}`, source)
 	})
 
-	It("fails when no schemas are available", func() {
-		file, err := parseFile(`[output = data] {}`)
+	It("marshals exported struct fields and respects json tags", func() {
+		source, err := Marshal(userConfig{
+			Name:    "Ada",
+			Enabled: true,
+			Profile: userProfile{Level: 3},
+		})
 		tAssert.NoError(err)
+		tAssert.Equal(`{
+  name: "Ada";
+  enabled: true;
+  profile: {
+    level: 3;
+  };
+}`, source)
+	})
 
-		_, err = GenerateStructs(file, "models")
+	It("rejects nil values", func() {
+		_, err := Marshal(map[string]any{"value": nil})
+		tAssert.Error(err)
+	})
+})
+
+var _ = Describe("MarshalOutput", func() {
+	It("wraps root records in a Mace output block", func() {
+		source, err := MarshalOutput(map[string]any{
+			"name": "Ada",
+			"age":  27,
+		})
+		tAssert.NoError(err)
+		tAssert.Equal(`[output = data]
+{
+  age: 27;
+  name: "Ada";
+}`, source)
+	})
+
+	It("rejects non-record roots", func() {
+		_, err := MarshalOutput([]int{1, 2, 3})
 		tAssert.Error(err)
 	})
 })

@@ -2,16 +2,16 @@
 
 ## Status
 
-This document describes the language implemented in this repository today.
-It intentionally avoids speculative features that are not supported by the
-parser or processor.
+This document describes the language contract implemented in this
+repository today. It avoids speculative features that are not supported by
+the parser or processor.
 
 ## Goals
 
 Mace is a typed configuration language for producing deterministic object
 data. The current implementation parses Mace source, validates declarations
-and output against schemas, evaluates expressions, and returns an in-memory
-object model suitable for later JSON serialization.
+and output against schemas, evaluates expressions, returns an in-memory
+object model, and exposes a CLI for JSON emission and source inspection.
 
 ## File Structure
 
@@ -77,6 +77,8 @@ normally.
 
 Variables declared in the script block are available to later declarations
 and to the output block.
+
+Type inference for declarations is not part of the current language.
 
 ### Type Declarations
 
@@ -219,6 +221,12 @@ Comments use the `/=` prefix.
 - Line comments continue to the end of the line.
 - Block comments begin with `/=` and end with `=/`.
 
+Disambiguation rule:
+
+- If a `=/` terminator appears before the next newline, the comment is a
+  block comment.
+- Otherwise the comment is a line comment and ends at the newline.
+
 ## Example
 
 ```mace
@@ -235,12 +243,10 @@ User result = { name: name; age: 27; };
 }
 ```
 
-## Non-Goals in the Current Implementation
+## Not Implemented Yet
 
 The following are not implemented today:
 
-- a CLI entrypoint
-- direct JSON emission
 - explicit export declarations
 - runtime injection for `injectable` variables
 - schema-valued output blocks
