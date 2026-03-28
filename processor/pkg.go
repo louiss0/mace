@@ -355,7 +355,7 @@ func validateRecordType(record ast.RecordType, symbols *symbolTable, types *type
 }
 
 func validateOutputDirectives(directives []ast.OutputDirective, symbols *symbolTable) error {
-	var outputSet bool
+	var outputValue string
 	seenKinds := map[ast.OutputDirectiveKind]struct{}{}
 
 	for _, directive := range directives {
@@ -366,19 +366,23 @@ func validateOutputDirectives(directives []ast.OutputDirective, symbols *symbolT
 
 		switch directive.Kind {
 		case ast.OutputDirectiveOutput:
-			outputSet = true
+			outputValue = directive.Value
 		case ast.OutputDirectiveSchema:
 			if !symbols.IsSchema(directive.Value) && !symbols.IsImport(directive.Value) {
 				return validationErrorf("unknown schema %q", directive.Value)
 			}
 		case ast.OutputDirectiveSchemaFile:
+			return validationErrorf("output directive %q is reserved and not implemented", directiveKindName(directive.Kind))
 		default:
 			return validationErrorf("unknown output directive")
 		}
 	}
 
-	if !outputSet {
+	if outputValue == "" {
 		return validationErrorf("missing output directive")
+	}
+	if outputValue != "data" {
+		return validationErrorf("output mode %q is reserved and not implemented", outputValue)
 	}
 
 	return nil

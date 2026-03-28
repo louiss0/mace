@@ -266,6 +266,8 @@ schema User = { name: string; };
 [schema = User] {}`, "missing output directive"),
 		Entry("duplicate output directive", "[output = data, output = schema] {}", "duplicate output directive"),
 		Entry("unknown schema in directive", "[output = data, schema = Missing] {}", "unknown schema"),
+		Entry("schema output mode is unsupported", "[output = schema] {}", "reserved and not implemented"),
+		Entry("schema_file directive is unsupported", `[output = data, schema_file = "./user.mace"] {}`, "reserved and not implemented"),
 	)
 
 	DescribeTable("accepts output that matches schema",
