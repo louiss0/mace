@@ -355,6 +355,10 @@ func validateRecordType(record ast.RecordType, symbols *symbolTable, types *type
 }
 
 func validateOutputDirectives(directives []ast.OutputDirective, symbols *symbolTable) error {
+	if len(directives) == 0 {
+		return nil
+	}
+
 	var outputValue string
 	seenKinds := map[ast.OutputDirectiveKind]struct{}{}
 

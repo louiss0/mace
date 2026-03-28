@@ -79,4 +79,15 @@ injectable string user = "Ada";
   result: (1 + 2) * (3 - 4 ? 5 : 6);
 }`, output)
 	})
+
+	It("formats bare output blocks without injecting a directive", func() {
+		file, err := parseMaceFile(`{ result: 1 + 2; }`)
+		tAssert.NoError(err)
+
+		output, err := FormatFile(file)
+		tAssert.NoError(err)
+		tAssert.Equal(`{
+  result: 1 + 2;
+}`, output)
+	})
 })

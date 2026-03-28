@@ -125,8 +125,8 @@ supported.
 
 ## Output Block
 
-The output block starts with a directive list and is followed by a record of
-output fields.
+The output block is a record of output fields. It may be preceded by a
+directive list.
 
 ```mace
 [output = data, schema = User]
@@ -136,22 +136,39 @@ output fields.
 }
 ```
 
+If no output directive is present, the output mode defaults to `data`.
+
+```mace
+{
+  name: user_name;
+  age: 27;
+}
+```
+
 ### Supported Directives
 
-The only supported output mode is:
+The explicit data form is:
 
 ```mace
 [output = data]
+{
+  name: user_name;
+  age: 27;
+}
 ```
 
-The current implementation also supports:
+The current implementation also supports schema validation with:
 
 ```mace
 [output = data, schema = User]
+{
+  name: user_name;
+  age: 27;
+}
 ```
 
-When a `schema` directive is present, the output record is validated against
-that schema.
+When a `schema` directive is present, the output record is validated
+against that schema.
 
 ### Reserved Directives
 

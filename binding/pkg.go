@@ -47,7 +47,7 @@ func MarshalOutput(value any) (string, error) {
 		return "", fmt.Errorf("marshal output: expected record value at root")
 	}
 
-	return "[output = data]\n" + marshaled, nil
+	return marshaled, nil
 }
 
 type marshaller struct{}

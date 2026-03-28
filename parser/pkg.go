@@ -59,7 +59,7 @@ func (p *Parser) ParseFile() (ast.File, error) {
 		script = &scriptBlock
 	}
 
-	if p.current().Type != lexer.TokenLBracket {
+	if p.current().Type != lexer.TokenLBracket && p.current().Type != lexer.TokenLBrace {
 		return ast.File{}, p.unexpectedTokenError("parser: expected output directive")
 	}
 
@@ -298,9 +298,13 @@ func (p *Parser) parseSchemaField() (ast.SchemaField, error) {
 }
 
 func (p *Parser) parseOutputBlock() (ast.OutputBlock, error) {
-	directives, err := p.parseOutputDirective()
-	if err != nil {
-		return ast.OutputBlock{}, err
+	directives := []ast.OutputDirective{}
+	if p.current().Type == lexer.TokenLBracket {
+		parsedDirectives, err := p.parseOutputDirective()
+		if err != nil {
+			return ast.OutputBlock{}, err
+		}
+		directives = parsedDirectives
 	}
 
 	if _, err := p.consume(lexer.TokenLBrace, "parser: expected '{' to start output block"); err != nil {

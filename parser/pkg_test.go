@@ -351,5 +351,14 @@ type Matrix = array<array<int>>;
 				}
 			}
 		})
+
+		It("parses a bare output block as default data output", func() {
+			file, err := parseFileInput(`{ result: 1 + 2; }`)
+			tAssert.NoError(err)
+			tAssert.Empty(file.Output.Directives)
+			if tAssert.Len(file.Output.Items, 1) {
+				tAssert.Equal("result", file.Output.Items[0].Name)
+			}
+		})
 	})
 })

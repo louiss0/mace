@@ -136,7 +136,8 @@ array_type
 (* ===================================================== *)
 
 output_block
-  = output_directive ,
+  = [ output_directive ,
+      ws0 ] ,
     ws0 ,
     "{" , ws0 ,
     { output_item , ws0 } ,
@@ -152,7 +153,7 @@ directive_pair
   | "schema_file" , ws0 , "=" , ws0 , string_literal
   | "schema" , ws0 , "=" , ws0 , identifier ;
 
-(* The parser accepts all directive forms above.
+(* If `output_directive` is omitted, the output mode defaults to `data`.
    The current processor only executes `output = data`
    with an optional `schema = <identifier>` validator. *)
 

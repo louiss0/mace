@@ -70,12 +70,13 @@ func (f *formatter) writeScriptBlock(script ast.ScriptBlock) error {
 }
 
 func (f *formatter) writeOutputBlock(output ast.OutputBlock) error {
-	directive, err := formatOutputDirectives(output.Directives)
-	if err != nil {
-		return err
+	if len(output.Directives) > 0 {
+		directive, err := formatOutputDirectives(output.Directives)
+		if err != nil {
+			return err
+		}
+		f.writeLine(directive)
 	}
-
-	f.writeLine(directive)
 	if len(output.Items) == 0 {
 		f.write("{}")
 		return nil

@@ -288,6 +288,7 @@ schema User = { profile: Profile; };
 |===|
 [output = data, schema = User]
 { profile: { age: 30; }; }`),
+		Entry("bare output block defaults to data", `{ result: 1 + 2; }`),
 	)
 
 	DescribeTable("rejects output that violates schema",

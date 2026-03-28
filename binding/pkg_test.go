@@ -111,14 +111,13 @@ var _ = Describe("Marshal", func() {
 })
 
 var _ = Describe("MarshalOutput", func() {
-	It("wraps root records in a Mace output block", func() {
+	It("returns a bare output record when data is implicit", func() {
 		source, err := MarshalOutput(map[string]any{
 			"name": "Ada",
 			"age":  27,
 		})
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = data]
-{
+		tAssert.Equal(`{
   age: 27;
   name: "Ada";
 }`, source)
