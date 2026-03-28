@@ -29,6 +29,19 @@ type userConfig struct {
 	private string
 }
 
+type decodedConfig struct {
+	Name    string                 `json:"name"`
+	Enabled bool                   `json:"enabled"`
+	Profile decodedProfile         `json:"profile"`
+	Flags   []bool                 `json:"flags"`
+	Meta    map[string]interface{} `json:"meta"`
+}
+
+type decodedProfile struct {
+	Level int     `json:"level"`
+	Alias *string `json:"alias,omitempty"`
+}
+
 var _ = Describe("OutputMap", func() {
 	It("converts evaluated output to nested Go maps and slices", func() {
 		result, err := processor.New().Process(`|===|
@@ -113,6 +126,54 @@ var _ = Describe("MarshalOutput", func() {
 
 	It("rejects non-record roots", func() {
 		_, err := MarshalOutput([]int{1, 2, 3})
+		tAssert.Error(err)
+	})
+})
+
+var _ = Describe("Unmarshal", func() {
+	It("unmarshals output records into structs", func() {
+		input := `[output = data]
+{
+  name: "Ada";
+  enabled: true;
+  profile: {
+    level: 3;
+  };
+  flags: [true, false];
+  meta: {
+    retries: 2;
+  };
+}`
+
+		var config decodedConfig
+		err := Unmarshal(input, &config)
+		tAssert.NoError(err)
+		tAssert.Equal("Ada", config.Name)
+		tAssert.Equal(true, config.Enabled)
+		tAssert.Equal(3, config.Profile.Level)
+		tAssert.Nil(config.Profile.Alias)
+		tAssert.Equal([]bool{true, false}, config.Flags)
+		tAssert.Equal(map[string]interface{}{"retries": int64(2)}, config.Meta)
+	})
+
+	It("unmarshals output records into maps", func() {
+		input := `[output = data]
+{
+  age: 27;
+  name: "Ada";
+}`
+
+		target := map[string]any{}
+		err := Unmarshal(input, &target)
+		tAssert.NoError(err)
+		tAssert.Equal(map[string]any{
+			"age":  int64(27),
+			"name": "Ada",
+		}, target)
+	})
+
+	It("rejects non-pointer targets", func() {
+		err := Unmarshal(`[output = data] { value: 1; }`, map[string]any{})
 		tAssert.Error(err)
 	})
 })
