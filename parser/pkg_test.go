@@ -321,5 +321,35 @@ string user = "Ada";
 				requireIdentifier(file.Output.Items[0].Value, "user")
 			}
 		})
+
+		It("parses nested array type references without spacing between closers", func() {
+			input := `|===|
+type Matrix = array<array<int>>;
+|===|
+[output = data] {}`
+
+			file, err := parseFileInput(input)
+			tAssert.NoError(err)
+
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 1) {
+				typeDecl, ok := file.Script.Items[0].(ast.TypeDeclaration)
+				tAssert.True(ok)
+				if ok {
+					outerArray, ok := typeDecl.Type.(ast.ArrayType)
+					tAssert.True(ok)
+					if ok {
+						innerArray, ok := outerArray.Element.(ast.ArrayType)
+						tAssert.True(ok)
+						if ok {
+							primitive, ok := innerArray.Element.(ast.PrimitiveType)
+							tAssert.True(ok)
+							if ok {
+								tAssert.Equal("int", primitive.Name)
+							}
+						}
+					}
+				}
+			}
+		})
 	})
 })

@@ -462,7 +462,7 @@ func (p *Parser) parseTypeReference() (ast.TypeReference, error) {
 		if err != nil {
 			return nil, err
 		}
-		if _, err := p.consume(lexer.TokenGreater, "parser: expected '>' after array type"); err != nil {
+		if err := p.consumeTypeCloser("parser: expected '>' after array type"); err != nil {
 			return nil, err
 		}
 		return ast.ArrayType{Element: element}, nil
@@ -472,6 +472,30 @@ func (p *Parser) parseTypeReference() (ast.TypeReference, error) {
 		return ast.NamedType{Name: token.Lexeme}, nil
 	default:
 		return nil, p.unexpectedTokenError("parser: expected type reference")
+	}
+}
+
+func (p *Parser) consumeTypeCloser(message string) error {
+	switch p.current().Type {
+	case lexer.TokenGreater:
+		p.advance()
+		return nil
+	case lexer.TokenShiftRight:
+		token := p.current()
+		token.Type = lexer.TokenGreater
+		token.Lexeme = ">"
+		token.Column++
+		p.tokens[p.position] = token
+		return nil
+	case lexer.TokenShiftRightUnsigned:
+		token := p.current()
+		token.Type = lexer.TokenShiftRight
+		token.Lexeme = ">>"
+		token.Column++
+		p.tokens[p.position] = token
+		return nil
+	default:
+		return p.unexpectedTokenError(message)
 	}
 }
 

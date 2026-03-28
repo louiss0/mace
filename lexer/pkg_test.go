@@ -384,5 +384,9 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenIdentifier, lexeme: "name"},
 			{tokenType: TokenEOF, lexeme: ""},
 		}),
+		Entry("line comment does not consume later block closer", "/= comment\n/= block =/ value", []expectedToken{
+			{tokenType: TokenIdentifier, lexeme: "value"},
+			{tokenType: TokenEOF, lexeme: ""},
+		}),
 	)
 })

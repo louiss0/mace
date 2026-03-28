@@ -247,7 +247,18 @@ func (l *Lexer) skipComment() error {
 }
 
 func (l *Lexer) shouldUseBlockComment() bool {
-	return strings.Contains(l.input[l.position:], "=/")
+	rest := l.input[l.position:]
+	blockEnd := strings.Index(rest, "=/")
+	if blockEnd == -1 {
+		return false
+	}
+
+	lineEnd := strings.IndexAny(rest, "\r\n")
+	if lineEnd == -1 {
+		return true
+	}
+
+	return blockEnd < lineEnd
 }
 
 func (l *Lexer) isScriptDelimiterStart(startPosition int) bool {
