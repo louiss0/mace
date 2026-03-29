@@ -1,0 +1,729 @@
+===
+default data output block
+===
+{
+  name: "Ada";
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (string_literal))))
+
+===
+explicit data output block
+===
+[output = data]
+{
+  name: "Ada";
+}
+---
+(source_file
+  (output_block
+    (directive_list
+      (output_mode_directive
+        (data_mode)))
+    (output_field
+      (identifier)
+      (string_literal))))
+
+===
+data output with schema directive
+===
+|===|
+schema User = {
+  name: string;
+  age?: int;
+};
+|===|
+[output = data, schema = User]
+{
+  name: "Ada";
+  age?: 27;
+}
+---
+(source_file
+  (script_block
+    (schema_declaration
+      (identifier)
+      (record_type
+        (schema_field
+          (identifier)
+          (string_type))
+        (schema_field
+          (identifier)
+          (optional_marker)
+          (int_type)))))
+  (output_block
+    (directive_list
+      (output_mode_directive
+        (data_mode))
+      (schema_directive
+        (identifier)))
+    (output_field
+      (identifier)
+      (string_literal))
+    (output_field
+      (identifier)
+      (optional_marker)
+      (int_literal))))
+
+===
+data output with schema and schema file directives
+===
+[output = data, schema = User, schema_file = "./shared.mace"]
+{
+  name: "Ada";
+}
+---
+(source_file
+  (ERROR))
+
+===
+schema output with type references
+===
+[output = schema]
+{
+  name: string;
+  scores: array<array<int>>;
+  profile?: Profile;
+}
+---
+(source_file
+  (output_block
+    (directive_list
+      (output_mode_directive
+        (schema_mode)))
+    (output_schema_field
+      (identifier)
+      (string_type))
+    (output_schema_field
+      (identifier)
+      (array_type
+        (array_type
+          (int_type))))
+    (output_schema_field
+      (identifier)
+      (optional_marker)
+      (named_type
+        (identifier)))))
+
+===
+optional output field
+===
+{
+  enabled?: true;
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (optional_marker)
+      (boolean_literal))))
+
+===
+
+
+===
+duplicate output directives are invalid
+===
+[output = data, output = schema]
+{
+  name: "Ada";
+}
+---
+(source_file
+  (ERROR))
+
+
+===
+array nesting level 1
+===
+{
+  value: [1];
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (array_literal
+        (int_literal)))))
+
+===
+array nesting level 2
+===
+{
+  value: [[1]];
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (array_literal
+        (array_literal
+          (int_literal))))))
+
+===
+array nesting level 3
+===
+{
+  value: [[[1]]];
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (array_literal
+        (array_literal
+          (array_literal
+            (int_literal)))))))
+
+===
+array nesting level 4
+===
+{
+  value: [[[[1]]]];
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (array_literal
+        (array_literal
+          (array_literal
+            (array_literal
+              (int_literal))))))))
+
+===
+array nesting level 5
+===
+{
+  value: [[[[[1]]]]];
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (array_literal
+        (array_literal
+          (array_literal
+            (array_literal
+              (array_literal
+                (int_literal)))))))))
+
+===
+array nesting level 6
+===
+{
+  value: [[[[[[1]]]]]];
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (array_literal
+        (array_literal
+          (array_literal
+            (array_literal
+              (array_literal
+                (array_literal
+                  (int_literal))))))))))
+
+===
+array nesting level 7
+===
+{
+  value: [[[[[[[1]]]]]]];
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (array_literal
+        (array_literal
+          (array_literal
+            (array_literal
+              (array_literal
+                (array_literal
+                  (array_literal
+                    (int_literal)))))))))))
+
+===
+array nesting level 8
+===
+{
+  value: [[[[[[[[1]]]]]]]];
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (array_literal
+        (array_literal
+          (array_literal
+            (array_literal
+              (array_literal
+                (array_literal
+                  (array_literal
+                    (array_literal
+                      (int_literal))))))))))))
+
+===
+array nesting level 9
+===
+{
+  value: [[[[[[[[[1]]]]]]]]];
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (array_literal
+        (array_literal
+          (array_literal
+            (array_literal
+              (array_literal
+                (array_literal
+                  (array_literal
+                    (array_literal
+                      (array_literal
+                        (int_literal)))))))))))))
+
+===
+array nesting level 10
+===
+{
+  value: [[[[[[[[[[1]]]]]]]]]];
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (array_literal
+        (array_literal
+          (array_literal
+            (array_literal
+              (array_literal
+                (array_literal
+                  (array_literal
+                    (array_literal
+                      (array_literal
+                        (array_literal
+                          (int_literal))))))))))))))
+
+===
+record nesting level 1
+===
+{
+  value: {
+    level1: 1;
+  };
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (record_literal
+        (record_field
+          (identifier)
+          (int_literal))))))
+
+===
+record nesting level 2
+===
+{
+  value: {
+    level1: {
+      level2: 1;
+    };
+  };
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (record_literal
+        (record_field
+          (identifier)
+          (record_literal
+            (record_field
+              (identifier)
+              (int_literal))))))))
+
+===
+record nesting level 3
+===
+{
+  value: {
+    level1: {
+      level2: {
+        level3: 1;
+      };
+    };
+  };
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (record_literal
+        (record_field
+          (identifier)
+          (record_literal
+            (record_field
+              (identifier)
+              (record_literal
+                (record_field
+                  (identifier)
+                  (int_literal))))))))))
+
+===
+record nesting level 4
+===
+{
+  value: {
+    level1: {
+      level2: {
+        level3: {
+          level4: 1;
+        };
+      };
+    };
+  };
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (record_literal
+        (record_field
+          (identifier)
+          (record_literal
+            (record_field
+              (identifier)
+              (record_literal
+                (record_field
+                  (identifier)
+                  (record_literal
+                    (record_field
+                      (identifier)
+                      (int_literal))))))))))))
+
+===
+record nesting level 5
+===
+{
+  value: {
+    level1: {
+      level2: {
+        level3: {
+          level4: {
+            level5: 1;
+          };
+        };
+      };
+    };
+  };
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (record_literal
+        (record_field
+          (identifier)
+          (record_literal
+            (record_field
+              (identifier)
+              (record_literal
+                (record_field
+                  (identifier)
+                  (record_literal
+                    (record_field
+                      (identifier)
+                      (record_literal
+                        (record_field
+                          (identifier)
+                          (int_literal))))))))))))))
+
+===
+record nesting level 6
+===
+{
+  value: {
+    level1: {
+      level2: {
+        level3: {
+          level4: {
+            level5: {
+              level6: 1;
+            };
+          };
+        };
+      };
+    };
+  };
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (record_literal
+        (record_field
+          (identifier)
+          (record_literal
+            (record_field
+              (identifier)
+              (record_literal
+                (record_field
+                  (identifier)
+                  (record_literal
+                    (record_field
+                      (identifier)
+                      (record_literal
+                        (record_field
+                          (identifier)
+                          (record_literal
+                            (record_field
+                              (identifier)
+                              (int_literal))))))))))))))))
+
+===
+record nesting level 7
+===
+{
+  value: {
+    level1: {
+      level2: {
+        level3: {
+          level4: {
+            level5: {
+              level6: {
+                level7: 1;
+              };
+            };
+          };
+        };
+      };
+    };
+  };
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (record_literal
+        (record_field
+          (identifier)
+          (record_literal
+            (record_field
+              (identifier)
+              (record_literal
+                (record_field
+                  (identifier)
+                  (record_literal
+                    (record_field
+                      (identifier)
+                      (record_literal
+                        (record_field
+                          (identifier)
+                          (record_literal
+                            (record_field
+                              (identifier)
+                              (record_literal
+                                (record_field
+                                  (identifier)
+                                  (int_literal))))))))))))))))))
+
+===
+record nesting level 8
+===
+{
+  value: {
+    level1: {
+      level2: {
+        level3: {
+          level4: {
+            level5: {
+              level6: {
+                level7: {
+                  level8: 1;
+                };
+              };
+            };
+          };
+        };
+      };
+    };
+  };
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (record_literal
+        (record_field
+          (identifier)
+          (record_literal
+            (record_field
+              (identifier)
+              (record_literal
+                (record_field
+                  (identifier)
+                  (record_literal
+                    (record_field
+                      (identifier)
+                      (record_literal
+                        (record_field
+                          (identifier)
+                          (record_literal
+                            (record_field
+                              (identifier)
+                              (record_literal
+                                (record_field
+                                  (identifier)
+                                  (record_literal
+                                    (record_field
+                                      (identifier)
+                                      (int_literal))))))))))))))))))))
+
+===
+record nesting level 9
+===
+{
+  value: {
+    level1: {
+      level2: {
+        level3: {
+          level4: {
+            level5: {
+              level6: {
+                level7: {
+                  level8: {
+                    level9: 1;
+                  };
+                };
+              };
+            };
+          };
+        };
+      };
+    };
+  };
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (record_literal
+        (record_field
+          (identifier)
+          (record_literal
+            (record_field
+              (identifier)
+              (record_literal
+                (record_field
+                  (identifier)
+                  (record_literal
+                    (record_field
+                      (identifier)
+                      (record_literal
+                        (record_field
+                          (identifier)
+                          (record_literal
+                            (record_field
+                              (identifier)
+                              (record_literal
+                                (record_field
+                                  (identifier)
+                                  (record_literal
+                                    (record_field
+                                      (identifier)
+                                      (record_literal
+                                        (record_field
+                                          (identifier)
+                                          (int_literal))))))))))))))))))))))
+
+===
+record nesting level 10
+===
+{
+  value: {
+    level1: {
+      level2: {
+        level3: {
+          level4: {
+            level5: {
+              level6: {
+                level7: {
+                  level8: {
+                    level9: {
+                      level10: 1;
+                    };
+                  };
+                };
+              };
+            };
+          };
+        };
+      };
+    };
+  };
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (record_literal
+        (record_field
+          (identifier)
+          (record_literal
+            (record_field
+              (identifier)
+              (record_literal
+                (record_field
+                  (identifier)
+                  (record_literal
+                    (record_field
+                      (identifier)
+                      (record_literal
+                        (record_field
+                          (identifier)
+                          (record_literal
+                            (record_field
+                              (identifier)
+                              (record_literal
+                                (record_field
+                                  (identifier)
+                                  (record_literal
+                                    (record_field
+                                      (identifier)
+                                      (record_literal
+                                        (record_field
+                                          (identifier)
+                                          (record_literal
+                                            (record_field
+                                              (identifier)
+                                              (int_literal))))))))))))))))))))))))

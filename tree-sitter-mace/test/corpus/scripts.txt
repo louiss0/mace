@@ -1,0 +1,178 @@
+===
+file structure with imports script and schema validated output
+===
+from "./shared.mace" import Name, User;
+
+|===|
+Name name = "Ada";
+User user = {
+  name: name;
+};
+|===|
+
+[output = data, schema = User]
+{
+  user: user;
+}
+---
+(source_file
+  (import_declaration
+    (string_literal)
+    (identifier)
+    (identifier))
+  (script_block
+    (variable_declaration
+      (named_type
+        (identifier))
+      (identifier)
+      (string_literal))
+    (variable_declaration
+      (named_type
+        (identifier))
+      (identifier)
+      (record_literal
+        (record_field
+          (identifier)
+          (identifier)))))
+  (output_block
+    (directive_list
+      (output_mode_directive
+        (data_mode))
+      (schema_directive
+        (identifier)))
+    (output_field
+      (identifier)
+      (identifier))))
+
+===
+script block with alternate delimiter length
+===
+|====|
+type Scores = array<int>;
+Scores scores = [1, 2, 3];
+|====|
+{
+  scores: scores;
+}
+---
+(source_file
+  (script_block
+    (type_declaration
+      (identifier)
+      (array_type
+        (int_type)))
+    (variable_declaration
+      (named_type
+        (identifier))
+      (identifier)
+      (array_literal
+        (int_literal)
+        (int_literal)
+        (int_literal))))
+  (output_block
+    (output_field
+      (identifier)
+      (identifier))))
+
+===
+mixed declarations with schema aware output block
+===
+|===|
+type Name = string;
+schema User = {
+  name: Name;
+  tags: array<string>;
+};
+User user = {
+  name: "Ada";
+  tags: ["ops", "prod"];
+};
+|===|
+[output = data, schema = User]
+{
+  user: user;
+}
+---
+(source_file
+  (script_block
+    (type_declaration
+      (identifier)
+      (string_type))
+    (schema_declaration
+      (identifier)
+      (record_type
+        (schema_field
+          (identifier)
+          (named_type
+            (identifier)))
+        (schema_field
+          (identifier)
+          (array_type
+            (string_type)))))
+    (variable_declaration
+      (named_type
+        (identifier))
+      (identifier)
+      (record_literal
+        (record_field
+          (identifier)
+          (string_literal))
+            (record_field
+              (identifier)
+              (array_literal
+                (string_literal)
+                (string_literal))))))
+  (output_block
+    (directive_list
+      (output_mode_directive
+        (data_mode))
+      (schema_directive
+        (identifier)))
+    (output_field
+      (identifier)
+      (identifier))))
+
+===
+script block with schema mode output
+===
+|===|
+type Name = string;
+schema User = {
+  name: Name;
+  enabled?: boolean;
+};
+|===|
+[output = schema]
+{
+  name: Name;
+  enabled?: boolean;
+}
+---
+(source_file
+  (script_block
+    (type_declaration
+      (identifier)
+      (string_type))
+    (schema_declaration
+      (identifier)
+      (record_type
+        (schema_field
+          (identifier)
+          (named_type
+            (identifier)))
+        (schema_field
+          (identifier)
+          (optional_marker)
+          (boolean_type)))))
+  (output_block
+    (directive_list
+      (output_mode_directive
+        (schema_mode)))
+    (output_schema_field
+      (identifier)
+      (named_type
+        (identifier)))
+    (output_schema_field
+      (identifier)
+      (optional_marker)
+      (boolean_type))))

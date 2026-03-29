@@ -1,0 +1,298 @@
+===
+primitive variable declarations
+===
+|===|
+string name = "Ada";
+int age = 27;
+float ratio = 3.14;
+boolean enabled = true;
+|===|
+{
+  name: name;
+  age: age;
+  ratio: ratio;
+  enabled: enabled;
+}
+---
+(source_file
+  (script_block
+    (variable_declaration
+      (string_type)
+      (identifier)
+      (string_literal))
+    (variable_declaration
+      (int_type)
+      (identifier)
+      (int_literal))
+    (variable_declaration
+      (float_type)
+      (identifier)
+      (float_literal))
+    (variable_declaration
+      (boolean_type)
+      (identifier)
+      (boolean_literal)))
+  (output_block
+    (output_field
+      (identifier)
+      (identifier))
+    (output_field
+      (identifier)
+      (identifier))
+    (output_field
+      (identifier)
+      (identifier))
+    (output_field
+      (identifier)
+      (identifier))))
+
+===
+named type alias variable
+===
+|===|
+type Name = string;
+Name name = "Ada";
+|===|
+{
+  name: name;
+}
+---
+(source_file
+  (script_block
+    (type_declaration
+      (identifier)
+      (string_type))
+    (variable_declaration
+      (named_type
+        (identifier))
+      (identifier)
+      (string_literal)))
+  (output_block
+    (output_field
+      (identifier)
+      (identifier))))
+
+===
+array variable declaration
+===
+|===|
+array<array<int>> matrix = [[1, 2], [3, 4]];
+|===|
+{
+  matrix: matrix;
+}
+---
+(source_file
+  (script_block
+    (variable_declaration
+      (array_type
+        (array_type
+          (int_type)))
+      (identifier)
+      (array_literal
+        (array_literal
+          (int_literal)
+          (int_literal))
+        (array_literal
+          (int_literal)
+          (int_literal)))))
+  (output_block
+    (output_field
+      (identifier)
+      (identifier))))
+
+===
+schema typed variable declaration
+===
+|===|
+schema User = {
+  name: string;
+  age?: int;
+};
+User user = {
+  name: "Ada";
+  age?: 27;
+};
+|===|
+{
+  user: user;
+}
+---
+(source_file
+  (script_block
+    (schema_declaration
+      (identifier)
+      (record_type
+        (schema_field
+          (identifier)
+          (string_type))
+        (schema_field
+          (identifier)
+          (optional_marker)
+          (int_type))))
+    (variable_declaration
+      (named_type
+        (identifier))
+      (identifier)
+      (record_literal
+        (record_field
+          (identifier)
+          (string_literal))
+        (record_field
+          (identifier)
+          (optional_marker)
+          (int_literal)))))
+  (output_block
+    (output_field
+      (identifier)
+      (identifier))))
+
+===
+injectable string variable
+===
+|===|
+injectable string env = "dev";
+|===|
+{
+  env: env;
+}
+---
+(source_file
+  (script_block
+    (variable_declaration
+      (injectable_modifier)
+      (string_type)
+      (identifier)
+      (string_literal)))
+  (output_block
+    (output_field
+      (identifier)
+      (identifier))))
+
+===
+injectable int variable
+===
+|===|
+injectable int retries = 3;
+|===|
+{
+  retries: retries;
+}
+---
+(source_file
+  (script_block
+    (variable_declaration
+      (injectable_modifier)
+      (int_type)
+      (identifier)
+      (int_literal)))
+  (output_block
+    (output_field
+      (identifier)
+      (identifier))))
+
+===
+injectable float variable
+===
+|===|
+injectable float threshold = 0.75;
+|===|
+{
+  threshold: threshold;
+}
+---
+(source_file
+  (script_block
+    (variable_declaration
+      (injectable_modifier)
+      (float_type)
+      (identifier)
+      (float_literal)))
+  (output_block
+    (output_field
+      (identifier)
+      (identifier))))
+
+===
+injectable boolean variable
+===
+|===|
+injectable boolean enabled = false;
+|===|
+{
+  enabled: enabled;
+}
+---
+(source_file
+  (script_block
+    (variable_declaration
+      (injectable_modifier)
+      (boolean_type)
+      (identifier)
+      (boolean_literal)))
+  (output_block
+    (output_field
+      (identifier)
+      (identifier))))
+
+===
+injectable array variable
+===
+|===|
+injectable array<string> tags = ["ops", "prod"];
+|===|
+{
+  tags: tags;
+}
+---
+(source_file
+  (script_block
+    (variable_declaration
+      (injectable_modifier)
+      (array_type
+        (string_type))
+      (identifier)
+      (array_literal
+        (string_literal)
+        (string_literal))))
+  (output_block
+    (output_field
+      (identifier)
+      (identifier))))
+
+===
+injectable schema variable
+===
+|===|
+schema User = {
+  name: string;
+};
+injectable User user = {
+  name: "Ada";
+};
+|===|
+{
+  user: user;
+}
+---
+(source_file
+  (script_block
+    (schema_declaration
+      (identifier)
+      (record_type
+        (schema_field
+          (identifier)
+          (string_type))))
+    (variable_declaration
+      (injectable_modifier)
+      (named_type
+        (identifier))
+      (identifier)
+      (record_literal
+        (record_field
+          (identifier)
+          (string_literal)))))
+  (output_block
+    (output_field
+      (identifier)
+      (identifier))))

@@ -1,0 +1,91 @@
+===
+line comment before output block
+===
+/= this is a line comment
+{
+  value: true;
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (boolean_literal))))
+
+===
+block comment before output block
+===
+/= this is a block comment =/
+{
+  value: true;
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (boolean_literal))))
+
+===
+line comment inside script block
+===
+|===|
+/= comment about the declaration
+string name = "Ada";
+|===|
+{
+  name: name;
+}
+---
+(source_file
+  (script_block
+    (variable_declaration
+      (string_type)
+      (identifier)
+      (string_literal)))
+  (output_block
+    (output_field
+      (identifier)
+      (identifier))))
+
+===
+block comment inside output block
+===
+{
+  /= inline block comment =/
+  value: true;
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (boolean_literal))))
+
+===
+comment disambiguation uses block comment when terminator appears before newline
+===
+/= block comment =/
+{
+  value: true;
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (boolean_literal))))
+
+===
+comment disambiguation uses line comment without terminator before newline
+===
+/= line comment
+{
+  value: true;
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (boolean_literal))))

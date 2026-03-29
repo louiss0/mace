@@ -1,0 +1,303 @@
+===
+unary plus operator
+===
+{
+  result: +1;
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (unary_expression
+        (plus_operator)
+        (int_literal)))))
+
+===
+unary minus operator
+===
+{
+  result: -1;
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (unary_expression
+        (minus_operator)
+        (int_literal)))))
+
+===
+bitwise not operator
+===
+{
+  result: ~1;
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (unary_expression
+        (tilde_operator)
+        (int_literal)))))
+
+===
+addition operator
+===
+{
+  result: 1 + 2;
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (additive_expression
+        (int_literal)
+        (plus_operator)
+        (int_literal)))))
+
+===
+subtraction operator
+===
+{
+  result: 5 - 3;
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (additive_expression
+        (int_literal)
+        (minus_operator)
+        (int_literal)))))
+
+===
+multiplication operator
+===
+{
+  result: 2 * 3;
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (multiplicative_expression
+        (int_literal)
+        (star_operator)
+        (int_literal)))))
+
+===
+division operator
+===
+{
+  result: 8 / 2;
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (multiplicative_expression
+        (int_literal)
+        (slash_operator)
+        (int_literal)))))
+
+===
+modulo operator
+===
+{
+  result: 9 % 4;
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (multiplicative_expression
+        (int_literal)
+        (percent_operator)
+        (int_literal)))))
+
+===
+exponent operator
+===
+{
+  result: 2 ** 3;
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (exponent_expression
+        (int_literal)
+        (double_star_operator)
+        (int_literal)))))
+
+===
+shift left operator
+===
+{
+  result: 8 << 1;
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (shift_expression
+        (int_literal)
+        (shift_left_operator)
+        (int_literal)))))
+
+===
+shift right operator
+===
+{
+  result: 8 >> 1;
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (shift_expression
+        (int_literal)
+        (shift_right_operator)
+        (int_literal)))))
+
+===
+unsigned shift right operator
+===
+{
+  result: 8 >>> 1;
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (shift_expression
+        (int_literal)
+        (unsigned_shift_right_operator)
+        (int_literal)))))
+
+===
+bitwise and operator
+===
+{
+  result: 7 & 3;
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (bitwise_and_expression
+        (int_literal)
+        (ampersand_operator)
+        (int_literal)))))
+
+===
+bitwise xor operator
+===
+{
+  result: 7 ^ 3;
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (bitwise_xor_expression
+        (int_literal)
+        (caret_operator)
+        (int_literal)))))
+
+===
+bitwise or operator
+===
+{
+  result: 7 | 3;
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (bitwise_or_expression
+        (int_literal)
+        (pipe_operator)
+        (int_literal)))))
+
+===
+combined arithmetic operators
+===
+{
+  result: +1 + 2 * 3 - 8 / 4 % 2;
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (additive_expression
+        (additive_expression
+          (unary_expression
+            (plus_operator)
+            (int_literal))
+          (plus_operator)
+          (multiplicative_expression
+            (int_literal)
+            (star_operator)
+            (int_literal)))
+        (minus_operator)
+        (multiplicative_expression
+          (multiplicative_expression
+            (int_literal)
+            (slash_operator)
+            (int_literal))
+          (percent_operator)
+          (int_literal))))))
+
+===
+combined exponent shift and bitwise operators
+===
+{
+  result: ~(2 ** 3) << 1 >> 2 >>> 1 & 7 ^ 3 | 1;
+}
+---
+(source_file
+  (output_block
+    (output_field
+      (identifier)
+      (bitwise_or_expression
+        (bitwise_xor_expression
+          (bitwise_and_expression
+            (shift_expression
+              (shift_expression
+                (shift_expression
+                  (unary_expression
+                    (tilde_operator)
+                    (parenthesized_expression
+                      (exponent_expression
+                        (int_literal)
+                        (double_star_operator)
+                        (int_literal))))
+                  (shift_left_operator)
+                  (int_literal))
+                (shift_right_operator)
+                (int_literal))
+              (unsigned_shift_right_operator)
+              (int_literal))
+            (ampersand_operator)
+            (int_literal))
+          (caret_operator)
+          (int_literal))
+        (pipe_operator)
+        (int_literal))))))

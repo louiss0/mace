@@ -121,6 +121,23 @@ func assertExpectedSchema(result Result, expected map[expectedSchemaField]Schema
 	}
 }
 
+func assertProcessedResult(input string, expected expectedValue) {
+	processor := New()
+	result, err := processor.Process(input)
+	tAssert.NoError(err)
+
+	actual := requireOutputValue(result, "result")
+	assertExpectedValue(actual, expected)
+}
+
+func assertProcessedOutput(input string, expected map[string]expectedValue) {
+	processor := New()
+	result, err := processor.Process(input)
+	tAssert.NoError(err)
+
+	assertExpectedOutput(result, expected)
+}
+
 func requireScriptVariable(result ScriptResult, name string) Value {
 	value, ok := result.Variables[name]
 	tAssert.True(ok)
@@ -506,6 +523,50 @@ schema Plot = { points: array<Point>; };
 { points: [ { x: 1; y: 2; }, { x: 3; } ]; }`, "missing required field"),
 	)
 
+	DescribeTable("returns individual operator results",
+		func(input string, expected expectedValue) {
+			assertProcessedResult(input, expected)
+		},
+		Entry("unary plus", `[output = data] { result: +7; }`, expectedValue{kind: ValueInt, int64: 7}),
+		Entry("unary minus", `[output = data] { result: -5; }`, expectedValue{kind: ValueInt, int64: -5}),
+		Entry("logical not", `[output = data] { result: !false; }`, expectedValue{kind: ValueBoolean, bool: true}),
+		Entry("bitwise not", `[output = data] { result: ~1; }`, expectedValue{kind: ValueInt, int64: ^int64(1)}),
+		Entry("addition", `[output = data] { result: 1 + 2; }`, expectedValue{kind: ValueInt, int64: 3}),
+		Entry("subtraction", `[output = data] { result: 5 - 3; }`, expectedValue{kind: ValueInt, int64: 2}),
+		Entry("multiplication", `[output = data] { result: 2 * 3; }`, expectedValue{kind: ValueInt, int64: 6}),
+		Entry("division", `[output = data] { result: 8 / 2; }`, expectedValue{kind: ValueInt, int64: 4}),
+		Entry("modulo", `[output = data] { result: 9 % 4; }`, expectedValue{kind: ValueInt, int64: 1}),
+		Entry("exponentiation", `[output = data] { result: 2 ** 3; }`, expectedValue{kind: ValueInt, int64: 8}),
+		Entry("shift left", `[output = data] { result: 1 << 3; }`, expectedValue{kind: ValueInt, int64: 8}),
+		Entry("shift right", `[output = data] { result: 8 >> 1; }`, expectedValue{kind: ValueInt, int64: 4}),
+		Entry("unsigned shift right", `[output = data] { result: 8 >>> 1; }`, expectedValue{kind: ValueInt, int64: 4}),
+		Entry("less than", `[output = data] { result: 1 < 2; }`, expectedValue{kind: ValueBoolean, bool: true}),
+		Entry("less than or equal", `[output = data] { result: 2 <= 2; }`, expectedValue{kind: ValueBoolean, bool: true}),
+		Entry("greater than", `[output = data] { result: 3 > 2; }`, expectedValue{kind: ValueBoolean, bool: true}),
+		Entry("greater than or equal", `[output = data] { result: 2 >= 2; }`, expectedValue{kind: ValueBoolean, bool: true}),
+		Entry("equal", `[output = data] { result: 3 == 3; }`, expectedValue{kind: ValueBoolean, bool: true}),
+		Entry("not equal", `[output = data] { result: 3 != 4; }`, expectedValue{kind: ValueBoolean, bool: true}),
+		Entry("strict equal", `[output = data] { result: 3 === 3; }`, expectedValue{kind: ValueBoolean, bool: true}),
+		Entry("strict not equal", `[output = data] { result: 3 !== 4; }`, expectedValue{kind: ValueBoolean, bool: true}),
+		Entry("bitwise and", `[output = data] { result: 6 & 3; }`, expectedValue{kind: ValueInt, int64: 2}),
+		Entry("bitwise xor", `[output = data] { result: 5 ^ 3; }`, expectedValue{kind: ValueInt, int64: 6}),
+		Entry("bitwise or", `[output = data] { result: 5 | 2; }`, expectedValue{kind: ValueInt, int64: 7}),
+		Entry("logical and", `[output = data] { result: true && false; }`, expectedValue{kind: ValueBoolean, bool: false}),
+		Entry("logical or", `[output = data] { result: true || false; }`, expectedValue{kind: ValueBoolean, bool: true}),
+		Entry("ternary", `[output = data] { result: true ? 1 : 2; }`, expectedValue{kind: ValueInt, int64: 1}),
+	)
+
+	DescribeTable("returns mixed operator results",
+		func(input string, expected expectedValue) {
+			assertProcessedResult(input, expected)
+		},
+		Entry("arithmetic precedence", `[output = data] { result: 1 + 2 * 3 - 4; }`, expectedValue{kind: ValueInt, int64: 3}),
+		Entry("shift and additive precedence", `[output = data] { result: 1 + 2 << 2; }`, expectedValue{kind: ValueInt, int64: 12}),
+		Entry("bitwise precedence", `[output = data] { result: 7 & 3 ^ 1 | 8; }`, expectedValue{kind: ValueInt, int64: 10}),
+		Entry("comparison and logic precedence", `[output = data] { result: 1 < 2 && 3 > 2 || false; }`, expectedValue{kind: ValueBoolean, bool: true}),
+		Entry("conditional with logical expression", `[output = data] { result: false || true ? 5 : 2; }`, expectedValue{kind: ValueInt, int64: 5}),
+	)
+
 	DescribeTable("returns math results",
 		func(file string, expected expectedValue) {
 			processor := New()
@@ -796,6 +857,46 @@ int base = 3 * 4;
 			"base":   {kind: ValueInt, int64: 4},
 			"result": {kind: ValueInt, int64: 12},
 		}),
+	)
+
+	DescribeTable("returns self reference results by depth",
+		func(input string, expected expectedValue) {
+			assertProcessedResult(input, expected)
+		},
+		Entry("level 1", `[output = data] { base: 4; result: $self.base; }`, expectedValue{kind: ValueInt, int64: 4}),
+		Entry("level 2", `[output = data] { profile: { name: "Ada"; }; result: $self.profile.name; }`, expectedValue{kind: ValueString, string: "Ada"}),
+		Entry("level 3", `[output = data] { profile: { details: { age: 30; }; }; result: $self.profile.details.age; }`, expectedValue{kind: ValueInt, int64: 30}),
+		Entry("level 4", `[output = data] { tree: { branch: { leaf: { value: 9; }; }; }; result: $self.tree.branch.leaf.value; }`, expectedValue{kind: ValueInt, int64: 9}),
+		Entry("level 5", `[output = data] { a: { b: { c: { d: { e: true; }; }; }; }; result: $self.a.b.c.d.e; }`, expectedValue{kind: ValueBoolean, bool: true}),
+	)
+
+	DescribeTable("returns mixed self reference results",
+		func(input string, expected expectedValue) {
+			assertProcessedResult(input, expected)
+		},
+		Entry("arithmetic with chained fields", `[output = data] { base: 4; doubled: $self.base * 2; result: $self.doubled + $self.base; }`, expectedValue{kind: ValueInt, int64: 12}),
+		Entry("conditional with self", `[output = data] { enabled: true; result: $self.enabled ? "on" : "off"; }`, expectedValue{kind: ValueString, string: "on"}),
+		Entry("array literal with self", `[output = data] { base: 2; result: [$self.base, $self.base + 1, $self.base + 2]; }`, expectedValue{kind: ValueArray, array: []expectedValue{
+			{kind: ValueInt, int64: 2},
+			{kind: ValueInt, int64: 3},
+			{kind: ValueInt, int64: 4},
+		}}),
+		Entry("record literal with self", `[output = data] { name: "Ada"; result: { display: $self.name; active: true; }; }`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+			"display": {kind: ValueString, string: "Ada"},
+			"active":  {kind: ValueBoolean, bool: true},
+		}}),
+		Entry("nested self and operators", `[output = data] { profile: { score: 3; }; result: $self.profile.score * 4 + 1; }`, expectedValue{kind: ValueInt, int64: 13}),
+	)
+
+	DescribeTable("rejects invalid self references",
+		func(input, message string) {
+			processor := New()
+			_, err := processor.Process(input)
+			tAssert.Error(err)
+			tAssert.ErrorContains(err, message)
+		},
+		Entry("future field reference", `[output = data] { result: $self.base; base: 4; }`, "unknown self reference"),
+		Entry("nested path through non record", `[output = data] { base: 4; result: $self.base.value; }`, "non-record"),
 	)
 
 	DescribeTable("rejects inline arrays with mixed types",
