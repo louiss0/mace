@@ -170,13 +170,32 @@ The current implementation also supports schema validation with:
 When a `schema` directive is present, the output record is validated
 against that schema.
 
-### Reserved Directives
+Schema output is also supported with an anonymous schema block:
 
-The grammar recognizes these forms, but the processor rejects them because
-they are not implemented:
+```mace
+[output = schema]
+{
+  name: string;
+  age?: int;
+}
+```
 
-- `output = schema`
-- `schema_file = "..."`
+In schema mode, output fields contain type references instead of
+expressions. The processor currently returns those fields using their
+declared names and optionality alongside the formatted type string.
+
+External schema declarations can also be loaded for data validation:
+
+```mace
+[output = data, schema = User, schema_file = "./schemas.mace"]
+{
+  name: user_name;
+}
+```
+
+When `schema_file` is present, the processor loads type and schema
+declarations from the referenced Mace file before validating the output
+schema.
 
 ## Expressions
 
@@ -266,5 +285,3 @@ The following are not implemented today:
 
 - explicit export declarations
 - runtime injection for `injectable` variables
-- schema-valued output blocks
-- `schema_file` resolution
