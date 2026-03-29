@@ -210,7 +210,7 @@ Expressions are pure and deterministic. The implementation supports:
 - arithmetic operators: `+`, `-`, `*`, `/`, `%`, `**`
 - shift operators: `<<`, `>>`, `>>>`
 - comparison operators: `<`, `<=`, `>`, `>=`
-- equality operators: `==`, `!=`, `===`, `!==`
+- equality operators: `==`, `!=`,
 - bitwise operators: `&`, `|`, `^`
 - logical operators: `&&`, `||`
 - ternary conditional: `? :`
