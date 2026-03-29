@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/louiss0/mace/lexer"
-	"github.com/louiss0/mace/parser"
-	"github.com/louiss0/mace/parser/ast"
+	"github.com/louiss0/mace/internal/lexer"
+	"github.com/louiss0/mace/internal/parser"
+	"github.com/louiss0/mace/internal/parser/ast"
 )
 
 type Processor struct{}
@@ -17,6 +17,12 @@ type Processor struct{}
 type Result struct {
 	File   ast.File
 	Output map[string]Value
+	Schema map[SchemaField]string
+}
+
+type SchemaField struct {
+	Name     string
+	Optional bool
 }
 
 func New() *Processor {
@@ -61,7 +67,12 @@ func (p *Processor) processInput(input string, baseDir string) (Result, error) {
 		return Result{}, err
 	}
 
-	return Result{File: file, Output: output}, nil
+	schema, err := evaluateSchemaOutput(file)
+	if err != nil {
+		return Result{}, err
+	}
+
+	return Result{File: file, Output: output, Schema: schema}, nil
 }
 
 func lex(input string) ([]lexer.Token, error) {
@@ -117,12 +128,45 @@ func validateFile(file ast.File, baseDir string) error {
 		}
 	}
 
-	if err := validateOutputDirectives(file.Output.Directives, symbols); err != nil {
+	if err := validateOutputDirectiveStructure(file.Output); err != nil {
 		return err
 	}
 
+	schemaFileDeclarations, err := resolveSchemaFileDeclarations(file.Output.Directives, baseDir)
+	if err != nil {
+		return err
+	}
+
+	for _, declaration := range schemaFileDeclarations {
+		if symbols.Has(declaration.name) {
+			return validationErrorf("duplicate declaration %q", declaration.name)
+		}
+
+		switch declaration.kind {
+		case symbolKindType:
+			symbols.Add(declaration.name, symbolKindType)
+			types.AddAlias(declaration.name, declaration.typeRef)
+		case symbolKindSchema:
+			symbols.Add(declaration.name, symbolKindSchema)
+			schemas.Add(declaration.name, declaration.record)
+		default:
+			return validationErrorf("unknown declaration %q in schema_file", declaration.name)
+		}
+	}
+
+	if err := validateOutputDirectiveReferences(file.Output, symbols); err != nil {
+		return err
+	}
+
+	if file.Output.Mode == ast.OutputModeSchema {
+		if err := validateSchemaOutputFields(file.Output.SchemaFields, symbols, types); err != nil {
+			return err
+		}
+		return nil
+	}
+
 	if schemaName, ok := outputSchemaName(file.Output.Directives); ok {
-		if err := validateOutputSchema(schemaName, file.Output.Items, variables, symbols, types, schemas); err != nil {
+		if err := validateOutputSchema(schemaName, file.Output.DataFields, variables, symbols, types, schemas); err != nil {
 			return err
 		}
 	}
@@ -249,6 +293,56 @@ func loadImportDeclarations(path string, cache map[string]map[string]ast.Declara
 	return declarations, nil
 }
 
+func resolveSchemaFileDeclarations(directives []ast.OutputDirective, baseDir string) ([]importedDeclaration, error) {
+	var path string
+	for _, directive := range directives {
+		if directive.Kind != ast.OutputDirectiveSchemaFile {
+			continue
+		}
+
+		if path != "" {
+			return nil, validationErrorf("duplicate output directive %q", directiveKindName(directive.Kind))
+		}
+
+		parsedPath, err := parseString(directive.Value)
+		if err != nil {
+			return nil, err
+		}
+
+		path = parsedPath.String
+	}
+
+	if path == "" {
+		return nil, nil
+	}
+
+	resolvedPath := filepath.Join(baseDir, path)
+	declarations, err := loadImportDeclarations(resolvedPath, map[string]map[string]ast.Declaration{}, map[string]struct{}{})
+	if err != nil {
+		return nil, err
+	}
+
+	outputDeclarations := []importedDeclaration{}
+	for name, declaration := range declarations {
+		switch typedDeclaration := declaration.(type) {
+		case ast.TypeDeclaration:
+			outputDeclarations = append(outputDeclarations, importedDeclaration{
+				name:    name,
+				kind:    symbolKindType,
+				typeRef: typedDeclaration.Type,
+			})
+		case ast.SchemaDeclaration:
+			outputDeclarations = append(outputDeclarations, importedDeclaration{
+				name:   name,
+				kind:   symbolKindSchema,
+				record: typedDeclaration.Type,
+			})
+		}
+	}
+
+	return outputDeclarations, nil
+}
+
 func collectDeclarations(items []ast.Declaration, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry) error {
 	for _, declaration := range items {
 		switch decl := declaration.(type) {
@@ -354,15 +448,15 @@ func validateRecordType(record ast.RecordType, symbols *symbolTable, types *type
 	return nil
 }
 
-func validateOutputDirectives(directives []ast.OutputDirective, symbols *symbolTable) error {
-	if len(directives) == 0 {
+func validateOutputDirectiveStructure(output ast.OutputBlock) error {
+	if len(output.Directives) == 0 {
 		return nil
 	}
 
 	var outputValue string
 	seenKinds := map[ast.OutputDirectiveKind]struct{}{}
 
-	for _, directive := range directives {
+	for _, directive := range output.Directives {
 		if _, exists := seenKinds[directive.Kind]; exists {
 			return validationErrorf("duplicate output directive %q", directiveKindName(directive.Kind))
 		}
@@ -372,11 +466,13 @@ func validateOutputDirectives(directives []ast.OutputDirective, symbols *symbolT
 		case ast.OutputDirectiveOutput:
 			outputValue = directive.Value
 		case ast.OutputDirectiveSchema:
-			if !symbols.IsSchema(directive.Value) && !symbols.IsImport(directive.Value) {
-				return validationErrorf("unknown schema %q", directive.Value)
+			if output.Mode == ast.OutputModeSchema {
+				return validationErrorf("schema directive is invalid when output mode is schema")
 			}
 		case ast.OutputDirectiveSchemaFile:
-			return validationErrorf("output directive %q is reserved and not implemented", directiveKindName(directive.Kind))
+			if output.Mode == ast.OutputModeSchema {
+				return validationErrorf("schema_file directive is invalid when output mode is schema")
+			}
 		default:
 			return validationErrorf("unknown output directive")
 		}
@@ -385,8 +481,35 @@ func validateOutputDirectives(directives []ast.OutputDirective, symbols *symbolT
 	if outputValue == "" {
 		return validationErrorf("missing output directive")
 	}
-	if outputValue != "data" {
-		return validationErrorf("output mode %q is reserved and not implemented", outputValue)
+
+	return nil
+}
+
+func validateOutputDirectiveReferences(output ast.OutputBlock, symbols *symbolTable) error {
+	for _, directive := range output.Directives {
+		if directive.Kind != ast.OutputDirectiveSchema {
+			continue
+		}
+
+		if !symbols.IsSchema(directive.Value) && !symbols.IsImport(directive.Value) {
+			return validationErrorf("unknown schema %q", directive.Value)
+		}
+	}
+
+	return nil
+}
+
+func validateSchemaOutputFields(fields []ast.OutputSchemaField, symbols *symbolTable, types *typeRegistry) error {
+	fieldNames := map[string]struct{}{}
+	for _, field := range fields {
+		if _, exists := fieldNames[field.Name]; exists {
+			return validationErrorf("duplicate output field %q", field.Name)
+		}
+		fieldNames[field.Name] = struct{}{}
+
+		if err := validateTypeReference(field.Type, symbols, types); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -601,7 +724,29 @@ func evaluateOutput(file ast.File) (map[string]Value, error) {
 		}
 	}
 
-	return evaluateOutputFields(file.Output.Items, environment)
+	if file.Output.Mode != ast.OutputModeData {
+		return map[string]Value{}, nil
+	}
+
+	return evaluateOutputFields(file.Output.DataFields, environment)
+}
+
+func evaluateSchemaOutput(file ast.File) (map[SchemaField]string, error) {
+	if file.Output.Mode != ast.OutputModeSchema {
+		return map[SchemaField]string{}, nil
+	}
+
+	fields := make(map[SchemaField]string, len(file.Output.SchemaFields))
+	for _, field := range file.Output.SchemaFields {
+		typeName, err := formatTypeReference(field.Type)
+		if err != nil {
+			return nil, err
+		}
+
+		fields[SchemaField{Name: field.Name, Optional: field.Optional}] = typeName
+	}
+
+	return fields, nil
 }
 
 func evaluateScript(items []ast.Declaration, environment *valueEnvironment) error {
@@ -1173,6 +1318,24 @@ func primitiveValueType(name string) (valueType, error) {
 		return valueType{kind: ValueBoolean}, nil
 	default:
 		return valueType{}, validationErrorf("unknown type %q", name)
+	}
+}
+
+func formatTypeReference(typeRef ast.TypeReference) (string, error) {
+	switch ref := typeRef.(type) {
+	case ast.PrimitiveType:
+		return ref.Name, nil
+	case ast.ArrayType:
+		element, err := formatTypeReference(ref.Element)
+		if err != nil {
+			return "", err
+		}
+
+		return fmt.Sprintf("array<%s>", element), nil
+	case ast.NamedType:
+		return ref.Name, nil
+	default:
+		return "", validationErrorf("unknown type reference")
 	}
 }
 

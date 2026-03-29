@@ -1,12 +1,12 @@
-package binding
+package codec
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/stretchr/testify/assert"
-
-	"github.com/louiss0/mace/processor"
 )
 
 var tAssert *assert.Assertions
@@ -44,7 +44,7 @@ type decodedProfile struct {
 
 var _ = Describe("OutputMap", func() {
 	It("converts evaluated output to nested Go maps and slices", func() {
-		result, err := processor.New().Process(`|===|
+		result, err := Parse(`|===|
 int age = 27;
 |===|
 [output = data]
@@ -64,6 +64,35 @@ int age = 27;
 			},
 			"scores": []any{int64(1), int64(2), int64(3)},
 		}, output)
+	})
+})
+
+var _ = Describe("Parse", func() {
+	It("returns schema outputs through the public binding result", func() {
+		result, err := Parse(`[output = schema]
+{
+  name: string;
+  age?: int;
+}`)
+		tAssert.NoError(err)
+		tAssert.Empty(result.Data)
+		tAssert.Equal(map[SchemaField]string{
+			{Name: "name"}:                "string",
+			{Name: "age", Optional: true}: "int",
+		}, result.Schema)
+	})
+
+	It("parses files through the public binding result", func() {
+		tempDir, err := os.MkdirTemp("", "mace-binding-*")
+		tAssert.NoError(err)
+
+		path := filepath.Join(tempDir, "config.mace")
+		err = os.WriteFile(path, []byte(`[output = data] { value: 2 + 2; }`), 0o600)
+		tAssert.NoError(err)
+
+		result, err := ParseFile(path)
+		tAssert.NoError(err)
+		tAssert.Equal(map[string]any{"value": int64(4)}, result.Data)
 	})
 })
 

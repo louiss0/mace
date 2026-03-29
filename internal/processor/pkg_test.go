@@ -32,6 +32,11 @@ type expectedValue struct {
 	record map[string]expectedValue
 }
 
+type expectedSchemaField struct {
+	name     string
+	optional bool
+}
+
 func requireOutputValue(result Result, name string) Value {
 	value, ok := result.Output[name]
 	tAssert.True(ok)
@@ -77,6 +82,21 @@ func assertExpectedOutput(result Result, expected map[string]expectedValue) {
 	for name, value := range expected {
 		actual := requireOutputValue(result, name)
 		assertExpectedValue(actual, value)
+	}
+}
+
+func assertExpectedSchema(result Result, expected map[expectedSchemaField]string) {
+	tAssert.Len(result.Output, 0)
+	tAssert.Len(result.Schema, len(expected))
+
+	for field, expectedType := range expected {
+		actualType, ok := result.Schema[SchemaField{Name: field.name, Optional: field.optional}]
+		tAssert.True(ok)
+		if !ok {
+			continue
+		}
+
+		tAssert.Equal(expectedType, actualType)
 	}
 }
 
@@ -216,6 +236,9 @@ User result = { name: name; age: 30; };
 			"name": {kind: ValueString, string: "Ada"},
 			"age":  {kind: ValueInt, int64: 27},
 		}}),
+		Entry("resolves schema_file relative to file", "testdata/schema_file/consumer.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+			"name": {kind: ValueString, string: "Ada"},
+		}}),
 	)
 
 	DescribeTable("rejects circular imports",
@@ -266,8 +289,34 @@ schema User = { name: string; };
 [schema = User] {}`, "missing output directive"),
 		Entry("duplicate output directive", "[output = data, output = schema] {}", "duplicate output directive"),
 		Entry("unknown schema in directive", "[output = data, schema = Missing] {}", "unknown schema"),
-		Entry("schema output mode is unsupported", "[output = schema] {}", "reserved and not implemented"),
-		Entry("schema_file directive is unsupported", `[output = data, schema_file = "./user.mace"] {}`, "reserved and not implemented"),
+		Entry("schema directive is invalid in schema mode", "[output = schema, schema = User] {}", "schema directive"),
+		Entry("schema_file directive is invalid in schema mode", `[output = schema, schema_file = "./user.mace"] {}`, "schema_file"),
+	)
+
+	DescribeTable("returns schema output fields",
+		func(input string, expected map[expectedSchemaField]string) {
+			processor := New()
+			result, err := processor.Process(input)
+			tAssert.NoError(err)
+
+			assertExpectedSchema(result, expected)
+		},
+		Entry("primitive and optional fields", `[output = schema]
+{
+  name: string;
+  age?: int;
+}`, map[expectedSchemaField]string{
+			{name: "name"}:                "string",
+			{name: "age", optional: true}: "int",
+		}),
+		Entry("nested array fields", `[output = schema]
+{
+  names: array<string>;
+  matrix: array<array<int>>;
+}`, map[expectedSchemaField]string{
+			{name: "names"}:  "array<string>",
+			{name: "matrix"}: "array<array<int>>",
+		}),
 	)
 
 	DescribeTable("accepts output that matches schema",

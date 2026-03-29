@@ -1,6 +1,6 @@
 package ast
 
-import "github.com/louiss0/mace/lexer"
+import "github.com/louiss0/mace/internal/lexer"
 
 type Expression interface {
 	expressionNode()
@@ -158,9 +158,18 @@ type SchemaField struct {
 }
 
 type OutputBlock struct {
-	Directives []OutputDirective
-	Items      []OutputField
+	Directives   []OutputDirective
+	Mode         OutputMode
+	DataFields   []OutputField
+	SchemaFields []OutputSchemaField
 }
+
+type OutputMode int
+
+const (
+	OutputModeData OutputMode = iota
+	OutputModeSchema
+)
 
 type OutputDirectiveKind int
 
@@ -179,4 +188,10 @@ type OutputField struct {
 	Name     string
 	Optional bool
 	Value    Expression
+}
+
+type OutputSchemaField struct {
+	Name     string
+	Optional bool
+	Type     TypeReference
 }

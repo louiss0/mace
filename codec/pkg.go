@@ -1,4 +1,4 @@
-package binding
+package codec
 
 import (
 	"fmt"
@@ -7,11 +7,39 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/louiss0/mace/processor"
+	"github.com/louiss0/mace/internal/processor"
 )
 
-func OutputMap(result processor.Result) map[string]any {
-	return valuesToMap(result.Output)
+type Result struct {
+	Data   map[string]any
+	Schema map[SchemaField]string
+}
+
+type SchemaField struct {
+	Name     string
+	Optional bool
+}
+
+func Parse(input string) (Result, error) {
+	processed, err := processor.New().Process(input)
+	if err != nil {
+		return Result{}, err
+	}
+
+	return newResult(processed), nil
+}
+
+func ParseFile(path string) (Result, error) {
+	processed, err := processor.New().ProcessFile(path)
+	if err != nil {
+		return Result{}, err
+	}
+
+	return newResult(processed), nil
+}
+
+func OutputMap(result Result) map[string]any {
+	return result.Data
 }
 
 func Unmarshal(input string, target any) error {
@@ -56,6 +84,13 @@ func newMarshaller() *marshaller {
 	return &marshaller{}
 }
 
+func newResult(processed processor.Result) Result {
+	return Result{
+		Data:   valuesToMap(processed.Output),
+		Schema: schemaToMap(processed.Schema),
+	}
+}
+
 func valuesToMap(values map[string]processor.Value) map[string]any {
 	output := make(map[string]any, len(values))
 	for name, value := range values {
@@ -86,6 +121,18 @@ func valueToAny(value processor.Value) any {
 	default:
 		return nil
 	}
+}
+
+func schemaToMap(fields map[processor.SchemaField]string) map[SchemaField]string {
+	schema := make(map[SchemaField]string, len(fields))
+	for field, valueType := range fields {
+		schema[SchemaField{
+			Name:     field.Name,
+			Optional: field.Optional,
+		}] = valueType
+	}
+
+	return schema
 }
 
 func (m *marshaller) marshalValue(value reflect.Value, depth int) (string, error) {

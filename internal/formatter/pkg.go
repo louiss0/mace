@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/louiss0/mace/lexer"
-	"github.com/louiss0/mace/parser/ast"
+	"github.com/louiss0/mace/internal/lexer"
+	"github.com/louiss0/mace/internal/parser/ast"
 )
 
 func FormatFile(file ast.File) (string, error) {
@@ -77,14 +77,40 @@ func (f *formatter) writeOutputBlock(output ast.OutputBlock) error {
 		}
 		f.writeLine(directive)
 	}
-	if len(output.Items) == 0 {
+	if output.Mode == ast.OutputModeSchema {
+		return f.writeSchemaOutputBlock(output.SchemaFields)
+	}
+
+	return f.writeDataOutputBlock(output.DataFields)
+}
+
+func (f *formatter) writeDataOutputBlock(fields []ast.OutputField) error {
+	if len(fields) == 0 {
 		f.write("{}")
 		return nil
 	}
 
 	f.writeLine("{")
-	for _, item := range output.Items {
+	for _, item := range fields {
 		line, err := formatOutputField(item)
+		if err != nil {
+			return err
+		}
+		f.writeLine("  " + line)
+	}
+	f.write("}")
+	return nil
+}
+
+func (f *formatter) writeSchemaOutputBlock(fields []ast.OutputSchemaField) error {
+	if len(fields) == 0 {
+		f.write("{}")
+		return nil
+	}
+
+	f.writeLine("{")
+	for _, field := range fields {
+		line, err := formatOutputSchemaField(field)
 		if err != nil {
 			return err
 		}
@@ -216,6 +242,20 @@ func formatOutputField(field ast.OutputField) (string, error) {
 	}
 
 	return fmt.Sprintf("%s%s: %s;", field.Name, optional, value), nil
+}
+
+func formatOutputSchemaField(field ast.OutputSchemaField) (string, error) {
+	typeReference, err := formatTypeReference(field.Type)
+	if err != nil {
+		return "", err
+	}
+
+	optional := ""
+	if field.Optional {
+		optional = "?"
+	}
+
+	return fmt.Sprintf("%s%s: %s;", field.Name, optional, typeReference), nil
 }
 
 func formatExpression(expression ast.Expression) (string, error) {

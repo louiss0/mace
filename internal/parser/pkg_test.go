@@ -6,8 +6,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/louiss0/mace/lexer"
-	"github.com/louiss0/mace/parser/ast"
+	"github.com/louiss0/mace/internal/lexer"
+	"github.com/louiss0/mace/internal/parser/ast"
 )
 
 var tAssert *assert.Assertions
@@ -316,10 +316,12 @@ string user = "Ada";
 				tAssert.Equal("User", file.Output.Directives[1].Value)
 			}
 
-			if tAssert.Len(file.Output.Items, 1) {
-				tAssert.Equal("name", file.Output.Items[0].Name)
-				requireIdentifier(file.Output.Items[0].Value, "user")
+			tAssert.Equal(ast.OutputModeData, file.Output.Mode)
+			if tAssert.Len(file.Output.DataFields, 1) {
+				tAssert.Equal("name", file.Output.DataFields[0].Name)
+				requireIdentifier(file.Output.DataFields[0].Value, "user")
 			}
+			tAssert.Empty(file.Output.SchemaFields)
 		})
 
 		It("parses nested array type references without spacing between closers", func() {
@@ -356,8 +358,40 @@ type Matrix = array<array<int>>;
 			file, err := parseFileInput(`{ result: 1 + 2; }`)
 			tAssert.NoError(err)
 			tAssert.Empty(file.Output.Directives)
-			if tAssert.Len(file.Output.Items, 1) {
-				tAssert.Equal("result", file.Output.Items[0].Name)
+			tAssert.Equal(ast.OutputModeData, file.Output.Mode)
+			if tAssert.Len(file.Output.DataFields, 1) {
+				tAssert.Equal("result", file.Output.DataFields[0].Name)
+			}
+		})
+
+		It("parses schema-mode output blocks as schema fields", func() {
+			file, err := parseFileInput(`[output = schema]
+{
+  name: string;
+  age?: int;
+}`)
+			tAssert.NoError(err)
+
+			tAssert.Equal(ast.OutputModeSchema, file.Output.Mode)
+			tAssert.Empty(file.Output.DataFields)
+			if tAssert.Len(file.Output.SchemaFields, 2) {
+				tAssert.Equal("name", file.Output.SchemaFields[0].Name)
+				tAssert.False(file.Output.SchemaFields[0].Optional)
+
+				nameType, ok := file.Output.SchemaFields[0].Type.(ast.PrimitiveType)
+				tAssert.True(ok)
+				if ok {
+					tAssert.Equal("string", nameType.Name)
+				}
+
+				tAssert.Equal("age", file.Output.SchemaFields[1].Name)
+				tAssert.True(file.Output.SchemaFields[1].Optional)
+
+				ageType, ok := file.Output.SchemaFields[1].Type.(ast.PrimitiveType)
+				tAssert.True(ok)
+				if ok {
+					tAssert.Equal("int", ageType.Name)
+				}
 			}
 		})
 	})

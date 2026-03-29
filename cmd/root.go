@@ -6,14 +6,14 @@ import (
 	"io"
 	"os"
 
-	"github.com/louiss0/mace/formatter"
+	"github.com/louiss0/mace/internal/formatter"
 	"github.com/sanity-io/litter"
 	"github.com/spf13/cobra"
 
-	"github.com/louiss0/mace/lexer"
-	"github.com/louiss0/mace/parser"
-	"github.com/louiss0/mace/parser/ast"
-	"github.com/louiss0/mace/processor"
+	"github.com/louiss0/mace/internal/lexer"
+	"github.com/louiss0/mace/internal/parser"
+	"github.com/louiss0/mace/internal/parser/ast"
+	"github.com/louiss0/mace/internal/processor"
 )
 
 func run(args []string, stdout io.Writer, stderr io.Writer) int {

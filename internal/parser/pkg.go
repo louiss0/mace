@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/louiss0/mace/lexer"
-	"github.com/louiss0/mace/parser/ast"
+	"github.com/louiss0/mace/internal/lexer"
+	"github.com/louiss0/mace/internal/parser/ast"
 )
 
 const (
@@ -307,17 +307,29 @@ func (p *Parser) parseOutputBlock() (ast.OutputBlock, error) {
 		directives = parsedDirectives
 	}
 
+	mode := outputModeFromDirectives(directives)
+
 	if _, err := p.consume(lexer.TokenLBrace, "parser: expected '{' to start output block"); err != nil {
 		return ast.OutputBlock{}, err
 	}
 
-	items := []ast.OutputField{}
+	dataFields := []ast.OutputField{}
+	schemaFields := []ast.OutputSchemaField{}
 	for !p.isAtEnd() && p.current().Type != lexer.TokenRBrace {
+		if mode == ast.OutputModeSchema {
+			field, err := p.parseOutputSchemaField()
+			if err != nil {
+				return ast.OutputBlock{}, err
+			}
+			schemaFields = append(schemaFields, field)
+			continue
+		}
+
 		field, err := p.parseOutputField()
 		if err != nil {
 			return ast.OutputBlock{}, err
 		}
-		items = append(items, field)
+		dataFields = append(dataFields, field)
 	}
 
 	if _, err := p.consume(lexer.TokenRBrace, "parser: expected '}' to close output block"); err != nil {
@@ -325,9 +337,21 @@ func (p *Parser) parseOutputBlock() (ast.OutputBlock, error) {
 	}
 
 	return ast.OutputBlock{
-		Directives: directives,
-		Items:      items,
+		Directives:   directives,
+		Mode:         mode,
+		DataFields:   dataFields,
+		SchemaFields: schemaFields,
 	}, nil
+}
+
+func outputModeFromDirectives(directives []ast.OutputDirective) ast.OutputMode {
+	for _, directive := range directives {
+		if directive.Kind == ast.OutputDirectiveOutput && directive.Value == "schema" {
+			return ast.OutputModeSchema
+		}
+	}
+
+	return ast.OutputModeData
 }
 
 func (p *Parser) parseOutputDirective() ([]ast.OutputDirective, error) {
@@ -429,6 +453,28 @@ func (p *Parser) parseOutputField() (ast.OutputField, error) {
 		Name:     name,
 		Optional: optional,
 		Value:    value,
+	}, nil
+}
+
+func (p *Parser) parseOutputSchemaField() (ast.OutputSchemaField, error) {
+	name, optional, err := p.parseFieldHeader("output schema field")
+	if err != nil {
+		return ast.OutputSchemaField{}, err
+	}
+
+	typeRef, err := p.parseTypeReference()
+	if err != nil {
+		return ast.OutputSchemaField{}, err
+	}
+
+	if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after output schema field"); err != nil {
+		return ast.OutputSchemaField{}, err
+	}
+
+	return ast.OutputSchemaField{
+		Name:     name,
+		Optional: optional,
+		Type:     typeRef,
 	}, nil
 }
 

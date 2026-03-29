@@ -6,9 +6,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/louiss0/mace/lexer"
-	"github.com/louiss0/mace/parser"
-	"github.com/louiss0/mace/parser/ast"
+	"github.com/louiss0/mace/internal/lexer"
+	"github.com/louiss0/mace/internal/parser"
+	"github.com/louiss0/mace/internal/parser/ast"
 )
 
 var tAssert *assert.Assertions
@@ -88,6 +88,23 @@ injectable string user = "Ada";
 		tAssert.NoError(err)
 		tAssert.Equal(`{
   result: 1 + 2;
+}`, output)
+	})
+
+	It("formats schema-mode output blocks with type references", func() {
+		file, err := parseMaceFile(`[output = schema]
+{
+  name: string;
+  tags?: array<string>;
+}`)
+		tAssert.NoError(err)
+
+		output, err := FormatFile(file)
+		tAssert.NoError(err)
+		tAssert.Equal(`[output = schema]
+{
+  name: string;
+  tags?: array<string>;
 }`, output)
 	})
 })
