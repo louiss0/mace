@@ -55,6 +55,29 @@ int base = 2 + 2;
   }
 }`, stdout.String())
 		})
+
+		It("accepts injectable values as a Mace record literal", func() {
+			path := writeMaceFile(`|===|
+injectable string env = "dev";
+|===|
+[output = data]
+{
+  env: env;
+}`)
+
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			command := newRootCommand(&stdout, &stderr)
+			command.SetArgs([]string{"json", path, "--inject", `{ env: "prod"; }`})
+
+			err := command.Execute()
+			tAssert.NoError(err)
+			tAssert.Equal("", stderr.String())
+			tAssert.JSONEq(`{
+  "env": "prod"
+}`, stdout.String())
+		})
 	})
 
 	Describe("nodes", func() {

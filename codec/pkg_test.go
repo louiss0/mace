@@ -94,6 +94,20 @@ var _ = Describe("Parse", func() {
 		tAssert.NoError(err)
 		tAssert.Equal(map[string]any{"value": int64(4)}, result.Data)
 	})
+
+	It("applies injectable values from a Go map", func() {
+		result, err := ParseWithInjections(`|===|
+injectable string env = "dev";
+|===|
+[output = data]
+{
+  env: env;
+}`, map[string]any{
+			"env": "prod",
+		})
+		tAssert.NoError(err)
+		tAssert.Equal(map[string]any{"env": "prod"}, result.Data)
+	})
 })
 
 var _ = Describe("Marshal", func() {
@@ -203,5 +217,20 @@ var _ = Describe("Unmarshal", func() {
 	It("rejects non-pointer targets", func() {
 		err := Unmarshal(`[output = data] { value: 1; }`, map[string]any{})
 		tAssert.Error(err)
+	})
+
+	It("uses injectable values during unmarshal", func() {
+		var target map[string]any
+		err := UnmarshalWithInjections(`|===|
+injectable string env = "dev";
+|===|
+[output = data]
+{
+  env: env;
+}`, map[string]any{
+			"env": "prod",
+		}, &target)
+		tAssert.NoError(err)
+		tAssert.Equal(map[string]any{"env": "prod"}, target)
 	})
 })

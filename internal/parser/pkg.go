@@ -79,6 +79,44 @@ func (p *Parser) ParseFile() (ast.File, error) {
 	}, nil
 }
 
+func (p *Parser) ParseScriptBlock() (ast.ScriptBlock, error) {
+	if len(p.tokens) == 0 {
+		return ast.ScriptBlock{}, fmt.Errorf("parser: empty token stream")
+	}
+
+	script, err := p.parseScriptBlock()
+	if err != nil {
+		return ast.ScriptBlock{}, err
+	}
+
+	if !p.isAtEnd() {
+		return ast.ScriptBlock{}, p.unexpectedTokenError("parser: unexpected token after script block")
+	}
+
+	return script, nil
+}
+
+func (p *Parser) ParseOutputBlock() (ast.OutputBlock, error) {
+	if len(p.tokens) == 0 {
+		return ast.OutputBlock{}, fmt.Errorf("parser: empty token stream")
+	}
+
+	if p.current().Type != lexer.TokenLBracket && p.current().Type != lexer.TokenLBrace {
+		return ast.OutputBlock{}, p.unexpectedTokenError("parser: expected output block")
+	}
+
+	output, err := p.parseOutputBlock()
+	if err != nil {
+		return ast.OutputBlock{}, err
+	}
+
+	if !p.isAtEnd() {
+		return ast.OutputBlock{}, p.unexpectedTokenError("parser: unexpected token after output block")
+	}
+
+	return output, nil
+}
+
 func (p *Parser) ParseExpression() (ast.Expression, error) {
 	if len(p.tokens) == 0 {
 		return nil, fmt.Errorf("parser: empty token stream")

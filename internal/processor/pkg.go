@@ -12,7 +12,9 @@ import (
 	"github.com/louiss0/mace/internal/parser/ast"
 )
 
-type Processor struct{}
+type Processor struct {
+	injections map[string]Value
+}
 
 type Result struct {
 	File   ast.File
@@ -20,13 +22,63 @@ type Result struct {
 	Schema map[SchemaField]string
 }
 
+type ScriptResult struct {
+	Script    ast.ScriptBlock
+	Variables map[string]Value
+	context   processContext
+}
+
 type SchemaField struct {
 	Name     string
 	Optional bool
 }
 
+type processContext struct {
+	baseDir     string
+	symbols     *symbolTable
+	types       *typeRegistry
+	schemas     *schemaRegistry
+	variables   *variableRegistry
+	environment *valueEnvironment
+}
+
+func newProcessContext(baseDir string) processContext {
+	return processContext{
+		baseDir:     baseDir,
+		symbols:     newSymbolTable(),
+		types:       newTypeRegistry(),
+		schemas:     newSchemaRegistry(),
+		variables:   newVariableRegistry(),
+		environment: newValueEnvironment(),
+	}
+}
+
+func (context processContext) clone() processContext {
+	if context.symbols == nil {
+		return processContext{}
+	}
+
+	return processContext{
+		baseDir:     context.baseDir,
+		symbols:     context.symbols.Clone(),
+		types:       context.types.Clone(),
+		schemas:     context.schemas.Clone(),
+		variables:   context.variables.Clone(),
+		environment: context.environment.Clone(),
+	}
+}
+
 func New() *Processor {
-	return &Processor{}
+	return &Processor{injections: map[string]Value{}}
+}
+
+func NewWithInjections(injections map[string]Value) *Processor {
+	cloned := make(map[string]Value, len(injections))
+	for name, value := range injections {
+		cloned[name] = value
+	}
+
+	return &Processor{injections: cloned}
 }
 
 func (p *Processor) Process(input string) (Result, error) {
@@ -38,6 +90,29 @@ func (p *Processor) Process(input string) (Result, error) {
 	return p.processInput(input, baseDir)
 }
 
+func (p *Processor) ProcessScriptBlock(input string) (ScriptResult, error) {
+	baseDir, err := os.Getwd()
+	if err != nil {
+		baseDir = "."
+	}
+
+	return p.processScriptInput(input, baseDir)
+}
+
+func (p *Processor) ProcessOutputBlock(input string, scriptResult ScriptResult) (Result, error) {
+	baseDir := scriptResult.context.baseDir
+	if baseDir == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			baseDir = "."
+		} else {
+			baseDir = cwd
+		}
+	}
+
+	return p.processOutputInput(input, scriptResult, baseDir)
+}
+
 func (p *Processor) ProcessFile(path string) (Result, error) {
 	contents, err := os.ReadFile(path)
 	if err != nil {
@@ -45,6 +120,28 @@ func (p *Processor) ProcessFile(path string) (Result, error) {
 	}
 
 	return p.processInput(string(contents), filepath.Dir(path))
+}
+
+func ParseInjectionRecord(input string) (map[string]Value, error) {
+	tokens, err := lex(input)
+	if err != nil {
+		return nil, err
+	}
+
+	expression, err := parser.New(tokens).ParseExpression()
+	if err != nil {
+		return nil, err
+	}
+
+	value, err := evaluateExpression(expression, newValueEnvironment(), Value{})
+	if err != nil {
+		return nil, err
+	}
+	if value.Kind != ValueRecord {
+		return nil, validationErrorf("injection input must be a record literal")
+	}
+
+	return value.Record, nil
 }
 
 func (p *Processor) processInput(input string, baseDir string) (Result, error) {
@@ -58,21 +155,94 @@ func (p *Processor) processInput(input string, baseDir string) (Result, error) {
 		return Result{}, err
 	}
 
-	if err := validateFile(file, baseDir); err != nil {
-		return Result{}, err
-	}
-
-	output, err := evaluateOutput(file)
+	context, err := buildProcessContext(file.Imports, file.Script, baseDir, p.injections)
 	if err != nil {
 		return Result{}, err
 	}
 
-	schema, err := evaluateSchemaOutput(file)
+	return p.processParsedOutput(file.Output, file, context)
+}
+
+func (p *Processor) processScriptInput(input string, baseDir string) (ScriptResult, error) {
+	tokens, err := lex(input)
+	if err != nil {
+		return ScriptResult{}, err
+	}
+
+	script, err := parser.New(tokens).ParseScriptBlock()
+	if err != nil {
+		return ScriptResult{}, err
+	}
+
+	context, err := buildProcessContext(nil, &script, baseDir, p.injections)
+	if err != nil {
+		return ScriptResult{}, err
+	}
+
+	return ScriptResult{
+		Script:    script,
+		Variables: context.environment.Values(),
+		context:   context,
+	}, nil
+}
+
+func (p *Processor) processOutputInput(input string, scriptResult ScriptResult, baseDir string) (Result, error) {
+	tokens, err := lex(input)
 	if err != nil {
 		return Result{}, err
 	}
 
-	return Result{File: file, Output: output, Schema: schema}, nil
+	outputBlock, err := parser.New(tokens).ParseOutputBlock()
+	if err != nil {
+		return Result{}, err
+	}
+
+	context := scriptResult.context
+	if context.symbols == nil {
+		context = newProcessContext(baseDir)
+	} else {
+		context = context.clone()
+		context.baseDir = baseDir
+	}
+
+	file := ast.File{
+		Script: &scriptResult.Script,
+		Output: outputBlock,
+	}
+
+	return p.processParsedOutput(outputBlock, file, context)
+}
+
+func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.File, context processContext) (Result, error) {
+	outputContext, err := prepareOutputContext(outputBlock, context)
+	if err != nil {
+		return Result{}, err
+	}
+
+	if outputBlock.Mode == ast.OutputModeSchema {
+		if err := validateSchemaOutputFields(outputBlock.SchemaFields, outputContext.symbols, outputContext.types); err != nil {
+			return Result{}, err
+		}
+		schema, err := evaluateSchemaOutput(outputBlock)
+		if err != nil {
+			return Result{}, err
+		}
+
+		return Result{File: file, Output: map[string]Value{}, Schema: schema}, nil
+	}
+
+	if schemaName, ok := outputSchemaName(outputBlock.Directives); ok {
+		if err := validateOutputSchema(schemaName, outputBlock.DataFields, outputContext.variables, outputContext.symbols, outputContext.types, outputContext.schemas); err != nil {
+			return Result{}, err
+		}
+	}
+
+	output, err := evaluateOutputFields(outputBlock.DataFields, outputContext.environment)
+	if err != nil {
+		return Result{}, err
+	}
+
+	return Result{File: file, Output: output, Schema: map[SchemaField]string{}}, nil
 }
 
 func lex(input string) ([]lexer.Token, error) {
@@ -92,86 +262,85 @@ func lex(input string) ([]lexer.Token, error) {
 	}
 }
 
-func validateFile(file ast.File, baseDir string) error {
-	symbols := newSymbolTable()
-	types := newTypeRegistry()
-	schemas := newSchemaRegistry()
-	variables := newVariableRegistry()
+func buildProcessContext(imports []ast.ImportDeclaration, script *ast.ScriptBlock, baseDir string, injections map[string]Value) (processContext, error) {
+	context := newProcessContext(baseDir)
 
-	imported, err := resolveImports(file, baseDir)
+	imported, err := resolveImports(ast.File{Imports: imports}, baseDir)
 	if err != nil {
-		return err
+		return processContext{}, err
 	}
 
 	for _, importedDecl := range imported {
-		if symbols.Has(importedDecl.name) {
-			return validationErrorf("duplicate import %q", importedDecl.name)
+		if context.symbols.Has(importedDecl.name) {
+			return processContext{}, validationErrorf("duplicate import %q", importedDecl.name)
 		}
 		switch importedDecl.kind {
 		case symbolKindType:
-			symbols.Add(importedDecl.name, symbolKindType)
-			types.AddAlias(importedDecl.name, importedDecl.typeRef)
+			context.symbols.Add(importedDecl.name, symbolKindType)
+			context.types.AddAlias(importedDecl.name, importedDecl.typeRef)
 		case symbolKindSchema:
-			symbols.Add(importedDecl.name, symbolKindSchema)
-			schemas.Add(importedDecl.name, importedDecl.record)
+			context.symbols.Add(importedDecl.name, symbolKindSchema)
+			context.schemas.Add(importedDecl.name, importedDecl.record)
 		default:
-			return validationErrorf("unknown import %q", importedDecl.name)
+			return processContext{}, validationErrorf("unknown import %q", importedDecl.name)
 		}
 	}
 
-	if file.Script != nil {
-		if err := collectDeclarations(file.Script.Items, symbols, types, schemas); err != nil {
-			return err
+	if script != nil {
+		if err := collectDeclarations(script.Items, context.symbols, context.types, context.schemas); err != nil {
+			return processContext{}, err
 		}
-		if err := validateDeclarations(file.Script.Items, symbols, types, schemas, variables); err != nil {
-			return err
+		if err := validateDeclarations(script.Items, context.symbols, context.types, context.schemas, context.variables, injections); err != nil {
+			return processContext{}, err
+		}
+		if err := validateInjections(script.Items, injections); err != nil {
+			return processContext{}, err
+		}
+		if err := evaluateScript(script.Items, context.environment, injections); err != nil {
+			return processContext{}, err
 		}
 	}
 
-	if err := validateOutputDirectiveStructure(file.Output); err != nil {
-		return err
+	return context, nil
+}
+
+func prepareOutputContext(output ast.OutputBlock, context processContext) (processContext, error) {
+	outputContext := context.clone()
+	if outputContext.symbols == nil {
+		outputContext = newProcessContext(context.baseDir)
 	}
 
-	schemaFileDeclarations, err := resolveSchemaFileDeclarations(file.Output.Directives, baseDir)
+	if err := validateOutputDirectiveStructure(output); err != nil {
+		return processContext{}, err
+	}
+
+	schemaFileDeclarations, err := resolveSchemaFileDeclarations(output.Directives, outputContext.baseDir)
 	if err != nil {
-		return err
+		return processContext{}, err
 	}
 
 	for _, declaration := range schemaFileDeclarations {
-		if symbols.Has(declaration.name) {
-			return validationErrorf("duplicate declaration %q", declaration.name)
+		if outputContext.symbols.Has(declaration.name) {
+			return processContext{}, validationErrorf("duplicate declaration %q", declaration.name)
 		}
 
 		switch declaration.kind {
 		case symbolKindType:
-			symbols.Add(declaration.name, symbolKindType)
-			types.AddAlias(declaration.name, declaration.typeRef)
+			outputContext.symbols.Add(declaration.name, symbolKindType)
+			outputContext.types.AddAlias(declaration.name, declaration.typeRef)
 		case symbolKindSchema:
-			symbols.Add(declaration.name, symbolKindSchema)
-			schemas.Add(declaration.name, declaration.record)
+			outputContext.symbols.Add(declaration.name, symbolKindSchema)
+			outputContext.schemas.Add(declaration.name, declaration.record)
 		default:
-			return validationErrorf("unknown declaration %q in schema_file", declaration.name)
+			return processContext{}, validationErrorf("unknown declaration %q in schema_file", declaration.name)
 		}
 	}
 
-	if err := validateOutputDirectiveReferences(file.Output, symbols); err != nil {
-		return err
+	if err := validateOutputDirectiveReferences(output, outputContext.symbols); err != nil {
+		return processContext{}, err
 	}
 
-	if file.Output.Mode == ast.OutputModeSchema {
-		if err := validateSchemaOutputFields(file.Output.SchemaFields, symbols, types); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	if schemaName, ok := outputSchemaName(file.Output.Directives); ok {
-		if err := validateOutputSchema(schemaName, file.Output.DataFields, variables, symbols, types, schemas); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return outputContext, nil
 }
 
 type importedDeclaration struct {
@@ -371,9 +540,9 @@ func collectDeclarations(items []ast.Declaration, symbols *symbolTable, types *t
 	return nil
 }
 
-func validateDeclarations(items []ast.Declaration, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, variables *variableRegistry) error {
+func validateDeclarations(items []ast.Declaration, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, variables *variableRegistry, injections map[string]Value) error {
 	for _, declaration := range items {
-		if err := validateDeclaration(declaration, symbols, types, schemas, variables); err != nil {
+		if err := validateDeclaration(declaration, symbols, types, schemas, variables, injections); err != nil {
 			return err
 		}
 	}
@@ -381,7 +550,7 @@ func validateDeclarations(items []ast.Declaration, symbols *symbolTable, types *
 	return nil
 }
 
-func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, variables *variableRegistry) error {
+func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, variables *variableRegistry, injections map[string]Value) error {
 	switch decl := declaration.(type) {
 	case ast.VariableDeclaration:
 		if err := validateTypeReference(decl.Type, symbols, types); err != nil {
@@ -401,6 +570,13 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 		if err := validateExpressionAgainstType(decl.Value, expectedType, variables, symbols, types, schemas); err != nil {
 			return err
 		}
+		if decl.Injectable {
+			if injectedValue, ok := injections[decl.Name]; ok {
+				if err := ensureAssignable(expectedType, valueTypeFromValue(injectedValue)); err != nil {
+					return err
+				}
+			}
+		}
 		variables.Add(decl.Name, expectedType)
 		return nil
 	case ast.TypeDeclaration:
@@ -410,6 +586,32 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 	default:
 		return validationErrorf("unknown declaration")
 	}
+}
+
+func validateInjections(items []ast.Declaration, injections map[string]Value) error {
+	if len(injections) == 0 {
+		return nil
+	}
+
+	injectableNames := map[string]struct{}{}
+	for _, declaration := range items {
+		variable, ok := declaration.(ast.VariableDeclaration)
+		if !ok || !variable.Injectable {
+			continue
+		}
+
+		injectableNames[variable.Name] = struct{}{}
+	}
+
+	for name := range injections {
+		if _, ok := injectableNames[name]; ok {
+			continue
+		}
+
+		return validationErrorf("unknown injectable %q", name)
+	}
+
+	return nil
 }
 
 func validateTypeReference(typeRef ast.TypeReference, symbols *symbolTable, types *typeRegistry) error {
@@ -716,28 +918,26 @@ func (environment *valueEnvironment) Get(name string) (Value, bool) {
 	return value, ok
 }
 
-func evaluateOutput(file ast.File) (map[string]Value, error) {
-	environment := newValueEnvironment()
-	if file.Script != nil {
-		if err := evaluateScript(file.Script.Items, environment); err != nil {
-			return nil, err
-		}
+func (environment *valueEnvironment) Values() map[string]Value {
+	values := make(map[string]Value, len(environment.values))
+	for name, value := range environment.values {
+		values[name] = value
 	}
 
-	if file.Output.Mode != ast.OutputModeData {
-		return map[string]Value{}, nil
-	}
-
-	return evaluateOutputFields(file.Output.DataFields, environment)
+	return values
 }
 
-func evaluateSchemaOutput(file ast.File) (map[SchemaField]string, error) {
-	if file.Output.Mode != ast.OutputModeSchema {
+func (environment *valueEnvironment) Clone() *valueEnvironment {
+	return &valueEnvironment{values: environment.Values()}
+}
+
+func evaluateSchemaOutput(output ast.OutputBlock) (map[SchemaField]string, error) {
+	if output.Mode != ast.OutputModeSchema {
 		return map[SchemaField]string{}, nil
 	}
 
-	fields := make(map[SchemaField]string, len(file.Output.SchemaFields))
-	for _, field := range file.Output.SchemaFields {
+	fields := make(map[SchemaField]string, len(output.SchemaFields))
+	for _, field := range output.SchemaFields {
 		typeName, err := formatTypeReference(field.Type)
 		if err != nil {
 			return nil, err
@@ -749,11 +949,18 @@ func evaluateSchemaOutput(file ast.File) (map[SchemaField]string, error) {
 	return fields, nil
 }
 
-func evaluateScript(items []ast.Declaration, environment *valueEnvironment) error {
+func evaluateScript(items []ast.Declaration, environment *valueEnvironment, injections map[string]Value) error {
 	for _, declaration := range items {
 		variable, ok := declaration.(ast.VariableDeclaration)
 		if !ok {
 			continue
+		}
+
+		if variable.Injectable {
+			if injectedValue, ok := injections[variable.Name]; ok {
+				environment.Add(variable.Name, injectedValue)
+				continue
+			}
 		}
 
 		value, err := evaluateExpression(variable.Value, environment, Value{})
@@ -1573,6 +1780,15 @@ func newSymbolTable() *symbolTable {
 	}
 }
 
+func (s *symbolTable) Clone() *symbolTable {
+	cloned := newSymbolTable()
+	for name, kind := range s.symbols {
+		cloned.symbols[name] = kind
+	}
+
+	return cloned
+}
+
 func (s *symbolTable) Add(name string, kind symbolKind) {
 	s.symbols[name] = kind
 }
@@ -1605,6 +1821,15 @@ func newTypeRegistry() *typeRegistry {
 	return &typeRegistry{
 		aliases: map[string]ast.TypeReference{},
 	}
+}
+
+func (t *typeRegistry) Clone() *typeRegistry {
+	cloned := newTypeRegistry()
+	for name, reference := range t.aliases {
+		cloned.aliases[name] = reference
+	}
+
+	return cloned
 }
 
 func (t *typeRegistry) AddAlias(name string, reference ast.TypeReference) {
@@ -1655,6 +1880,15 @@ func newSchemaRegistry() *schemaRegistry {
 	}
 }
 
+func (s *schemaRegistry) Clone() *schemaRegistry {
+	cloned := newSchemaRegistry()
+	for name, record := range s.schemas {
+		cloned.schemas[name] = record
+	}
+
+	return cloned
+}
+
 func (s *schemaRegistry) Add(name string, record ast.RecordType) {
 	s.schemas[name] = record
 }
@@ -1672,6 +1906,15 @@ func newVariableRegistry() *variableRegistry {
 	return &variableRegistry{
 		variables: map[string]valueType{},
 	}
+}
+
+func (v *variableRegistry) Clone() *variableRegistry {
+	cloned := newVariableRegistry()
+	for name, valueType := range v.variables {
+		cloned.variables[name] = valueType
+	}
+
+	return cloned
 }
 
 func (v *variableRegistry) Add(name string, valueType valueType) {

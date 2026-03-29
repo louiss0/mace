@@ -71,9 +71,9 @@ int age = 27;
 injectable string env = "dev";
 ```
 
-`injectable` is currently parsed and preserved in the AST, but there is no
-runtime injection mechanism yet. The declared initializer is still evaluated
-normally.
+`injectable` marks a variable whose runtime value may be overridden by an
+external injection. If no injected value is provided, the declared
+initializer is evaluated normally and used as the fallback value.
 
 Variables declared in the script block are available to later declarations
 and to the output block.

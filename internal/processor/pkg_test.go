@@ -100,6 +100,67 @@ func assertExpectedSchema(result Result, expected map[expectedSchemaField]string
 	}
 }
 
+func requireScriptVariable(result ScriptResult, name string) Value {
+	value, ok := result.Variables[name]
+	tAssert.True(ok)
+	if !ok {
+		return Value{}
+	}
+
+	return value
+}
+
+var _ = Describe("Block processing", func() {
+	It("processes script blocks independently", func() {
+		processor := New()
+		result, err := processor.ProcessScriptBlock(`|===|
+int base = 2 + 2;
+string name = "Ada";
+|===|`)
+		tAssert.NoError(err)
+
+		base := requireScriptVariable(result, "base")
+		tAssert.Equal(ValueInt, base.Kind)
+		tAssert.Equal(int64(4), base.Int)
+
+		name := requireScriptVariable(result, "name")
+		tAssert.Equal(ValueString, name.Kind)
+		tAssert.Equal("Ada", name.String)
+	})
+
+	It("processes output blocks independently", func() {
+		processor := New()
+		result, err := processor.ProcessOutputBlock(`[output = schema]
+{
+  name: string;
+  age?: int;
+}`, ScriptResult{})
+		tAssert.NoError(err)
+
+		assertExpectedSchema(result, map[expectedSchemaField]string{
+			{name: "name"}:                "string",
+			{name: "age", optional: true}: "int",
+		})
+	})
+
+	It("processes output blocks with script context", func() {
+		processor := New()
+		scriptResult, err := processor.ProcessScriptBlock(`|===|
+int base = 2 + 2;
+|===|`)
+		tAssert.NoError(err)
+
+		result, err := processor.ProcessOutputBlock(`[output = data]
+{
+  result: base * 3;
+}`, scriptResult)
+		tAssert.NoError(err)
+
+		actual := requireOutputValue(result, "result")
+		assertExpectedValue(actual, expectedValue{kind: ValueInt, int64: 12})
+	})
+})
+
 var _ = Describe("Script block", func() {
 	DescribeTable("processes valid script blocks",
 		func(input string) {
@@ -166,6 +227,9 @@ array<Point> points = [
   { x: 3; y: 4; }
 ];
 |===|`)),
+		Entry("injectable fallback initializer", wrapScriptWithOutput(`|===|
+injectable string env = "dev";
+|===|`)),
 	)
 
 	DescribeTable("rejects schema record literal mismatches",
@@ -199,6 +263,37 @@ array<Point> points = [
 ];
 |===|`), "missing required field"),
 	)
+
+	It("uses injected values for injectable variables", func() {
+		processor := NewWithInjections(map[string]Value{
+			"env": {Kind: ValueString, String: "prod"},
+		})
+
+		result, err := processor.Process(`|===|
+injectable string env = "dev";
+|===|
+[output = data]
+{
+  env: env;
+}`)
+		tAssert.NoError(err)
+
+		actual := requireOutputValue(result, "env")
+		assertExpectedValue(actual, expectedValue{kind: ValueString, string: "prod"})
+	})
+
+	It("rejects unknown injected values", func() {
+		processor := NewWithInjections(map[string]Value{
+			"missing": {Kind: ValueString, String: "prod"},
+		})
+
+		_, err := processor.Process(`|===|
+injectable string env = "dev";
+|===|
+[output = data] {}`)
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, "unknown injectable")
+	})
 })
 
 var _ = Describe("Imports", func() {

@@ -44,12 +44,23 @@ func newRootCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
 }
 
 func newJSONCommand(stdout io.Writer) *cobra.Command {
+	var injectionInput string
+
 	command := &cobra.Command{
 		Use:   "json <path>",
 		Short: "Evaluate a Mace file and print JSON output",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
-			result, err := processor.New().ProcessFile(args[0])
+			processorInstance := processor.New()
+			if injectionInput != "" {
+				injections, err := processor.ParseInjectionRecord(injectionInput)
+				if err != nil {
+					return err
+				}
+				processorInstance = processor.NewWithInjections(injections)
+			}
+
+			result, err := processorInstance.ProcessFile(args[0])
 			if err != nil {
 				return err
 			}
@@ -63,6 +74,8 @@ func newJSONCommand(stdout io.Writer) *cobra.Command {
 			return err
 		},
 	}
+
+	command.Flags().StringVar(&injectionInput, "inject", "", "Mace record literal used for injectable values")
 
 	return command
 }

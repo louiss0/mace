@@ -21,7 +21,11 @@ type SchemaField struct {
 }
 
 func Parse(input string) (Result, error) {
-	processed, err := processor.New().Process(input)
+	return ParseWithInjections(input, nil)
+}
+
+func ParseWithInjections(input string, injections map[string]any) (Result, error) {
+	processed, err := newProcessor(injections).Process(input)
 	if err != nil {
 		return Result{}, err
 	}
@@ -30,7 +34,11 @@ func Parse(input string) (Result, error) {
 }
 
 func ParseFile(path string) (Result, error) {
-	processed, err := processor.New().ProcessFile(path)
+	return ParseFileWithInjections(path, nil)
+}
+
+func ParseFileWithInjections(path string, injections map[string]any) (Result, error) {
+	processed, err := newProcessor(injections).ProcessFile(path)
 	if err != nil {
 		return Result{}, err
 	}
@@ -43,11 +51,15 @@ func OutputMap(result Result) map[string]any {
 }
 
 func Unmarshal(input string, target any) error {
+	return UnmarshalWithInjections(input, nil, target)
+}
+
+func UnmarshalWithInjections(input string, injections map[string]any, target any) error {
 	if target == nil {
 		return fmt.Errorf("unmarshal mace: target is required")
 	}
 
-	result, err := processor.New().Process(input)
+	result, err := newProcessor(injections).Process(input)
 	if err != nil {
 		return err
 	}
@@ -89,6 +101,19 @@ func newResult(processed processor.Result) Result {
 		Data:   valuesToMap(processed.Output),
 		Schema: schemaToMap(processed.Schema),
 	}
+}
+
+func newProcessor(injections map[string]any) *processor.Processor {
+	if len(injections) == 0 {
+		return processor.New()
+	}
+
+	converted := make(map[string]processor.Value, len(injections))
+	for name, value := range injections {
+		converted[name] = toProcessorValue(value)
+	}
+
+	return processor.NewWithInjections(converted)
 }
 
 func valuesToMap(values map[string]processor.Value) map[string]any {
@@ -133,6 +158,50 @@ func schemaToMap(fields map[processor.SchemaField]string) map[SchemaField]string
 	}
 
 	return schema
+}
+
+func toProcessorValue(value any) processor.Value {
+	return processorValueFromReflect(reflect.ValueOf(value))
+}
+
+func processorValueFromReflect(value reflect.Value) processor.Value {
+	if !value.IsValid() {
+		return processor.Value{Kind: processor.ValueUnknown}
+	}
+
+	for value.Kind() == reflect.Interface || value.Kind() == reflect.Pointer {
+		if value.IsNil() {
+			return processor.Value{Kind: processor.ValueUnknown}
+		}
+		value = value.Elem()
+	}
+
+	switch value.Kind() {
+	case reflect.String:
+		return processor.Value{Kind: processor.ValueString, String: value.String()}
+	case reflect.Bool:
+		return processor.Value{Kind: processor.ValueBoolean, Boolean: value.Bool()}
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return processor.Value{Kind: processor.ValueInt, Int: value.Int()}
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return processor.Value{Kind: processor.ValueInt, Int: int64(value.Uint())}
+	case reflect.Float32, reflect.Float64:
+		return processor.Value{Kind: processor.ValueFloat, Float: value.Float()}
+	case reflect.Slice, reflect.Array:
+		items := make([]processor.Value, 0, value.Len())
+		for index := 0; index < value.Len(); index++ {
+			items = append(items, processorValueFromReflect(value.Index(index)))
+		}
+		return processor.Value{Kind: processor.ValueArray, Array: items}
+	case reflect.Map:
+		record := map[string]processor.Value{}
+		for _, key := range value.MapKeys() {
+			record[key.String()] = processorValueFromReflect(value.MapIndex(key))
+		}
+		return processor.Value{Kind: processor.ValueRecord, Record: record}
+	default:
+		return processor.Value{Kind: processor.ValueUnknown}
+	}
 }
 
 func (m *marshaller) marshalValue(value reflect.Value, depth int) (string, error) {
