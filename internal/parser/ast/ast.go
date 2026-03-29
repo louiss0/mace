@@ -151,6 +151,8 @@ type RecordType struct {
 	Fields []SchemaField
 }
 
+func (RecordType) typeReferenceNode() {}
+
 type SchemaField struct {
 	Name     string
 	Optional bool

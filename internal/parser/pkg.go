@@ -554,6 +554,8 @@ func (p *Parser) parseTypeReference() (ast.TypeReference, error) {
 			return nil, err
 		}
 		return ast.ArrayType{Element: element}, nil
+	case lexer.TokenLBrace:
+		return p.parseRecordType()
 	case lexer.TokenIdentifier:
 		token := p.current()
 		p.advance()

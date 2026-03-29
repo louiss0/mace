@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/louiss0/mace/internal/lexer"
 	"github.com/louiss0/mace/internal/parser"
@@ -19,7 +20,7 @@ type Processor struct {
 type Result struct {
 	File   ast.File
 	Output map[string]Value
-	Schema map[SchemaField]string
+	Schema map[SchemaField]SchemaType
 }
 
 type ScriptResult struct {
@@ -31,6 +32,23 @@ type ScriptResult struct {
 type SchemaField struct {
 	Name     string
 	Optional bool
+}
+
+type SchemaTypeKind int
+
+const (
+	SchemaTypeUnknown SchemaTypeKind = iota
+	SchemaTypePrimitive
+	SchemaTypeNamed
+	SchemaTypeArray
+	SchemaTypeRecord
+)
+
+type SchemaType struct {
+	Kind    SchemaTypeKind
+	Name    string
+	Element *SchemaType
+	Fields  map[SchemaField]SchemaType
 }
 
 type processContext struct {
@@ -242,7 +260,7 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 		return Result{}, err
 	}
 
-	return Result{File: file, Output: output, Schema: map[SchemaField]string{}}, nil
+	return Result{File: file, Output: output, Schema: map[SchemaField]SchemaType{}}, nil
 }
 
 func lex(input string) ([]lexer.Token, error) {
@@ -620,6 +638,8 @@ func validateTypeReference(typeRef ast.TypeReference, symbols *symbolTable, type
 		return nil
 	case ast.ArrayType:
 		return validateTypeReference(ref.Element, symbols, types)
+	case ast.RecordType:
+		return validateRecordType(ref, symbols, types)
 	case ast.NamedType:
 		if symbols.IsType(ref.Name) {
 			_, _, err := types.Resolve(ref.Name)
@@ -931,19 +951,19 @@ func (environment *valueEnvironment) Clone() *valueEnvironment {
 	return &valueEnvironment{values: environment.Values()}
 }
 
-func evaluateSchemaOutput(output ast.OutputBlock) (map[SchemaField]string, error) {
+func evaluateSchemaOutput(output ast.OutputBlock) (map[SchemaField]SchemaType, error) {
 	if output.Mode != ast.OutputModeSchema {
-		return map[SchemaField]string{}, nil
+		return map[SchemaField]SchemaType{}, nil
 	}
 
-	fields := make(map[SchemaField]string, len(output.SchemaFields))
+	fields := make(map[SchemaField]SchemaType, len(output.SchemaFields))
 	for _, field := range output.SchemaFields {
-		typeName, err := formatTypeReference(field.Type)
+		schemaType, err := schemaTypeFromTypeReference(field.Type)
 		if err != nil {
 			return nil, err
 		}
 
-		fields[SchemaField{Name: field.Name, Optional: field.Optional}] = typeName
+		fields[SchemaField{Name: field.Name, Optional: field.Optional}] = schemaType
 	}
 
 	return fields, nil
@@ -1496,6 +1516,8 @@ func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *ty
 			return valueType{}, err
 		}
 		return valueType{kind: ValueArray, element: &element}, nil
+	case ast.RecordType:
+		return valueType{kind: ValueRecord}, nil
 	case ast.NamedType:
 		resolved, resolvedByAlias, err := types.Resolve(ref.Name)
 		if err != nil {
@@ -1539,10 +1561,65 @@ func formatTypeReference(typeRef ast.TypeReference) (string, error) {
 		}
 
 		return fmt.Sprintf("array<%s>", element), nil
+	case ast.RecordType:
+		return formatRecordTypeReference(ref)
 	case ast.NamedType:
 		return ref.Name, nil
 	default:
 		return "", validationErrorf("unknown type reference")
+	}
+}
+
+func formatRecordTypeReference(record ast.RecordType) (string, error) {
+	if len(record.Fields) == 0 {
+		return "{}", nil
+	}
+
+	parts := make([]string, 0, len(record.Fields))
+	for _, field := range record.Fields {
+		typeName, err := formatTypeReference(field.Type)
+		if err != nil {
+			return "", err
+		}
+
+		optional := ""
+		if field.Optional {
+			optional = "?"
+		}
+
+		parts = append(parts, fmt.Sprintf("%s%s: %s", field.Name, optional, typeName))
+	}
+
+	return "{ " + strings.Join(parts, "; ") + "; }", nil
+}
+
+func schemaTypeFromTypeReference(typeRef ast.TypeReference) (SchemaType, error) {
+	switch ref := typeRef.(type) {
+	case ast.PrimitiveType:
+		return SchemaType{Kind: SchemaTypePrimitive, Name: ref.Name}, nil
+	case ast.NamedType:
+		return SchemaType{Kind: SchemaTypeNamed, Name: ref.Name}, nil
+	case ast.ArrayType:
+		element, err := schemaTypeFromTypeReference(ref.Element)
+		if err != nil {
+			return SchemaType{}, err
+		}
+
+		return SchemaType{Kind: SchemaTypeArray, Element: &element}, nil
+	case ast.RecordType:
+		fields := make(map[SchemaField]SchemaType, len(ref.Fields))
+		for _, field := range ref.Fields {
+			fieldType, err := schemaTypeFromTypeReference(field.Type)
+			if err != nil {
+				return SchemaType{}, err
+			}
+
+			fields[SchemaField{Name: field.Name, Optional: field.Optional}] = fieldType
+		}
+
+		return SchemaType{Kind: SchemaTypeRecord, Fields: fields}, nil
+	default:
+		return SchemaType{}, validationErrorf("unknown type reference")
 	}
 }
 

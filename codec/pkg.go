@@ -12,12 +12,29 @@ import (
 
 type Result struct {
 	Data   map[string]any
-	Schema map[SchemaField]string
+	Schema map[SchemaField]SchemaType
 }
 
 type SchemaField struct {
 	Name     string
 	Optional bool
+}
+
+type SchemaTypeKind int
+
+const (
+	SchemaTypeUnknown SchemaTypeKind = iota
+	SchemaTypePrimitive
+	SchemaTypeNamed
+	SchemaTypeArray
+	SchemaTypeRecord
+)
+
+type SchemaType struct {
+	Kind    SchemaTypeKind
+	Name    string
+	Element *SchemaType
+	Fields  map[SchemaField]SchemaType
 }
 
 func Parse(input string) (Result, error) {
@@ -148,16 +165,38 @@ func valueToAny(value processor.Value) any {
 	}
 }
 
-func schemaToMap(fields map[processor.SchemaField]string) map[SchemaField]string {
-	schema := make(map[SchemaField]string, len(fields))
+func schemaToMap(fields map[processor.SchemaField]processor.SchemaType) map[SchemaField]SchemaType {
+	schema := make(map[SchemaField]SchemaType, len(fields))
 	for field, valueType := range fields {
 		schema[SchemaField{
 			Name:     field.Name,
 			Optional: field.Optional,
-		}] = valueType
+		}] = schemaTypeFromProcessor(valueType)
 	}
 
 	return schema
+}
+
+func schemaTypeFromProcessor(schemaType processor.SchemaType) SchemaType {
+	result := SchemaType{
+		Kind: SchemaTypeKind(schemaType.Kind),
+		Name: schemaType.Name,
+	}
+
+	if schemaType.Element != nil {
+		element := schemaTypeFromProcessor(*schemaType.Element)
+		result.Element = &element
+	}
+
+	if len(schemaType.Fields) > 0 {
+		fields := make(map[SchemaField]SchemaType, len(schemaType.Fields))
+		for field, fieldType := range schemaType.Fields {
+			fields[SchemaField{Name: field.Name, Optional: field.Optional}] = schemaTypeFromProcessor(fieldType)
+		}
+		result.Fields = fields
+	}
+
+	return result
 }
 
 func toProcessorValue(value any) processor.Value {

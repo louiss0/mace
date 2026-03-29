@@ -37,6 +37,27 @@ type expectedSchemaField struct {
 	optional bool
 }
 
+func schemaPrimitive(name string) SchemaType {
+	return SchemaType{Kind: SchemaTypePrimitive, Name: name}
+}
+
+func schemaNamed(name string) SchemaType {
+	return SchemaType{Kind: SchemaTypeNamed, Name: name}
+}
+
+func schemaArray(element SchemaType) SchemaType {
+	return SchemaType{Kind: SchemaTypeArray, Element: &element}
+}
+
+func schemaRecord(fields map[expectedSchemaField]SchemaType) SchemaType {
+	recordFields := make(map[SchemaField]SchemaType, len(fields))
+	for field, fieldType := range fields {
+		recordFields[SchemaField{Name: field.name, Optional: field.optional}] = fieldType
+	}
+
+	return SchemaType{Kind: SchemaTypeRecord, Fields: recordFields}
+}
+
 func requireOutputValue(result Result, name string) Value {
 	value, ok := result.Output[name]
 	tAssert.True(ok)
@@ -85,7 +106,7 @@ func assertExpectedOutput(result Result, expected map[string]expectedValue) {
 	}
 }
 
-func assertExpectedSchema(result Result, expected map[expectedSchemaField]string) {
+func assertExpectedSchema(result Result, expected map[expectedSchemaField]SchemaType) {
 	tAssert.Len(result.Output, 0)
 	tAssert.Len(result.Schema, len(expected))
 
@@ -137,9 +158,9 @@ string name = "Ada";
 }`, ScriptResult{})
 		tAssert.NoError(err)
 
-		assertExpectedSchema(result, map[expectedSchemaField]string{
-			{name: "name"}:                "string",
-			{name: "age", optional: true}: "int",
+		assertExpectedSchema(result, map[expectedSchemaField]SchemaType{
+			{name: "name"}:                schemaPrimitive("string"),
+			{name: "age", optional: true}: schemaPrimitive("int"),
 		})
 	})
 
@@ -389,7 +410,7 @@ schema User = { name: string; };
 	)
 
 	DescribeTable("returns schema output fields",
-		func(input string, expected map[expectedSchemaField]string) {
+		func(input string, expected map[expectedSchemaField]SchemaType) {
 			processor := New()
 			result, err := processor.Process(input)
 			tAssert.NoError(err)
@@ -400,17 +421,31 @@ schema User = { name: string; };
 {
   name: string;
   age?: int;
-}`, map[expectedSchemaField]string{
-			{name: "name"}:                "string",
-			{name: "age", optional: true}: "int",
+}`, map[expectedSchemaField]SchemaType{
+			{name: "name"}:                schemaPrimitive("string"),
+			{name: "age", optional: true}: schemaPrimitive("int"),
 		}),
 		Entry("nested array fields", `[output = schema]
 {
   names: array<string>;
   matrix: array<array<int>>;
-}`, map[expectedSchemaField]string{
-			{name: "names"}:  "array<string>",
-			{name: "matrix"}: "array<array<int>>",
+}`, map[expectedSchemaField]SchemaType{
+			{name: "names"}:  schemaArray(schemaPrimitive("string")),
+			{name: "matrix"}: schemaArray(schemaArray(schemaPrimitive("int"))),
+		}),
+		Entry("record fields", `|===|
+schema User = { name: string; };
+|===|
+[output = schema]
+{
+  profile: { name: string; age?: int; };
+  user: User;
+}`, map[expectedSchemaField]SchemaType{
+			{name: "profile"}: schemaRecord(map[expectedSchemaField]SchemaType{
+				{name: "name"}:                schemaPrimitive("string"),
+				{name: "age", optional: true}: schemaPrimitive("int"),
+			}),
+			{name: "user"}: schemaNamed("User"),
 		}),
 	)
 

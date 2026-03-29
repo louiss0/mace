@@ -11,6 +11,14 @@ import (
 
 var tAssert *assert.Assertions
 
+func codecPrimitive(name string) SchemaType {
+	return SchemaType{Kind: SchemaTypePrimitive, Name: name}
+}
+
+func codecRecord(fields map[SchemaField]SchemaType) SchemaType {
+	return SchemaType{Kind: SchemaTypeRecord, Fields: fields}
+}
+
 func TestBinding(t *testing.T) {
 	tAssert = assert.New(t)
 	RunSpecs(t, "Binding Suite")
@@ -76,9 +84,23 @@ var _ = Describe("Parse", func() {
 }`)
 		tAssert.NoError(err)
 		tAssert.Empty(result.Data)
-		tAssert.Equal(map[SchemaField]string{
-			{Name: "name"}:                "string",
-			{Name: "age", Optional: true}: "int",
+		tAssert.Equal(map[SchemaField]SchemaType{
+			{Name: "name"}:                codecPrimitive("string"),
+			{Name: "age", Optional: true}: codecPrimitive("int"),
+		}, result.Schema)
+	})
+
+	It("returns structured record schema outputs", func() {
+		result, err := Parse(`[output = schema]
+{
+  profile: { name: string; age?: int; };
+}`)
+		tAssert.NoError(err)
+		tAssert.Equal(map[SchemaField]SchemaType{
+			{Name: "profile"}: codecRecord(map[SchemaField]SchemaType{
+				{Name: "name"}:                codecPrimitive("string"),
+				{Name: "age", Optional: true}: codecPrimitive("int"),
+			}),
 		}, result.Schema)
 	})
 

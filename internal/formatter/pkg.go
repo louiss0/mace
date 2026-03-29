@@ -178,6 +178,8 @@ func formatTypeReference(typeReference ast.TypeReference) (string, error) {
 		}
 
 		return fmt.Sprintf("array<%s>", element), nil
+	case ast.RecordType:
+		return formatRecordType(typedReference, 0)
 	case ast.NamedType:
 		return typedReference.Name, nil
 	default:
