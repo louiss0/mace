@@ -187,15 +187,20 @@ declared names and optionality alongside the formatted type string.
 External schema declarations can also be loaded for data validation:
 
 ```mace
-[output = data, schema = User, schema_file = "./schemas.mace"]
+[output = data, schema_file = "./schemas.mace"]
 {
   name: user_name;
 }
 ```
 
 When `schema_file` is present, the processor loads type and schema
-declarations from the referenced Mace file before validating the output
-schema.
+declarations from the referenced Mace file before validating the output.
+
+`output = schema` must be used alone.
+
+`output = data` may be used alone, with `schema = <Name>`, or with
+`schema_file = "<path>"`. Combining `schema` and `schema_file` in the same
+directive list is invalid.
 
 ## Expressions
 

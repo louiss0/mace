@@ -154,8 +154,9 @@ directive_pair
   | "schema" , ws0 , "=" , ws0 , identifier ;
 
 (* If `output_directive` is omitted, the output mode defaults to `data`.
-   The current processor only executes `output = data`
-   with an optional `schema = <identifier>` validator. *)
+   `output = schema` must appear alone.
+   `output = data` may appear alone, with `schema = <identifier>`,
+   or with `schema_file = <string_literal>`, but not both. *)
 
 output_item
   = output_field ;
