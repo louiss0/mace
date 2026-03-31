@@ -222,18 +222,19 @@ func (server *Server) complete(context *glsp.Context, params *protocol.Completio
 
 	prefix := identifierPrefixAt(document.text, params.Position)
 	items := []protocol.CompletionItem{}
-
 	for _, completion := range keywordCompletions {
-		if strings.HasPrefix(completion.Label, prefix) {
-			item := protocol.CompletionItem{
-				Label: completion.Label,
-				Kind:  Ptr(completion.Kind),
-			}
-			if completion.Detail != "" {
-				item.Detail = Ptr(completion.Detail)
-			}
-			items = append(items, item)
+		if !strings.HasPrefix(completion.Label, prefix) {
+			continue
 		}
+
+		item := protocol.CompletionItem{
+			Label: completion.Label,
+			Kind:  Ptr(completion.Kind),
+		}
+		if completion.Detail != "" {
+			item.Detail = Ptr(completion.Detail)
+		}
+		items = append(items, item)
 	}
 
 	for _, declaration := range document.analysis.declarations {

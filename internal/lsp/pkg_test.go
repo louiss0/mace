@@ -238,6 +238,8 @@ int count = "Ada";
 			params := requireDiagnostics(notifications[0])
 			tAssert.Len(params.Diagnostics, 1)
 			tAssert.Contains(params.Diagnostics[0].Message, `processor: type mismatch: expected int, got string`)
+			tAssert.Equal(protocol.UInteger(1), params.Diagnostics[0].Range.Start.Line)
+			tAssert.Equal(protocol.UInteger(4), params.Diagnostics[0].Range.Start.Character)
 		}
 	})
 
@@ -302,6 +304,8 @@ schema Plot = { points: array<Point>; };
 			params := requireDiagnostics(notifications[0])
 			tAssert.Len(params.Diagnostics, 1)
 			tAssert.Contains(params.Diagnostics[0].Message, `processor: missing required field "y" for schema "Point"`)
+			tAssert.Equal(protocol.UInteger(1), params.Diagnostics[0].Range.Start.Line)
+			tAssert.Equal(protocol.UInteger(7), params.Diagnostics[0].Range.Start.Character)
 		}
 	})
 
