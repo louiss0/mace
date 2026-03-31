@@ -38,12 +38,12 @@ func newRootCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
 
 	command.SetOut(stdout)
 	command.SetErr(stderr)
-	command.AddCommand(newJSONCommand(stdout), newNodesCommand(stdout), newSourceCommand(stdout))
+	command.AddCommand(newJSONCommand(), newNodesCommand(), newSourceCommand(), newLSPCommand())
 
 	return command
 }
 
-func newJSONCommand(stdout io.Writer) *cobra.Command {
+func newJSONCommand() *cobra.Command {
 	var injectionInput string
 
 	command := &cobra.Command{
@@ -70,7 +70,7 @@ func newJSONCommand(stdout io.Writer) *cobra.Command {
 				return fmt.Errorf("marshal json output: %w", err)
 			}
 
-			_, err = fmt.Fprintln(stdout, string(payload))
+			_, err = fmt.Fprintln(command.OutOrStdout(), string(payload))
 			return err
 		},
 	}
@@ -80,7 +80,7 @@ func newJSONCommand(stdout io.Writer) *cobra.Command {
 	return command
 }
 
-func newNodesCommand(stdout io.Writer) *cobra.Command {
+func newNodesCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "nodes <path>",
 		Short: "Parse a Mace file and print its node structure",
@@ -91,7 +91,7 @@ func newNodesCommand(stdout io.Writer) *cobra.Command {
 				return err
 			}
 
-			_, err = fmt.Fprintln(stdout, litter.Sdump(file))
+			_, err = fmt.Fprintln(command.OutOrStdout(), litter.Sdump(file))
 			return err
 		},
 	}
@@ -99,7 +99,7 @@ func newNodesCommand(stdout io.Writer) *cobra.Command {
 	return command
 }
 
-func newSourceCommand(stdout io.Writer) *cobra.Command {
+func newSourceCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "source <path>",
 		Short: "Parse a Mace file and print canonical Mace source",
@@ -115,7 +115,7 @@ func newSourceCommand(stdout io.Writer) *cobra.Command {
 				return err
 			}
 
-			_, err = fmt.Fprintln(stdout, source)
+			_, err = fmt.Fprintln(command.OutOrStdout(), source)
 			return err
 		},
 	}

@@ -5,8 +5,10 @@ go 1.25.5
 require (
 	github.com/onsi/ginkgo/v2 v2.27.3
 	github.com/sanity-io/litter v1.5.8
+	github.com/sourcegraph/jsonrpc2 v0.2.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
+	github.com/tliron/glsp v0.2.2
 )
 
 require (

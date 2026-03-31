@@ -156,4 +156,19 @@ schema User = {
 `, stdout.String())
 		})
 	})
+
+	Describe("lsp", func() {
+		It("registers the language server command", func() {
+			command := newRootCommand(&bytes.Buffer{}, &bytes.Buffer{})
+
+			found := false
+			for _, child := range command.Commands() {
+				if child.Name() == "lsp" {
+					found = true
+				}
+			}
+
+			tAssert.True(found)
+		})
+	})
 })
