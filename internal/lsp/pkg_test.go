@@ -238,6 +238,31 @@ int count = "Ada";
 			params := requireDiagnostics(notifications[0])
 			tAssert.Len(params.Diagnostics, 1)
 			tAssert.Contains(params.Diagnostics[0].Message, `processor: type mismatch: expected int, got string`)
+			tAssert.Equal(protocol.UInteger(1), params.Diagnostics[0].Range.Start.Line)
+			tAssert.Equal(protocol.UInteger(4), params.Diagnostics[0].Range.Start.Character)
+		}
+	})
+
+	It("publishes variable mismatch diagnostics for the failing declaration", func() {
+		server := New()
+		initializeServer(server)
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+string name = "Ada";
+int count = "seven";
+|===|
+[output = data]
+{
+  result: name;
+}`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			tAssert.Len(params.Diagnostics, 1)
+			tAssert.Contains(params.Diagnostics[0].Message, `processor: type mismatch: expected int, got string`)
+			tAssert.Equal(protocol.UInteger(2), params.Diagnostics[0].Range.Start.Line)
+			tAssert.Equal(protocol.UInteger(4), params.Diagnostics[0].Range.Start.Character)
 		}
 	})
 
@@ -302,6 +327,8 @@ schema Plot = { points: array<Point>; };
 			params := requireDiagnostics(notifications[0])
 			tAssert.Len(params.Diagnostics, 1)
 			tAssert.Contains(params.Diagnostics[0].Message, `processor: missing required field "y" for schema "Point"`)
+			tAssert.Equal(protocol.UInteger(1), params.Diagnostics[0].Range.Start.Line)
+			tAssert.Equal(protocol.UInteger(7), params.Diagnostics[0].Range.Start.Character)
 		}
 	})
 
