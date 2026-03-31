@@ -2,5 +2,8 @@
 type Age = int;
 schema Profile = { age: Age; bio?: string; };
 |===|
-
-[output = data] {}
+[output = schema]
+{
+  Age: Age;
+  Profile: Profile;
+}

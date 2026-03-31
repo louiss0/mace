@@ -35,11 +35,17 @@ Current import rules:
 
 - Import paths are resolved relative to the importing file.
 - Only named imports are supported.
-- Only top-level `type` and `schema` declarations are importable.
-- Variables are not importable.
+- Only symbols exposed through the imported file's output block are importable.
+- Top-level `type`, `schema`, and variable declarations are internal unless surfaced through the output block.
 - There is no explicit `export` keyword.
-- Type and schema declarations in a file are implicitly importable by name.
 - Circular imports are rejected.
+
+Imported symbols come from the referenced file's output mode:
+
+- `output = schema` exposes named type-like fields for import.
+- A field whose type is a record, or references a schema, is imported as a schema.
+- Other schema output fields are imported as types.
+- `output = data` exposes named values for import.
 
 ## Script Block
 

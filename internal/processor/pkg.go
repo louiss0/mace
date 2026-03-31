@@ -281,9 +281,20 @@ func lex(input string) ([]lexer.Token, error) {
 }
 
 func buildProcessContext(imports []ast.ImportDeclaration, script *ast.ScriptBlock, baseDir string, injections map[string]Value) (processContext, error) {
+	return buildProcessContextWithState(
+		imports,
+		script,
+		baseDir,
+		injections,
+		map[string]map[string]importedDeclaration{},
+		map[string]struct{}{},
+	)
+}
+
+func buildProcessContextWithState(imports []ast.ImportDeclaration, script *ast.ScriptBlock, baseDir string, injections map[string]Value, cache map[string]map[string]importedDeclaration, stack map[string]struct{}) (processContext, error) {
 	context := newProcessContext(baseDir)
 
-	imported, err := resolveImports(ast.File{Imports: imports}, baseDir)
+	imported, err := resolveImportsWithState(ast.File{Imports: imports}, baseDir, cache, stack)
 	if err != nil {
 		return processContext{}, err
 	}
@@ -299,6 +310,10 @@ func buildProcessContext(imports []ast.ImportDeclaration, script *ast.ScriptBloc
 		case symbolKindSchema:
 			context.symbols.Add(importedDecl.name, symbolKindSchema)
 			context.schemas.Add(importedDecl.name, importedDecl.record)
+		case symbolKindVariable:
+			context.symbols.Add(importedDecl.name, symbolKindVariable)
+			context.variables.Add(importedDecl.name, importedDecl.vtype)
+			context.environment.Add(importedDecl.name, importedDecl.value)
 		default:
 			return processContext{}, validationErrorf("unknown import %q", importedDecl.name)
 		}
@@ -366,16 +381,20 @@ type importedDeclaration struct {
 	kind    symbolKind
 	typeRef ast.TypeReference
 	record  ast.RecordType
+	value   Value
+	vtype   valueType
 }
 
 func resolveImports(file ast.File, baseDir string) ([]importedDeclaration, error) {
+	return resolveImportsWithState(file, baseDir, map[string]map[string]importedDeclaration{}, map[string]struct{}{})
+}
+
+func resolveImportsWithState(file ast.File, baseDir string, cache map[string]map[string]importedDeclaration, stack map[string]struct{}) ([]importedDeclaration, error) {
 	if len(file.Imports) == 0 {
 		return nil, nil
 	}
 
 	imports := map[string]importedDeclaration{}
-	cache := map[string]map[string]ast.Declaration{}
-	stack := map[string]struct{}{}
 
 	for _, importDecl := range file.Imports {
 		path, err := parseImportPath(importDecl.Path)
@@ -384,7 +403,7 @@ func resolveImports(file ast.File, baseDir string) ([]importedDeclaration, error
 		}
 
 		resolvedPath := filepath.Join(baseDir, path)
-		declarations, err := loadImportDeclarations(resolvedPath, cache, stack)
+		declarations, err := loadImportExports(resolvedPath, cache, stack)
 		if err != nil {
 			return nil, err
 		}
@@ -399,14 +418,7 @@ func resolveImports(file ast.File, baseDir string) ([]importedDeclaration, error
 				return nil, validationErrorf("imported identifier %q not found in %q", name, path)
 			}
 
-			switch typedDecl := decl.(type) {
-			case ast.TypeDeclaration:
-				imports[name] = importedDeclaration{name: name, kind: symbolKindType, typeRef: typedDecl.Type}
-			case ast.SchemaDeclaration:
-				imports[name] = importedDeclaration{name: name, kind: symbolKindSchema, record: typedDecl.Type}
-			default:
-				return nil, validationErrorf("imported identifier %q must be a type or schema", name)
-			}
+			imports[name] = decl
 		}
 	}
 
@@ -425,7 +437,103 @@ func parseImportPath(literal ast.StringLiteral) (string, error) {
 	return value.String, nil
 }
 
-func loadImportDeclarations(path string, cache map[string]map[string]ast.Declaration, stack map[string]struct{}) (map[string]ast.Declaration, error) {
+func loadImportExports(path string, cache map[string]map[string]importedDeclaration, stack map[string]struct{}) (map[string]importedDeclaration, error) {
+	if declarations, ok := cache[path]; ok {
+		return declarations, nil
+	}
+	if _, ok := stack[path]; ok {
+		return nil, validationErrorf("circular import detected at %q", path)
+	}
+
+	stack[path] = struct{}{}
+	defer delete(stack, path)
+
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return nil, validationErrorf("unable to read import file %q", path)
+	}
+
+	tokens, err := lex(string(contents))
+	if err != nil {
+		return nil, err
+	}
+
+	file, err := parser.New(tokens).ParseFile()
+	if err != nil {
+		return nil, validationErrorf("unable to parse import file %q: %s", path, err)
+	}
+
+	context, err := buildProcessContextWithState(
+		file.Imports,
+		file.Script,
+		filepath.Dir(path),
+		map[string]Value{},
+		cache,
+		stack,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	declarations, err := collectImportExports(file.Output, context)
+	if err != nil {
+		return nil, err
+	}
+	cache[path] = declarations
+	return declarations, nil
+}
+
+func resolveSchemaFileDeclarations(directives []ast.OutputDirective, baseDir string) ([]importedDeclaration, error) {
+	var path string
+	for _, directive := range directives {
+		if directive.Kind != ast.OutputDirectiveSchemaFile {
+			continue
+		}
+
+		if path != "" {
+			return nil, validationErrorf("duplicate output directive %q", directiveKindName(directive.Kind))
+		}
+
+		parsedPath, err := parseString(directive.Value)
+		if err != nil {
+			return nil, err
+		}
+
+		path = parsedPath.String
+	}
+
+	if path == "" {
+		return nil, nil
+	}
+
+	resolvedPath := filepath.Join(baseDir, path)
+	declarations, err := loadSchemaFileDeclarations(resolvedPath, map[string]map[string]ast.Declaration{}, map[string]struct{}{})
+	if err != nil {
+		return nil, err
+	}
+
+	outputDeclarations := []importedDeclaration{}
+	for name, declaration := range declarations {
+		switch typedDeclaration := declaration.(type) {
+		case ast.TypeDeclaration:
+			outputDeclarations = append(outputDeclarations, importedDeclaration{
+				name:    name,
+				kind:    symbolKindType,
+				typeRef: typedDeclaration.Type,
+			})
+		case ast.SchemaDeclaration:
+			outputDeclarations = append(outputDeclarations, importedDeclaration{
+				name:   name,
+				kind:   symbolKindSchema,
+				record: typedDeclaration.Type,
+			})
+		}
+	}
+
+	return outputDeclarations, nil
+}
+
+func loadSchemaFileDeclarations(path string, cache map[string]map[string]ast.Declaration, stack map[string]struct{}) (map[string]ast.Declaration, error) {
 	if declarations, ok := cache[path]; ok {
 		return declarations, nil
 	}
@@ -456,8 +564,9 @@ func loadImportDeclarations(path string, cache map[string]map[string]ast.Declara
 		if err != nil {
 			return nil, err
 		}
+
 		resolvedPath := filepath.Join(filepath.Dir(path), importPath)
-		if _, err := loadImportDeclarations(resolvedPath, cache, stack); err != nil {
+		if _, err := loadSchemaFileDeclarations(resolvedPath, cache, stack); err != nil {
 			return nil, err
 		}
 	}
@@ -480,54 +589,219 @@ func loadImportDeclarations(path string, cache map[string]map[string]ast.Declara
 	return declarations, nil
 }
 
-func resolveSchemaFileDeclarations(directives []ast.OutputDirective, baseDir string) ([]importedDeclaration, error) {
-	var path string
-	for _, directive := range directives {
-		if directive.Kind != ast.OutputDirectiveSchemaFile {
-			continue
-		}
-
-		if path != "" {
-			return nil, validationErrorf("duplicate output directive %q", directiveKindName(directive.Kind))
-		}
-
-		parsedPath, err := parseString(directive.Value)
-		if err != nil {
-			return nil, err
-		}
-
-		path = parsedPath.String
-	}
-
-	if path == "" {
-		return nil, nil
-	}
-
-	resolvedPath := filepath.Join(baseDir, path)
-	declarations, err := loadImportDeclarations(resolvedPath, map[string]map[string]ast.Declaration{}, map[string]struct{}{})
+func collectImportExports(output ast.OutputBlock, context processContext) (map[string]importedDeclaration, error) {
+	outputContext, err := prepareOutputContext(output, context)
 	if err != nil {
 		return nil, err
 	}
 
-	outputDeclarations := []importedDeclaration{}
-	for name, declaration := range declarations {
-		switch typedDeclaration := declaration.(type) {
-		case ast.TypeDeclaration:
-			outputDeclarations = append(outputDeclarations, importedDeclaration{
-				name:    name,
-				kind:    symbolKindType,
-				typeRef: typedDeclaration.Type,
-			})
-		case ast.SchemaDeclaration:
-			outputDeclarations = append(outputDeclarations, importedDeclaration{
-				name:   name,
-				kind:   symbolKindSchema,
-				record: typedDeclaration.Type,
-			})
+	if output.Mode == ast.OutputModeSchema {
+		if err := validateSchemaOutputFields(output.SchemaFields, outputContext.symbols, outputContext.types); err != nil {
+			return nil, err
+		}
+
+		exports := make(map[string]importedDeclaration, len(output.SchemaFields))
+		for _, field := range output.SchemaFields {
+			exported, err := schemaFieldImportDeclaration(field, outputContext)
+			if err != nil {
+				return nil, err
+			}
+
+			exports[field.Name] = exported
+		}
+
+		return exports, nil
+	}
+
+	if schemaName, ok := outputSchemaName(output.Directives); ok {
+		if err := validateOutputSchema(schemaName, output.DataFields, outputContext.variables, outputContext.symbols, outputContext.types, outputContext.schemas); err != nil {
+			return nil, err
 		}
 	}
 
-	return outputDeclarations, nil
+	values, err := evaluateOutputFields(output.DataFields, outputContext.environment)
+	if err != nil {
+		return nil, err
+	}
+
+	exports := make(map[string]importedDeclaration, len(output.DataFields))
+	for _, field := range output.DataFields {
+		exportedType, err := exportedOutputFieldType(field, output, outputContext)
+		if err != nil {
+			return nil, err
+		}
+
+		exports[field.Name] = importedDeclaration{
+			name:  field.Name,
+			kind:  symbolKindVariable,
+			value: values[field.Name],
+			vtype: exportedType,
+		}
+	}
+
+	return exports, nil
+}
+
+func schemaFieldImportDeclaration(field ast.OutputSchemaField, context processContext) (importedDeclaration, error) {
+	switch typedRef := field.Type.(type) {
+	case ast.NamedType:
+		if record, ok := context.schemas.Get(typedRef.Name); ok {
+			exportedRecord, err := resolveExportedRecordType(record, context.types, context.schemas, map[string]struct{}{}, map[string]struct{}{})
+			if err != nil {
+				return importedDeclaration{}, err
+			}
+
+			return importedDeclaration{
+				name:   field.Name,
+				kind:   symbolKindSchema,
+				record: exportedRecord,
+			}, nil
+		}
+	case ast.RecordType:
+		exportedRecord, err := resolveExportedRecordType(typedRef, context.types, context.schemas, map[string]struct{}{}, map[string]struct{}{})
+		if err != nil {
+			return importedDeclaration{}, err
+		}
+
+		return importedDeclaration{
+			name:   field.Name,
+			kind:   symbolKindSchema,
+			record: exportedRecord,
+		}, nil
+	}
+
+	exportedType, err := resolveExportedTypeReference(field.Type, context.types, context.schemas, map[string]struct{}{}, map[string]struct{}{})
+	if err != nil {
+		return importedDeclaration{}, err
+	}
+
+	return importedDeclaration{
+		name:    field.Name,
+		kind:    symbolKindType,
+		typeRef: exportedType,
+	}, nil
+}
+
+func exportedOutputFieldType(field ast.OutputField, output ast.OutputBlock, context processContext) (valueType, error) {
+	if schemaName, ok := outputSchemaName(output.Directives); ok {
+		schema, exists := context.schemas.Get(schemaName)
+		if !exists {
+			return valueType{}, validationErrorf("unknown schema %q", schemaName)
+		}
+
+		for _, schemaField := range schema.Fields {
+			if schemaField.Name != field.Name {
+				continue
+			}
+
+			resolvedType, err := resolveValueType(schemaField.Type, context.symbols, context.types, context.schemas)
+			if err != nil {
+				return valueType{}, err
+			}
+
+			return sanitizeImportedValueType(resolvedType, context.schemas), nil
+		}
+	}
+
+	inferredType, err := inferExpressionType(field.Value, context.variables, context.symbols, context.types)
+	if err != nil {
+		return valueType{}, err
+	}
+
+	return sanitizeImportedValueType(inferredType, context.schemas), nil
+}
+
+func sanitizeImportedValueType(input valueType, schemas *schemaRegistry) valueType {
+	if input.kind != ValueArray && input.kind != ValueRecord {
+		return input
+	}
+
+	sanitized := input
+	if sanitized.element != nil {
+		element := sanitizeImportedValueType(*sanitized.element, schemas)
+		sanitized.element = &element
+	}
+
+	if sanitized.schemaName == "" {
+		return sanitized
+	}
+
+	if _, ok := schemas.Get(sanitized.schemaName); ok {
+		sanitized.schemaName = ""
+	}
+
+	return sanitized
+}
+
+func resolveExportedTypeReference(typeRef ast.TypeReference, types *typeRegistry, schemas *schemaRegistry, aliasStack map[string]struct{}, schemaStack map[string]struct{}) (ast.TypeReference, error) {
+	switch ref := typeRef.(type) {
+	case ast.PrimitiveType:
+		return ref, nil
+	case ast.ArrayType:
+		element, err := resolveExportedTypeReference(ref.Element, types, schemas, aliasStack, schemaStack)
+		if err != nil {
+			return nil, err
+		}
+
+		return ast.ArrayType{Element: element}, nil
+	case ast.RecordType:
+		return resolveExportedRecordType(ref, types, schemas, aliasStack, schemaStack)
+	case ast.NamedType:
+		if record, ok := schemas.Get(ref.Name); ok {
+			if _, exists := schemaStack[ref.Name]; exists {
+				return nil, validationErrorf("cyclic schema reference %q", ref.Name)
+			}
+
+			nextSchemaStack := cloneNameSet(schemaStack)
+			nextSchemaStack[ref.Name] = struct{}{}
+			return resolveExportedRecordType(record, types, schemas, aliasStack, nextSchemaStack)
+		}
+
+		if _, ok := aliasStack[ref.Name]; ok {
+			return nil, validationErrorf("cyclic type alias %q", ref.Name)
+		}
+
+		resolved, exists, err := types.Resolve(ref.Name)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			return ref, nil
+		}
+
+		nextAliasStack := cloneNameSet(aliasStack)
+		nextAliasStack[ref.Name] = struct{}{}
+		return resolveExportedTypeReference(resolved, types, schemas, nextAliasStack, schemaStack)
+	default:
+		return nil, validationErrorf("unknown type reference")
+	}
+}
+
+func resolveExportedRecordType(record ast.RecordType, types *typeRegistry, schemas *schemaRegistry, aliasStack map[string]struct{}, schemaStack map[string]struct{}) (ast.RecordType, error) {
+	fields := make([]ast.SchemaField, 0, len(record.Fields))
+	for _, field := range record.Fields {
+		resolvedType, err := resolveExportedTypeReference(field.Type, types, schemas, aliasStack, schemaStack)
+		if err != nil {
+			return ast.RecordType{}, err
+		}
+
+		fields = append(fields, ast.SchemaField{
+			Name:     field.Name,
+			Optional: field.Optional,
+			Type:     resolvedType,
+		})
+	}
+
+	return ast.RecordType{Fields: fields}, nil
+}
+
+func cloneNameSet(values map[string]struct{}) map[string]struct{} {
+	cloned := make(map[string]struct{}, len(values))
+	for name := range values {
+		cloned[name] = struct{}{}
+	}
+
+	return cloned
 }
 
 func collectDeclarations(items []ast.Declaration, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry) error {

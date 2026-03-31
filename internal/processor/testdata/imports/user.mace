@@ -7,4 +7,7 @@ Name default_name = "Ada";
 Age default_age = 30;
 |===|
 
-[output = data] {}
+[output = schema]
+{
+  User: User;
+}

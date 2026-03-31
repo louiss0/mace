@@ -354,6 +354,26 @@ User result = { name: name; age: 30; };
 			"name": {kind: ValueString, string: "Ada"},
 			"age":  {kind: ValueInt, int64: 30},
 		}}),
+		Entry("imports values surfaced through output", `from "testdata/imports/values.mace" import count;
+[output = data]
+{ result: count + 2; }`, expectedValue{kind: ValueInt, int64: 5}),
+	)
+
+	DescribeTable("keeps hidden declarations internal",
+		func(file string, message string) {
+			processor := New()
+			_, err := processor.Process(file)
+			tAssert.Error(err)
+			tAssert.ErrorContains(err, message)
+		},
+		Entry("hidden type is not importable", `from "testdata/imports/base.mace" import Internal;
+[output = data] {}`, "imported identifier"),
+		Entry("hidden schema is not importable", `from "testdata/imports/base.mace" import Secret;
+[output = data] {}`, "imported identifier"),
+		Entry("hidden variable is not importable", `from "testdata/imports/base.mace" import local;
+[output = data] {}`, "imported identifier"),
+		Entry("hidden value is not importable", `from "testdata/imports/values.mace" import hidden;
+[output = data] {}`, "imported identifier"),
 	)
 
 	DescribeTable("processes imported files",
@@ -393,8 +413,6 @@ User result = { name: name; age: 30; };
 		},
 		Entry("unknown imported identifier", `from "testdata/imports/base.mace" import Missing;
 [output = data] {}`, "imported identifier"),
-		Entry("imported variable", `from "testdata/imports/base.mace" import local;
-[output = data] {}`, "type or schema"),
 		Entry("duplicate import across declarations", `from "testdata/imports/base.mace" import Name;
 from "testdata/imports/other.mace" import Name;
 [output = data] {}`, "duplicate import"),
