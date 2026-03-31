@@ -15,6 +15,7 @@ import (
 
 var (
 	missingRequiredFieldPattern = regexp.MustCompile(`missing required field "([^"]+)" for schema "([^"]+)"`)
+	typeMismatchPattern         = regexp.MustCompile(`type mismatch: expected (.+), got (.+)$`)
 )
 
 type analysisSnapshot struct {
@@ -71,13 +72,29 @@ func semanticDiagnosticFromError(file ast.File, tokens []lexer.Token, err error)
 }
 
 func variableTypeMismatchDiagnostic(file ast.File, tokens []lexer.Token, message string) (protocol.Diagnostic, bool) {
-	if file.Script == nil || !strings.Contains(message, "type mismatch") {
+	if file.Script == nil {
 		return protocol.Diagnostic{}, false
 	}
 
+	expectedType, actualType, ok := parseExpectedAndActualType(message)
+	if !ok {
+		return protocol.Diagnostic{}, false
+	}
+
+	knownTypes := map[string]string{}
 	for _, item := range file.Script.Items {
 		declaration, ok := item.(ast.VariableDeclaration)
 		if !ok {
+			continue
+		}
+
+		declaredType := typeReferenceDetail(declaration.Type)
+		valueType, found := expressionTypeSummary(declaration.Value, knownTypes)
+		if found && declaredType == valueType {
+			knownTypes[declaration.Name] = declaredType
+		}
+
+		if !found || declaredType != expectedType || valueType != actualType {
 			continue
 		}
 
@@ -95,6 +112,33 @@ func variableTypeMismatchDiagnostic(file ast.File, tokens []lexer.Token, message
 	}
 
 	return protocol.Diagnostic{}, false
+}
+
+func parseExpectedAndActualType(message string) (string, string, bool) {
+	matches := typeMismatchPattern.FindStringSubmatch(message)
+	if len(matches) != 3 {
+		return "", "", false
+	}
+
+	return strings.TrimSpace(matches[1]), strings.TrimSpace(matches[2]), true
+}
+
+func expressionTypeSummary(expression ast.Expression, knownTypes map[string]string) (string, bool) {
+	switch typed := expression.(type) {
+	case ast.StringLiteral:
+		return "string", true
+	case ast.IntLiteral:
+		return "int", true
+	case ast.FloatLiteral:
+		return "float", true
+	case ast.BooleanLiteral:
+		return "boolean", true
+	case ast.Identifier:
+		knownType, ok := knownTypes[typed.Name]
+		return knownType, ok
+	default:
+		return "", false
+	}
 }
 
 func schemaDiagnostic(tokens []lexer.Token, message string) (protocol.Diagnostic, bool) {
