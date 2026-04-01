@@ -637,6 +637,30 @@ schema Plot = { points: array<Point>; };
 		tAssert.Equal([]string{"Config", "User"}, labels)
 	})
 
+	It("suggests imported identifiers inside the script block", func() {
+		server := New()
+		initializeServer(server)
+
+		workspace, err := os.MkdirTemp("", "mace-lsp-imported-script-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
+{
+  User: { name: string; };
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `from "./shared.mace" import User;
+|===|
+Us
+|===|
+[output = data] {}`, nil)
+
+		labels := completeLabels(server, uri, 2, 2)
+		tAssert.Contains(labels, "User")
+	})
+
 	It("only suggests directives inside directive delimiters", func() {
 		server := New()
 		initializeServer(server)
@@ -783,6 +807,52 @@ string env = "dev";
 		tAssert.True(ok)
 		if ok {
 			tAssert.Contains(content.Value, "string env")
+		}
+	})
+
+	It("returns hover details for imported declarations", func() {
+		server := New()
+		initializeServer(server)
+
+		workspace, err := os.MkdirTemp("", "mace-lsp-hover-import-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
+{
+  User: { name: string; };
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `from "./shared.mace" import User;
+|===|
+User current = { name: "Ada"; };
+|===|
+[output = data] { result: current; }`))
+
+		didOpen(server, uri, `from "./shared.mace" import User;
+|===|
+User current = { name: "Ada"; };
+|===|
+[output = data] { result: current; }`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 2, Character: 1},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, "schema User")
 		}
 	})
 

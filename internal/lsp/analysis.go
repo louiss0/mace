@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -60,12 +61,12 @@ func analyzeDocumentAt(text string, documentPath string) analysisSnapshot {
 		if semanticDiagnostic, ok := semanticDiagnosticFromError(file, tokens, processErr); ok {
 			snapshot.diagnostics = []protocol.Diagnostic{semanticDiagnostic}
 		}
-		snapshot.declarations = collectDeclarations(file, nil)
+		snapshot.declarations = collectDeclarations(file, nil, filepath.Dir(documentPath))
 		return snapshot
 	}
 
 	snapshot.result = &result
-	snapshot.declarations = collectDeclarations(file, &result)
+	snapshot.declarations = collectDeclarations(file, &result, filepath.Dir(documentPath))
 
 	return snapshot
 }
@@ -184,10 +185,10 @@ func tokenRange(tokens []lexer.Token, lexeme string) (protocol.Range, bool) {
 	return protocol.Range{Start: start, End: end}, true
 }
 
-func collectDeclarations(file ast.File, result *processor.Result) []declarationDefinition {
-	var declarations []declarationDefinition
+func collectDeclarations(file ast.File, result *processor.Result, baseDir string) []declarationDefinition {
+	declarations := importedDeclarationDefinitions(file, baseDir)
 	if file.Script != nil {
-		declarations = lo.FilterMap(file.Script.Items, func(item ast.Declaration, _ int) (declarationDefinition, bool) {
+		declarations = append(declarations, lo.FilterMap(file.Script.Items, func(item ast.Declaration, _ int) (declarationDefinition, bool) {
 			switch declaration := item.(type) {
 			case ast.TypeDeclaration:
 				return declarationDefinition{
@@ -210,7 +211,7 @@ func collectDeclarations(file ast.File, result *processor.Result) []declarationD
 			default:
 				return declarationDefinition{}, false
 			}
-		})
+		})...)
 	}
 
 	if result == nil {
@@ -229,6 +230,95 @@ func collectDeclarations(file ast.File, result *processor.Result) []declarationD
 			Detail: fmt.Sprintf("output %s: %s = %s", field.Name, valueTypeSummary(value), summarizeValue(value)),
 		}, true
 	})...)
+}
+
+func importedDeclarationDefinitions(file ast.File, baseDir string) []declarationDefinition {
+	if baseDir == "" {
+		return nil
+	}
+
+	return lo.FlatMap(file.Imports, func(importDecl ast.ImportDeclaration, _ int) []declarationDefinition {
+		pathValue, ok := stringLiteralValue(importDecl.Path)
+		if !ok {
+			return nil
+		}
+
+		importedFile, ok := importedFile(filepath.Join(baseDir, pathValue))
+		if !ok {
+			return nil
+		}
+
+		return lo.FilterMap(importDecl.Identifiers, func(name string, _ int) (declarationDefinition, bool) {
+			return importedDeclarationDefinition(importedFile, name)
+		})
+	})
+}
+
+func importedFile(path string) (ast.File, bool) {
+	contents, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		return ast.File{}, false
+	}
+
+	file, err := parseFile(string(contents))
+	if err != nil {
+		return ast.File{}, false
+	}
+
+	return file, true
+}
+
+func importedDeclarationDefinition(file ast.File, name string) (declarationDefinition, bool) {
+	if field, ok := lo.Find(file.Output.SchemaFields, func(field ast.OutputSchemaField) bool {
+		return field.Name == name
+	}); ok {
+		kind := protocol.CompletionItemKindClass
+		detail := fmt.Sprintf("type %s = %s;", field.Name, fieldTypeDetail(field.Type))
+		if isSchemaTypeReference(field.Type, file) {
+			kind = protocol.CompletionItemKindStruct
+			detail = fmt.Sprintf("schema %s = %s;", field.Name, fieldTypeDetail(field.Type))
+		}
+
+		return declarationDefinition{
+			Name:   field.Name,
+			Kind:   kind,
+			Detail: detail,
+		}, true
+	}
+
+	if field, ok := lo.Find(file.Output.DataFields, func(field ast.OutputField) bool {
+		return field.Name == name
+	}); ok {
+		return declarationDefinition{
+			Name:   field.Name,
+			Kind:   protocol.CompletionItemKindVariable,
+			Detail: fmt.Sprintf("import %s", field.Name),
+		}, true
+	}
+
+	return declarationDefinition{}, false
+}
+
+func isSchemaTypeReference(typeReference ast.TypeReference, file ast.File) bool {
+	switch value := typeReference.(type) {
+	case ast.RecordType:
+		return true
+	case ast.NamedType:
+		return lo.ContainsBy(fileScriptDeclarations(file), func(item ast.Declaration) bool {
+			declaration, ok := item.(ast.SchemaDeclaration)
+			return ok && declaration.Name == value.Name
+		})
+	default:
+		return false
+	}
+}
+
+func fileScriptDeclarations(file ast.File) []ast.Declaration {
+	if file.Script == nil {
+		return nil
+	}
+
+	return file.Script.Items
 }
 
 func summarizeValue(value processor.Value) string {

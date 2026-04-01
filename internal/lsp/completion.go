@@ -43,6 +43,7 @@ var scriptKeywordCompletions = []completionDefinition{
 func completionItems(document document, uri protocol.DocumentUri, position protocol.Position) []protocol.CompletionItem {
 	linePrefix := currentLinePrefix(document.text, position)
 	scope := completionScopeAt(document.text, position)
+	declarations := completionDeclarations(document, uri, position, linePrefix, scope)
 
 	if scope == completionScopeFile {
 		if items, handled := importCompletionItems(linePrefix, uri); handled {
@@ -63,12 +64,69 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 		items = itemsFromDefinitions(globalKeywordCompletions, prefix)
 	case completionScopeScript:
 		items = itemsFromDefinitions(scriptKeywordCompletions, prefix)
-		items = append(items, itemsFromDeclarations(document.analysis.declarations, prefix)...)
+		items = append(items, itemsFromDeclarations(declarations, prefix)...)
 	case completionScopeOutput:
-		items = itemsFromDeclarations(document.analysis.declarations, prefix)
+		items = itemsFromDeclarations(declarations, prefix)
 	}
 
 	return sortCompletionItems(items)
+}
+
+func completionDeclarations(
+	document document,
+	uri protocol.DocumentUri,
+	position protocol.Position,
+	linePrefix string,
+	scope completionScope,
+) []declarationDefinition {
+	if len(document.analysis.declarations) > 0 {
+		return document.analysis.declarations
+	}
+
+	switch scope {
+	case completionScopeScript:
+		file, ok := partialScriptFile(document.text, position)
+		if !ok {
+			return nil
+		}
+
+		return collectDeclarations(file, nil, filepath.Dir(documentPath(uri)))
+	case completionScopeOutput:
+		file := completionFile(document, linePrefix)
+		if file == nil {
+			return nil
+		}
+
+		return collectDeclarations(*file, nil, filepath.Dir(documentPath(uri)))
+	default:
+		return nil
+	}
+}
+
+func partialScriptFile(text string, position protocol.Position) (ast.File, bool) {
+	index := position.IndexIn(text)
+	if index < 0 {
+		return ast.File{}, false
+	}
+
+	lineStart := strings.LastIndex(text[:index], "\n")
+	if lineStart < 0 {
+		lineStart = 0
+	} else {
+		lineStart++
+	}
+
+	prefix := text[:lineStart]
+	if !strings.Contains(prefix, "|") {
+		return ast.File{}, false
+	}
+
+	file, err := parseFile(prefix + "\n|===|\n[output = data] {}")
+	if err != nil {
+		return ast.File{}, false
+	}
+
+	return file, true
 }
 
 func completionScopeAt(text string, position protocol.Position) completionScope {
