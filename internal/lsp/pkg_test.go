@@ -735,14 +735,14 @@ Us
 		tAssert.NotContains(labels, "string")
 	})
 
-	It("suggests schema and schema_file after output schema and a comma", func() {
+	It("does not suggest schema directives after output schema and a comma", func() {
 		server := New()
 		initializeServer(server)
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = schema, s`, nil)
 
 		labels := completeLabels(server, uri, 0, uint32(len(`[output = schema, s`)))
-		tAssert.Equal([]string{"schema", "schema_file"}, labels)
+		tAssert.Empty(labels)
 	})
 
 	It("suggests local and imported schemas after schema directive", func() {
@@ -763,9 +763,9 @@ Us
 |===|
 schema LocalUser = { id: int; };
 |===|
-[output = schema, schema = `, nil)
+[output = data, schema = `, nil)
 
-		labels := completeLabels(server, uri, 4, uint32(len(`[output = schema, schema = `)))
+		labels := completeLabels(server, uri, 4, uint32(len(`[output = data, schema = `)))
 		tAssert.Equal([]string{"ImportedUser", "LocalUser"}, labels)
 	})
 
@@ -788,9 +788,9 @@ schema LocalUser = { id: int; };
 
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `from "./shared.mace" import ImportedUser;
-[output = schema, schema_file = "`, nil)
+[output = data, schema_file = "`, nil)
 
-		labels := completeLabels(server, uri, 1, uint32(len(`[output = schema, schema_file = "`)))
+		labels := completeLabels(server, uri, 1, uint32(len(`[output = data, schema_file = "`)))
 		tAssert.NotContains(labels, "./shared.mace")
 		tAssert.Contains(labels, "./other.mace")
 	})
@@ -823,6 +823,37 @@ schema User = { name: string; };
 		tAssert.True(ok)
 		if ok {
 			tAssert.Contains(content.Value, "record schema")
+		}
+	})
+
+	It("returns directive-aware hover documentation for schema inside output directives", func() {
+		server := New()
+		initializeServer(server)
+		didOpen(server, uri, `[output = data, schema = User]
+{
+  result: 1;
+}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 0, Character: 17},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, "does not switch output mode")
 		}
 	})
 
@@ -1064,6 +1095,28 @@ string env = "dev";
 			tAssert.Equal("output", symbols[2].Name)
 			tAssert.NotEmpty(symbols[0].Children)
 			tAssert.NotEmpty(symbols[2].Children)
+		}
+	})
+
+	It("publishes warnings for script variables ignored by schema output mode", func() {
+		server := New()
+		initializeServer(server)
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+schema User = { name: string; };
+string value = "Ada";
+|===|
+[output = schema]
+{
+  User: User;
+}`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			tAssert.Len(params.Diagnostics, 1)
+			tAssert.Equal(protocol.DiagnosticSeverityWarning, *params.Diagnostics[0].Severity)
+			tAssert.Equal("mace.directive.schema-output-variable-ignored", params.Diagnostics[0].Code.Value)
 		}
 	})
 

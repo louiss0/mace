@@ -58,6 +58,7 @@ const (
 	diagnosticDirectiveInvalidOutputValue           diagnosticCode = "mace.directive.invalid-output-value"
 	diagnosticDirectiveOutputSchemaCombined         diagnosticCode = "mace.directive.output-schema-combined"
 	diagnosticDirectiveSchemaAndSchemaFileCombined  diagnosticCode = "mace.directive.schema-and-schema-file-combined"
+	diagnosticDirectiveSchemaOutputVariableIgnored  diagnosticCode = "mace.directive.schema-output-variable-ignored"
 	diagnosticDirectiveUnknownSchemaName            diagnosticCode = "mace.directive.unknown-schema-name"
 	diagnosticDirectiveSchemaFileInvalid            diagnosticCode = "mace.directive.schema-file-invalid"
 	diagnosticDirectiveSchemaFileUnusable           diagnosticCode = "mace.directive.schema-file-unusable"

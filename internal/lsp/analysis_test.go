@@ -170,6 +170,23 @@ int count = "Ada";
 		}
 	})
 
+	It("translates mixed array literal errors in script declarations into token-scoped diagnostics", func() {
+		snapshot := analyzeDocument(`|===|
+array<int> foo = ["4", 6];
+|===|
+[output = data]
+{
+  result: 1;
+}`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "array literal has mixed element types")
+			tAssert.Equal(protocol.UInteger(1), snapshot.diagnostics[0].Range.Start.Line)
+			tAssert.Equal(protocol.UInteger(11), snapshot.diagnostics[0].Range.Start.Character)
+			tAssert.Equal(string(diagnosticTypeMixedArrayLiteral), requireDiagnosticCode(snapshot.diagnostics[0]))
+		}
+	})
+
 	It("translates schema output value exports into schema-field diagnostics", func() {
 		snapshot := analyzeDocument(`|===|
 type Name = string;
@@ -183,10 +200,12 @@ int local = 1;
   foo: local;
 }`)
 
-		if tAssert.Len(snapshot.diagnostics, 1) {
-			tAssert.Contains(snapshot.diagnostics[0].Message, "invalid field type")
-			tAssert.Equal(protocol.UInteger(9), snapshot.diagnostics[0].Range.Start.Line)
-			tAssert.Equal(string(diagnosticTypeInvalidOutputSchemaField), requireDiagnosticCode(snapshot.diagnostics[0]))
+		diagnostic, ok := lo.Find(snapshot.diagnostics, func(diagnostic protocol.Diagnostic) bool {
+			return requireDiagnosticCode(diagnostic) == string(diagnosticTypeInvalidOutputSchemaField)
+		})
+		if tAssert.True(ok) {
+			tAssert.Contains(diagnostic.Message, "invalid field type")
+			tAssert.Equal(protocol.UInteger(9), diagnostic.Range.Start.Line)
 		}
 	})
 
@@ -256,6 +275,25 @@ schema User = { name: string; };
 
 		tAssert.NotEmpty(removeDirective.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))])
 		tAssert.NotEmpty(removeContext.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))])
+	})
+
+	It("warns when script variables are present in schema output mode", func() {
+		snapshot := analyzeDocument(`|===|
+schema User = { name: string; };
+string value = "Ada";
+|===|
+[output = schema]
+{
+  User: User;
+}`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, `script variable "value" is ignored`)
+			tAssert.Equal(protocol.DiagnosticSeverityWarning, *snapshot.diagnostics[0].Severity)
+			tAssert.Equal(protocol.UInteger(2), snapshot.diagnostics[0].Range.Start.Line)
+			tAssert.Equal(protocol.UInteger(7), snapshot.diagnostics[0].Range.Start.Character)
+			tAssert.Equal(string(diagnosticDirectiveSchemaOutputVariableIgnored), requireDiagnosticCode(snapshot.diagnostics[0]))
+		}
 	})
 
 	It("translates processor self-reference failures into output-field diagnostics", func() {

@@ -28,12 +28,19 @@ const (
 var diagnosticPositionPattern = regexp.MustCompile(`at (\d+):(\d+)`)
 
 var keywordDocs = map[string]string{
-	"array":       "Declares an array type like `array<string>`.",
-	"injectable":  "Marks a script variable as overrideable through injections.",
-	"output":      "Configures whether the output block returns `data` or `schema`.",
-	"schema":      "Declares a reusable record schema.",
-	"schema_file": "References a schema from another Mace file.",
-	"type":        "Declares a reusable type alias.",
+	"array":      "Declares an array type like `array<string>`.",
+	"injectable": "Marks a script variable as overrideable through injections.",
+	"type":       "Declares a reusable type alias.",
+}
+
+var directiveKeywordDocs = map[string]string{
+	"output":      "Selects the output mode with `output = data` or `output = schema`.",
+	"schema":      "Validates `output = data` against a named local or imported schema. It does not switch output mode.",
+	"schema_file": "Loads declarations from another Mace file for output validation. It does not switch output mode.",
+}
+
+var declarationKeywordDocs = map[string]string{
+	"schema": "Declares a reusable record schema.",
 }
 
 type Server struct {
@@ -259,6 +266,26 @@ func (server *Server) hover(context *glsp.Context, params *protocol.HoverParams)
 	}
 
 	if documentation, ok := keywordDocs[identifier]; ok {
+		return &protocol.Hover{
+			Contents: protocol.MarkupContent{
+				Kind:  protocol.MarkupKindMarkdown,
+				Value: documentation,
+			},
+		}, nil
+	}
+
+	if isDirectivePosition(document.text, params.Position) {
+		if documentation, ok := directiveKeywordDocs[identifier]; ok {
+			return &protocol.Hover{
+				Contents: protocol.MarkupContent{
+					Kind:  protocol.MarkupKindMarkdown,
+					Value: documentation,
+				},
+			}, nil
+		}
+	}
+
+	if documentation, ok := declarationKeywordDocs[identifier]; ok {
 		return &protocol.Hover{
 			Contents: protocol.MarkupContent{
 				Kind:  protocol.MarkupKindMarkdown,
@@ -609,6 +636,25 @@ func identifierAt(text string, position protocol.Position) (string, bool) {
 	}
 
 	return text[start:end], true
+}
+
+func isDirectivePosition(text string, position protocol.Position) bool {
+	index := position.IndexIn(text)
+	if index < 0 || index > len(text) {
+		return false
+	}
+
+	openIndex := strings.LastIndex(text[:index], "[")
+	if openIndex < 0 {
+		return false
+	}
+
+	closeIndex := strings.Index(text[openIndex:], "]")
+	if closeIndex < 0 {
+		return true
+	}
+
+	return openIndex+closeIndex >= index
 }
 
 func isIdentifierCharacter(value byte) bool {

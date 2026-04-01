@@ -284,7 +284,34 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 		actions = append(actions, candidates...)
 	}
 
+	diagnostics = append(diagnostics, schemaOutputVariableDiagnostics(file, tokens)...)
+
 	return diagnostics, actions
+}
+
+func schemaOutputVariableDiagnostics(file ast.File, tokens []lexer.Token) []protocol.Diagnostic {
+	if file.Output.Mode != ast.OutputModeSchema || file.Script == nil {
+		return nil
+	}
+
+	return lo.FilterMap(file.Script.Items, func(item ast.Declaration, _ int) (protocol.Diagnostic, bool) {
+		declaration, ok := item.(ast.VariableDeclaration)
+		if !ok {
+			return protocol.Diagnostic{}, false
+		}
+
+		rangeValue, found := tokenRange(tokens, declaration.Name)
+		if !found {
+			return protocol.Diagnostic{}, false
+		}
+
+		return diagnosticWithCode(
+			rangeValue,
+			protocol.DiagnosticSeverityWarning,
+			diagnosticDirectiveSchemaOutputVariableIgnored,
+			fmt.Sprintf("script variable %q is ignored when output = schema; only type and schema declarations affect schema output", declaration.Name),
+		), true
+	})
 }
 
 func schemaFileConflictAnalysis(text string, file ast.File, documentPath string) (protocol.Diagnostic, []analysisCodeActionCandidate, bool) {
@@ -362,6 +389,10 @@ func semanticDiagnosticFromError(file ast.File, tokens []lexer.Token, err error)
 		return diagnostic, true
 	}
 
+	if diagnostic, ok := mixedArrayLiteralDiagnostic(file, tokens, message); ok {
+		return diagnostic, true
+	}
+
 	if diagnostic, ok := schemaDiagnostic(tokens, message); ok {
 		return diagnostic, true
 	}
@@ -418,6 +449,32 @@ func variableTypeMismatchDiagnostic(file ast.File, tokens []lexer.Token, message
 		}
 
 		return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticTypeInitializerMismatch, message), true
+	}
+
+	return protocol.Diagnostic{}, false
+}
+
+func mixedArrayLiteralDiagnostic(file ast.File, tokens []lexer.Token, message string) (protocol.Diagnostic, bool) {
+	if file.Script == nil || !strings.Contains(message, "array literal has mixed element types") {
+		return protocol.Diagnostic{}, false
+	}
+
+	for _, item := range file.Script.Items {
+		declaration, ok := item.(ast.VariableDeclaration)
+		if !ok {
+			continue
+		}
+
+		if _, ok := declaration.Value.(ast.ArrayLiteral); !ok {
+			continue
+		}
+
+		rangeValue, found := tokenRange(tokens, declaration.Name)
+		if !found {
+			continue
+		}
+
+		return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticTypeMixedArrayLiteral, message), true
 	}
 
 	return protocol.Diagnostic{}, false

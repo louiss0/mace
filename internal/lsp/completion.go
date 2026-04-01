@@ -245,11 +245,19 @@ func directiveCompletionItems(document document, uri protocol.DocumentUri, lineP
 		}
 	}
 
+	state := parseDirectiveState(parts)
+
 	if matches := directiveSchemaPattern.FindStringSubmatch(lastPart); len(matches) == 2 {
+		if state.outputMode == "schema" {
+			return []protocol.CompletionItem{}, true
+		}
 		return schemaReferenceItems(document, uri, linePrefix, matches[1]), true
 	}
 
 	if matches := directiveSchemaFilePattern.FindStringSubmatch(lastPart); len(matches) == 2 {
+		if state.outputMode == "schema" {
+			return []protocol.CompletionItem{}, true
+		}
 		return schemaFileItems(document, uri, linePrefix, matches[1]), true
 	}
 
@@ -264,7 +272,24 @@ func directiveCompletionItems(document document, uri protocol.DocumentUri, lineP
 }
 
 func nextDirectiveDefinitions(parts []string) []completionDefinition {
-	state := lo.Reduce(parts, func(agg directiveState, part string, _ int) directiveState {
+	state := parseDirectiveState(parts)
+
+	if state.outputMode == "" || state.outputMode == "schema" {
+		return []completionDefinition{}
+	}
+
+	if state.seenSchema || state.seenSchemaFile {
+		return []completionDefinition{}
+	}
+
+	return []completionDefinition{
+		{Label: "schema", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
+		{Label: "schema_file", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
+	}
+}
+
+func parseDirectiveState(parts []string) directiveState {
+	return lo.Reduce(parts, func(agg directiveState, part string, _ int) directiveState {
 		switch {
 		case strings.HasPrefix(part, "output"):
 			segments := strings.SplitN(part, "=", 2)
@@ -279,19 +304,6 @@ func nextDirectiveDefinitions(parts []string) []completionDefinition {
 
 		return agg
 	}, directiveState{})
-
-	if state.outputMode == "" {
-		return []completionDefinition{}
-	}
-
-	if state.seenSchema || state.seenSchemaFile {
-		return []completionDefinition{}
-	}
-
-	return []completionDefinition{
-		{Label: "schema", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
-		{Label: "schema_file", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
-	}
 }
 
 func directivePrefix(linePrefix string) (string, bool) {
