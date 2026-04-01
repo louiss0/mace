@@ -2,7 +2,6 @@ package lsp
 
 import (
 	"encoding/json"
-	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -141,14 +140,11 @@ func writeWorkspaceFile(root string, relativePath string, contents string) strin
 	err = os.WriteFile(path, []byte(contents), 0o600)
 	tAssert.NoError(err)
 
-	return fileURI(path)
+	return testFileURI(path)
 }
 
-func fileURI(path string) string {
-	return (&url.URL{
-		Scheme: "file",
-		Path:   filepath.ToSlash(path),
-	}).String()
+func testFileURI(path string) string {
+	return fileURI(path)
 }
 
 func requireDiagnostics(notification capturedNotification) protocol.PublishDiagnosticsParams {
@@ -193,7 +189,9 @@ var _ = Describe("LSP server", func() {
 		tAssert.Equal(protocol.TextDocumentSyncKindFull, *syncOptions.Change)
 		tAssert.NotNil(result.Capabilities.CompletionProvider)
 		tAssert.Equal(true, result.Capabilities.HoverProvider)
+		tAssert.Equal(true, result.Capabilities.DefinitionProvider)
 		tAssert.Equal(true, result.Capabilities.DocumentSymbolProvider)
+		tAssert.Equal(true, result.Capabilities.CodeActionProvider)
 		tAssert.Equal(true, result.Capabilities.DocumentFormattingProvider)
 	})
 
@@ -306,6 +304,7 @@ Name user = "Ada";
 			tAssert.Len(params.Diagnostics, 1)
 			tAssert.Contains(params.Diagnostics[0].Message, "parser:")
 			tAssert.Equal(protocol.DiagnosticSeverityError, *params.Diagnostics[0].Severity)
+			tAssert.NotNil(params.Diagnostics[0].Code)
 		}
 	})
 
@@ -328,6 +327,7 @@ int count = "Ada";
 			tAssert.Contains(params.Diagnostics[0].Message, `processor: type mismatch: expected int, got string`)
 			tAssert.Equal(protocol.UInteger(1), params.Diagnostics[0].Range.Start.Line)
 			tAssert.Equal(protocol.UInteger(4), params.Diagnostics[0].Range.Start.Character)
+			tAssert.NotNil(params.Diagnostics[0].Code)
 		}
 	})
 
@@ -854,6 +854,136 @@ User current = { name: "Ada"; };
 		if ok {
 			tAssert.Contains(content.Value, "schema User")
 		}
+	})
+
+	It("returns definition locations for imported symbols", func() {
+		server := New()
+		initializeServer(server)
+
+		workspace, err := os.MkdirTemp("", "mace-lsp-definition-import-*")
+		tAssert.NoError(err)
+
+		importPath := writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
+{
+  User: { name: string; };
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `from "./shared.mace" import User;
+|===|
+User current = { name: "Ada"; };
+|===|
+[output = data] { result: current; }`))
+
+		didOpen(server, uri, `from "./shared.mace" import User;
+|===|
+User current = { name: "Ada"; };
+|===|
+[output = data] { result: current; }`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentDefinition, protocol.DefinitionParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 2, Character: 1},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		location, ok := resultValue.(protocol.Location)
+		tAssert.True(ok)
+		if !ok {
+			return
+		}
+
+		tAssert.Equal(protocol.DocumentUri(importPath), location.URI)
+	})
+
+	It("returns code actions for import path fixes", func() {
+		server := New()
+		initializeServer(server)
+
+		workspace, err := os.MkdirTemp("", "mace-lsp-code-action-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "shared.mace", `[output = data] { name: "Ada"; }`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `from "./shared" import name;
+[output = data]
+{
+  result: name;
+}`))
+
+		didOpen(server, uri, `from "./shared" import name;
+[output = data]
+{
+  result: name;
+}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentCodeAction, protocol.CodeActionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+			Range: protocol.Range{
+				Start: protocol.Position{Line: 0, Character: 0},
+				End:   protocol.Position{Line: 0, Character: 20},
+			},
+			Context: protocol.CodeActionContext{},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		actions, ok := resultValue.([]protocol.CodeAction)
+		tAssert.True(ok)
+		if !ok || !tAssert.NotEmpty(actions) {
+			return
+		}
+
+		tAssert.Equal("Append .mace to import path", actions[0].Title)
+	})
+
+	It("returns code actions for schema and schema_file conflicts", func() {
+		server := New()
+		initializeServer(server)
+
+		workspace, err := os.MkdirTemp("", "mace-lsp-schema-file-conflict-*")
+		tAssert.NoError(err)
+
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `from "./shared.mace" import User;
+|===|
+schema User = { name: string; };
+|===|
+[output = data, schema = User, schema_file = "./shared.mace"]
+{
+  result: { name: "Ada"; };
+}`))
+
+		didOpen(server, uri, `from "./shared.mace" import User;
+|===|
+schema User = { name: string; };
+|===|
+[output = data, schema = User, schema_file = "./shared.mace"]
+{
+  result: { name: "Ada"; };
+}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentCodeAction, protocol.CodeActionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+			Range: protocol.Range{
+				Start: protocol.Position{Line: 4, Character: 0},
+				End:   protocol.Position{Line: 4, Character: 60},
+			},
+			Context: protocol.CodeActionContext{},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		actions, ok := resultValue.([]protocol.CodeAction)
+		tAssert.True(ok)
+		if !ok || !tAssert.Len(actions, 2) {
+			return
+		}
+
+		tAssert.Equal("Remove schema_file directive", actions[0].Title)
+		tAssert.Equal("Remove imports and script block", actions[1].Title)
 	})
 
 	It("returns hierarchical document symbols", func() {

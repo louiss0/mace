@@ -3,7 +3,9 @@ package lsp
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -73,7 +75,9 @@ func New() *Server {
 		TextDocumentDidClose:       server.didClose,
 		TextDocumentCompletion:     server.complete,
 		TextDocumentHover:          server.hover,
+		TextDocumentDefinition:     server.definition,
 		TextDocumentDocumentSymbol: server.documentSymbols,
+		TextDocumentCodeAction:     server.codeActions,
 		TextDocumentFormatting:     server.formatDocument,
 	}
 
@@ -206,7 +210,7 @@ func (server *Server) didClose(context *glsp.Context, params *protocol.DidCloseT
 }
 
 func (server *Server) complete(context *glsp.Context, params *protocol.CompletionParams) (any, error) {
-	document, ok := server.document(params.TextDocument.URI)
+	document, ok := server.documentForPosition(params.TextDocument.URI, params.Position)
 	if !ok {
 		return []protocol.CompletionItem{}, nil
 	}
@@ -215,7 +219,7 @@ func (server *Server) complete(context *glsp.Context, params *protocol.Completio
 }
 
 func (server *Server) hover(context *glsp.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
-	document, ok := server.document(params.TextDocument.URI)
+	document, ok := server.documentForPosition(params.TextDocument.URI, params.Position)
 	if !ok {
 		return nil, nil
 	}
@@ -234,19 +238,31 @@ func (server *Server) hover(context *glsp.Context, params *protocol.HoverParams)
 		}, nil
 	}
 
-	declaration, ok := lo.Find(document.analysis.declarations, func(definition declarationDefinition) bool {
-		return definition.Name == identifier
-	})
+	symbol, ok := document.analysis.symbol(identifier)
 	if ok {
 		return &protocol.Hover{
 			Contents: protocol.MarkupContent{
 				Kind:  protocol.MarkupKindMarkdown,
-				Value: "```mace\n" + declaration.Detail + "\n```",
+				Value: "```mace\n" + symbol.Detail + "\n```",
 			},
 		}, nil
 	}
 
 	return nil, nil
+}
+
+func (server *Server) definition(context *glsp.Context, params *protocol.DefinitionParams) (any, error) {
+	document, ok := server.documentForPosition(params.TextDocument.URI, params.Position)
+	if !ok {
+		return nil, nil
+	}
+
+	location, ok := document.analysis.definitionAt(params.Position)
+	if !ok {
+		return nil, nil
+	}
+
+	return location, nil
 }
 
 func (server *Server) documentSymbols(context *glsp.Context, params *protocol.DocumentSymbolParams) (any, error) {
@@ -314,6 +330,15 @@ func (server *Server) formatDocument(context *glsp.Context, params *protocol.Doc
 	}, nil
 }
 
+func (server *Server) codeActions(context *glsp.Context, params *protocol.CodeActionParams) (any, error) {
+	document, ok := server.document(params.TextDocument.URI)
+	if !ok {
+		return []protocol.CodeAction{}, nil
+	}
+
+	return document.analysis.codeActions(params.TextDocument.URI, params.Range), nil
+}
+
 func (server *Server) publishDiagnostics(context *glsp.Context, uri protocol.DocumentUri) {
 	document, ok := server.document(uri)
 	if !ok {
@@ -343,6 +368,20 @@ func (server *Server) document(uri protocol.DocumentUri) (document, bool) {
 	return document, ok
 }
 
+func (server *Server) documentForPosition(uri protocol.DocumentUri, position protocol.Position) (document, bool) {
+	document, ok := server.document(uri)
+	if !ok {
+		return document, false
+	}
+
+	if document.analysis.file != nil {
+		return document, true
+	}
+
+	document.analysis = analyzeCompletionContext(document.text, documentPath(uri), position)
+	return document, true
+}
+
 func diagnosticFromError(err error) protocol.Diagnostic {
 	position := protocol.Position{}
 	matches := diagnosticPositionPattern.FindStringSubmatch(err.Error())
@@ -360,15 +399,10 @@ func diagnosticFromError(err error) protocol.Diagnostic {
 	end := position
 	end.Character++
 
-	return protocol.Diagnostic{
-		Severity: Ptr(protocol.DiagnosticSeverityError),
-		Source:   Ptr(serverName),
-		Message:  err.Error(),
-		Range: protocol.Range{
-			Start: position,
-			End:   end,
-		},
-	}
+	return diagnosticWithCode(protocol.Range{
+		Start: position,
+		End:   end,
+	}, protocol.DiagnosticSeverityError, classifyDiagnosticCode(err.Error()), err.Error())
 }
 
 func documentPath(uri protocol.DocumentUri) string {
@@ -378,6 +412,18 @@ func documentPath(uri protocol.DocumentUri) string {
 	}
 
 	return path
+}
+
+func fileURI(path string) string {
+	path = filepath.ToSlash(path)
+	if len(path) >= 2 && path[1] == ':' {
+		path = "/" + path
+	}
+
+	return (&url.URL{
+		Scheme: "file",
+		Path:   path,
+	}).String()
 }
 
 func parseUint(value string) protocol.UInteger {
