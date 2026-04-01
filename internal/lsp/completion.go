@@ -13,7 +13,9 @@ import (
 	"github.com/samber/lo"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
+	"github.com/louiss0/mace/internal/lexer"
 	"github.com/louiss0/mace/internal/parser/ast"
+	"github.com/louiss0/mace/internal/processor"
 )
 
 var (
@@ -55,6 +57,10 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 		if items, handled := directiveCompletionItems(document, uri, linePrefix); handled {
 			return items
 		}
+
+		if items, handled := selfCompletionItems(document, uri, position); handled {
+			return items
+		}
 	}
 
 	prefix := identifierPrefixAt(document.text, position)
@@ -70,6 +76,30 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 	}
 
 	return sortCompletionItems(items)
+}
+
+func selfCompletionItems(document document, uri protocol.DocumentUri, position protocol.Position) ([]protocol.CompletionItem, bool) {
+	linePrefix := currentLinePrefix(document.text, position)
+	path, prefix, ok := selfCompletionContext(linePrefix)
+	if !ok {
+		return nil, false
+	}
+
+	value, ok := selfCompletionValue(document, uri, position, path)
+	if !ok {
+		return []protocol.CompletionItem{}, true
+	}
+
+	items := lo.Map(selfCompletionEntries(value), func(name string, _ int) protocol.CompletionItem {
+		return protocol.CompletionItem{
+			Label: name,
+			Kind:  Ptr(protocol.CompletionItemKindField),
+		}
+	})
+	items = lo.Filter(items, func(item protocol.CompletionItem, _ int) bool {
+		return strings.HasPrefix(item.Label, prefix)
+	})
+	return sortCompletionItems(items), true
 }
 
 func completionDeclarations(
@@ -101,6 +131,30 @@ func completionDeclarations(
 	default:
 		return nil
 	}
+}
+
+func selfCompletionContext(linePrefix string) ([]string, string, bool) {
+	index := strings.LastIndex(linePrefix, "$self.")
+	if index < 0 {
+		return nil, "", false
+	}
+
+	suffix := linePrefix[index+len("$self."):]
+	if strings.ContainsAny(suffix, "[]{}():;,+-*/%&|^!?=<>\"' \t") {
+		return nil, "", false
+	}
+
+	segments := lo.Filter(strings.Split(suffix, "."), func(segment string, _ int) bool {
+		return segment != ""
+	})
+	if strings.HasSuffix(suffix, ".") {
+		return segments, "", true
+	}
+	if len(segments) == 0 {
+		return nil, "", true
+	}
+
+	return segments[:len(segments)-1], segments[len(segments)-1], true
 }
 
 func partialScriptFile(text string, position protocol.Position) (ast.File, bool) {
@@ -518,6 +572,191 @@ func completionFile(document document, linePrefix string) *ast.File {
 	}
 
 	return &file
+}
+
+func selfCompletionValue(document document, uri protocol.DocumentUri, position protocol.Position, path []string) (processor.Value, bool) {
+	result, ok := partialOutputResult(document, uri, position)
+	if !ok {
+		return processor.Value{}, false
+	}
+
+	current := processor.Value{Kind: processor.ValueRecord, Record: result.Output}
+	for _, segment := range path {
+		if current.Kind != processor.ValueRecord {
+			return processor.Value{}, false
+		}
+
+		next, ok := current.Record[segment]
+		if !ok {
+			return processor.Value{}, false
+		}
+		current = next
+	}
+
+	return current, true
+}
+
+func selfCompletionEntries(value processor.Value) []string {
+	if value.Kind != processor.ValueRecord {
+		return nil
+	}
+
+	return sortStrings(lo.Keys(value.Record))
+}
+
+func partialOutputResult(document document, uri protocol.DocumentUri, position protocol.Position) (processor.Result, bool) {
+	text := document.text
+	tokens, err := lex(text)
+	if err != nil {
+		return processor.Result{}, false
+	}
+
+	outputOpenIndex, ok := outputBlockOpenIndex(text, tokens)
+	if !ok {
+		return processor.Result{}, false
+	}
+
+	fieldRanges, ok := outputFieldRanges(text, tokens, outputOpenIndex)
+	if !ok {
+		return processor.Result{}, false
+	}
+
+	cursorIndex := position.IndexIn(text)
+	if cursorIndex < 0 {
+		return processor.Result{}, false
+	}
+
+	currentFieldIndex := -1
+	for index, fieldRange := range fieldRanges {
+		if cursorIndex < fieldRange.Start || cursorIndex > fieldRange.End {
+			continue
+		}
+		currentFieldIndex = index
+		break
+	}
+	if currentFieldIndex < 0 {
+		return processor.Result{}, false
+	}
+
+	body := strings.Join(lo.Map(fieldRanges[:currentFieldIndex], func(fieldRange outputFieldRange, _ int) string {
+		return text[fieldRange.Start:fieldRange.End]
+	}), "")
+	partialText := text[:outputOpenIndex+1]
+	if strings.TrimSpace(body) != "" {
+		partialText += "\n" + body
+	}
+	partialText += "\n}"
+
+	baseDir := filepath.Dir(documentPath(uri))
+	if baseDir == "" {
+		baseDir = "."
+	}
+
+	result, err := processor.New().ProcessInDir(partialText, baseDir)
+	if err != nil {
+		return processor.Result{}, false
+	}
+
+	return result, true
+}
+
+type outputFieldRange struct {
+	Start int
+	End   int
+}
+
+func outputBlockOpenIndex(text string, tokens []lexer.Token) (int, bool) {
+	inScript := false
+	directiveDepth := 0
+
+	for _, token := range tokens {
+		switch token.Type {
+		case lexer.TokenScriptDelimiter:
+			inScript = !inScript
+		case lexer.TokenLBracket:
+			if !inScript {
+				directiveDepth++
+			}
+		case lexer.TokenRBracket:
+			if !inScript && directiveDepth > 0 {
+				directiveDepth--
+			}
+		case lexer.TokenLBrace:
+			if !inScript && directiveDepth == 0 {
+				return tokenStartIndex(text, token), true
+			}
+		}
+	}
+
+	return 0, false
+}
+
+func outputFieldRanges(text string, tokens []lexer.Token, outputOpenIndex int) ([]outputFieldRange, bool) {
+	outputTokens := lo.Filter(tokens, func(token lexer.Token, _ int) bool {
+		return tokenStartIndex(text, token) >= outputOpenIndex
+	})
+
+	braceDepth := 0
+	fieldStarts := []int{}
+
+	for index := 0; index < len(outputTokens); index++ {
+		token := outputTokens[index]
+		switch token.Type {
+		case lexer.TokenLBrace:
+			braceDepth++
+		case lexer.TokenRBrace:
+			braceDepth--
+		case lexer.TokenIdentifier:
+			if braceDepth != 1 || !isOutputFieldHeader(outputTokens, index) {
+				continue
+			}
+			fieldStarts = append(fieldStarts, tokenStartIndex(text, token))
+		}
+	}
+
+	if len(fieldStarts) == 0 {
+		return nil, false
+	}
+
+	outputCloseIndex := -1
+	for index := len(outputTokens) - 1; index >= 0; index-- {
+		if outputTokens[index].Type != lexer.TokenRBrace {
+			continue
+		}
+		outputCloseIndex = tokenStartIndex(text, outputTokens[index])
+		break
+	}
+	if outputCloseIndex < 0 {
+		return nil, false
+	}
+
+	return lo.Map(fieldStarts, func(start int, index int) outputFieldRange {
+		end := outputCloseIndex
+		if index+1 < len(fieldStarts) {
+			end = fieldStarts[index+1]
+		}
+		return outputFieldRange{Start: start, End: end}
+	}), true
+}
+
+func isOutputFieldHeader(tokens []lexer.Token, index int) bool {
+	if index+1 >= len(tokens) {
+		return false
+	}
+	if tokens[index+1].Type == lexer.TokenColon {
+		return true
+	}
+	return index+2 < len(tokens) &&
+		tokens[index+1].Type == lexer.TokenQuestion &&
+		tokens[index+2].Type == lexer.TokenColon
+}
+
+func tokenStartIndex(text string, token lexer.Token) int {
+	position := protocol.Position{
+		Line:      protocol.UInteger(token.Line - 1),
+		Character: protocol.UInteger(token.Column - 1),
+	}
+	return position.IndexIn(text)
 }
 
 func stringLiteralValue(literal ast.StringLiteral) (string, bool) {

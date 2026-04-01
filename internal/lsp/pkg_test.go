@@ -2,8 +2,10 @@ package lsp
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -173,6 +175,24 @@ func requireDiagnostics(notification capturedNotification) protocol.PublishDiagn
 	}
 
 	return params
+}
+
+func nestedSelfDocument(depth int) string {
+	keys := make([]string, 0, depth)
+	for index := range depth {
+		keys = append(keys, fmt.Sprintf("level%d", index+1))
+	}
+
+	leaf := `{ final: 9; }`
+	for index := len(keys) - 1; index >= 0; index-- {
+		leaf = fmt.Sprintf("{ %s: %s; }", keys[index], leaf)
+	}
+
+	return fmt.Sprintf(`[output = data]
+{
+  tree: %s;
+  result: $self.tree.%s.
+}`, leaf, strings.Join(keys, "."))
 }
 
 var _ = Describe("LSP server", func() {
@@ -793,6 +813,101 @@ schema LocalUser = { id: int; };
 		labels := completeLabels(server, uri, 1, uint32(len(`[output = data, schema_file = "`)))
 		tAssert.NotContains(labels, "./shared.mace")
 		tAssert.Contains(labels, "./other.mace")
+	})
+
+	It("suggests only previously evaluated output fields after $self dot", func() {
+		server := New()
+		initializeServer(server)
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data]
+{
+  base: 4;
+  profile: { name: "Ada"; };
+  result: $self.
+}`, nil)
+
+		labels := completeLabels(server, uri, 4, uint32(len(`  result: $self.`)))
+		tAssert.Equal([]string{"base", "profile"}, labels)
+	})
+
+	It("suggests nested keys from previously evaluated self fields", func() {
+		server := New()
+		initializeServer(server)
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data]
+{
+  profile: { name: "Ada"; details: { age: 30; }; };
+  result: $self.profile.
+}`, nil)
+
+		labels := completeLabels(server, uri, 3, uint32(len(`  result: $self.profile.`)))
+		tAssert.Equal([]string{"details", "name"}, labels)
+	})
+
+	DescribeTable("suggests recursive keys from deeply nested self paths",
+		func(depth int) {
+			server := New()
+			initializeServer(server)
+			openEmptyDocument(server, uri, nil)
+
+			text := nestedSelfDocument(depth)
+			didChange(server, uri, 2, text, nil)
+
+			lines := strings.Split(text, "\n")
+			line := uint32(len(lines) - 2)
+			character := uint32(len(lines[len(lines)-2]))
+			labels := completeLabels(server, uri, line, character)
+			tAssert.Equal([]string{"final"}, labels)
+		},
+		Entry("level 3", 3),
+		Entry("level 4", 4),
+		Entry("level 5", 5),
+		Entry("level 6", 6),
+		Entry("level 7", 7),
+		Entry("level 8", 8),
+		Entry("level 9", 9),
+		Entry("level 10", 10),
+		Entry("level 11", 11),
+		Entry("level 12", 12),
+	)
+
+	It("suggests recursive keys when prior fields combine into a nested calculation source", func() {
+		server := New()
+		initializeServer(server)
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data]
+{
+  profile: { stats: { base: 2; multiplier: 3; }; };
+  summary: {
+    stats: {
+      total: $self.profile.stats.base * $self.profile.stats.multiplier;
+      base: $self.profile.stats.base;
+    };
+  };
+  result: $self.summary.stats.
+}`, nil)
+
+		labels := completeLabels(server, uri, 9, uint32(len(`  result: $self.summary.stats.`)))
+		tAssert.Equal([]string{"base", "total"}, labels)
+	})
+
+	It("suggests recursive keys when nested records reuse self values across multiple places", func() {
+		server := New()
+		initializeServer(server)
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data]
+{
+  account: { balance: 10; bonus: 5; };
+  ledger: {
+    previous: $self.account.balance;
+    next: $self.account.balance + $self.account.bonus;
+    nested: { delta: $self.account.bonus; };
+  };
+  result: $self.ledger.
+}`, nil)
+
+		labels := completeLabels(server, uri, 8, uint32(len(`  result: $self.ledger.`)))
+		tAssert.Equal([]string{"nested", "next", "previous"}, labels)
 	})
 
 	It("returns hover documentation for language keywords", func() {
