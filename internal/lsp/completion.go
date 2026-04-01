@@ -106,7 +106,7 @@ func directiveCompletionItems(linePrefix string) ([]protocol.CompletionItem, boo
 		}, prefix), true
 	}
 
-	lastPart := parts[len(parts)-1]
+	lastPart := lo.LastOrEmpty(parts)
 	if len(parts) == 1 {
 		if !strings.Contains(lastPart, "=") {
 			prefix := trailingIdentifierPrefix(lastPart)
@@ -135,39 +135,37 @@ func directiveCompletionItems(linePrefix string) ([]protocol.CompletionItem, boo
 }
 
 func nextDirectiveDefinitions(parts []string) []completionDefinition {
-	outputMode := ""
-	seenSchemaFile := false
-	seenSchema := false
-
-	for _, part := range parts {
+	state := lo.Reduce(parts, func(agg directiveState, part string, _ int) directiveState {
 		switch {
 		case strings.HasPrefix(part, "output"):
 			segments := strings.SplitN(part, "=", 2)
 			if len(segments) == 2 {
-				outputMode = strings.TrimSpace(segments[1])
+				agg.outputMode = strings.TrimSpace(segments[1])
 			}
 		case strings.HasPrefix(part, "schema_file"):
-			seenSchemaFile = true
+			agg.seenSchemaFile = true
 		case strings.HasPrefix(part, "schema"):
-			seenSchema = true
+			agg.seenSchema = true
 		}
-	}
 
-	if outputMode != "data" {
+		return agg
+	}, directiveState{})
+
+	if state.outputMode != "data" {
 		return []completionDefinition{}
 	}
 
-	if seenSchema && seenSchemaFile {
+	if state.seenSchema && state.seenSchemaFile {
 		return []completionDefinition{}
 	}
 
-	if seenSchemaFile {
+	if state.seenSchemaFile {
 		return []completionDefinition{
 			{Label: "schema", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
 		}
 	}
 
-	if seenSchema {
+	if state.seenSchema {
 		return []completionDefinition{
 			{Label: "schema_file", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
 		}
@@ -208,14 +206,7 @@ func currentLinePrefix(text string, position protocol.Position) string {
 		return ""
 	}
 
-	start := strings.LastIndex(text[:index], "\n")
-	if start < 0 {
-		start = 0
-	} else {
-		start++
-	}
-
-	return text[start:index]
+	return lo.LastOrEmpty(strings.Split(text[:index], "\n"))
 }
 
 func importableIdentifiers(uri protocol.DocumentUri, importPath string) ([]string, bool) {
@@ -303,4 +294,10 @@ func sortCompletionItems(items []protocol.CompletionItem) []protocol.CompletionI
 		return strings.Compare(left.Label, right.Label)
 	})
 	return items
+}
+
+type directiveState struct {
+	outputMode     string
+	seenSchemaFile bool
+	seenSchema     bool
 }
