@@ -1,5 +1,20 @@
-|===|
-schema Role = { name: string; level: int; };
-|===|
+|=============================================|
+schema Role = {
+  name: string;
+  level: int;
+};
 
-[output = data] {}
+Role default_role = { name: "1"; level: 0; };
+
+int name = 4;
+int nice = 4;
+int fine = 4;
+
+
+array<int> foo = [6];
+
+|=============================================|
+
+[output = data] {
+  Role:4;
+}

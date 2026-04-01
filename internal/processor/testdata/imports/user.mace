@@ -1,13 +1,23 @@
 from "./profile.mace" import Profile, Age;
 
-|===|
+|================================================|
 type Name = string;
-schema User = { name: Name; profile: Profile; };
-Name default_name = "Ada";
-Age default_age = 30;
-|===|
 
-[output = schema]
+schema User = { name: Name; profile: Profile; };
+
+Name default_name = "Ada";
+
+Age default_age = 30;
+
+|================================================|
+
+[output = data]
 {
-  User: User;
+  User: {
+    name: default_name;
+    profile: { age: default_age; };
+  };
+  foo: $self.User.profile.age;
+  bar: $self.foo;
+  baz: ($self.User.name);
 }

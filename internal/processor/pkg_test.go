@@ -357,6 +357,21 @@ User result = { name: name; age: 30; };
 		Entry("imports values surfaced through output", `from "testdata/imports/values.mace" import count;
 [output = data]
 { result: count + 2; }`, expectedValue{kind: ValueInt, int64: 5}),
+		Entry("imports schemas and aliases from a public contract fixture", `from "testdata/imports/contracts.mace" import ID, Team;
+|===|
+ID team_name = "core";
+Team result = { name: team_name; members: [{ id: "u1"; role: "owner"; }]; };
+|===|
+[output = data]
+{ result: result; }`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+			"name": {kind: ValueString, string: "core"},
+			"members": {kind: ValueArray, array: []expectedValue{
+				{kind: ValueRecord, record: map[string]expectedValue{
+					"id":   {kind: ValueString, string: "u1"},
+					"role": {kind: ValueString, string: "owner"},
+				}},
+			}},
+		}}),
 	)
 
 	DescribeTable("keeps hidden declarations internal",
@@ -373,6 +388,8 @@ User result = { name: name; age: 30; };
 		Entry("hidden variable is not importable", `from "testdata/imports/base.mace" import local;
 [output = data] {}`, "imported identifier"),
 		Entry("hidden value is not importable", `from "testdata/imports/values.mace" import hidden;
+[output = data] {}`, "imported identifier"),
+		Entry("hidden schema in a data fixture is not importable", `from "testdata/imports/metrics.mace" import Hidden;
 [output = data] {}`, "imported identifier"),
 	)
 
