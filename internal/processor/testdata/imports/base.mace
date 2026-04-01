@@ -1,10 +1,23 @@
-|===|
+|===================|
+
+from "./foo.mace"
+
 type Name = string;
-type Internal = int;
-schema User = { name: Name; age: int; };
-schema Secret = { token: Internal; };
+
+
+schema User = {
+  name: Name;
+  age: int;
+};
+
+schema Secret = {
+  token: int;
+};
+
 int local = 1;
-|===|
+
+|===================|
+
 [output = schema]
 {
   Name: Name;
