@@ -1,7 +1,7 @@
-|===|
+|===============|
 int count = 3;
 int hidden = 9;
-|===|
+|===============|
 [output = data]
 {
   count: count;
