@@ -94,6 +94,22 @@ func didChange(server *Server, uri protocol.DocumentUri, version int32, text str
 	tAssert.NoError(err)
 }
 
+func didSave(server *Server, uri protocol.DocumentUri, text *string, notifications *[]capturedNotification) {
+	params := protocol.DidSaveTextDocumentParams{
+		TextDocument: protocol.TextDocumentIdentifier{
+			URI: uri,
+		},
+	}
+	if text != nil {
+		params.Text = text
+	}
+
+	_, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentDidSave, params, notifications)
+	tAssert.True(validMethod)
+	tAssert.True(validParams)
+	tAssert.NoError(err)
+}
+
 func didClose(server *Server, uri protocol.DocumentUri, notifications *[]capturedNotification) {
 	_, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentDidClose, protocol.DidCloseTextDocumentParams{
 		TextDocument: protocol.TextDocumentIdentifier{
@@ -187,6 +203,12 @@ var _ = Describe("LSP server", func() {
 
 		tAssert.True(*syncOptions.OpenClose)
 		tAssert.Equal(protocol.TextDocumentSyncKindFull, *syncOptions.Change)
+		saveOptions, ok := syncOptions.Save.(*protocol.SaveOptions)
+		tAssert.True(ok)
+		if ok {
+			tAssert.NotNil(saveOptions.IncludeText)
+			tAssert.True(*saveOptions.IncludeText)
+		}
 		tAssert.NotNil(result.Capabilities.CompletionProvider)
 		tAssert.Equal(true, result.Capabilities.HoverProvider)
 		tAssert.Equal(true, result.Capabilities.DefinitionProvider)
@@ -387,6 +409,31 @@ int count = 7;
 {
   result: count;
 }`, &notifications)
+
+		if tAssert.Len(notifications, 2) {
+			params := requireDiagnostics(notifications[1])
+			tAssert.Empty(params.Diagnostics)
+		}
+	})
+
+	It("refreshes diagnostics when a document is saved", func() {
+		server := New()
+		initializeServer(server)
+		notifications := []capturedNotification{}
+
+		workspace, err := os.MkdirTemp("", "mace-lsp-save-diagnostics-*")
+		tAssert.NoError(err)
+
+		path := writeWorkspaceFile(workspace, "consumer.mace", `[output = data] { result: ; }`)
+		uri := protocol.DocumentUri(path)
+
+		didOpen(server, uri, `[output = data] { result: ; }`, &notifications)
+
+		fixedText := `[output = data] { result: 3; }`
+		err = os.WriteFile(filepath.FromSlash(documentPath(uri)), []byte(fixedText), 0o600)
+		tAssert.NoError(err)
+
+		didSave(server, uri, nil, &notifications)
 
 		if tAssert.Len(notifications, 2) {
 			params := requireDiagnostics(notifications[1])

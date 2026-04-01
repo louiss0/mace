@@ -72,6 +72,7 @@ func New() *Server {
 		SetTrace:                   server.setTrace,
 		TextDocumentDidOpen:        server.didOpen,
 		TextDocumentDidChange:      server.didChange,
+		TextDocumentDidSave:        server.didSave,
 		TextDocumentDidClose:       server.didClose,
 		TextDocumentCompletion:     server.complete,
 		TextDocumentHover:          server.hover,
@@ -104,6 +105,9 @@ func (server *Server) initialize(context *glsp.Context, params *protocol.Initial
 	if syncOptions, ok := capabilities.TextDocumentSync.(*protocol.TextDocumentSyncOptions); ok {
 		syncMode := protocol.TextDocumentSyncKindFull
 		syncOptions.Change = &syncMode
+		syncOptions.Save = &protocol.SaveOptions{
+			IncludeText: Ptr(true),
+		}
 	}
 
 	if capabilities.CompletionProvider != nil {
@@ -190,6 +194,31 @@ func (server *Server) didChange(context *glsp.Context, params *protocol.DidChang
 		text:     changeResult.text,
 		version:  protocol.UInteger(params.TextDocument.Version),
 		analysis: analysis,
+	}
+	server.lock.Unlock()
+
+	server.publishDiagnostics(context, params.TextDocument.URI)
+	return nil
+}
+
+func (server *Server) didSave(context *glsp.Context, params *protocol.DidSaveTextDocumentParams) error {
+	server.lock.Lock()
+	current, ok := server.documents[params.TextDocument.URI]
+	if !ok {
+		server.lock.Unlock()
+		return nil
+	}
+
+	text, err := savedDocumentText(params.Text, params.TextDocument.URI, current.text)
+	if err != nil {
+		server.lock.Unlock()
+		return err
+	}
+
+	server.documents[params.TextDocument.URI] = document{
+		text:     text,
+		version:  current.version,
+		analysis: analyzeDocumentAt(text, documentPath(params.TextDocument.URI)),
 	}
 	server.lock.Unlock()
 
@@ -650,6 +679,24 @@ type stdrwc struct{}
 type textChangeResult struct {
 	text string
 	err  error
+}
+
+func savedDocumentText(savedText *string, uri protocol.DocumentUri, fallback string) (string, error) {
+	if savedText != nil {
+		return *savedText, nil
+	}
+
+	path := documentPath(uri)
+	if path == "" {
+		return fallback, nil
+	}
+
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+
+	return string(contents), nil
 }
 
 func fileScriptItems(file ast.File) []ast.Declaration {
