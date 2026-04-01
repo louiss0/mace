@@ -3,9 +3,11 @@ package lsp
 import (
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/samber/lo"
@@ -16,8 +18,11 @@ import (
 
 var (
 	importPathPattern           = regexp.MustCompile(`^\s*from\s+"([^"]+)"\s*([A-Za-z_]*)$`)
+	importOpenPathPattern       = regexp.MustCompile(`^\s*from\s+"([^"]*)$`)
 	importIdentifiersPattern    = regexp.MustCompile(`^\s*from\s+"([^"]+)"\s+import\s*([A-Za-z_]*)$`)
 	directiveOutputValuePattern = regexp.MustCompile(`^\s*output\s*=\s*([A-Za-z_]*)$`)
+	directiveSchemaPattern      = regexp.MustCompile(`^\s*schema\s*=\s*([A-Za-z_]*)$`)
+	directiveSchemaFilePattern  = regexp.MustCompile(`^\s*schema_file\s*=\s*"([^"]*)$`)
 )
 
 var globalKeywordCompletions = []completionDefinition{
@@ -39,7 +44,7 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 		return items
 	}
 
-	if items, handled := directiveCompletionItems(linePrefix); handled {
+	if items, handled := directiveCompletionItems(document, uri, linePrefix); handled {
 		return items
 	}
 
@@ -50,6 +55,10 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 }
 
 func importCompletionItems(linePrefix string, uri protocol.DocumentUri) ([]protocol.CompletionItem, bool) {
+	if matches := importOpenPathPattern.FindStringSubmatch(linePrefix); len(matches) == 2 {
+		return relativePathItems(uri, matches[1], nil), true
+	}
+
 	if matches := importIdentifiersPattern.FindStringSubmatch(linePrefix); len(matches) == 3 {
 		path := matches[1]
 		prefix := matches[2]
@@ -88,7 +97,7 @@ func importCompletionItems(linePrefix string, uri protocol.DocumentUri) ([]proto
 	return nil, false
 }
 
-func directiveCompletionItems(linePrefix string) ([]protocol.CompletionItem, bool) {
+func directiveCompletionItems(document document, uri protocol.DocumentUri, linePrefix string) ([]protocol.CompletionItem, bool) {
 	content, ok := directivePrefix(linePrefix)
 	if !ok {
 		return nil, false
@@ -124,6 +133,14 @@ func directiveCompletionItems(linePrefix string) ([]protocol.CompletionItem, boo
 		}
 	}
 
+	if matches := directiveSchemaPattern.FindStringSubmatch(lastPart); len(matches) == 2 {
+		return schemaReferenceItems(document, uri, linePrefix, matches[1]), true
+	}
+
+	if matches := directiveSchemaFilePattern.FindStringSubmatch(lastPart); len(matches) == 2 {
+		return schemaFileItems(document, uri, linePrefix, matches[1]), true
+	}
+
 	if strings.HasSuffix(content, ",") {
 		options := nextDirectiveDefinitions(parts)
 		return itemsFromDefinitions(options, ""), true
@@ -151,24 +168,12 @@ func nextDirectiveDefinitions(parts []string) []completionDefinition {
 		return agg
 	}, directiveState{})
 
-	if state.outputMode != "data" {
+	if state.outputMode == "" {
 		return []completionDefinition{}
 	}
 
-	if state.seenSchema && state.seenSchemaFile {
+	if state.seenSchema || state.seenSchemaFile {
 		return []completionDefinition{}
-	}
-
-	if state.seenSchemaFile {
-		return []completionDefinition{
-			{Label: "schema", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
-		}
-	}
-
-	if state.seenSchema {
-		return []completionDefinition{
-			{Label: "schema_file", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
-		}
 	}
 
 	return []completionDefinition{
@@ -251,6 +256,227 @@ func documentPathFromURI(uri protocol.DocumentUri) (string, bool) {
 	}
 
 	return filepath.FromSlash(path), true
+}
+
+func relativePathItems(uri protocol.DocumentUri, pathPrefix string, excludedPaths []string) []protocol.CompletionItem {
+	documentPath, ok := documentPathFromURI(uri)
+	if !ok {
+		return []protocol.CompletionItem{}
+	}
+
+	items, err := directoryEntries(filepath.Dir(documentPath), pathPrefix, excludedPaths)
+	if err != nil {
+		return []protocol.CompletionItem{}
+	}
+
+	return sortCompletionItems(items)
+}
+
+func schemaReferenceItems(document document, uri protocol.DocumentUri, linePrefix string, prefix string) []protocol.CompletionItem {
+	items := lo.Map(availableSchemaNames(document, uri, linePrefix), func(name string, _ int) protocol.CompletionItem {
+		return protocol.CompletionItem{
+			Label: name,
+			Kind:  Ptr(protocol.CompletionItemKindStruct),
+		}
+	})
+	items = lo.Filter(items, func(item protocol.CompletionItem, _ int) bool {
+		return strings.HasPrefix(item.Label, prefix)
+	})
+	return sortCompletionItems(items)
+}
+
+func schemaFileItems(document document, uri protocol.DocumentUri, linePrefix string, pathPrefix string) []protocol.CompletionItem {
+	return relativePathItems(uri, pathPrefix, importedPaths(document, linePrefix))
+}
+
+func availableSchemaNames(document document, uri protocol.DocumentUri, linePrefix string) []string {
+	localSchemas := []string{}
+	file := completionFile(document, linePrefix)
+	if file != nil && file.Script != nil {
+		localSchemas = lo.FilterMap(file.Script.Items, func(item ast.Declaration, _ int) (string, bool) {
+			declaration, ok := item.(ast.SchemaDeclaration)
+			if !ok {
+				return "", false
+			}
+
+			return declaration.Name, true
+		})
+	}
+
+	importedSchemas := lo.FlatMap(currentImports(document, linePrefix), func(importDecl ast.ImportDeclaration, _ int) []string {
+		exportedSchemas, ok := importableSchemaIdentifiers(uri, importDecl)
+		if !ok {
+			return nil
+		}
+
+		return exportedSchemas
+	})
+
+	names := append(localSchemas, importedSchemas...)
+	return lo.Uniq(sortStrings(names))
+}
+
+func importableSchemaIdentifiers(uri protocol.DocumentUri, importDecl ast.ImportDeclaration) ([]string, bool) {
+	pathValue, ok := stringLiteralValue(importDecl.Path)
+	if !ok {
+		return nil, false
+	}
+
+	documentPath, ok := documentPathFromURI(uri)
+	if !ok {
+		return nil, false
+	}
+
+	resolvedPath := filepath.Clean(filepath.Join(filepath.Dir(documentPath), pathValue))
+	contents, err := os.ReadFile(resolvedPath)
+	if err != nil {
+		return nil, false
+	}
+
+	file, err := parseFile(string(contents))
+	if err != nil {
+		return nil, false
+	}
+
+	exportedSchemaNames := lo.Map(file.Output.SchemaFields, func(field ast.OutputSchemaField, _ int) string {
+		return field.Name
+	})
+
+	return lo.Filter(importDecl.Identifiers, func(name string, _ int) bool {
+		return lo.Contains(exportedSchemaNames, name)
+	}), true
+}
+
+func importedPaths(document document, linePrefix string) []string {
+	return lo.FilterMap(currentImports(document, linePrefix), func(importDecl ast.ImportDeclaration, _ int) (string, bool) {
+		pathValue, ok := stringLiteralValue(importDecl.Path)
+		if !ok {
+			return "", false
+		}
+
+		return pathValue, true
+	})
+}
+
+func currentImports(document document, linePrefix string) []ast.ImportDeclaration {
+	file := completionFile(document, linePrefix)
+	if file == nil {
+		return nil
+	}
+
+	return file.Imports
+}
+
+func completionFile(document document, linePrefix string) *ast.File {
+	if document.analysis.file != nil {
+		return document.analysis.file
+	}
+
+	openIndex := strings.LastIndex(document.text, "[")
+	if openIndex < 0 {
+		return nil
+	}
+
+	closeIndex := strings.LastIndex(document.text, "]")
+	if closeIndex > openIndex {
+		return nil
+	}
+
+	prefix := document.text[:openIndex]
+	outputMode := "data"
+	if strings.Contains(linePrefix, "output = schema") {
+		outputMode = "schema"
+	}
+
+	file, err := parseFile(prefix + "[output = " + outputMode + "] {}")
+	if err != nil {
+		return nil
+	}
+
+	return &file
+}
+
+func stringLiteralValue(literal ast.StringLiteral) (string, bool) {
+	value, err := strconv.Unquote(literal.Lexeme)
+	if err != nil {
+		return "", false
+	}
+
+	return value, true
+}
+
+func directoryEntries(baseDir string, pathPrefix string, excludedPaths []string) ([]protocol.CompletionItem, error) {
+	resolvedDir, itemPrefix, labelPrefix := importDirectory(baseDir, pathPrefix)
+	entries, err := os.ReadDir(resolvedDir)
+	if err != nil {
+		return nil, err
+	}
+
+	items := lo.FilterMap(entries, func(entry os.DirEntry, _ int) (protocol.CompletionItem, bool) {
+		name := entry.Name()
+		if !strings.HasPrefix(name, itemPrefix) {
+			return protocol.CompletionItem{}, false
+		}
+		if !entry.IsDir() && filepath.Ext(name) != ".mace" {
+			return protocol.CompletionItem{}, false
+		}
+
+		label := joinImportPath(labelPrefix, name, entry.IsDir())
+		if lo.Contains(excludedPaths, label) {
+			return protocol.CompletionItem{}, false
+		}
+
+		kind := protocol.CompletionItemKindFile
+		if entry.IsDir() {
+			kind = protocol.CompletionItemKindFolder
+		}
+
+		return protocol.CompletionItem{
+			Label: label,
+			Kind:  Ptr(kind),
+		}, true
+	})
+
+	return items, nil
+}
+
+func importDirectory(baseDir string, pathPrefix string) (string, string, string) {
+	cleanPrefix := normalizedRelativePathPrefix(pathPrefix)
+	parent, name := path.Split(cleanPrefix)
+	if strings.HasSuffix(cleanPrefix, "/") {
+		parent = cleanPrefix
+		name = ""
+	}
+
+	return filepath.Clean(filepath.Join(baseDir, filepath.FromSlash(parent))), name, parent
+}
+
+func normalizedRelativePathPrefix(pathPrefix string) string {
+	if strings.HasPrefix(pathPrefix, "../") || pathPrefix == ".." {
+		return filepath.ToSlash(pathPrefix)
+	}
+	if strings.HasPrefix(pathPrefix, "./") {
+		return filepath.ToSlash(pathPrefix)
+	}
+	if pathPrefix == "" {
+		return "./"
+	}
+
+	return "./" + filepath.ToSlash(pathPrefix)
+}
+
+func joinImportPath(parent string, name string, isDir bool) string {
+	label := parent + name
+	if isDir {
+		return label + "/"
+	}
+
+	return label
+}
+
+func sortStrings(values []string) []string {
+	slices.Sort(values)
+	return values
 }
 
 func itemsFromDefinitions(definitions []completionDefinition, prefix string) []protocol.CompletionItem {

@@ -72,6 +72,10 @@ func didOpen(server *Server, uri protocol.DocumentUri, text string, notification
 	tAssert.NoError(err)
 }
 
+func openEmptyDocument(server *Server, uri protocol.DocumentUri, notifications *[]capturedNotification) {
+	didOpen(server, uri, "", notifications)
+}
+
 func didChange(server *Server, uri protocol.DocumentUri, version int32, text string, notifications *[]capturedNotification) {
 	_, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentDidChange, protocol.DidChangeTextDocumentParams{
 		TextDocument: protocol.VersionedTextDocumentIdentifier{
@@ -441,7 +445,8 @@ schema Plot = { points: array<Point>; };
 	It("returns keyword completions using the current prefix", func() {
 		server := New()
 		initializeServer(server)
-		didOpen(server, uri, "sche", nil)
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, "sche", nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentCompletion, protocol.CompletionParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
@@ -477,13 +482,70 @@ schema Plot = { points: array<Point>; };
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `from "./shared.mace" imp`))
 
-		didOpen(server, uri, `from "./shared.mace" imp`, nil)
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `from "./shared.mace" imp`, nil)
 
 		labels := completeLabels(server, uri, 0, uint32(len(`from "./shared.mace" imp`)))
 		tAssert.Equal([]string{"import"}, labels)
 	})
 
-	It("only suggests identifiers exported by the import path", func() {
+	It("uses the current directory as the default import path baseline", func() {
+		server := New()
+		initializeServer(server)
+
+		workspace, err := os.MkdirTemp("", "mace-lsp-import-path-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "shared.mace", `[output = data] { name: "Ada"; }`)
+		writeWorkspaceFile(workspace, "nested/roles.mace", `[output = data] { role: "admin"; }`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `from "`, nil)
+
+		labels := completeLabels(server, uri, 0, uint32(len(`from "`)))
+		tAssert.Contains(labels, "./shared.mace")
+		tAssert.Contains(labels, "./nested/")
+	})
+
+	It("suggests parent relative import paths while the from string changes", func() {
+		server := New()
+		initializeServer(server)
+
+		workspace, err := os.MkdirTemp("", "mace-lsp-parent-import-path-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "shared.mace", `[output = data] { name: "Ada"; }`)
+		consumerURI := protocol.DocumentUri(writeWorkspaceFile(workspace, "nested/consumer.mace", ``))
+
+		openEmptyDocument(server, consumerURI, nil)
+		didChange(server, consumerURI, 2, `from "../`, nil)
+
+		labels := completeLabels(server, consumerURI, 0, uint32(len(`from "../`)))
+		tAssert.Contains(labels, "../shared.mace")
+	})
+
+	It("suggests import after a valid from path change with trailing space", func() {
+		server := New()
+		initializeServer(server)
+
+		workspace, err := os.MkdirTemp("", "mace-lsp-import-space-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
+{
+  User: { name: string; };
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `from "./shared.mace" `, nil)
+
+		labels := completeLabels(server, uri, 0, uint32(len(`from "./shared.mace" `)))
+		tAssert.Equal([]string{"import"}, labels)
+	})
+
+	It("only suggests identifiers exported by the import path after change", func() {
 		server := New()
 		initializeServer(server)
 
@@ -497,41 +559,106 @@ schema Plot = { points: array<Point>; };
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `from "./shared.mace" import U`))
 
-		didOpen(server, uri, `from "./shared.mace" import U`, nil)
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `from "./shared.mace" import U`, nil)
 
 		labels := completeLabels(server, uri, 0, uint32(len(`from "./shared.mace" import U`)))
 		tAssert.Equal([]string{"User"}, labels)
 	})
 
+	It("suggests all exported identifiers after import changes", func() {
+		server := New()
+		initializeServer(server)
+
+		workspace, err := os.MkdirTemp("", "mace-lsp-imported-all-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
+{
+  User: { name: string; };
+  Config: string;
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `from "./shared.mace" import `, nil)
+
+		labels := completeLabels(server, uri, 0, uint32(len(`from "./shared.mace" import `)))
+		tAssert.Equal([]string{"Config", "User"}, labels)
+	})
+
 	It("only suggests directives inside directive delimiters", func() {
 		server := New()
 		initializeServer(server)
-		didOpen(server, uri, `out`, nil)
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `out`, nil)
 
 		labels := completeLabels(server, uri, 0, 3)
 		tAssert.NotContains(labels, "output")
 
-		didChange(server, uri, 2, `[out`, nil)
+		didChange(server, uri, 3, `[out`, nil)
 		labels = completeLabels(server, uri, 0, 4)
 		tAssert.Equal([]string{"output"}, labels)
 	})
 
-	It("suggests only ordered directive options after output mode", func() {
+	It("suggests schema and schema_file after output schema and a comma", func() {
 		server := New()
 		initializeServer(server)
-		didOpen(server, uri, `[output = data, s`, nil)
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = schema, s`, nil)
 
-		labels := completeLabels(server, uri, 0, uint32(len(`[output = data, s`)))
+		labels := completeLabels(server, uri, 0, uint32(len(`[output = schema, s`)))
 		tAssert.Equal([]string{"schema", "schema_file"}, labels)
 	})
 
-	It("suggests only schema after schema_file was already used", func() {
+	It("suggests local and imported schemas after schema directive", func() {
 		server := New()
 		initializeServer(server)
-		didOpen(server, uri, `[output = data, schema_file = "./shared.mace", s`, nil)
 
-		labels := completeLabels(server, uri, 0, uint32(len(`[output = data, schema_file = "./shared.mace", s`)))
-		tAssert.Equal([]string{"schema"}, labels)
+		workspace, err := os.MkdirTemp("", "mace-lsp-schema-ref-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
+{
+  ImportedUser: { name: string; };
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `from "./shared.mace" import ImportedUser;
+|===|
+schema LocalUser = { id: int; };
+|===|
+[output = schema, schema = `, nil)
+
+		labels := completeLabels(server, uri, 4, uint32(len(`[output = schema, schema = `)))
+		tAssert.Equal([]string{"ImportedUser", "LocalUser"}, labels)
+	})
+
+	It("suggests schema files and excludes files already imported", func() {
+		server := New()
+		initializeServer(server)
+
+		workspace, err := os.MkdirTemp("", "mace-lsp-schema-file-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
+{
+  ImportedUser: { name: string; };
+}`)
+		writeWorkspaceFile(workspace, "other.mace", `[output = schema]
+{
+  OtherUser: { name: string; };
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `from "./shared.mace" import ImportedUser;
+[output = schema, schema_file = "`, nil)
+
+		labels := completeLabels(server, uri, 1, uint32(len(`[output = schema, schema_file = "`)))
+		tAssert.NotContains(labels, "./shared.mace")
+		tAssert.Contains(labels, "./other.mace")
 	})
 
 	It("returns hover documentation for language keywords", func() {
