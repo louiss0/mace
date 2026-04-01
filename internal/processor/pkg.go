@@ -257,6 +257,10 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 		return Result{File: file, Output: map[string]Value{}, Schema: schema}, nil
 	}
 
+	if err := validateDataOutputFields(outputBlock.DataFields, outputContext.symbols); err != nil {
+		return Result{}, err
+	}
+
 	if schemaName, ok := outputSchemaName(outputBlock.Directives); ok {
 		if err := validateOutputSchema(schemaName, outputBlock.DataFields, outputContext.variables, outputContext.symbols, outputContext.types, outputContext.schemas); err != nil {
 			return Result{}, err
@@ -1011,8 +1015,32 @@ func validateSchemaOutputFields(fields []ast.OutputSchemaField, symbols *symbolT
 		}
 		fieldNames[field.Name] = struct{}{}
 
+		if err := validateSchemaOutputFieldType(field.Type, symbols); err != nil {
+			return err
+		}
+
 		if err := validateTypeReference(field.Type, symbols, types); err != nil {
 			return err
+		}
+	}
+
+	return nil
+}
+
+func validateSchemaOutputFieldType(typeRef ast.TypeReference, symbols *symbolTable) error {
+	switch ref := typeRef.(type) {
+	case ast.ArrayType:
+		return validateSchemaOutputFieldType(ref.Element, symbols)
+	case ast.RecordType:
+		for _, field := range ref.Fields {
+			if err := validateSchemaOutputFieldType(field.Type, symbols); err != nil {
+				return err
+			}
+		}
+		return nil
+	case ast.NamedType:
+		if symbols.IsVariable(ref.Name) {
+			return validationErrorf("invalid field type %q in output = schema", ref.Name)
 		}
 	}
 
@@ -1026,6 +1054,54 @@ func outputSchemaName(directives []ast.OutputDirective) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func validateDataOutputFields(fields []ast.OutputField, symbols *symbolTable) error {
+	for _, field := range fields {
+		if err := validateDataOutputExpression(field.Value, symbols); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func validateDataOutputExpression(expression ast.Expression, symbols *symbolTable) error {
+	switch expr := expression.(type) {
+	case ast.Identifier:
+		if symbols.IsType(expr.Name) || symbols.IsSchema(expr.Name) {
+			return validationErrorf("output value %q cannot reference type or schema declaration", expr.Name)
+		}
+	case ast.ArrayLiteral:
+		for _, element := range expr.Elements {
+			if err := validateDataOutputExpression(element, symbols); err != nil {
+				return err
+			}
+		}
+	case ast.RecordLiteral:
+		for _, field := range expr.Fields {
+			if err := validateDataOutputExpression(field.Value, symbols); err != nil {
+				return err
+			}
+		}
+	case ast.PrefixExpression:
+		return validateDataOutputExpression(expr.Right, symbols)
+	case ast.InfixExpression:
+		if err := validateDataOutputExpression(expr.Left, symbols); err != nil {
+			return err
+		}
+		return validateDataOutputExpression(expr.Right, symbols)
+	case ast.ConditionalExpression:
+		if err := validateDataOutputExpression(expr.Condition, symbols); err != nil {
+			return err
+		}
+		if err := validateDataOutputExpression(expr.Then, symbols); err != nil {
+			return err
+		}
+		return validateDataOutputExpression(expr.Else, symbols)
+	}
+
+	return nil
 }
 
 func validateOutputSchema(schemaName string, items []ast.OutputField, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry) error {
@@ -2170,6 +2246,11 @@ func (s *symbolTable) IsType(name string) bool {
 func (s *symbolTable) IsSchema(name string) bool {
 	kind, exists := s.symbols[name]
 	return exists && kind == symbolKindSchema
+}
+
+func (s *symbolTable) IsVariable(name string) bool {
+	kind, exists := s.symbols[name]
+	return exists && kind == symbolKindVariable
 }
 
 type typeRegistry struct {

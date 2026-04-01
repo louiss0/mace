@@ -541,6 +541,36 @@ schema Plot = { points: array<Point>; };
 { points: [ { x: 1; y: 2; }, { x: 3; } ]; }`, "missing required field"),
 	)
 
+	DescribeTable("rejects output surface mismatches",
+		func(input, message string) {
+			processor := New()
+			_, err := processor.Process(input)
+			tAssert.Error(err)
+			tAssert.ErrorContains(err, message)
+		},
+		Entry("schema output cannot export variable declarations", `|===|
+type Name = string;
+schema User = { name: Name; age: int; };
+int local = 1;
+|===|
+[output = schema]
+{
+  Name: Name;
+  User: User;
+  foo: local;
+}`, "invalid field type"),
+		Entry("data output cannot export type declarations as values", `|===|
+type Name = string;
+schema User = { name: string; };
+string value = "Ada";
+|===|
+{
+  Name: Name;
+  User: User;
+  value: value;
+}`, "cannot reference type or schema declaration"),
+	)
+
 	DescribeTable("returns individual operator results",
 		func(input string, expected expectedValue) {
 			assertProcessedResult(input, expected)
