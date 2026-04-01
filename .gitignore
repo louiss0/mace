@@ -13,6 +13,7 @@ dist/
 tmp/
 vendor/
 tree-sitter-mace/
+zed-extension-mace/
 *.exe
 *.dll
 *.so
