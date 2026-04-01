@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"regexp"
-	"slices"
 	"strings"
 	"sync"
 
@@ -32,22 +31,6 @@ var keywordDocs = map[string]string{
 	"schema":      "Declares a reusable record schema.",
 	"schema_file": "References a schema from another Mace file.",
 	"type":        "Declares a reusable type alias.",
-}
-
-var keywordCompletions = []completionDefinition{
-	{Label: "array", Kind: protocol.CompletionItemKindKeyword, Detail: "type constructor"},
-	{Label: "boolean", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
-	{Label: "data", Kind: protocol.CompletionItemKindKeyword, Detail: "output mode"},
-	{Label: "float", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
-	{Label: "from", Kind: protocol.CompletionItemKindKeyword, Detail: "import declaration"},
-	{Label: "import", Kind: protocol.CompletionItemKindKeyword, Detail: "import declaration"},
-	{Label: "injectable", Kind: protocol.CompletionItemKindKeyword, Detail: "variable modifier"},
-	{Label: "int", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
-	{Label: "output", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
-	{Label: "schema", Kind: protocol.CompletionItemKindKeyword, Detail: "schema declaration"},
-	{Label: "schema_file", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
-	{Label: "string", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
-	{Label: "type", Kind: protocol.CompletionItemKindKeyword, Detail: "type declaration"},
 }
 
 type Server struct {
@@ -219,43 +202,7 @@ func (server *Server) complete(context *glsp.Context, params *protocol.Completio
 		return []protocol.CompletionItem{}, nil
 	}
 
-	prefix := identifierPrefixAt(document.text, params.Position)
-	items := []protocol.CompletionItem{}
-	for _, completion := range keywordCompletions {
-		if !strings.HasPrefix(completion.Label, prefix) {
-			continue
-		}
-
-		item := protocol.CompletionItem{
-			Label: completion.Label,
-			Kind:  Ptr(completion.Kind),
-		}
-		if completion.Detail != "" {
-			item.Detail = Ptr(completion.Detail)
-		}
-		items = append(items, item)
-	}
-
-	for _, declaration := range document.analysis.declarations {
-		if declaration.Name == "" || !strings.HasPrefix(declaration.Name, prefix) {
-			continue
-		}
-
-		item := protocol.CompletionItem{
-			Label: declaration.Name,
-			Kind:  Ptr(declaration.Kind),
-		}
-		if declaration.Detail != "" {
-			item.Detail = Ptr(declaration.Detail)
-		}
-		items = append(items, item)
-	}
-
-	slices.SortFunc(items, func(left protocol.CompletionItem, right protocol.CompletionItem) int {
-		return strings.Compare(left.Label, right.Label)
-	})
-
-	return items, nil
+	return completionItems(document, params.TextDocument.URI, params.Position), nil
 }
 
 func (server *Server) hover(context *glsp.Context, params *protocol.HoverParams) (*protocol.Hover, error) {

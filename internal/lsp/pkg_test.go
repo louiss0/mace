@@ -2,6 +2,9 @@ package lsp
 
 import (
 	"encoding/json"
+	"net/url"
+	"os"
+	"path/filepath"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -97,6 +100,51 @@ func didClose(server *Server, uri protocol.DocumentUri, notifications *[]capture
 	tAssert.True(validMethod)
 	tAssert.True(validParams)
 	tAssert.NoError(err)
+}
+
+func completeLabels(server *Server, uri protocol.DocumentUri, line uint32, character uint32) []string {
+	resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentCompletion, protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+			Position: protocol.Position{
+				Line:      protocol.UInteger(line),
+				Character: protocol.UInteger(character),
+			},
+		},
+	}, nil)
+	tAssert.True(validMethod)
+	tAssert.True(validParams)
+	tAssert.NoError(err)
+
+	items, ok := resultValue.([]protocol.CompletionItem)
+	tAssert.True(ok)
+	if !ok {
+		return nil
+	}
+
+	labels := make([]string, 0, len(items))
+	for _, item := range items {
+		labels = append(labels, item.Label)
+	}
+
+	return labels
+}
+
+func writeWorkspaceFile(root string, relativePath string, contents string) string {
+	path := filepath.Join(root, relativePath)
+	err := os.MkdirAll(filepath.Dir(path), 0o755)
+	tAssert.NoError(err)
+	err = os.WriteFile(path, []byte(contents), 0o600)
+	tAssert.NoError(err)
+
+	return fileURI(path)
+}
+
+func fileURI(path string) string {
+	return (&url.URL{
+		Scheme: "file",
+		Path:   filepath.ToSlash(path),
+	}).String()
 }
 
 func requireDiagnostics(notification capturedNotification) protocol.PublishDiagnosticsParams {
@@ -413,6 +461,77 @@ schema Plot = { points: array<Point>; };
 
 		tAssert.NotEmpty(items)
 		tAssert.Equal("schema", items[0].Label)
+	})
+
+	It("only suggests import after a valid from path", func() {
+		server := New()
+		initializeServer(server)
+
+		workspace, err := os.MkdirTemp("", "mace-lsp-import-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
+{
+  User: { name: string; };
+  Config: string;
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `from "./shared.mace" imp`))
+
+		didOpen(server, uri, `from "./shared.mace" imp`, nil)
+
+		labels := completeLabels(server, uri, 0, uint32(len(`from "./shared.mace" imp`)))
+		tAssert.Equal([]string{"import"}, labels)
+	})
+
+	It("only suggests identifiers exported by the import path", func() {
+		server := New()
+		initializeServer(server)
+
+		workspace, err := os.MkdirTemp("", "mace-lsp-imported-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
+{
+  User: { name: string; };
+  Config: string;
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `from "./shared.mace" import U`))
+
+		didOpen(server, uri, `from "./shared.mace" import U`, nil)
+
+		labels := completeLabels(server, uri, 0, uint32(len(`from "./shared.mace" import U`)))
+		tAssert.Equal([]string{"User"}, labels)
+	})
+
+	It("only suggests directives inside directive delimiters", func() {
+		server := New()
+		initializeServer(server)
+		didOpen(server, uri, `out`, nil)
+
+		labels := completeLabels(server, uri, 0, 3)
+		tAssert.NotContains(labels, "output")
+
+		didChange(server, uri, 2, `[out`, nil)
+		labels = completeLabels(server, uri, 0, 4)
+		tAssert.Equal([]string{"output"}, labels)
+	})
+
+	It("suggests only ordered directive options after output mode", func() {
+		server := New()
+		initializeServer(server)
+		didOpen(server, uri, `[output = data, s`, nil)
+
+		labels := completeLabels(server, uri, 0, uint32(len(`[output = data, s`)))
+		tAssert.Equal([]string{"schema", "schema_file"}, labels)
+	})
+
+	It("suggests only schema after schema_file was already used", func() {
+		server := New()
+		initializeServer(server)
+		didOpen(server, uri, `[output = data, schema_file = "./shared.mace", s`, nil)
+
+		labels := completeLabels(server, uri, 0, uint32(len(`[output = data, schema_file = "./shared.mace", s`)))
+		tAssert.Equal([]string{"schema"}, labels)
 	})
 
 	It("returns hover documentation for language keywords", func() {
