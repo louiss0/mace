@@ -1,6 +1,10 @@
 package lsp
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/samber/lo"
+)
 
 func formatDocumentText(text string) string {
 	newline := "\n"
@@ -9,8 +13,9 @@ func formatDocumentText(text string) string {
 	}
 
 	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
-	formatted := make([]string, len(lines))
-	copy(formatted, lines)
+	formatted := lo.Map(lines, func(line string, _ int) string {
+		return line
+	})
 
 	start := -1
 	for index, line := range lines {
@@ -47,12 +52,13 @@ func isScriptDelimiterLine(line string) bool {
 }
 
 func widestScriptDelimiter(lines []string) string {
-	width := 3
-	for _, line := range lines {
-		if len(line) > width {
-			width = len(line)
+	width := lo.Reduce(lines, func(currentWidth int, line string, _ int) int {
+		if len(line) > currentWidth {
+			return len(line)
 		}
-	}
+
+		return currentWidth
+	}, 3)
 
 	return "|" + strings.Repeat("=", width) + "|"
 }

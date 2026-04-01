@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/samber/lo"
 	"github.com/sourcegraph/jsonrpc2"
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
@@ -146,35 +147,43 @@ func (server *Server) didOpen(context *glsp.Context, params *protocol.DidOpenTex
 func (server *Server) didChange(context *glsp.Context, params *protocol.DidChangeTextDocumentParams) error {
 	server.lock.Lock()
 	current := server.documents[params.TextDocument.URI]
-	text := current.text
+	changeResult := lo.Reduce(params.ContentChanges, func(agg textChangeResult, changeValue any, _ int) textChangeResult {
+		if agg.err != nil {
+			return agg
+		}
 
-	for _, changeValue := range params.ContentChanges {
 		switch change := changeValue.(type) {
 		case protocol.TextDocumentContentChangeEvent:
 			if change.Range == nil {
-				text = change.Text
-				continue
+				agg.text = change.Text
+				return agg
 			}
 
-			start, end := change.Range.IndexesIn(text)
-			if start < 0 || end < start || end > len(text) {
-				server.lock.Unlock()
-				return fmt.Errorf("lsp: invalid text change range")
+			start, end := change.Range.IndexesIn(agg.text)
+			if start < 0 || end < start || end > len(agg.text) {
+				agg.err = fmt.Errorf("lsp: invalid text change range")
+				return agg
 			}
 
-			text = text[:start] + change.Text + text[end:]
+			agg.text = agg.text[:start] + change.Text + agg.text[end:]
+			return agg
 		case protocol.TextDocumentContentChangeEventWhole:
-			text = change.Text
+			agg.text = change.Text
+			return agg
 		default:
-			server.lock.Unlock()
-			return fmt.Errorf("lsp: unsupported text change payload")
+			agg.err = fmt.Errorf("lsp: unsupported text change payload")
+			return agg
 		}
+	}, textChangeResult{text: current.text})
+	if changeResult.err != nil {
+		server.lock.Unlock()
+		return changeResult.err
 	}
 
-	analysis := analyzeDocument(text)
+	analysis := analyzeDocument(changeResult.text)
 
 	server.documents[params.TextDocument.URI] = document{
-		text:     text,
+		text:     changeResult.text,
 		version:  protocol.UInteger(params.TextDocument.Version),
 		analysis: analysis,
 	}
@@ -225,11 +234,10 @@ func (server *Server) hover(context *glsp.Context, params *protocol.HoverParams)
 		}, nil
 	}
 
-	for _, declaration := range document.analysis.declarations {
-		if declaration.Name != identifier {
-			continue
-		}
-
+	declaration, ok := lo.Find(document.analysis.declarations, func(definition declarationDefinition) bool {
+		return definition.Name == identifier
+	})
+	if ok {
 		return &protocol.Hover{
 			Contents: protocol.MarkupContent{
 				Kind:  protocol.MarkupKindMarkdown,
@@ -251,39 +259,37 @@ func (server *Server) documentSymbols(context *glsp.Context, params *protocol.Do
 		return []protocol.DocumentSymbol{}, nil
 	}
 
-	symbols := []protocol.DocumentSymbol{}
 	file := *document.analysis.file
-	if file.Script != nil {
-		for _, item := range file.Script.Items {
-			switch declaration := item.(type) {
-			case ast.TypeDeclaration:
-				symbols = append(symbols, newSymbol(document.text, declaration.Name, "type", protocol.SymbolKindClass, nil))
-			case ast.SchemaDeclaration:
-				children := []protocol.DocumentSymbol{}
-				for _, field := range declaration.Type.Fields {
-					children = append(children, newSymbol(document.text, field.Name, fieldTypeDetail(field.Type), protocol.SymbolKindField, nil))
-				}
-				symbols = append(symbols, newSymbol(document.text, declaration.Name, "schema", protocol.SymbolKindStruct, children))
-			case ast.VariableDeclaration:
-				symbols = append(symbols, newSymbol(document.text, declaration.Name, typeReferenceDetail(declaration.Type), protocol.SymbolKindVariable, nil))
-			}
+	symbols := lo.FilterMap(fileScriptItems(file), func(item ast.Declaration, _ int) (protocol.DocumentSymbol, bool) {
+		switch declaration := item.(type) {
+		case ast.TypeDeclaration:
+			return newSymbol(document.text, declaration.Name, "type", protocol.SymbolKindClass, nil), true
+		case ast.SchemaDeclaration:
+			children := lo.Map(declaration.Type.Fields, func(field ast.SchemaField, _ int) protocol.DocumentSymbol {
+				return newSymbol(document.text, field.Name, fieldTypeDetail(field.Type), protocol.SymbolKindField, nil)
+			})
+			return newSymbol(document.text, declaration.Name, "schema", protocol.SymbolKindStruct, children), true
+		case ast.VariableDeclaration:
+			return newSymbol(document.text, declaration.Name, typeReferenceDetail(declaration.Type), protocol.SymbolKindVariable, nil), true
+		default:
+			return protocol.DocumentSymbol{}, false
 		}
-	}
+	})
 
 	if len(file.Output.DataFields) > 0 || len(file.Output.SchemaFields) > 0 {
-		children := []protocol.DocumentSymbol{}
-		for _, field := range file.Output.DataFields {
+		children := lo.Map(file.Output.DataFields, func(field ast.OutputField, _ int) protocol.DocumentSymbol {
 			detail := "output field"
 			if document.analysis.result != nil {
 				if value, ok := document.analysis.result.Output[field.Name]; ok {
 					detail = "output field = " + summarizeValue(value)
 				}
 			}
-			children = append(children, newSymbol(document.text, field.Name, detail, protocol.SymbolKindProperty, nil))
-		}
-		for _, field := range file.Output.SchemaFields {
-			children = append(children, newSymbol(document.text, field.Name, fieldTypeDetail(field.Type), protocol.SymbolKindProperty, nil))
-		}
+
+			return newSymbol(document.text, field.Name, detail, protocol.SymbolKindProperty, nil)
+		})
+		children = append(children, lo.Map(file.Output.SchemaFields, func(field ast.OutputSchemaField, _ int) protocol.DocumentSymbol {
+			return newSymbol(document.text, field.Name, fieldTypeDetail(field.Type), protocol.SymbolKindProperty, nil)
+		})...)
 		symbols = append(symbols, newSymbol(document.text, "output", "output block", protocol.SymbolKindObject, children))
 	}
 
@@ -417,14 +423,13 @@ func fieldTypeDetail(typeReference ast.TypeReference) string {
 }
 
 func recordTypeDetail(record ast.RecordType) string {
-	fields := make([]string, 0, len(record.Fields))
-	for _, field := range record.Fields {
+	fields := lo.Map(record.Fields, func(field ast.SchemaField, _ int) string {
 		name := field.Name
 		if field.Optional {
 			name += "?"
 		}
-		fields = append(fields, fmt.Sprintf("%s: %s", name, typeReferenceDetail(field.Type)))
-	}
+		return fmt.Sprintf("%s: %s", name, typeReferenceDetail(field.Type))
+	})
 
 	return "{ " + strings.Join(fields, "; ") + "; }"
 }
@@ -586,6 +591,19 @@ func (server *Server) handle(
 }
 
 type stdrwc struct{}
+
+type textChangeResult struct {
+	text string
+	err  error
+}
+
+func fileScriptItems(file ast.File) []ast.Declaration {
+	if file.Script == nil {
+		return nil
+	}
+
+	return file.Script.Items
+}
 
 func (stdrwc) Read(buffer []byte) (int, error) {
 	return os.Stdin.Read(buffer)
