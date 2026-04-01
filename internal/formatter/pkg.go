@@ -57,15 +57,21 @@ func (f *formatter) writeImportDeclaration(importDeclaration ast.ImportDeclarati
 }
 
 func (f *formatter) writeScriptBlock(script ast.ScriptBlock) error {
-	f.writeLine("|===|")
+	lines := make([]string, 0, len(script.Items))
 	for _, declaration := range script.Items {
 		line, err := formatDeclaration(declaration)
 		if err != nil {
 			return err
 		}
+		lines = append(lines, line)
+	}
+
+	delimiter := formatScriptDelimiter(lines)
+	f.writeLine(delimiter)
+	for _, line := range lines {
 		f.writeLine(line)
 	}
-	f.write("|===|")
+	f.write(delimiter)
 	return nil
 }
 
@@ -132,7 +138,7 @@ func (f *formatter) writeLine(value string) {
 func formatDeclaration(declaration ast.Declaration) (string, error) {
 	switch typedDeclaration := declaration.(type) {
 	case ast.VariableDeclaration:
-		value, err := formatExpression(typedDeclaration.Value)
+		value, err := formatExpressionWithDepth(typedDeclaration.Value, 0)
 		if err != nil {
 			return "", err
 		}
@@ -233,7 +239,7 @@ func formatOutputDirectives(directives []ast.OutputDirective) (string, error) {
 }
 
 func formatOutputField(field ast.OutputField) (string, error) {
-	value, err := formatExpression(field.Value)
+	value, err := formatExpressionWithDepth(field.Value, 1)
 	if err != nil {
 		return "", err
 	}
@@ -261,11 +267,15 @@ func formatOutputSchemaField(field ast.OutputSchemaField) (string, error) {
 }
 
 func formatExpression(expression ast.Expression) (string, error) {
-	return formatExpressionWithPrecedence(expression, precedenceLowest)
+	return formatExpressionWithDepth(expression, 0)
 }
 
-func formatExpressionWithPrecedence(expression ast.Expression, parentPrecedence int) (string, error) {
-	formatted, precedence, err := formatExpressionNode(expression)
+func formatExpressionWithDepth(expression ast.Expression, depth int) (string, error) {
+	return formatExpressionWithPrecedence(expression, precedenceLowest, depth)
+}
+
+func formatExpressionWithPrecedence(expression ast.Expression, parentPrecedence int, depth int) (string, error) {
+	formatted, precedence, err := formatExpressionNode(expression, depth)
 	if err != nil {
 		return "", err
 	}
@@ -277,7 +287,7 @@ func formatExpressionWithPrecedence(expression ast.Expression, parentPrecedence 
 	return formatted, nil
 }
 
-func formatExpressionNode(expression ast.Expression) (string, int, error) {
+func formatExpressionNode(expression ast.Expression, depth int) (string, int, error) {
 	switch typedExpression := expression.(type) {
 	case ast.Identifier:
 		return typedExpression.Name, precedencePrimary, nil
@@ -293,18 +303,13 @@ func formatExpressionNode(expression ast.Expression) (string, int, error) {
 		}
 		return "false", precedencePrimary, nil
 	case ast.ArrayLiteral:
-		values := make([]string, 0, len(typedExpression.Elements))
-		for _, element := range typedExpression.Elements {
-			value, err := formatExpression(element)
-			if err != nil {
-				return "", 0, err
-			}
-			values = append(values, value)
+		value, err := formatArrayLiteral(typedExpression, depth)
+		if err != nil {
+			return "", 0, err
 		}
-
-		return "[" + strings.Join(values, ", ") + "]", precedencePrimary, nil
+		return value, precedencePrimary, nil
 	case ast.RecordLiteral:
-		record, err := formatRecordLiteral(typedExpression)
+		record, err := formatRecordLiteral(typedExpression, depth)
 		if err != nil {
 			return "", 0, err
 		}
@@ -312,26 +317,26 @@ func formatExpressionNode(expression ast.Expression) (string, int, error) {
 	case ast.SelfReference:
 		return "$self." + strings.Join(typedExpression.Path, "."), precedencePrimary, nil
 	case ast.PrefixExpression:
-		right, err := formatExpressionWithPrecedence(typedExpression.Right, precedencePrefix)
+		right, err := formatExpressionWithPrecedence(typedExpression.Right, precedencePrefix, depth)
 		if err != nil {
 			return "", 0, err
 		}
 
 		return tokenLexeme(typedExpression.Operator) + right, precedencePrefix, nil
 	case ast.InfixExpression:
-		return formatInfixExpression(typedExpression)
+		return formatInfixExpression(typedExpression, depth)
 	case ast.ConditionalExpression:
-		condition, err := formatExpressionWithPrecedence(typedExpression.Condition, precedenceConditional)
+		condition, err := formatExpressionWithPrecedence(typedExpression.Condition, precedenceConditional, depth)
 		if err != nil {
 			return "", 0, err
 		}
 
-		thenValue, err := formatExpression(typedExpression.Then)
+		thenValue, err := formatExpressionWithDepth(typedExpression.Then, depth)
 		if err != nil {
 			return "", 0, err
 		}
 
-		elseValue, err := formatExpressionWithPrecedence(typedExpression.Else, precedenceConditional)
+		elseValue, err := formatExpressionWithPrecedence(typedExpression.Else, precedenceConditional, depth)
 		if err != nil {
 			return "", 0, err
 		}
@@ -342,14 +347,48 @@ func formatExpressionNode(expression ast.Expression) (string, int, error) {
 	}
 }
 
-func formatRecordLiteral(record ast.RecordLiteral) (string, error) {
+func formatArrayLiteral(array ast.ArrayLiteral, depth int) (string, error) {
+	if len(array.Elements) == 0 {
+		return "[]", nil
+	}
+
+	values := make([]string, 0, len(array.Elements))
+	multiline := len(array.Elements) > 1
+	for _, element := range array.Elements {
+		value, err := formatExpressionWithDepth(element, depth+1)
+		if err != nil {
+			return "", err
+		}
+		if strings.Contains(value, "\n") {
+			multiline = true
+		}
+		values = append(values, value)
+	}
+
+	if !multiline {
+		return "[" + strings.Join(values, ", ") + "]", nil
+	}
+
+	lines := []string{"["}
+	indent := strings.Repeat("  ", depth+1)
+	closingIndent := strings.Repeat("  ", depth)
+	for index, value := range values {
+		lines = append(lines, formatMultilineArrayItem(value, indent, index < len(values)-1))
+	}
+	lines = append(lines, closingIndent+"]")
+	return strings.Join(lines, "\n"), nil
+}
+
+func formatRecordLiteral(record ast.RecordLiteral, depth int) (string, error) {
 	if len(record.Fields) == 0 {
 		return "{}", nil
 	}
 
 	lines := []string{"{"}
+	indent := strings.Repeat("  ", depth+1)
+	closingIndent := strings.Repeat("  ", depth)
 	for _, field := range record.Fields {
-		value, err := formatExpression(field.Value)
+		value, err := formatExpressionWithDepth(field.Value, depth+1)
 		if err != nil {
 			return "", err
 		}
@@ -359,14 +398,14 @@ func formatRecordLiteral(record ast.RecordLiteral) (string, error) {
 			optional = "?"
 		}
 
-		lines = append(lines, fmt.Sprintf("  %s%s: %s;", field.Name, optional, value))
+		lines = append(lines, formatMultilineRecordField(field.Name, optional, value, indent))
 	}
 
-	lines = append(lines, "}")
+	lines = append(lines, closingIndent+"}")
 	return strings.Join(lines, "\n"), nil
 }
 
-func formatInfixExpression(expression ast.InfixExpression) (string, int, error) {
+func formatInfixExpression(expression ast.InfixExpression, depth int) (string, int, error) {
 	precedence := infixPrecedence(expression.Operator)
 
 	leftPrecedence := precedence
@@ -379,17 +418,46 @@ func formatInfixExpression(expression ast.InfixExpression) (string, int, error) 
 		rightPrecedence = precedence
 	}
 
-	left, err := formatExpressionWithPrecedence(expression.Left, leftPrecedence)
+	left, err := formatExpressionWithPrecedence(expression.Left, leftPrecedence, depth)
 	if err != nil {
 		return "", 0, err
 	}
 
-	right, err := formatExpressionWithPrecedence(expression.Right, rightPrecedence)
+	right, err := formatExpressionWithPrecedence(expression.Right, rightPrecedence, depth)
 	if err != nil {
 		return "", 0, err
 	}
 
 	return fmt.Sprintf("%s %s %s", left, tokenLexeme(expression.Operator), right), precedence, nil
+}
+
+func formatScriptDelimiter(lines []string) string {
+	width := 3
+	for _, line := range lines {
+		for _, part := range strings.Split(line, "\n") {
+			if len(part) > width {
+				width = len(part)
+			}
+		}
+	}
+
+	return "|" + strings.Repeat("=", width) + "|"
+}
+
+func formatMultilineArrayItem(value string, indent string, trailingComma bool) string {
+	lines := strings.Split(value, "\n")
+	lines[0] = indent + lines[0]
+	if trailingComma {
+		lines[len(lines)-1] += ","
+	}
+	return strings.Join(lines, "\n")
+}
+
+func formatMultilineRecordField(name string, optional string, value string, indent string) string {
+	lines := strings.Split(value, "\n")
+	lines[0] = indent + fmt.Sprintf("%s%s: %s", name, optional, lines[0])
+	lines[len(lines)-1] += ";"
+	return strings.Join(lines, "\n")
 }
 
 func tokenLexeme(tokenType lexer.TokenType) string {

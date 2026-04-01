@@ -53,14 +53,14 @@ injectable string user = "Ada";
 		tAssert.NoError(err)
 		tAssert.Equal(`from "./base.mace" import User, Config;
 
-|===|
+|===============================|
 type Name = string;
 schema User = {
   name: string;
   age?: int;
 };
 injectable string user = "Ada";
-|===|
+|===============================|
 [output = data, schema = User]
 {
   name: user;
@@ -88,6 +88,32 @@ injectable string user = "Ada";
 		tAssert.NoError(err)
 		tAssert.Equal(`{
   result: 1 + 2;
+}`, output)
+	})
+
+	It("keeps arrays and nested records expanded instead of collapsing them", func() {
+		file, err := parseMaceFile(`[output = data]
+{
+  result: [{ profile: { name: "Ada"; }; }, { profile: { name: "Bob"; }; }];
+}`)
+		tAssert.NoError(err)
+
+		output, err := FormatFile(file)
+		tAssert.NoError(err)
+		tAssert.Equal(`[output = data]
+{
+  result: [
+    {
+      profile: {
+        name: "Ada";
+      };
+    },
+    {
+      profile: {
+        name: "Bob";
+      };
+    }
+  ];
 }`, output)
 	})
 

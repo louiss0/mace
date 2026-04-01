@@ -534,9 +534,45 @@ string env = "dev";
 		}
 
 		if tAssert.Len(edits, 1) {
-			tAssert.Equal(`[output = data]
+			tAssert.Equal(`[output = data]{result:1+2;}`, edits[0].NewText)
+		}
+	})
+
+	It("preserves existing spacing while resizing script delimiters", func() {
+		server := New()
+		initializeServer(server)
+		didOpen(server, uri, `|===|
+string display_name = "Ada";
+|===|
+[output = data]
 {
-  result: 1 + 2;
+  result: [{ profile: { name: "Ada"; }; }, { profile: { name: "Bob"; }; }];
+}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentFormatting, protocol.DocumentFormattingParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+			Options: protocol.FormattingOptions{
+				protocol.FormattingOptionInsertSpaces: true,
+				protocol.FormattingOptionTabSize:      2,
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		edits, ok := resultValue.([]protocol.TextEdit)
+		tAssert.True(ok)
+		if !ok {
+			return
+		}
+
+		if tAssert.Len(edits, 1) {
+			tAssert.Equal(`|============================|
+string display_name = "Ada";
+|============================|
+[output = data]
+{
+  result: [{ profile: { name: "Ada"; }; }, { profile: { name: "Bob"; }; }];
 }`, edits[0].NewText)
 		}
 	})

@@ -142,12 +142,12 @@ schema User = { name: string; age?: int; };
 			tAssert.Equal("", stderr.String())
 			tAssert.Equal(`from "./base.mace" import User;
 
-|===|
+|===============|
 schema User = {
   name: string;
   age?: int;
 };
-|===|
+|===============|
 [output = data, schema = User]
 {
   name: "Ada";

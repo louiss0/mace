@@ -13,7 +13,6 @@ import (
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
-	"github.com/louiss0/mace/internal/formatter"
 	"github.com/louiss0/mace/internal/lexer"
 	"github.com/louiss0/mace/internal/parser"
 	"github.com/louiss0/mace/internal/parser/ast"
@@ -349,19 +348,7 @@ func (server *Server) formatDocument(context *glsp.Context, params *protocol.Doc
 	if !ok {
 		return []protocol.TextEdit{}, nil
 	}
-
-	if document.analysis.file == nil {
-		file, err := parseFile(document.text)
-		if err != nil {
-			return nil, err
-		}
-		document.analysis.file = &file
-	}
-
-	formatted, err := formatter.FormatFile(*document.analysis.file)
-	if err != nil {
-		return nil, err
-	}
+	formatted := formatDocumentText(document.text)
 
 	return []protocol.TextEdit{
 		{
