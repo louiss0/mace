@@ -26,10 +26,13 @@ var (
 )
 
 var globalKeywordCompletions = []completionDefinition{
+	{Label: "from", Kind: protocol.CompletionItemKindKeyword, Detail: "import declaration"},
+}
+
+var scriptKeywordCompletions = []completionDefinition{
 	{Label: "array", Kind: protocol.CompletionItemKindKeyword, Detail: "type constructor"},
 	{Label: "boolean", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
 	{Label: "float", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
-	{Label: "from", Kind: protocol.CompletionItemKindKeyword, Detail: "import declaration"},
 	{Label: "injectable", Kind: protocol.CompletionItemKindKeyword, Detail: "variable modifier"},
 	{Label: "int", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
 	{Label: "schema", Kind: protocol.CompletionItemKindKeyword, Detail: "schema declaration"},
@@ -39,19 +42,70 @@ var globalKeywordCompletions = []completionDefinition{
 
 func completionItems(document document, uri protocol.DocumentUri, position protocol.Position) []protocol.CompletionItem {
 	linePrefix := currentLinePrefix(document.text, position)
+	scope := completionScopeAt(document.text, position)
 
-	if items, handled := importCompletionItems(linePrefix, uri); handled {
-		return items
+	if scope == completionScopeFile {
+		if items, handled := importCompletionItems(linePrefix, uri); handled {
+			return items
+		}
 	}
 
-	if items, handled := directiveCompletionItems(document, uri, linePrefix); handled {
-		return items
+	if scope == completionScopeOutput {
+		if items, handled := directiveCompletionItems(document, uri, linePrefix); handled {
+			return items
+		}
 	}
 
 	prefix := identifierPrefixAt(document.text, position)
-	items := itemsFromDefinitions(globalKeywordCompletions, prefix)
-	items = append(items, itemsFromDeclarations(document.analysis.declarations, prefix)...)
+	items := []protocol.CompletionItem{}
+	switch scope {
+	case completionScopeFile:
+		items = itemsFromDefinitions(globalKeywordCompletions, prefix)
+	case completionScopeScript:
+		items = itemsFromDefinitions(scriptKeywordCompletions, prefix)
+		items = append(items, itemsFromDeclarations(document.analysis.declarations, prefix)...)
+	case completionScopeOutput:
+		items = itemsFromDeclarations(document.analysis.declarations, prefix)
+	}
+
 	return sortCompletionItems(items)
+}
+
+func completionScopeAt(text string, position protocol.Position) completionScope {
+	index := position.IndexIn(text)
+	if index < 0 {
+		return completionScopeFile
+	}
+
+	lines := strings.Split(text[:index], "\n")
+	inScript := false
+	outputStarted := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if isScriptDelimiterLine(trimmed) {
+			inScript = !inScript
+			continue
+		}
+
+		if inScript {
+			continue
+		}
+
+		if strings.Contains(line, "[") || strings.Contains(line, "{") {
+			outputStarted = true
+		}
+	}
+
+	if inScript {
+		return completionScopeScript
+	}
+
+	if outputStarted {
+		return completionScopeOutput
+	}
+
+	return completionScopeFile
 }
 
 func importCompletionItems(linePrefix string, uri protocol.DocumentUri) ([]protocol.CompletionItem, bool) {
@@ -527,3 +581,11 @@ type directiveState struct {
 	seenSchemaFile bool
 	seenSchema     bool
 }
+
+type completionScope int
+
+const (
+	completionScopeFile completionScope = iota
+	completionScopeScript
+	completionScopeOutput
+)

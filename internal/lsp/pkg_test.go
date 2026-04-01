@@ -478,16 +478,16 @@ schema Plot = { points: array<Point>; };
 		tAssert.Nil(resultValue)
 	})
 
-	It("returns keyword completions using the current prefix", func() {
+	It("returns script keyword completions only inside the script block", func() {
 		server := New()
 		initializeServer(server)
 		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, "sche", nil)
+		didChange(server, uri, 2, "|===|\nsche", nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentCompletion, protocol.CompletionParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
-				Position:     protocol.Position{Line: 0, Character: 4},
+				Position:     protocol.Position{Line: 1, Character: 4},
 			},
 		}, nil)
 		tAssert.True(validMethod)
@@ -502,6 +502,20 @@ schema Plot = { points: array<Point>; };
 
 		tAssert.NotEmpty(items)
 		tAssert.Equal("schema", items[0].Label)
+	})
+
+	It("returns import completions only at file scope", func() {
+		server := New()
+		initializeServer(server)
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, "fr", nil)
+
+		labels := completeLabels(server, uri, 0, 2)
+		tAssert.Equal([]string{"from"}, labels)
+
+		didChange(server, uri, 3, "|===|\nfr", nil)
+		labels = completeLabels(server, uri, 1, 2)
+		tAssert.NotContains(labels, "from")
 	})
 
 	It("only suggests import after a valid from path", func() {
@@ -635,6 +649,19 @@ schema Plot = { points: array<Point>; };
 		didChange(server, uri, 3, `[out`, nil)
 		labels = completeLabels(server, uri, 0, 4)
 		tAssert.Equal([]string{"output"}, labels)
+	})
+
+	It("does not suggest script keywords in the output block", func() {
+		server := New()
+		initializeServer(server)
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data]
+{
+  str
+}`, nil)
+
+		labels := completeLabels(server, uri, 2, 5)
+		tAssert.NotContains(labels, "string")
 	})
 
 	It("suggests schema and schema_file after output schema and a comma", func() {
