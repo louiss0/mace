@@ -294,7 +294,7 @@ func (server *Server) hover(context *glsp.Context, params *protocol.HoverParams)
 		}, nil
 	}
 
-	symbol, ok := document.analysis.symbol(identifier)
+	symbol, ok := document.analysis.symbolAt(params.Position)
 	if ok {
 		return &protocol.Hover{
 			Contents: protocol.MarkupContent{

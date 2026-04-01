@@ -70,6 +70,22 @@ func (snapshot analysisSnapshot) symbol(name string) (semanticSymbol, bool) {
 	return symbol, ok
 }
 
+func (snapshot analysisSnapshot) symbolAt(position protocol.Position) (semanticSymbol, bool) {
+	for index := len(snapshot.symbols) - 1; index >= 0; index-- {
+		symbol := snapshot.symbols[index]
+		if comparePositions(symbol.Range.Start, position) <= 0 && comparePositions(position, symbol.Range.End) <= 0 {
+			return symbol, true
+		}
+	}
+
+	identifier, found := identifierAt(snapshot.text, position)
+	if !found {
+		return semanticSymbol{}, false
+	}
+
+	return snapshot.symbol(identifier)
+}
+
 func (snapshot analysisSnapshot) definitionAt(position protocol.Position) (protocol.Location, bool) {
 	if snapshot.file == nil {
 		return protocol.Location{}, false
@@ -634,6 +650,7 @@ func declarationsFromSymbols(symbols []semanticSymbol) []declarationDefinition {
 func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *processor.Result, documentPath string) []semanticSymbol {
 	symbols := importedSemanticSymbols(file, documentPath)
 	documentURI := pathURI(documentPath)
+	outputRanges := outputFieldHeaderRanges(tokens)
 
 	if file.Script != nil {
 		symbols = append(symbols, lo.FilterMap(file.Script.Items, func(item ast.Declaration, _ int) (semanticSymbol, bool) {
@@ -650,18 +667,18 @@ func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *process
 		})...)
 	}
 
-	symbols = append(symbols, lo.Map(file.Output.SchemaFields, func(field ast.OutputSchemaField, _ int) semanticSymbol {
-		return newLocalSymbol(tokens, documentURI, field.Name, protocol.CompletionItemKindProperty, symbolOriginOutput, fmt.Sprintf("output %s: %s", field.Name, fieldTypeDetail(field.Type)))
+	symbols = append(symbols, lo.Map(file.Output.SchemaFields, func(field ast.OutputSchemaField, index int) semanticSymbol {
+		return newOutputSymbol(outputRanges, index, documentURI, field.Name, fmt.Sprintf("output %s: %s", field.Name, fieldTypeDetail(field.Type)))
 	})...)
 
-	symbols = append(symbols, lo.Map(file.Output.DataFields, func(field ast.OutputField, _ int) semanticSymbol {
+	symbols = append(symbols, lo.Map(file.Output.DataFields, func(field ast.OutputField, index int) semanticSymbol {
 		detail := "output " + field.Name
 		if result != nil {
 			if value, ok := result.Output[field.Name]; ok {
 				detail = fmt.Sprintf("output %s: %s = %s", field.Name, valueTypeSummary(value), summarizeValue(value))
 			}
 		}
-		return newLocalSymbol(tokens, documentURI, field.Name, protocol.CompletionItemKindProperty, symbolOriginOutput, detail)
+		return newOutputSymbol(outputRanges, index, documentURI, field.Name, detail)
 	})...)
 
 	return dedupeSymbols(symbols)
@@ -681,6 +698,94 @@ func newLocalSymbol(tokens []lexer.Token, uri protocol.DocumentUri, name string,
 			Range: rangeValue,
 		},
 	}
+}
+
+func newOutputSymbol(outputRanges []protocol.Range, index int, uri protocol.DocumentUri, name string, detail string) semanticSymbol {
+	rangeValue := protocol.Range{}
+	if index < len(outputRanges) {
+		rangeValue = outputRanges[index]
+	}
+
+	return semanticSymbol{
+		Name:   name,
+		Kind:   protocol.CompletionItemKindProperty,
+		Detail: detail,
+		Origin: symbolOriginOutput,
+		Range:  rangeValue,
+		Definition: protocol.Location{
+			URI:   uri,
+			Range: rangeValue,
+		},
+	}
+}
+
+func outputFieldHeaderRanges(tokens []lexer.Token) []protocol.Range {
+	inScript := false
+	directiveDepth := 0
+	braceDepth := 0
+	inOutput := false
+	ranges := []protocol.Range{}
+
+	for index := 0; index < len(tokens); index++ {
+		token := tokens[index]
+
+		switch token.Type {
+		case lexer.TokenScriptDelimiter:
+			inScript = !inScript
+			continue
+		case lexer.TokenLBracket:
+			if !inScript {
+				directiveDepth++
+			}
+			continue
+		case lexer.TokenRBracket:
+			if !inScript && directiveDepth > 0 {
+				directiveDepth--
+			}
+			continue
+		case lexer.TokenLBrace:
+			if inScript || directiveDepth > 0 {
+				continue
+			}
+			braceDepth++
+			if !inOutput {
+				inOutput = true
+			}
+			continue
+		case lexer.TokenRBrace:
+			if !inOutput {
+				continue
+			}
+			braceDepth--
+			if braceDepth == 0 {
+				return ranges
+			}
+			continue
+		}
+
+		if !inOutput || braceDepth != 1 || token.Type != lexer.TokenIdentifier || !looksLikeFieldHeader(tokens, index) {
+			continue
+		}
+
+		start := protocol.Position{Line: protocol.UInteger(token.Line - 1), Character: protocol.UInteger(token.Column - 1)}
+		end := protocol.Position{Line: protocol.UInteger(token.Line - 1), Character: protocol.UInteger(token.Column - 1 + len(token.Lexeme))}
+		ranges = append(ranges, protocol.Range{Start: start, End: end})
+	}
+
+	return ranges
+}
+
+func looksLikeFieldHeader(tokens []lexer.Token, index int) bool {
+	if index+1 >= len(tokens) {
+		return false
+	}
+	if tokens[index+1].Type == lexer.TokenColon {
+		return true
+	}
+
+	return index+2 < len(tokens) &&
+		tokens[index+1].Type == lexer.TokenQuestion &&
+		tokens[index+2].Type == lexer.TokenColon
 }
 
 func importedSemanticSymbols(file ast.File, documentPath string) []semanticSymbol {

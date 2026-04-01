@@ -18,6 +18,6 @@ Age default_age = 30;
     profile: { age: default_age; };
   };
   foo: $self.User.profile.age;
-  bar: $self.foo;
+  bar: ($self.foo + 5);
   baz: ($self.User.name);
 }

@@ -1003,6 +1003,87 @@ string env = "dev";
 		}
 	})
 
+	It("prefers output field hover details over same-named schema declarations", func() {
+		server := New()
+		initializeServer(server)
+		didOpen(server, uri, `|===|
+schema User = { name: string; };
+|===|
+[output = data]
+{
+  User: { name: "Ada"; };
+}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 5, Character: 3},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, "output User")
+			tAssert.NotContains(content.Value, "schema User")
+		}
+	})
+
+	It("prefers output field hover details when the same name is reused later in self references", func() {
+		server := New()
+		initializeServer(server)
+		didOpen(server, uri, `|===|
+type Name = string;
+schema Profile = { age: int; };
+schema User = { name: Name; profile: Profile; };
+Name default_name = "Ada";
+int default_age = 30;
+|===|
+[output = data]
+{
+  User: {
+    name: default_name;
+    profile: { age: default_age; };
+  };
+  foo: $self.User.profile.age;
+  bar: $self.foo;
+  baz: ($self.User.name);
+}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 8, Character: 3},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, `output User: { name: string; profile: { age: int; } }`)
+			tAssert.Contains(content.Value, `name: "Ada"`)
+			tAssert.NotContains(content.Value, "schema User")
+		}
+	})
+
 	It("returns hover details for imported declarations", func() {
 		server := New()
 		initializeServer(server)
