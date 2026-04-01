@@ -3,9 +3,10 @@ package lsp
 import (
 	"fmt"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 
+	"github.com/samber/lo"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
 	"github.com/louiss0/mace/internal/lexer"
@@ -161,62 +162,63 @@ func schemaDiagnostic(tokens []lexer.Token, message string) (protocol.Diagnostic
 }
 
 func tokenRange(tokens []lexer.Token, lexeme string) (protocol.Range, bool) {
-	for _, token := range tokens {
-		if token.Type != lexer.TokenIdentifier || token.Lexeme != lexeme {
-			continue
-		}
-
-		start := protocol.Position{Line: protocol.UInteger(token.Line - 1), Character: protocol.UInteger(token.Column - 1)}
-		end := protocol.Position{Line: protocol.UInteger(token.Line - 1), Character: protocol.UInteger(token.Column - 1 + len(token.Lexeme))}
-		return protocol.Range{Start: start, End: end}, true
+	token, found := lo.Find(tokens, func(token lexer.Token) bool {
+		return token.Type == lexer.TokenIdentifier && token.Lexeme == lexeme
+	})
+	if !found {
+		return protocol.Range{}, false
 	}
 
-	return protocol.Range{}, false
+	start := protocol.Position{Line: protocol.UInteger(token.Line - 1), Character: protocol.UInteger(token.Column - 1)}
+	end := protocol.Position{Line: protocol.UInteger(token.Line - 1), Character: protocol.UInteger(token.Column - 1 + len(token.Lexeme))}
+	return protocol.Range{Start: start, End: end}, true
 }
 
 func collectDeclarations(file ast.File, result *processor.Result) []declarationDefinition {
-	declarations := []declarationDefinition{}
+	var declarations []declarationDefinition
 	if file.Script != nil {
-		for _, item := range file.Script.Items {
+		declarations = lo.FilterMap(file.Script.Items, func(item ast.Declaration, _ int) (declarationDefinition, bool) {
 			switch declaration := item.(type) {
 			case ast.TypeDeclaration:
-				declarations = append(declarations, declarationDefinition{
+				return declarationDefinition{
 					Name:   declaration.Name,
 					Kind:   protocol.CompletionItemKindClass,
 					Detail: fmt.Sprintf("type %s = %s;", declaration.Name, typeReferenceDetail(declaration.Type)),
-				})
+				}, true
 			case ast.SchemaDeclaration:
-				declarations = append(declarations, declarationDefinition{
+				return declarationDefinition{
 					Name:   declaration.Name,
 					Kind:   protocol.CompletionItemKindStruct,
 					Detail: fmt.Sprintf("schema %s = %s;", declaration.Name, recordTypeDetail(declaration.Type)),
-				})
+				}, true
 			case ast.VariableDeclaration:
-				detail := fmt.Sprintf("%s %s = %s", typeReferenceDetail(declaration.Type), declaration.Name, expressionSummary(declaration.Value))
-				declarations = append(declarations, declarationDefinition{
+				return declarationDefinition{
 					Name:   declaration.Name,
 					Kind:   protocol.CompletionItemKindVariable,
-					Detail: detail,
-				})
+					Detail: fmt.Sprintf("%s %s = %s", typeReferenceDetail(declaration.Type), declaration.Name, expressionSummary(declaration.Value)),
+				}, true
+			default:
+				return declarationDefinition{}, false
 			}
-		}
+		})
 	}
 
-	if result != nil {
-		for _, field := range file.Output.DataFields {
-			value, ok := result.Output[field.Name]
-			if !ok {
-				continue
-			}
-			declarations = append(declarations, declarationDefinition{
-				Name:   field.Name,
-				Kind:   protocol.CompletionItemKindProperty,
-				Detail: fmt.Sprintf("output %s: %s = %s", field.Name, valueTypeSummary(value), summarizeValue(value)),
-			})
-		}
+	if result == nil {
+		return declarations
 	}
 
-	return declarations
+	return append(declarations, lo.FilterMap(file.Output.DataFields, func(field ast.OutputField, _ int) (declarationDefinition, bool) {
+		value, ok := result.Output[field.Name]
+		if !ok {
+			return declarationDefinition{}, false
+		}
+
+		return declarationDefinition{
+			Name:   field.Name,
+			Kind:   protocol.CompletionItemKindProperty,
+			Detail: fmt.Sprintf("output %s: %s = %s", field.Name, valueTypeSummary(value), summarizeValue(value)),
+		}, true
+	})...)
 }
 
 func summarizeValue(value processor.Value) string {
@@ -233,21 +235,16 @@ func summarizeValue(value processor.Value) string {
 		}
 		return "false"
 	case processor.ValueArray:
-		items := make([]string, 0, len(value.Array))
-		for _, item := range value.Array {
-			items = append(items, summarizeValue(item))
-		}
+		items := lo.Map(value.Array, func(item processor.Value, _ int) string {
+			return summarizeValue(item)
+		})
 		return "[" + strings.Join(items, ", ") + "]"
 	case processor.ValueRecord:
-		names := make([]string, 0, len(value.Record))
-		for name := range value.Record {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		fields := make([]string, 0, len(names))
-		for _, name := range names {
-			fields = append(fields, fmt.Sprintf("%s: %s", name, summarizeValue(value.Record[name])))
-		}
+		names := lo.Keys(value.Record)
+		slices.Sort(names)
+		fields := lo.Map(names, func(name string, _ int) string {
+			return fmt.Sprintf("%s: %s", name, summarizeValue(value.Record[name]))
+		})
 		return "{ " + strings.Join(fields, "; ") + " }"
 	default:
 		return "unknown"
@@ -270,15 +267,11 @@ func valueTypeSummary(value processor.Value) string {
 		}
 		return "array<" + valueTypeSummary(value.Array[0]) + ">"
 	case processor.ValueRecord:
-		names := make([]string, 0, len(value.Record))
-		for name := range value.Record {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		fields := make([]string, 0, len(names))
-		for _, name := range names {
-			fields = append(fields, fmt.Sprintf("%s: %s", name, valueTypeSummary(value.Record[name])))
-		}
+		names := lo.Keys(value.Record)
+		slices.Sort(names)
+		fields := lo.Map(names, func(name string, _ int) string {
+			return fmt.Sprintf("%s: %s", name, valueTypeSummary(value.Record[name]))
+		})
 		return "{ " + strings.Join(fields, "; ") + " }"
 	default:
 		return "unknown"
