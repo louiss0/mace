@@ -130,7 +130,7 @@ func (server *Server) setTrace(context *glsp.Context, params *protocol.SetTraceP
 }
 
 func (server *Server) didOpen(context *glsp.Context, params *protocol.DidOpenTextDocumentParams) error {
-	analysis := analyzeDocument(params.TextDocument.Text)
+	analysis := analyzeDocumentAt(params.TextDocument.Text, documentPath(params.TextDocument.URI))
 
 	server.lock.Lock()
 	server.documents[params.TextDocument.URI] = document{
@@ -180,7 +180,7 @@ func (server *Server) didChange(context *glsp.Context, params *protocol.DidChang
 		return changeResult.err
 	}
 
-	analysis := analyzeDocument(changeResult.text)
+	analysis := analyzeDocumentAt(changeResult.text, documentPath(params.TextDocument.URI))
 
 	server.documents[params.TextDocument.URI] = document{
 		text:     changeResult.text,
@@ -369,6 +369,15 @@ func diagnosticFromError(err error) protocol.Diagnostic {
 			End:   end,
 		},
 	}
+}
+
+func documentPath(uri protocol.DocumentUri) string {
+	path, ok := documentPathFromURI(uri)
+	if !ok {
+		return ""
+	}
+
+	return path
 }
 
 func parseUint(value string) protocol.UInteger {

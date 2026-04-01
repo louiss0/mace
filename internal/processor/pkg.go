@@ -105,6 +105,14 @@ func (p *Processor) Process(input string) (Result, error) {
 		baseDir = "."
 	}
 
+	return p.ProcessInDir(input, baseDir)
+}
+
+func (p *Processor) ProcessInDir(input string, baseDir string) (Result, error) {
+	if baseDir == "" {
+		baseDir = "."
+	}
+
 	return p.processInput(input, baseDir)
 }
 

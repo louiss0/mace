@@ -258,6 +258,42 @@ var _ = Describe("LSP server", func() {
 		}
 	})
 
+	It("resolves top-level imports relative to the opened file", func() {
+		server := New()
+		initializeServer(server)
+		notifications := []capturedNotification{}
+
+		workspace, err := os.MkdirTemp("", "mace-lsp-import-diagnostics-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
+{
+  Name: string;
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `from "./shared.mace" import Name;
+|===|
+Name user = "Ada";
+|===|
+[output = data]
+{
+  user: user;
+}`))
+
+		didOpen(server, uri, `from "./shared.mace" import Name;
+|===|
+Name user = "Ada";
+|===|
+[output = data]
+{
+  user: user;
+}`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			tAssert.Empty(params.Diagnostics)
+		}
+	})
+
 	It("publishes syntax diagnostics when an invalid document opens", func() {
 		server := New()
 		initializeServer(server)

@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -27,6 +28,10 @@ type analysisSnapshot struct {
 }
 
 func analyzeDocument(text string) analysisSnapshot {
+	return analyzeDocumentAt(text, "")
+}
+
+func analyzeDocumentAt(text string, documentPath string) analysisSnapshot {
 	snapshot := analysisSnapshot{}
 
 	file, parseErr := parseFile(text)
@@ -44,7 +49,12 @@ func analyzeDocument(text string) analysisSnapshot {
 	snapshot.file = &file
 
 	processorInstance := processor.New()
-	result, processErr := processorInstance.Process(text)
+	baseDir := filepath.Dir(documentPath)
+	if documentPath == "" {
+		baseDir = ""
+	}
+
+	result, processErr := processorInstance.ProcessInDir(text, baseDir)
 	if processErr != nil {
 		snapshot.diagnostics = []protocol.Diagnostic{diagnosticFromError(processErr)}
 		if semanticDiagnostic, ok := semanticDiagnosticFromError(file, tokens, processErr); ok {
