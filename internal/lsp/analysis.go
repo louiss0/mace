@@ -91,12 +91,7 @@ func (snapshot analysisSnapshot) definitionAt(position protocol.Position) (proto
 		return protocol.Location{}, false
 	}
 
-	identifier, found := identifierAt(snapshot.text, position)
-	if !found {
-		return protocol.Location{}, false
-	}
-
-	symbol, ok := snapshot.symbol(identifier)
+	symbol, ok := snapshot.symbolAt(position)
 	if !ok {
 		return protocol.Location{}, false
 	}

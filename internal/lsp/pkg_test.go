@@ -1172,6 +1172,38 @@ User current = { name: "Ada"; };
 		tAssert.Equal(protocol.DocumentUri(importPath), location.URI)
 	})
 
+	It("prefers output field definitions over same-named schema declarations", func() {
+		server := New()
+		initializeServer(server)
+		didOpen(server, uri, `|===|
+schema User = { name: string; };
+|===|
+[output = data]
+{
+  User: { name: "Ada"; };
+}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentDefinition, protocol.DefinitionParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 5, Character: 3},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		location, ok := resultValue.(protocol.Location)
+		tAssert.True(ok)
+		if !ok {
+			return
+		}
+
+		tAssert.Equal(uri, location.URI)
+		tAssert.Equal(protocol.UInteger(5), location.Range.Start.Line)
+		tAssert.Equal(protocol.UInteger(2), location.Range.Start.Character)
+	})
+
 	It("returns code actions for import path fixes", func() {
 		server := New()
 		initializeServer(server)

@@ -123,6 +123,25 @@ User current = { name: "Ada"; };
 		tAssert.Equal(protocol.UInteger(2), localDefinition.Range.Start.Line)
 	})
 
+	It("prefers output field definitions over same-named schema declarations", func() {
+		workspace, err := os.MkdirTemp("", "mace-analysis-output-definition-*")
+		tAssert.NoError(err)
+		documentPath := filepath.Join(workspace, "consumer.mace")
+
+		snapshot := analyzeDocumentAt(`|===|
+schema User = { name: string; };
+|===|
+[output = data]
+{
+  User: { name: "Ada"; };
+}`, documentPath)
+
+		definition := requireDefinition(snapshot, protocol.Position{Line: 5, Character: 3})
+		tAssert.Equal(protocol.DocumentUri(fileURI(documentPath)), definition.URI)
+		tAssert.Equal(protocol.UInteger(5), definition.Range.Start.Line)
+		tAssert.Equal(protocol.UInteger(2), definition.Range.Start.Character)
+	})
+
 	It("translates import path validation into an LSP diagnostic and quick fix", func() {
 		workspace, err := os.MkdirTemp("", "mace-analysis-import-fix-*")
 		tAssert.NoError(err)
