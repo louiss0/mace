@@ -187,12 +187,14 @@ type OutputDirective struct {
 }
 
 type OutputField struct {
+	NameToken lexer.Token
 	Name     string
 	Optional bool
 	Value    Expression
 }
 
 type OutputSchemaField struct {
+	NameToken lexer.Token
 	Name     string
 	Optional bool
 	Type     TypeReference

@@ -319,6 +319,8 @@ string user = "Ada";
 			tAssert.Equal(ast.OutputModeData, file.Output.Mode)
 			if tAssert.Len(file.Output.DataFields, 1) {
 				tAssert.Equal("name", file.Output.DataFields[0].Name)
+				tAssert.Equal(8, file.Output.DataFields[0].NameToken.Line)
+				tAssert.Equal(3, file.Output.DataFields[0].NameToken.Column)
 				requireIdentifier(file.Output.DataFields[0].Value, "user")
 			}
 			tAssert.Empty(file.Output.SchemaFields)
@@ -361,6 +363,8 @@ type Matrix = array<array<int>>;
 			tAssert.Equal(ast.OutputModeData, file.Output.Mode)
 			if tAssert.Len(file.Output.DataFields, 1) {
 				tAssert.Equal("result", file.Output.DataFields[0].Name)
+				tAssert.Equal(1, file.Output.DataFields[0].NameToken.Line)
+				tAssert.Equal(3, file.Output.DataFields[0].NameToken.Column)
 			}
 		})
 
@@ -377,6 +381,8 @@ type Matrix = array<array<int>>;
 			if tAssert.Len(file.Output.SchemaFields, 2) {
 				tAssert.Equal("name", file.Output.SchemaFields[0].Name)
 				tAssert.False(file.Output.SchemaFields[0].Optional)
+				tAssert.Equal(3, file.Output.SchemaFields[0].NameToken.Line)
+				tAssert.Equal(3, file.Output.SchemaFields[0].NameToken.Column)
 
 				nameType, ok := file.Output.SchemaFields[0].Type.(ast.PrimitiveType)
 				tAssert.True(ok)
@@ -386,6 +392,8 @@ type Matrix = array<array<int>>;
 
 				tAssert.Equal("age", file.Output.SchemaFields[1].Name)
 				tAssert.True(file.Output.SchemaFields[1].Optional)
+				tAssert.Equal(4, file.Output.SchemaFields[1].NameToken.Line)
+				tAssert.Equal(3, file.Output.SchemaFields[1].NameToken.Column)
 
 				ageType, ok := file.Output.SchemaFields[1].Type.(ast.PrimitiveType)
 				tAssert.True(ok)

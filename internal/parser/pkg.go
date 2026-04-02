@@ -314,7 +314,7 @@ func (p *Parser) parseRecordType() (ast.RecordType, error) {
 }
 
 func (p *Parser) parseSchemaField() (ast.SchemaField, error) {
-	name, optional, err := p.parseFieldHeader("schema field")
+	_, name, optional, err := p.parseFieldHeader("schema field")
 	if err != nil {
 		return ast.SchemaField{}, err
 	}
@@ -473,7 +473,7 @@ func (p *Parser) parseDirectivePair() (ast.OutputDirective, error) {
 }
 
 func (p *Parser) parseOutputField() (ast.OutputField, error) {
-	name, optional, err := p.parseFieldHeader("output field")
+	nameToken, name, optional, err := p.parseFieldHeader("output field")
 	if err != nil {
 		return ast.OutputField{}, err
 	}
@@ -488,6 +488,7 @@ func (p *Parser) parseOutputField() (ast.OutputField, error) {
 	}
 
 	return ast.OutputField{
+		NameToken: nameToken,
 		Name:     name,
 		Optional: optional,
 		Value:    value,
@@ -495,7 +496,7 @@ func (p *Parser) parseOutputField() (ast.OutputField, error) {
 }
 
 func (p *Parser) parseOutputSchemaField() (ast.OutputSchemaField, error) {
-	name, optional, err := p.parseFieldHeader("output schema field")
+	nameToken, name, optional, err := p.parseFieldHeader("output schema field")
 	if err != nil {
 		return ast.OutputSchemaField{}, err
 	}
@@ -510,16 +511,17 @@ func (p *Parser) parseOutputSchemaField() (ast.OutputSchemaField, error) {
 	}
 
 	return ast.OutputSchemaField{
+		NameToken: nameToken,
 		Name:     name,
 		Optional: optional,
 		Type:     typeRef,
 	}, nil
 }
 
-func (p *Parser) parseFieldHeader(context string) (string, bool, error) {
+func (p *Parser) parseFieldHeader(context string) (lexer.Token, string, bool, error) {
 	nameToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier in "+context)
 	if err != nil {
-		return "", false, err
+		return lexer.Token{}, "", false, err
 	}
 
 	optional := false
@@ -529,10 +531,10 @@ func (p *Parser) parseFieldHeader(context string) (string, bool, error) {
 	}
 
 	if _, err := p.consume(lexer.TokenColon, "parser: expected ':' after "+context+" name"); err != nil {
-		return "", false, err
+		return lexer.Token{}, "", false, err
 	}
 
-	return nameToken.Lexeme, optional, nil
+	return nameToken, nameToken.Lexeme, optional, nil
 }
 
 func (p *Parser) parseTypeReference() (ast.TypeReference, error) {
@@ -739,7 +741,7 @@ func (p *Parser) parseRecordLiteral() (ast.Expression, error) {
 }
 
 func (p *Parser) parseRecordField() (ast.RecordField, error) {
-	name, optional, err := p.parseFieldHeader("record field")
+	_, name, optional, err := p.parseFieldHeader("record field")
 	if err != nil {
 		return ast.RecordField{}, err
 	}
