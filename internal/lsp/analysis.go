@@ -1069,11 +1069,6 @@ func comparePositions(left protocol.Position, right protocol.Position) int {
 	return 0
 }
 
-func nameRangeToProtocol(text string, name string) protocol.Range {
-	start, end := nameRange(text, name)
-	return protocol.Range{Start: start, End: end}
-}
-
 func quotedName(message string) string {
 	start := strings.Index(message, `"`)
 	if start < 0 {
