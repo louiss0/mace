@@ -1,0 +1,11 @@
+version: "2"
+
+run:
+  relative-path-mode: gomod
+
+linters:
+  default: standard
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
