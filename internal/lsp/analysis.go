@@ -726,7 +726,7 @@ func outputFieldHeaderRanges(tokens []lexer.Token) []protocol.Range {
 	inOutput := false
 	ranges := []protocol.Range{}
 
-	for index := 0; index < len(tokens); index++ {
+	for index := range tokens {
 		token := tokens[index]
 
 		switch token.Type {
@@ -905,19 +905,6 @@ func importedFile(path string) (ast.File, bool) {
 	}
 
 	return file, true
-}
-
-func importedDeclarationDefinition(file ast.File, name string) (declarationDefinition, bool) {
-	symbol, ok := importedSemanticSymbol(file, nil, "", "", name)
-	if !ok {
-		return declarationDefinition{}, false
-	}
-
-	return declarationDefinition{
-		Name:   symbol.Name,
-		Kind:   symbol.Kind,
-		Detail: symbol.Detail,
-	}, true
 }
 
 func isSchemaTypeReference(typeReference ast.TypeReference, file ast.File) bool {
