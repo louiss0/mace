@@ -229,6 +229,7 @@ func (p *Parser) parseVariableDeclaration() (ast.Declaration, error) {
 	return ast.VariableDeclaration{
 		Injectable: injectable,
 		Type:       typeRef,
+		NameToken:  nameToken,
 		Name:       nameToken.Lexeme,
 		Value:      value,
 	}, nil
@@ -258,8 +259,9 @@ func (p *Parser) parseTypeDeclaration() (ast.Declaration, error) {
 	}
 
 	return ast.TypeDeclaration{
-		Name: nameToken.Lexeme,
-		Type: typeRef,
+		NameToken: nameToken,
+		Name:      nameToken.Lexeme,
+		Type:      typeRef,
 	}, nil
 }
 
@@ -287,8 +289,9 @@ func (p *Parser) parseSchemaDeclaration() (ast.Declaration, error) {
 	}
 
 	return ast.SchemaDeclaration{
-		Name: nameToken.Lexeme,
-		Type: recordType,
+		NameToken: nameToken,
+		Name:      nameToken.Lexeme,
+		Type:      recordType,
 	}, nil
 }
 

@@ -292,6 +292,8 @@ string user = "Ada";
 				tAssert.True(ok)
 				if ok {
 					tAssert.Equal("User", schemaDecl.Name)
+					tAssert.Equal(4, schemaDecl.NameToken.Line)
+					tAssert.Equal(8, schemaDecl.NameToken.Column)
 					if tAssert.Len(schemaDecl.Type.Fields, 2) {
 						tAssert.Equal("name", schemaDecl.Type.Fields[0].Name)
 						tAssert.False(schemaDecl.Type.Fields[0].Optional)
@@ -305,6 +307,8 @@ string user = "Ada";
 				if ok {
 					tAssert.False(varDecl.Injectable)
 					tAssert.Equal("user", varDecl.Name)
+					tAssert.Equal(5, varDecl.NameToken.Line)
+					tAssert.Equal(8, varDecl.NameToken.Column)
 					requireStringLiteral(varDecl.Value, "\"Ada\"")
 				}
 			}

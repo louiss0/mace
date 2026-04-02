@@ -49,6 +49,7 @@ type analysisCodeActionCandidate struct {
 
 type analysisSnapshot struct {
 	text                 string
+	documentURI          protocol.DocumentUri
 	file                 *ast.File
 	result               *processor.Result
 	tokens               []lexer.Token
@@ -91,9 +92,17 @@ func (snapshot analysisSnapshot) definitionAt(position protocol.Position) (proto
 		return protocol.Location{}, false
 	}
 
-	symbol, ok := snapshot.symbolAt(position)
+	symbol, ok := snapshot.documentSymbolAt(position)
 	if !ok {
-		return protocol.Location{}, false
+		identifier, found := identifierAt(snapshot.text, position)
+		if !found {
+			return protocol.Location{}, false
+		}
+
+		symbol, ok = snapshot.definitionSymbol(identifier)
+		if !ok {
+			return protocol.Location{}, false
+		}
 	}
 
 	if symbol.Definition.URI == "" {
@@ -101,6 +110,35 @@ func (snapshot analysisSnapshot) definitionAt(position protocol.Position) (proto
 	}
 
 	return symbol.Definition, true
+}
+
+func (snapshot analysisSnapshot) documentSymbolAt(position protocol.Position) (semanticSymbol, bool) {
+	return findLastSymbol(snapshot.symbols, func(symbol semanticSymbol) bool {
+		return symbol.Definition.URI == snapshot.documentURI &&
+			comparePositions(symbol.Range.Start, position) <= 0 &&
+			comparePositions(position, symbol.Range.End) <= 0
+	})
+}
+
+func (snapshot analysisSnapshot) definitionSymbol(name string) (semanticSymbol, bool) {
+	if symbol, ok := findLastSymbol(snapshot.symbols, func(symbol semanticSymbol) bool {
+		return symbol.Name == name && symbol.Definition.URI == snapshot.documentURI
+	}); ok {
+		return symbol, true
+	}
+
+	return snapshot.symbol(name)
+}
+
+func findLastSymbol(symbols []semanticSymbol, predicate func(semanticSymbol) bool) (semanticSymbol, bool) {
+	for index := len(symbols) - 1; index >= 0; index-- {
+		symbol := symbols[index]
+		if predicate(symbol) {
+			return symbol, true
+		}
+	}
+
+	return semanticSymbol{}, false
 }
 
 func (snapshot analysisSnapshot) codeActions(uri protocol.DocumentUri, targetRange protocol.Range) []protocol.CodeAction {
@@ -134,6 +172,7 @@ func analyzeDocument(text string) analysisSnapshot {
 func analyzeDocumentAt(text string, documentPath string) analysisSnapshot {
 	snapshot := analysisSnapshot{}
 	snapshot.text = text
+	snapshot.documentURI = pathURI(documentPath)
 
 	tokens, lexErr := lex(text)
 	if lexErr != nil {
@@ -207,6 +246,7 @@ func recoveredSnapshot(text string, documentPath string, file ast.File) analysis
 
 	return analysisSnapshot{
 		text:         text,
+		documentURI:  pathURI(documentPath),
 		file:         &file,
 		tokens:       tokens,
 		symbols:      symbols,
@@ -652,11 +692,11 @@ func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *process
 		symbols = append(symbols, lo.FilterMap(file.Script.Items, func(item ast.Declaration, _ int) (semanticSymbol, bool) {
 			switch declaration := item.(type) {
 			case ast.TypeDeclaration:
-				return newLocalSymbol(tokens, documentURI, declaration.Name, protocol.CompletionItemKindClass, symbolOriginLocal, fmt.Sprintf("type %s = %s;", declaration.Name, typeReferenceDetail(declaration.Type))), true
+				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindClass, symbolOriginLocal, fmt.Sprintf("type %s = %s;", declaration.Name, typeReferenceDetail(declaration.Type))), true
 			case ast.SchemaDeclaration:
-				return newLocalSymbol(tokens, documentURI, declaration.Name, protocol.CompletionItemKindStruct, symbolOriginLocal, fmt.Sprintf("schema %s = %s;", declaration.Name, recordTypeDetail(declaration.Type))), true
+				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindStruct, symbolOriginLocal, fmt.Sprintf("schema %s = %s;", declaration.Name, recordTypeDetail(declaration.Type))), true
 			case ast.VariableDeclaration:
-				return newLocalSymbol(tokens, documentURI, declaration.Name, protocol.CompletionItemKindVariable, symbolOriginLocal, fmt.Sprintf("%s %s = %s", typeReferenceDetail(declaration.Type), declaration.Name, expressionSummary(declaration.Value))), true
+				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindVariable, symbolOriginLocal, fmt.Sprintf("%s %s = %s", typeReferenceDetail(declaration.Type), declaration.Name, expressionSummary(declaration.Value))), true
 			default:
 				return semanticSymbol{}, false
 			}
@@ -680,8 +720,8 @@ func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *process
 	return dedupeSymbols(symbols)
 }
 
-func newLocalSymbol(tokens []lexer.Token, uri protocol.DocumentUri, name string, kind protocol.CompletionItemKind, origin symbolOrigin, detail string) semanticSymbol {
-	rangeValue, _ := tokenRange(tokens, name)
+func newLocalSymbol(nameToken lexer.Token, uri protocol.DocumentUri, name string, kind protocol.CompletionItemKind, origin symbolOrigin, detail string) semanticSymbol {
+	rangeValue := tokenProtocolRange(nameToken)
 
 	return semanticSymbol{
 		Name:   name,

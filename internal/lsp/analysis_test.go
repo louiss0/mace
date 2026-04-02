@@ -142,6 +142,36 @@ schema User = { name: string; };
 		tAssert.Equal(protocol.UInteger(2), definition.Range.Start.Character)
 	})
 
+	It("prefers current document definitions over imported symbols with matching coordinates", func() {
+		workspace, err := os.MkdirTemp("", "mace-analysis-definition-coordinates-*")
+		tAssert.NoError(err)
+
+		importPath := writeAnalysisFile(workspace, "shared.mace", `[output = data]
+{
+
+
+
+
+       qux: 1;
+}`)
+		documentPath := filepath.Join(workspace, "consumer.mace")
+
+		snapshot := analyzeDocumentAt(`from "./shared.mace" import qux;
+|===|
+int qux = 2;
+|===|
+
+{
+  bar: qux;
+}`, documentPath)
+
+		definition := requireDefinition(snapshot, protocol.Position{Line: 6, Character: 7})
+		tAssert.Equal(protocol.DocumentUri(fileURI(documentPath)), definition.URI)
+		tAssert.NotEqual(protocol.DocumentUri(fileURI(importPath)), definition.URI)
+		tAssert.Equal(protocol.UInteger(2), definition.Range.Start.Line)
+		tAssert.Equal(protocol.UInteger(4), definition.Range.Start.Character)
+	})
+
 	It("translates import path validation into an LSP diagnostic and quick fix", func() {
 		workspace, err := os.MkdirTemp("", "mace-analysis-import-fix-*")
 		tAssert.NoError(err)
