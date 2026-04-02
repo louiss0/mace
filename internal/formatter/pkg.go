@@ -266,10 +266,6 @@ func formatOutputSchemaField(field ast.OutputSchemaField) (string, error) {
 	return fmt.Sprintf("%s%s: %s;", field.Name, optional, typeReference), nil
 }
 
-func formatExpression(expression ast.Expression) (string, error) {
-	return formatExpressionWithDepth(expression, 0)
-}
-
 func formatExpressionWithDepth(expression ast.Expression, depth int) (string, error) {
 	return formatExpressionWithPrecedence(expression, precedenceLowest, depth)
 }

@@ -130,14 +130,6 @@ func assertProcessedResult(input string, expected expectedValue) {
 	assertExpectedValue(actual, expected)
 }
 
-func assertProcessedOutput(input string, expected map[string]expectedValue) {
-	processor := New()
-	result, err := processor.Process(input)
-	tAssert.NoError(err)
-
-	assertExpectedOutput(result, expected)
-}
-
 func requireScriptVariable(result ScriptResult, name string) Value {
 	value, ok := result.Variables[name]
 	tAssert.True(ok)

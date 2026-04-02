@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/louiss0/mace/internal/lexer"
 	"github.com/louiss0/mace/internal/parser"
@@ -395,10 +394,6 @@ type importedDeclaration struct {
 	record  ast.RecordType
 	value   Value
 	vtype   valueType
-}
-
-func resolveImports(file ast.File, baseDir string) ([]importedDeclaration, error) {
-	return resolveImportsWithState(file, baseDir, map[string]map[string]importedDeclaration{}, map[string]struct{}{})
 }
 
 func resolveImportsWithState(file ast.File, baseDir string, cache map[string]map[string]importedDeclaration, stack map[string]struct{}) ([]importedDeclaration, error) {
@@ -1906,49 +1901,6 @@ func primitiveValueType(name string) (valueType, error) {
 	default:
 		return valueType{}, validationErrorf("unknown type %q", name)
 	}
-}
-
-func formatTypeReference(typeRef ast.TypeReference) (string, error) {
-	switch ref := typeRef.(type) {
-	case ast.PrimitiveType:
-		return ref.Name, nil
-	case ast.ArrayType:
-		element, err := formatTypeReference(ref.Element)
-		if err != nil {
-			return "", err
-		}
-
-		return fmt.Sprintf("array<%s>", element), nil
-	case ast.RecordType:
-		return formatRecordTypeReference(ref)
-	case ast.NamedType:
-		return ref.Name, nil
-	default:
-		return "", validationErrorf("unknown type reference")
-	}
-}
-
-func formatRecordTypeReference(record ast.RecordType) (string, error) {
-	if len(record.Fields) == 0 {
-		return "{}", nil
-	}
-
-	parts := make([]string, 0, len(record.Fields))
-	for _, field := range record.Fields {
-		typeName, err := formatTypeReference(field.Type)
-		if err != nil {
-			return "", err
-		}
-
-		optional := ""
-		if field.Optional {
-			optional = "?"
-		}
-
-		parts = append(parts, fmt.Sprintf("%s%s: %s", field.Name, optional, typeName))
-	}
-
-	return "{ " + strings.Join(parts, "; ") + "; }", nil
 }
 
 func schemaTypeFromTypeReference(typeRef ast.TypeReference) (SchemaType, error) {
