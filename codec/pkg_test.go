@@ -34,7 +34,6 @@ type userConfig struct {
 	Enabled bool        `json:"enabled"`
 	Profile userProfile `json:"profile"`
 	Scores  []int       `json:"scores,omitempty"`
-	private string
 }
 
 type decodedConfig struct {

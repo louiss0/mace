@@ -60,11 +60,6 @@ type analysisSnapshot struct {
 	recovered            bool
 }
 
-func (snapshot analysisSnapshot) hasSymbol(name string) bool {
-	_, ok := snapshot.symbol(name)
-	return ok
-}
-
 func (snapshot analysisSnapshot) symbol(name string) (semanticSymbol, bool) {
 	symbol, ok := snapshot.symbolIndex[name]
 	return symbol, ok
@@ -887,24 +882,6 @@ func parsedFile(path string) (string, ast.File, []lexer.Token, bool) {
 	}
 
 	return text, file, tokens, true
-}
-
-func importedDeclarationDefinitions(file ast.File, baseDir string) []declarationDefinition {
-	return declarationsFromSymbols(importedSemanticSymbols(file, filepath.Join(baseDir, "document.mace")))
-}
-
-func importedFile(path string) (ast.File, bool) {
-	contents, err := os.ReadFile(filepath.Clean(path))
-	if err != nil {
-		return ast.File{}, false
-	}
-
-	file, err := parseFile(string(contents))
-	if err != nil {
-		return ast.File{}, false
-	}
-
-	return file, true
 }
 
 func isSchemaTypeReference(typeReference ast.TypeReference, file ast.File) bool {
