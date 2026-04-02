@@ -105,6 +105,7 @@ type Declaration interface {
 type VariableDeclaration struct {
 	Injectable bool
 	Type       TypeReference
+	NameToken  lexer.Token
 	Name       string
 	Value      Expression
 }
@@ -112,15 +113,17 @@ type VariableDeclaration struct {
 func (VariableDeclaration) declarationNode() {}
 
 type TypeDeclaration struct {
-	Name string
-	Type TypeReference
+	NameToken lexer.Token
+	Name      string
+	Type      TypeReference
 }
 
 func (TypeDeclaration) declarationNode() {}
 
 type SchemaDeclaration struct {
-	Name string
-	Type RecordType
+	NameToken lexer.Token
+	Name      string
+	Type      RecordType
 }
 
 func (SchemaDeclaration) declarationNode() {}
@@ -187,12 +190,14 @@ type OutputDirective struct {
 }
 
 type OutputField struct {
+	NameToken lexer.Token
 	Name     string
 	Optional bool
 	Value    Expression
 }
 
 type OutputSchemaField struct {
+	NameToken lexer.Token
 	Name     string
 	Optional bool
 	Type     TypeReference
