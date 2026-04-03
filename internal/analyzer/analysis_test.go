@@ -219,6 +219,15 @@ int count = "Ada";
 		}
 	})
 
+	It("does not report diagnostics for an unused injectable without an initializer", func() {
+		snapshot := analyzeDocument(`|===|
+injectable string env;
+|===|
+[output = data] {}`)
+
+		tAssert.Empty(snapshot.diagnostics)
+	})
+
 	It("translates mixed array literal errors in script declarations into token-scoped diagnostics", func() {
 		snapshot := analyzeDocument(`|===|
 array<int> foo = ["4", 6];

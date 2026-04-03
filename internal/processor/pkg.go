@@ -952,8 +952,6 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 				if err := ensureAssignable(expectedType, valueTypeFromValue(injectedValue)); err != nil {
 					return err
 				}
-			} else if !decl.HasValue {
-				return validationErrorf("injectable %q requires a runtime value", decl.Name)
 			}
 		}
 		variables.Add(decl.Name, expectedType)
@@ -1456,22 +1454,35 @@ type Value struct {
 }
 
 type valueEnvironment struct {
-	values map[string]Value
+	values             map[string]Value
+	missingInjectables map[string]struct{}
 }
 
 func newValueEnvironment() *valueEnvironment {
 	return &valueEnvironment{
-		values: map[string]Value{},
+		values:             map[string]Value{},
+		missingInjectables: map[string]struct{}{},
 	}
 }
 
 func (environment *valueEnvironment) Add(name string, value Value) {
 	environment.values[name] = value
+	delete(environment.missingInjectables, name)
+}
+
+func (environment *valueEnvironment) AddMissingInjectable(name string) {
+	delete(environment.values, name)
+	environment.missingInjectables[name] = struct{}{}
 }
 
 func (environment *valueEnvironment) Get(name string) (Value, bool) {
 	value, ok := environment.values[name]
 	return value, ok
+}
+
+func (environment *valueEnvironment) IsMissingInjectable(name string) bool {
+	_, ok := environment.missingInjectables[name]
+	return ok
 }
 
 func (environment *valueEnvironment) Values() map[string]Value {
@@ -1484,7 +1495,13 @@ func (environment *valueEnvironment) Values() map[string]Value {
 }
 
 func (environment *valueEnvironment) Clone() *valueEnvironment {
-	return &valueEnvironment{values: environment.Values()}
+	cloned := newValueEnvironment()
+	cloned.values = environment.Values()
+	for name := range environment.missingInjectables {
+		cloned.missingInjectables[name] = struct{}{}
+	}
+
+	return cloned
 }
 
 func evaluateSchemaOutput(output ast.OutputBlock) (map[SchemaField]SchemaType, error) {
@@ -1526,7 +1543,8 @@ func evaluateScript(items []ast.Declaration, environment *valueEnvironment, inje
 			}
 
 			if !variable.HasValue {
-				return validationErrorf("injectable %q requires a runtime value", variable.Name)
+				environment.AddMissingInjectable(variable.Name)
+				continue
 			}
 		}
 
@@ -1572,6 +1590,9 @@ func evaluateExpression(expression ast.Expression, environment *valueEnvironment
 	case ast.Identifier:
 		value, ok := environment.Get(expr.Name)
 		if !ok {
+			if environment.IsMissingInjectable(expr.Name) {
+				return Value{}, validationErrorf("injectable %q requires a runtime value", expr.Name)
+			}
 			return Value{}, validationErrorf("unknown identifier %q", expr.Name)
 		}
 		return value, nil

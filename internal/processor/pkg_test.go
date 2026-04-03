@@ -217,6 +217,9 @@ int age = 30;
 float rate = 1.25;
 boolean active = true;
 |===|`)),
+		Entry("injectable without initializer when unused", wrapScriptWithOutput(`|===|
+injectable string env;
+|===|`)),
 		Entry("imports and script block", `from "testdata/imports/base.mace" import Name;
 |===|
 Name user = "Ada";
@@ -247,9 +250,6 @@ schema User = { name: string; };
 |===|`), "duplicate declaration"),
 		Entry("duplicate imports", `from "testdata/imports/base.mace" import User, User;
 [output = data] {}`, "duplicate import"),
-		Entry("injectable without initializer", wrapScriptWithOutput(`|===|
-injectable string env;
-|===|`), "requires a runtime value"),
 	)
 
 	DescribeTable("accepts schema record literals",
