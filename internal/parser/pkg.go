@@ -213,13 +213,18 @@ func (p *Parser) parseVariableDeclaration() (ast.Declaration, error) {
 		return nil, err
 	}
 
-	if _, err := p.consume(lexer.TokenAssign, "parser: expected '=' in variable declaration"); err != nil {
-		return nil, err
-	}
+	hasValue := false
+	var value ast.Expression
+	if p.current().Type == lexer.TokenAssign {
+		p.advance()
 
-	value, err := p.parseExpression(precedenceLowest)
-	if err != nil {
-		return nil, err
+		value, err = p.parseExpression(precedenceLowest)
+		if err != nil {
+			return nil, err
+		}
+		hasValue = true
+	} else if !injectable {
+		return nil, p.unexpectedTokenError("parser: expected '=' in variable declaration")
 	}
 
 	if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after variable declaration"); err != nil {
@@ -228,6 +233,7 @@ func (p *Parser) parseVariableDeclaration() (ast.Declaration, error) {
 
 	return ast.VariableDeclaration{
 		Injectable: injectable,
+		HasValue:   hasValue,
 		Type:       typeRef,
 		NameToken:  nameToken,
 		Name:       nameToken.Lexeme,
@@ -492,9 +498,9 @@ func (p *Parser) parseOutputField() (ast.OutputField, error) {
 
 	return ast.OutputField{
 		NameToken: nameToken,
-		Name:     name,
-		Optional: optional,
-		Value:    value,
+		Name:      name,
+		Optional:  optional,
+		Value:     value,
 	}, nil
 }
 
@@ -515,9 +521,9 @@ func (p *Parser) parseOutputSchemaField() (ast.OutputSchemaField, error) {
 
 	return ast.OutputSchemaField{
 		NameToken: nameToken,
-		Name:     name,
-		Optional: optional,
-		Type:     typeRef,
+		Name:      name,
+		Optional:  optional,
+		Type:      typeRef,
 	}, nil
 }
 

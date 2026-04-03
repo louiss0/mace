@@ -121,6 +121,8 @@ func classifyProcessorDiagnostic(message string) diagnosticCode {
 		return diagnosticImportNameNotExposed
 	case strings.Contains(message, "unknown type ") || strings.Contains(message, "unknown type reference"):
 		return diagnosticDeclarationUnknownTypeReference
+	case strings.Contains(message, "requires an initializer") || strings.Contains(message, "requires a runtime value"):
+		return diagnosticDeclarationVariableMissingInitializer
 	case strings.Contains(message, "duplicate declaration"):
 		return diagnosticDeclarationDuplicateVariable
 	case strings.Contains(message, "duplicate field"):

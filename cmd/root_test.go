@@ -78,6 +78,25 @@ injectable string env = "dev";
   "env": "prod"
 }`, stdout.String())
 		})
+
+		It("fails when an injectable has no runtime value or initializer", func() {
+			path := writeMaceFile(`|===|
+injectable string env;
+|===|
+[output = data]
+{
+  env: env;
+}`)
+
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			exitCode := run([]string{"json", path}, &stdout, &stderr)
+
+			tAssert.Equal(1, exitCode)
+			tAssert.Equal("", stdout.String())
+			tAssert.Contains(stderr.String(), `injectable "env" requires a runtime value`)
+		})
 	})
 
 	Describe("nodes", func() {

@@ -23,6 +23,7 @@ var (
 	selfReferencePattern        = regexp.MustCompile(`unknown self reference "([^"]+)"`)
 	schemaOutputFieldPattern    = regexp.MustCompile(`invalid field type "([^"]+)" in output = schema`)
 	dataOutputValuePattern      = regexp.MustCompile(`output value "([^"]+)" cannot reference type or schema declaration`)
+	missingInjectablePattern    = regexp.MustCompile(`injectable "([^"]+)" requires a runtime value`)
 )
 
 type symbolOrigin string
@@ -435,6 +436,10 @@ func semanticDiagnosticFromError(file ast.File, tokens []lexer.Token, err error)
 		return diagnostic, true
 	}
 
+	if diagnostic, ok := missingInjectableDiagnostic(file, tokens, message); ok {
+		return diagnostic, true
+	}
+
 	if diagnostic, ok := mixedArrayLiteralDiagnostic(file, tokens, message); ok {
 		return diagnostic, true
 	}
@@ -478,6 +483,9 @@ func variableTypeMismatchDiagnostic(file ast.File, tokens []lexer.Token, message
 		if !ok {
 			continue
 		}
+		if !declaration.HasValue {
+			continue
+		}
 
 		declaredType := typeReferenceDetail(declaration.Type)
 		valueType, found := expressionTypeSummary(declaration.Value, knownTypes)
@@ -500,6 +508,24 @@ func variableTypeMismatchDiagnostic(file ast.File, tokens []lexer.Token, message
 	return protocol.Diagnostic{}, false
 }
 
+func missingInjectableDiagnostic(file ast.File, tokens []lexer.Token, message string) (protocol.Diagnostic, bool) {
+	if file.Script == nil {
+		return protocol.Diagnostic{}, false
+	}
+
+	matches := missingInjectablePattern.FindStringSubmatch(message)
+	if len(matches) != 2 {
+		return protocol.Diagnostic{}, false
+	}
+
+	rangeValue, found := tokenRange(tokens, matches[1])
+	if !found {
+		return protocol.Diagnostic{}, false
+	}
+
+	return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticDeclarationVariableMissingInitializer, message), true
+}
+
 func mixedArrayLiteralDiagnostic(file ast.File, tokens []lexer.Token, message string) (protocol.Diagnostic, bool) {
 	if file.Script == nil || !strings.Contains(message, "array literal has mixed element types") {
 		return protocol.Diagnostic{}, false
@@ -508,6 +534,9 @@ func mixedArrayLiteralDiagnostic(file ast.File, tokens []lexer.Token, message st
 	for _, item := range file.Script.Items {
 		declaration, ok := item.(ast.VariableDeclaration)
 		if !ok {
+			continue
+		}
+		if !declaration.HasValue {
 			continue
 		}
 
@@ -691,7 +720,7 @@ func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *process
 			case ast.SchemaDeclaration:
 				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindStruct, symbolOriginLocal, fmt.Sprintf("schema %s = %s;", declaration.Name, recordTypeDetail(declaration.Type))), true
 			case ast.VariableDeclaration:
-				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindVariable, symbolOriginLocal, fmt.Sprintf("%s %s = %s", typeReferenceDetail(declaration.Type), declaration.Name, expressionSummary(declaration.Value))), true
+				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindVariable, symbolOriginLocal, variableDeclarationDetail(declaration)), true
 			default:
 				return semanticSymbol{}, false
 			}
@@ -922,6 +951,10 @@ func valueTypeSummary(value processor.Value) string {
 }
 
 func expressionSummary(expression ast.Expression) string {
+	if expression == nil {
+		return "runtime value"
+	}
+
 	switch typed := expression.(type) {
 	case ast.StringLiteral:
 		return typed.Lexeme
@@ -943,6 +976,18 @@ func expressionSummary(expression ast.Expression) string {
 	default:
 		return "expression"
 	}
+}
+
+func variableDeclarationDetail(declaration ast.VariableDeclaration) string {
+	detail := fmt.Sprintf("%s %s", typeReferenceDetail(declaration.Type), declaration.Name)
+	if declaration.Injectable {
+		detail = "injectable " + detail
+	}
+	if !declaration.HasValue {
+		return detail
+	}
+
+	return detail + " = " + expressionSummary(declaration.Value)
 }
 
 func indexSymbols(symbols []semanticSymbol) map[string]semanticSymbol {

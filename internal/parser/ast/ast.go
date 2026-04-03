@@ -104,6 +104,7 @@ type Declaration interface {
 
 type VariableDeclaration struct {
 	Injectable bool
+	HasValue   bool
 	Type       TypeReference
 	NameToken  lexer.Token
 	Name       string
@@ -191,14 +192,14 @@ type OutputDirective struct {
 
 type OutputField struct {
 	NameToken lexer.Token
-	Name     string
-	Optional bool
-	Value    Expression
+	Name      string
+	Optional  bool
+	Value     Expression
 }
 
 type OutputSchemaField struct {
 	NameToken lexer.Token
-	Name     string
-	Optional bool
-	Type     TypeReference
+	Name      string
+	Optional  bool
+	Type      TypeReference
 }

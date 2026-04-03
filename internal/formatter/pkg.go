@@ -138,17 +138,21 @@ func (f *formatter) writeLine(value string) {
 func formatDeclaration(declaration ast.Declaration) (string, error) {
 	switch typedDeclaration := declaration.(type) {
 	case ast.VariableDeclaration:
-		value, err := formatExpressionWithDepth(typedDeclaration.Value, 0)
-		if err != nil {
-			return "", err
-		}
-
 		prefix := ""
 		if typedDeclaration.Injectable {
 			prefix = "injectable "
 		}
 
 		typeReference, err := formatTypeReference(typedDeclaration.Type)
+		if err != nil {
+			return "", err
+		}
+
+		if !typedDeclaration.HasValue {
+			return fmt.Sprintf("%s%s %s;", prefix, typeReference, typedDeclaration.Name), nil
+		}
+
+		value, err := formatExpressionWithDepth(typedDeclaration.Value, 0)
 		if err != nil {
 			return "", err
 		}

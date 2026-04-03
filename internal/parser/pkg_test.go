@@ -330,6 +330,27 @@ string user = "Ada";
 			tAssert.Empty(file.Output.SchemaFields)
 		})
 
+		It("parses injectable declarations without an initializer", func() {
+			input := `|===|
+injectable string env;
+|===|
+[output = data] {}`
+
+			file, err := parseFileInput(input)
+			tAssert.NoError(err)
+
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 1) {
+				varDecl, ok := file.Script.Items[0].(ast.VariableDeclaration)
+				tAssert.True(ok)
+				if ok {
+					tAssert.True(varDecl.Injectable)
+					tAssert.Equal("env", varDecl.Name)
+					tAssert.False(varDecl.HasValue)
+					tAssert.Nil(varDecl.Value)
+				}
+			}
+		})
+
 		It("parses nested array type references without spacing between closers", func() {
 			input := `|===|
 type Matrix = array<array<int>>;

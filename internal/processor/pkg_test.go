@@ -238,6 +238,9 @@ schema User = { name: string; };
 |===|`), "duplicate declaration"),
 		Entry("duplicate imports", `from "testdata/imports/base.mace" import User, User;
 [output = data] {}`, "duplicate import"),
+		Entry("injectable without initializer", wrapScriptWithOutput(`|===|
+injectable string env;
+|===|`), "requires a runtime value"),
 	)
 
 	DescribeTable("accepts schema record literals",
@@ -310,6 +313,37 @@ injectable string env = "dev";
 
 		actual := requireOutputValue(result, "env")
 		assertExpectedValue(actual, expectedValue{kind: ValueString, string: "prod"})
+	})
+
+	It("uses an initializer when an injectable value is not provided", func() {
+		processor := New()
+
+		result, err := processor.Process(`|===|
+injectable string env = "dev";
+|===|
+[output = data]
+{
+  env: env;
+}`)
+		tAssert.NoError(err)
+
+		actual := requireOutputValue(result, "env")
+		assertExpectedValue(actual, expectedValue{kind: ValueString, string: "dev"})
+	})
+
+	It("rejects injectables without a provided value or initializer", func() {
+		processor := New()
+
+		_, err := processor.Process(`|===|
+injectable string env;
+|===|
+[output = data]
+{
+  env: env;
+}`)
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, "injectable")
+		tAssert.ErrorContains(err, "requires a runtime value")
 	})
 
 	It("rejects unknown injected values", func() {

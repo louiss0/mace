@@ -859,21 +859,29 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 		if err != nil {
 			return err
 		}
-		actualType, err := inferExpressionType(decl.Value, variables, symbols, types)
-		if err != nil {
-			return err
+
+		if decl.HasValue {
+			actualType, err := inferExpressionType(decl.Value, variables, symbols, types)
+			if err != nil {
+				return err
+			}
+			if err := ensureAssignable(expectedType, actualType); err != nil {
+				return err
+			}
+			if err := validateExpressionAgainstType(decl.Value, expectedType, variables, symbols, types, schemas); err != nil {
+				return err
+			}
+		} else if !decl.Injectable {
+			return validationErrorf("variable %q requires an initializer", decl.Name)
 		}
-		if err := ensureAssignable(expectedType, actualType); err != nil {
-			return err
-		}
-		if err := validateExpressionAgainstType(decl.Value, expectedType, variables, symbols, types, schemas); err != nil {
-			return err
-		}
+
 		if decl.Injectable {
 			if injectedValue, ok := injections[decl.Name]; ok {
 				if err := ensureAssignable(expectedType, valueTypeFromValue(injectedValue)); err != nil {
 					return err
 				}
+			} else if !decl.HasValue {
+				return validationErrorf("injectable %q requires a runtime value", decl.Name)
 			}
 		}
 		variables.Add(decl.Name, expectedType)
@@ -1334,6 +1342,14 @@ func evaluateScript(items []ast.Declaration, environment *valueEnvironment, inje
 				environment.Add(variable.Name, injectedValue)
 				continue
 			}
+
+			if !variable.HasValue {
+				return validationErrorf("injectable %q requires a runtime value", variable.Name)
+			}
+		}
+
+		if !variable.HasValue {
+			return validationErrorf("variable %q requires an initializer", variable.Name)
 		}
 
 		value, err := evaluateExpression(variable.Value, environment, Value{})

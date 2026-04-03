@@ -74,8 +74,18 @@ declaration
 (* ===================================================== *)
 
 variable_declaration
-  = [ "injectable" , ws1 ] ,
+  = injectable_variable_declaration
+  | initialized_variable_declaration ;
+
+injectable_variable_declaration
+  = "injectable" , ws1 ,
     type_reference , ws1 ,
+    identifier ,
+    [ ws0 , "=" , ws0 , expression ] ,
+    ws0 , ";" ;
+
+initialized_variable_declaration
+  = type_reference , ws1 ,
     identifier , ws0 ,
     "=" , ws0 ,
     expression ,

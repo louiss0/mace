@@ -74,12 +74,16 @@ Variables are immutable and must have both a type and an initializer.
 
 ```mace
 int age = 27;
-injectable string env = "dev";
 ```
 
-`injectable` marks a variable whose runtime value may be overridden by an
-external injection. If no injected value is provided, the declared
-initializer is evaluated normally and used as the fallback value.
+Injectables don't need an initializer!
+```mace
+injectable string env;
+```
+`injectable` marks a variable as one where the value is determined at runtime.
+If it has no value then an error will be shown! 
+
+The Mace processor and CLI are responsible for making sure the values are injected.
 
 Variables declared in the script block are available to later declarations
 and to the output block.
