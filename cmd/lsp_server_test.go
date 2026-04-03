@@ -759,6 +759,80 @@ en
 		tAssert.Contains(labels, "enum")
 	})
 
+	It("suggests enum values when assigning an enum typed variable", func() {
+		server := New()
+		initializeServer(server)
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+enum Fruit: string {
+  Apple,
+  Strawberry = "strawberry",
+}
+Fruit selected =
+|===|
+[output = data] {}`, nil)
+
+		labels := completeLabels(server, uri, 5, uint32(len(`Fruit selected = `)))
+		tAssert.Equal([]string{`"Apple"`, `"strawberry"`}, labels)
+	})
+
+	It("suggests enum values for schema fields after a record colon", func() {
+		server := New()
+		initializeServer(server)
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+enum Fruit: string {
+  Apple,
+  Strawberry = "strawberry",
+}
+schema Basket = { favorite_fruit: Fruit; };
+Basket basket = {
+  favorite_fruit:
+};
+|===|
+[output = data] {}`, nil)
+
+		labels := completeLabels(server, uri, 7, uint32(len(`  favorite_fruit: `)))
+		tAssert.Equal([]string{`"Apple"`, `"strawberry"`}, labels)
+	})
+
+	It("suggests schema record literals for nested schema fields after a record colon", func() {
+		server := New()
+		initializeServer(server)
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+schema Profile = { name: string; age?: int; };
+schema Basket = { owner: Profile; };
+Basket basket = {
+  owner:
+};
+|===|
+[output = data] {}`, nil)
+
+		labels := completeLabels(server, uri, 4, uint32(len(`  owner: `)))
+		tAssert.Equal([]string{`{ name: ""; age?: 0; }`}, labels)
+	})
+
+	It("suggests enum values for output schema fields after a record colon", func() {
+		server := New()
+		initializeServer(server)
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+enum Fruit: string {
+  Apple,
+  Strawberry = "strawberry",
+}
+schema Basket = { favorite_fruit: Fruit; };
+|===|
+[output = data, schema = Basket]
+{
+  favorite_fruit:
+}`, nil)
+
+		labels := completeLabels(server, uri, 9, uint32(len(`  favorite_fruit: `)))
+		tAssert.Equal([]string{`"Apple"`, `"strawberry"`}, labels)
+	})
+
 	It("does not suggest schema directives after output schema and a comma", func() {
 		server := New()
 		initializeServer(server)

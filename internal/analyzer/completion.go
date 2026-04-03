@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"fmt"
 	"net/url"
 	"os"
 	"path"
@@ -26,6 +27,8 @@ var (
 	directiveSchemaPattern      = regexp.MustCompile(`^\s*schema\s*=\s*([A-Za-z_]*)$`)
 	directiveSchemaFilePattern  = regexp.MustCompile(`^\s*schema_file\s*=\s*"([^"]*)$`)
 )
+
+const completionPlaceholderIdentifier = "mace_cursor_placeholder"
 
 var globalKeywordCompletions = []completionDefinition{
 	{Label: "from", Kind: protocol.CompletionItemKindKeyword, Detail: "import declaration"},
@@ -54,8 +57,18 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 		}
 	}
 
+	if scope == completionScopeScript {
+		if items, handled := initializerCompletionItems(document, uri, position); handled {
+			return items
+		}
+	}
+
 	if scope == completionScopeOutput {
 		if items, handled := directiveCompletionItems(document, uri, linePrefix); handled {
+			return items
+		}
+
+		if items, handled := outputInitializerCompletionItems(document, uri, position); handled {
 			return items
 		}
 
@@ -77,6 +90,58 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 	}
 
 	return sortCompletionItems(items)
+}
+
+func initializerCompletionItems(document document, uri protocol.DocumentUri, position protocol.Position) ([]protocol.CompletionItem, bool) {
+	linePrefix := currentLinePrefix(document.text, position)
+	trimmedPrefix := strings.TrimSpace(linePrefix)
+	if !strings.HasSuffix(trimmedPrefix, "=") && !strings.HasSuffix(trimmedPrefix, ":") {
+		return nil, false
+	}
+
+	file, ok := completionFileWithPlaceholder(document.text, position)
+	if !ok {
+		return nil, false
+	}
+
+	baseDir := filepath.Dir(documentPath(uri))
+	if baseDir == "" {
+		baseDir = "."
+	}
+
+	model := buildCompletionModel(*file, baseDir, map[string]completionModel{})
+	expectedType, path, ok := placeholderCompletionType(*file, model)
+	if !ok {
+		return nil, false
+	}
+
+	return sortCompletionItems(completionItemsForType(expectedType, model, len(path) > 0)), true
+}
+
+func outputInitializerCompletionItems(document document, uri protocol.DocumentUri, position protocol.Position) ([]protocol.CompletionItem, bool) {
+	linePrefix := currentLinePrefix(document.text, position)
+	trimmedPrefix := strings.TrimSpace(linePrefix)
+	if !strings.HasSuffix(trimmedPrefix, ":") {
+		return nil, false
+	}
+
+	file, ok := completionFileWithPlaceholder(document.text, position)
+	if !ok {
+		return nil, false
+	}
+
+	baseDir := filepath.Dir(documentPath(uri))
+	if baseDir == "" {
+		baseDir = "."
+	}
+
+	model := buildCompletionModel(*file, baseDir, map[string]completionModel{})
+	expectedType, path, ok := placeholderOutputCompletionType(*file, model)
+	if !ok {
+		return nil, false
+	}
+
+	return sortCompletionItems(completionItemsForType(expectedType, model, len(path) > 1)), true
 }
 
 func selfCompletionItems(document document, uri protocol.DocumentUri, position protocol.Position) ([]protocol.CompletionItem, bool) {
@@ -769,6 +834,365 @@ func stringLiteralValue(literal ast.StringLiteral) (string, bool) {
 	return value, true
 }
 
+func completionFileWithPlaceholder(text string, position protocol.Position) (*ast.File, bool) {
+	index := position.IndexIn(text)
+	if index < 0 {
+		return nil, false
+	}
+
+	linePrefix := currentLinePrefix(text, position)
+	replacement := completionPlaceholderIdentifier
+	trimmedPrefix := strings.TrimSpace(linePrefix)
+	if strings.HasSuffix(trimmedPrefix, "=") || strings.HasSuffix(trimmedPrefix, ":") {
+		replacement += ";"
+	}
+
+	file, err := parseFile(text[:index] + replacement + text[index:])
+	if err != nil {
+		return nil, false
+	}
+
+	return &file, true
+}
+
+func placeholderCompletionType(file ast.File, model completionModel) (ast.TypeReference, []string, bool) {
+	for _, item := range fileScriptItems(file) {
+		declaration, ok := item.(ast.VariableDeclaration)
+		if !ok || !declaration.HasValue {
+			continue
+		}
+
+		path, ok := placeholderPath(declaration.Value)
+		if !ok {
+			continue
+		}
+
+		expectedType, ok := completionTypeAtPath(declaration.Type, path, model)
+		if !ok {
+			return nil, nil, false
+		}
+
+		return expectedType, path, true
+	}
+
+	return nil, nil, false
+}
+
+func placeholderOutputCompletionType(file ast.File, model completionModel) (ast.TypeReference, []string, bool) {
+	if file.Output.Mode != ast.OutputModeData {
+		return nil, nil, false
+	}
+
+	schemaName, ok := outputSchemaDirective(file)
+	if !ok {
+		return nil, nil, false
+	}
+
+	rootType := ast.NamedType{Name: schemaName}
+	for _, field := range file.Output.DataFields {
+		path, ok := placeholderPath(field.Value)
+		if !ok {
+			continue
+		}
+
+		fullPath := append([]string{field.Name}, path...)
+		expectedType, ok := completionTypeAtPath(rootType, fullPath, model)
+		if !ok {
+			return nil, nil, false
+		}
+
+		return expectedType, fullPath, true
+	}
+
+	return nil, nil, false
+}
+
+func placeholderPath(expression ast.Expression) ([]string, bool) {
+	switch typed := expression.(type) {
+	case ast.Identifier:
+		if typed.Name == completionPlaceholderIdentifier {
+			return []string{}, true
+		}
+	case ast.RecordLiteral:
+		for _, field := range typed.Fields {
+			path, ok := placeholderPath(field.Value)
+			if !ok {
+				continue
+			}
+			return append([]string{field.Name}, path...), true
+		}
+	case ast.ArrayLiteral:
+		for _, element := range typed.Elements {
+			path, ok := placeholderPath(element)
+			if ok {
+				return path, true
+			}
+		}
+	case ast.PrefixExpression:
+		return placeholderPath(typed.Right)
+	case ast.InfixExpression:
+		if path, ok := placeholderPath(typed.Left); ok {
+			return path, true
+		}
+		return placeholderPath(typed.Right)
+	case ast.ConditionalExpression:
+		if path, ok := placeholderPath(typed.Condition); ok {
+			return path, true
+		}
+		if path, ok := placeholderPath(typed.Then); ok {
+			return path, true
+		}
+		return placeholderPath(typed.Else)
+	}
+
+	return nil, false
+}
+
+func completionTypeAtPath(typeReference ast.TypeReference, path []string, model completionModel) (ast.TypeReference, bool) {
+	current := typeReference
+	for _, segment := range path {
+		resolved := resolveCompletionType(current, model, map[string]struct{}{})
+		if resolved.kind != completionTypeSchema {
+			return nil, false
+		}
+
+		field, ok := lo.Find(resolved.record.Fields, func(field ast.SchemaField) bool {
+			return field.Name == segment
+		})
+		if !ok {
+			return nil, false
+		}
+
+		current = field.Type
+	}
+
+	return current, true
+}
+
+func completionItemsForType(typeReference ast.TypeReference, model completionModel, allowSchemaLiteral bool) []protocol.CompletionItem {
+	resolved := resolveCompletionType(typeReference, model, map[string]struct{}{})
+	switch resolved.kind {
+	case completionTypeEnum:
+		return lo.Map(resolved.enum.values, func(value string, _ int) protocol.CompletionItem {
+			return protocol.CompletionItem{
+				Label: value,
+				Kind:  Ptr(protocol.CompletionItemKindEnumMember),
+			}
+		})
+	case completionTypeSchema:
+		if !allowSchemaLiteral {
+			return nil
+		}
+
+		return []protocol.CompletionItem{
+			{
+				Label: schemaLiteral(resolved.record, model, map[string]struct{}{}),
+				Kind:  Ptr(protocol.CompletionItemKindStruct),
+			},
+		}
+	default:
+		return nil
+	}
+}
+
+func outputSchemaDirective(file ast.File) (string, bool) {
+	directive, ok := lo.Find(file.Output.Directives, func(directive ast.OutputDirective) bool {
+		return directive.Kind == ast.OutputDirectiveSchema
+	})
+	if !ok || directive.Value == "" {
+		return "", false
+	}
+
+	return directive.Value, true
+}
+
+func buildCompletionModel(file ast.File, baseDir string, cache map[string]completionModel) completionModel {
+	model := completionModel{
+		aliases: map[string]ast.TypeReference{},
+		schemas: map[string]ast.RecordType{},
+		enums:   map[string]completionEnum{},
+	}
+
+	for _, item := range fileScriptItems(file) {
+		switch declaration := item.(type) {
+		case ast.TypeDeclaration:
+			model.aliases[declaration.Name] = declaration.Type
+		case ast.SchemaDeclaration:
+			model.schemas[declaration.Name] = declaration.Type
+		case ast.EnumDeclaration:
+			model.enums[declaration.Name] = completionEnumFromDeclaration(declaration)
+		}
+	}
+
+	for _, importDecl := range file.Imports {
+		importPath, ok := stringLiteralValue(importDecl.Path)
+		if !ok {
+			continue
+		}
+
+		resolvedPath := filepath.Clean(filepath.Join(baseDir, importPath))
+		importedModel, importedFile, ok := importedCompletionModel(resolvedPath, cache)
+		if !ok {
+			continue
+		}
+
+		for _, name := range importDecl.Identifiers {
+			field, ok := lo.Find(importedFile.Output.SchemaFields, func(field ast.OutputSchemaField) bool {
+				return field.Name == name
+			})
+			if !ok {
+				continue
+			}
+
+			resolved := resolveCompletionType(field.Type, importedModel, map[string]struct{}{})
+			switch resolved.kind {
+			case completionTypeSchema:
+				model.schemas[name] = resolved.record
+			case completionTypeEnum:
+				model.enums[name] = resolved.enum
+			default:
+				model.aliases[name] = field.Type
+			}
+		}
+	}
+
+	return model
+}
+
+func importedCompletionModel(path string, cache map[string]completionModel) (completionModel, ast.File, bool) {
+	if model, ok := cache[path]; ok {
+		_, file, _, parsed := parsedFile(path)
+		return model, file, parsed
+	}
+
+	_, file, _, ok := parsedFile(path)
+	if !ok {
+		return completionModel{}, ast.File{}, false
+	}
+
+	cache[path] = completionModel{
+		aliases: map[string]ast.TypeReference{},
+		schemas: map[string]ast.RecordType{},
+		enums:   map[string]completionEnum{},
+	}
+	model := buildCompletionModel(file, filepath.Dir(path), cache)
+	cache[path] = model
+	return model, file, true
+}
+
+func resolveCompletionType(typeReference ast.TypeReference, model completionModel, seen map[string]struct{}) completionType {
+	switch typed := typeReference.(type) {
+	case ast.PrimitiveType:
+		return completionType{kind: completionTypePrimitive, primitive: typed.Name}
+	case ast.ArrayType:
+		return completionType{kind: completionTypeArray}
+	case ast.RecordType:
+		return completionType{kind: completionTypeSchema, record: typed}
+	case ast.NamedType:
+		if enumValue, ok := model.enums[typed.Name]; ok {
+			return completionType{kind: completionTypeEnum, enum: enumValue}
+		}
+		if schemaValue, ok := model.schemas[typed.Name]; ok {
+			return completionType{kind: completionTypeSchema, record: schemaValue}
+		}
+		if _, ok := seen[typed.Name]; ok {
+			return completionType{}
+		}
+
+		aliasValue, ok := model.aliases[typed.Name]
+		if !ok {
+			return completionType{}
+		}
+
+		nextSeen := map[string]struct{}{typed.Name: struct{}{}}
+		for name := range seen {
+			nextSeen[name] = struct{}{}
+		}
+		return resolveCompletionType(aliasValue, model, nextSeen)
+	default:
+		return completionType{}
+	}
+}
+
+func completionEnumFromDeclaration(declaration ast.EnumDeclaration) completionEnum {
+	values := lo.Map(declaration.Members, func(member ast.EnumMember, _ int) string {
+		if member.HasValue {
+			switch literal := member.Value.(type) {
+			case ast.StringLiteral:
+				return literal.Lexeme
+			case ast.IntLiteral:
+				return literal.Lexeme
+			case ast.FloatLiteral:
+				return literal.Lexeme
+			case ast.BooleanLiteral:
+				if literal.Value {
+					return "true"
+				}
+				return "false"
+			}
+		}
+
+		if declaration.BackingType.Name == "string" {
+			return strconv.Quote(member.Name)
+		}
+
+		return member.Name
+	})
+
+	return completionEnum{values: values}
+}
+
+func schemaLiteral(record ast.RecordType, model completionModel, seen map[string]struct{}) string {
+	fields := lo.Map(record.Fields, func(field ast.SchemaField, _ int) string {
+		name := field.Name
+		if field.Optional {
+			name += "?"
+		}
+		return fmt.Sprintf("%s: %s;", name, defaultLiteralForType(field.Type, model, seen))
+	})
+
+	return "{ " + strings.Join(fields, " ") + " }"
+}
+
+func defaultLiteralForType(typeReference ast.TypeReference, model completionModel, seen map[string]struct{}) string {
+	resolved := resolveCompletionType(typeReference, model, seen)
+	switch resolved.kind {
+	case completionTypePrimitive:
+		switch resolved.primitive {
+		case "string":
+			return `""`
+		case "int":
+			return "0"
+		case "float":
+			return "0.0"
+		case "boolean":
+			return "false"
+		default:
+			return `""`
+		}
+	case completionTypeArray:
+		return "[]"
+	case completionTypeEnum:
+		if len(resolved.enum.values) > 0 {
+			return resolved.enum.values[0]
+		}
+		return `""`
+	case completionTypeSchema:
+		key := recordTypeDetail(resolved.record)
+		if _, ok := seen[key]; ok {
+			return "{}"
+		}
+
+		nextSeen := map[string]struct{}{key: struct{}{}}
+		for name := range seen {
+			nextSeen[name] = struct{}{}
+		}
+		return schemaLiteral(resolved.record, model, nextSeen)
+	default:
+		return "{}"
+	}
+}
+
 func directoryEntries(baseDir string, pathPrefix string, excludedPaths []string) ([]protocol.CompletionItem, error) {
 	resolvedDir, itemPrefix, labelPrefix := importDirectory(baseDir, pathPrefix)
 	entries, err := os.ReadDir(resolvedDir)
@@ -890,6 +1314,33 @@ type directiveState struct {
 	outputMode     string
 	seenSchemaFile bool
 	seenSchema     bool
+}
+
+type completionModel struct {
+	aliases map[string]ast.TypeReference
+	schemas map[string]ast.RecordType
+	enums   map[string]completionEnum
+}
+
+type completionEnum struct {
+	values []string
+}
+
+type completionTypeKind int
+
+const (
+	completionTypeUnknown completionTypeKind = iota
+	completionTypePrimitive
+	completionTypeArray
+	completionTypeSchema
+	completionTypeEnum
+)
+
+type completionType struct {
+	kind      completionTypeKind
+	primitive string
+	record    ast.RecordType
+	enum      completionEnum
 }
 
 type completionScope int
