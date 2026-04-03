@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
+	"github.com/samber/lo"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
 	"github.com/louiss0/mace/internal/parser/ast"
@@ -42,5 +43,33 @@ schema Basket = { favorite_fruit: Fruit; };
 		if ok {
 			tAssert.Equal("Fruit", namedType.Name)
 		}
+	})
+
+	It("suggests enum values for output block schema fields", func() {
+		text := `|===|
+enum Fruit: string {
+  Apple,
+  Strawberry = "strawberry",
+}
+schema Basket = { favorite_fruit: Fruit; };
+|===|
+[output = data, schema = Basket]
+{
+  favorite_fruit:
+}`
+
+		position := protocol.Position{
+			Line:      9,
+			Character: uint32(len(`  favorite_fruit: `)),
+		}
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+			return item.Label
+		})
+
+		tAssert.Equal([]string{`"Apple"`, `"strawberry"`}, labels)
 	})
 })
