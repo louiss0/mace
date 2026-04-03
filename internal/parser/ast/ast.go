@@ -129,6 +129,22 @@ type SchemaDeclaration struct {
 
 func (SchemaDeclaration) declarationNode() {}
 
+type EnumDeclaration struct {
+	NameToken   lexer.Token
+	Name        string
+	BackingType PrimitiveType
+	Members     []EnumMember
+}
+
+func (EnumDeclaration) declarationNode() {}
+
+type EnumMember struct {
+	NameToken lexer.Token
+	Name      string
+	HasValue  bool
+	Value     Expression
+}
+
 type TypeReference interface {
 	typeReferenceNode()
 }

@@ -29,6 +29,7 @@ var diagnosticPositionPattern = regexp.MustCompile(`at (\d+):(\d+)`)
 
 var keywordDocs = map[string]string{
 	"array":      "Declares an array type like `array<string>`.",
+	"enum":       "Declares a named scalar enum type backed by `string` or `int`.",
 	"injectable": "Marks a script variable as overrideable through injections.",
 	"type":       "Declares a reusable type alias.",
 }
@@ -40,6 +41,7 @@ var directiveKeywordDocs = map[string]string{
 }
 
 var declarationKeywordDocs = map[string]string{
+	"enum":   "Declares a reusable enum type.",
 	"schema": "Declares a reusable record schema.",
 }
 
@@ -336,6 +338,15 @@ func (server *Server) documentSymbols(context *glsp.Context, params *protocol.Do
 		switch declaration := item.(type) {
 		case ast.TypeDeclaration:
 			return newSymbol(document.text, declaration.Name, "type", protocol.SymbolKindClass, nil), true
+		case ast.EnumDeclaration:
+			children := lo.Map(declaration.Members, func(member ast.EnumMember, _ int) protocol.DocumentSymbol {
+				detail := member.Name
+				if member.HasValue {
+					detail = expressionSummary(member.Value)
+				}
+				return newSymbol(document.text, member.Name, detail, protocol.SymbolKindEnumMember, nil)
+			})
+			return newSymbol(document.text, declaration.Name, declaration.BackingType.Name, protocol.SymbolKindEnum, children), true
 		case ast.SchemaDeclaration:
 			children := lo.Map(declaration.Type.Fields, func(field ast.SchemaField, _ int) protocol.DocumentSymbol {
 				return newSymbol(document.text, field.Name, fieldTypeDetail(field.Type), protocol.SymbolKindField, nil)

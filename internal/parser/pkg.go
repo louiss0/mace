@@ -191,6 +191,8 @@ func (p *Parser) parseDeclaration() (ast.Declaration, error) {
 		return p.parseTypeDeclaration()
 	case lexer.TokenSchema:
 		return p.parseSchemaDeclaration()
+	case lexer.TokenEnum:
+		return p.parseEnumDeclaration()
 	default:
 		return p.parseVariableDeclaration()
 	}
@@ -299,6 +301,111 @@ func (p *Parser) parseSchemaDeclaration() (ast.Declaration, error) {
 		Name:      nameToken.Lexeme,
 		Type:      recordType,
 	}, nil
+}
+
+func (p *Parser) parseEnumDeclaration() (ast.Declaration, error) {
+	if _, err := p.consume(lexer.TokenEnum, "parser: expected 'enum'"); err != nil {
+		return nil, err
+	}
+
+	nameToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier in enum declaration")
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := p.consume(lexer.TokenColon, "parser: expected ':' in enum declaration"); err != nil {
+		return nil, err
+	}
+
+	backingType, err := p.parseEnumBackingType()
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := p.consume(lexer.TokenLBrace, "parser: expected '{' to start enum declaration"); err != nil {
+		return nil, err
+	}
+
+	members := []ast.EnumMember{}
+	for !p.isAtEnd() && p.current().Type != lexer.TokenRBrace {
+		member, err := p.parseEnumMember()
+		if err != nil {
+			return nil, err
+		}
+		members = append(members, member)
+
+		if p.current().Type == lexer.TokenComma {
+			p.advance()
+		}
+	}
+
+	if _, err := p.consume(lexer.TokenRBrace, "parser: expected '}' to close enum declaration"); err != nil {
+		return nil, err
+	}
+
+	return ast.EnumDeclaration{
+		NameToken:   nameToken,
+		Name:        nameToken.Lexeme,
+		BackingType: backingType,
+		Members:     members,
+	}, nil
+}
+
+func (p *Parser) parseEnumBackingType() (ast.PrimitiveType, error) {
+	switch p.current().Type {
+	case lexer.TokenStringType, lexer.TokenIntType, lexer.TokenFloatType, lexer.TokenBooleanType:
+		token := p.current()
+		p.advance()
+		return ast.PrimitiveType{Name: token.Lexeme}, nil
+	default:
+		return ast.PrimitiveType{}, p.unexpectedTokenError("parser: expected enum backing type")
+	}
+}
+
+func (p *Parser) parseEnumMember() (ast.EnumMember, error) {
+	nameToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier in enum member")
+	if err != nil {
+		return ast.EnumMember{}, err
+	}
+
+	member := ast.EnumMember{
+		NameToken: nameToken,
+		Name:      nameToken.Lexeme,
+	}
+
+	if p.current().Type != lexer.TokenAssign {
+		return member, nil
+	}
+
+	p.advance()
+
+	value, err := p.parseEnumMemberValue()
+	if err != nil {
+		return ast.EnumMember{}, err
+	}
+
+	member.HasValue = true
+	member.Value = value
+	return member, nil
+}
+
+func (p *Parser) parseEnumMemberValue() (ast.Expression, error) {
+	switch token := p.current(); token.Type {
+	case lexer.TokenString:
+		p.advance()
+		return ast.StringLiteral{Lexeme: token.Lexeme}, nil
+	case lexer.TokenInt:
+		p.advance()
+		return ast.IntLiteral{Lexeme: token.Lexeme}, nil
+	case lexer.TokenFloat:
+		p.advance()
+		return ast.FloatLiteral{Lexeme: token.Lexeme}, nil
+	case lexer.TokenBoolean:
+		p.advance()
+		return ast.BooleanLiteral{Value: token.Lexeme == "true"}, nil
+	default:
+		return nil, p.unexpectedTokenError("parser: expected enum member value")
+	}
 }
 
 func (p *Parser) parseRecordType() (ast.RecordType, error) {

@@ -43,6 +43,7 @@ var _ = Describe("FormatFile", func() {
 |===|
 type Name = string;
 schema User = { name: string; age?: int; };
+enum Fruit: string { Apple, Strawberry = "strawberry" }
 injectable string user = "Ada";
 |===|
 [output = data, schema = User]
@@ -59,6 +60,10 @@ schema User = {
   name: string;
   age?: int;
 };
+enum Fruit: string {
+  Apple,
+  Strawberry = "strawberry",
+}
 injectable string user = "Ada";
 |===============================|
 [output = data, schema = User]

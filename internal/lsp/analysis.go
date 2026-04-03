@@ -24,6 +24,8 @@ var (
 	schemaOutputFieldPattern    = regexp.MustCompile(`invalid field type "([^"]+)" in output = schema`)
 	dataOutputValuePattern      = regexp.MustCompile(`output value "([^"]+)" cannot reference type or schema declaration`)
 	missingInjectablePattern    = regexp.MustCompile(`injectable "([^"]+)" requires a runtime value`)
+	enumNamePattern             = regexp.MustCompile(`enum "([^"]+)"`)
+	enumMemberPattern           = regexp.MustCompile(`enum member "([^"]+)"`)
 )
 
 type symbolOrigin string
@@ -464,6 +466,10 @@ func semanticDiagnosticFromError(file ast.File, tokens []lexer.Token, err error)
 		return diagnostic, true
 	}
 
+	if diagnostic, ok := enumDiagnostic(tokens, message); ok {
+		return diagnostic, true
+	}
+
 	return protocol.Diagnostic{}, false
 }
 
@@ -656,6 +662,28 @@ func dataOutputValueDiagnostic(tokens []lexer.Token, message string) (protocol.D
 	return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticTypeUnknownIdentifier, message), true
 }
 
+func enumDiagnostic(tokens []lexer.Token, message string) (protocol.Diagnostic, bool) {
+	if matches := enumMemberPattern.FindStringSubmatch(message); len(matches) == 2 {
+		rangeValue, found := tokenRange(tokens, matches[1])
+		if !found {
+			return protocol.Diagnostic{}, false
+		}
+
+		return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, classifyProcessorDiagnostic(message), message), true
+	}
+
+	if matches := enumNamePattern.FindStringSubmatch(message); len(matches) == 2 {
+		rangeValue, found := tokenRange(tokens, matches[1])
+		if !found {
+			return protocol.Diagnostic{}, false
+		}
+
+		return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, classifyProcessorDiagnostic(message), message), true
+	}
+
+	return protocol.Diagnostic{}, false
+}
+
 func tokenRange(tokens []lexer.Token, lexeme string) (protocol.Range, bool) {
 	return tokenRangeByType(tokens, lexer.TokenIdentifier, lexeme)
 }
@@ -717,6 +745,8 @@ func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *process
 			switch declaration := item.(type) {
 			case ast.TypeDeclaration:
 				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindClass, symbolOriginLocal, fmt.Sprintf("type %s = %s;", declaration.Name, typeReferenceDetail(declaration.Type))), true
+			case ast.EnumDeclaration:
+				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindEnum, symbolOriginLocal, enumDeclarationDetail(declaration)), true
 			case ast.SchemaDeclaration:
 				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindStruct, symbolOriginLocal, fmt.Sprintf("schema %s = %s;", declaration.Name, recordTypeDetail(declaration.Type))), true
 			case ast.VariableDeclaration:
@@ -815,6 +845,9 @@ func importedSemanticSymbol(file ast.File, path string, name string) (semanticSy
 		if isSchemaTypeReference(field.Type, file) {
 			kind = protocol.CompletionItemKindStruct
 			detail = fmt.Sprintf("schema %s = %s;", field.Name, fieldTypeDetail(field.Type))
+		} else if isEnumTypeReference(field.Type, file) {
+			kind = protocol.CompletionItemKindEnum
+			detail = fmt.Sprintf("enum %s: %s;", field.Name, fieldTypeDetail(field.Type))
 		}
 
 		return semanticSymbol{
@@ -883,6 +916,18 @@ func isSchemaTypeReference(typeReference ast.TypeReference, file ast.File) bool 
 	default:
 		return false
 	}
+}
+
+func isEnumTypeReference(typeReference ast.TypeReference, file ast.File) bool {
+	value, ok := typeReference.(ast.NamedType)
+	if !ok {
+		return false
+	}
+
+	return lo.ContainsBy(fileScriptDeclarations(file), func(item ast.Declaration) bool {
+		declaration, ok := item.(ast.EnumDeclaration)
+		return ok && declaration.Name == value.Name
+	})
 }
 
 func fileScriptDeclarations(file ast.File) []ast.Declaration {
@@ -988,6 +1033,18 @@ func variableDeclarationDetail(declaration ast.VariableDeclaration) string {
 	}
 
 	return detail + " = " + expressionSummary(declaration.Value)
+}
+
+func enumDeclarationDetail(declaration ast.EnumDeclaration) string {
+	members := lo.Map(declaration.Members, func(member ast.EnumMember, _ int) string {
+		if !member.HasValue {
+			return member.Name
+		}
+
+		return member.Name + " = " + expressionSummary(member.Value)
+	})
+
+	return fmt.Sprintf("enum %s: %s { %s }", declaration.Name, declaration.BackingType.Name, strings.Join(members, ", "))
 }
 
 func indexSymbols(symbols []semanticSymbol) map[string]semanticSymbol {

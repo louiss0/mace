@@ -141,6 +141,20 @@ func requireSelfReference(expression ast.Expression, path []string) ast.SelfRefe
 	return selfRef
 }
 
+func requireEnumMemberValue(member ast.EnumMember, lexeme string) {
+	literal, ok := member.Value.(ast.StringLiteral)
+	if ok {
+		tAssert.Equal(lexeme, literal.Lexeme)
+		return
+	}
+
+	intLiteral, ok := member.Value.(ast.IntLiteral)
+	tAssert.True(ok)
+	if ok {
+		tAssert.Equal(lexeme, intLiteral.Lexeme)
+	}
+}
+
 var _ = Describe("Parser", func() {
 	DescribeTable("parses identifiers and literals",
 		func(input string, assertExpression func(ast.Expression)) {
@@ -376,6 +390,35 @@ type Matrix = array<array<int>>;
 								tAssert.Equal("int", primitive.Name)
 							}
 						}
+					}
+				}
+			}
+		})
+
+		It("parses enum declarations with implicit and explicit members", func() {
+			input := `|===|
+enum Fruit: string {
+  Apple,
+  Strawberry = "strawberry",
+}
+|===|
+[output = data] {}`
+
+			file, err := parseFileInput(input)
+			tAssert.NoError(err)
+
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 1) {
+				enumDecl, ok := file.Script.Items[0].(ast.EnumDeclaration)
+				tAssert.True(ok)
+				if ok {
+					tAssert.Equal("Fruit", enumDecl.Name)
+					tAssert.Equal("string", enumDecl.BackingType.Name)
+					if tAssert.Len(enumDecl.Members, 2) {
+						tAssert.Equal("Apple", enumDecl.Members[0].Name)
+						tAssert.False(enumDecl.Members[0].HasValue)
+						tAssert.Equal("Strawberry", enumDecl.Members[1].Name)
+						tAssert.True(enumDecl.Members[1].HasValue)
+						requireEnumMemberValue(enumDecl.Members[1], "\"strawberry\"")
 					}
 				}
 			}

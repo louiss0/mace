@@ -34,6 +34,7 @@ var globalKeywordCompletions = []completionDefinition{
 var scriptKeywordCompletions = []completionDefinition{
 	{Label: "array", Kind: protocol.CompletionItemKindKeyword, Detail: "type constructor"},
 	{Label: "boolean", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
+	{Label: "enum", Kind: protocol.CompletionItemKindKeyword, Detail: "enum declaration"},
 	{Label: "float", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
 	{Label: "injectable", Kind: protocol.CompletionItemKindKeyword, Detail: "variable modifier"},
 	{Label: "int", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},

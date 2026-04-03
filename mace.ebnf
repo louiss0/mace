@@ -67,6 +67,7 @@ script_item
 declaration
   = variable_declaration
   | type_declaration
+  | enum_declaration
   | schema_declaration ;
 
 (* ===================================================== *)
@@ -103,7 +104,37 @@ type_declaration
     ws0 , ";" ;
 
 (* ===================================================== *)
-(* 7. SCHEMA DECLARATIONS                               *)
+(* 7. ENUM DECLARATIONS                                 *)
+(* ===================================================== *)
+
+enum_declaration
+  = "enum" , ws1 ,
+    identifier , ws0 ,
+    ":" , ws0 ,
+    enum_backing_type , ws0 ,
+    "{" , ws0 ,
+    [ enum_member , { ws0 , "," , ws0 , enum_member } , [ ws0 , "," ] ] ,
+    ws0 , "}" ;
+
+enum_backing_type
+  = primitive_type ;
+
+enum_member
+  = identifier ,
+    [ ws0 , "=" , ws0 , enum_member_value ] ;
+
+enum_member_value
+  = string_literal
+  | int_literal
+  | float_literal
+  | boolean_literal ;
+
+(* The current implementation accepts primitive backing-type syntax but
+   validates only `string` and `int`. String enums may use implicit values.
+   Int enums require explicit integer literals. *)
+
+(* ===================================================== *)
+(* 8. SCHEMA DECLARATIONS                               *)
 (* ===================================================== *)
 
 schema_declaration
@@ -125,7 +156,7 @@ schema_field
     ws0 , ";" ;
 
 (* ===================================================== *)
-(* 8. TYPE REFERENCES                                   *)
+(* 9. TYPE REFERENCES                                   *)
 (* ===================================================== *)
 
 type_reference
@@ -142,7 +173,7 @@ array_type
     ws0 , ">" ;
 
 (* ===================================================== *)
-(* 9. OUTPUT BLOCK                                      *)
+(* 10. OUTPUT BLOCK                                      *)
 (* ===================================================== *)
 
 output_block
@@ -178,7 +209,7 @@ output_field
     ws0 , ";" ;
 
 (* ===================================================== *)
-(* 10. EXPRESSIONS (JS-LIKE, PURE, WITH PRECEDENCE)      *)
+(* 11. EXPRESSIONS (JS-LIKE, PURE, WITH PRECEDENCE)      *)
 (* ===================================================== *)
 
 expression
@@ -267,7 +298,7 @@ conditional_expression
     conditional_expression ;
 
 (* ===================================================== *)
-(* 11. LITERALS                                         *)
+(* 12. LITERALS                                         *)
 (* ===================================================== *)
 
 array_literal
