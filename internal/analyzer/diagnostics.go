@@ -1,4 +1,4 @@
-package lsp
+package analyzer
 
 import (
 	"strings"

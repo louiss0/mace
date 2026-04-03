@@ -2,7 +2,7 @@
 
 ## Tests that are failing
 - No known failing tests at handoff time.
-- Verified on April 1, 2026 with `go test ./internal/lsp ./internal/processor/...`.
+- Verified on April 3, 2026 with `go test ./...`.
 
 ## What bugs are present
 - `textDocument/hover` now prefers output fields by cursor position, but

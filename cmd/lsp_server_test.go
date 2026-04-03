@@ -1,4 +1,4 @@
-package lsp
+package main
 
 import (
 	"encoding/json"
@@ -6,20 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
-	"github.com/stretchr/testify/assert"
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
-
-var tAssert *assert.Assertions
-
-func TestLSP(t *testing.T) {
-	tAssert = assert.New(t)
-	RunSpecs(t, "LSP Suite")
-}
 
 type capturedNotification struct {
 	method string

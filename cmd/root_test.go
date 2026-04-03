@@ -14,7 +14,7 @@ var tAssert *assert.Assertions
 
 func TestCLI(t *testing.T) {
 	tAssert = assert.New(t)
-	RunSpecs(t, "CLI Suite")
+	RunSpecs(t, "Cmd Suite")
 }
 
 func writeMaceFile(contents string) string {
