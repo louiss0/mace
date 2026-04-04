@@ -1,9 +1,13 @@
 from "./profile.mace" import Profile, Age;
 
-|================================================|
+|=================================================|
 type Name = string;
 
-injectable string default_name;
+injectable string name;
+
+enum Personality: string { friendly, nice, rude }
+
+Personality is_type  = "friendly";
 
 schema User = { name: Name; profile: Profile; };
 
@@ -11,7 +15,7 @@ Name default_name = "Ada";
 
 Age default_age = 30;
 
-|================================================|
+|=================================================|
 
 [output = data]
 {
