@@ -22,3 +22,4 @@
   `initializerCompletionItems`, and `placeholderCompletionType` in
   `internal/analyzer/completion.go` to find where the request falls back to
   normal script completions instead of enum-value completions.
+- Require enum values to be accessed to satify Enum type
