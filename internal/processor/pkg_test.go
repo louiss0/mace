@@ -1,6 +1,8 @@
 package processor
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -140,6 +142,13 @@ func requireScriptVariable(result ScriptResult, name string) Value {
 	return value
 }
 
+func writeFixtureFile(root string, relativePath string, contents string) string {
+	path := filepath.Join(root, relativePath)
+	tAssert.NoError(os.MkdirAll(filepath.Dir(path), 0o755))
+	tAssert.NoError(os.WriteFile(path, []byte(contents), 0o644))
+	return path
+}
+
 var _ = Describe("Block processing", func() {
 	It("processes script blocks independently", func() {
 		processor := New()
@@ -207,6 +216,9 @@ string name = "Ada";
 int age = 30;
 float rate = 1.25;
 boolean active = true;
+|===|`)),
+		Entry("injectable without initializer when unused", wrapScriptWithOutput(`|===|
+injectable string env;
 |===|`)),
 		Entry("imports and script block", `from "testdata/imports/base.mace" import Name;
 |===|
@@ -312,6 +324,37 @@ injectable string env = "dev";
 		assertExpectedValue(actual, expectedValue{kind: ValueString, string: "prod"})
 	})
 
+	It("uses an initializer when an injectable value is not provided", func() {
+		processor := New()
+
+		result, err := processor.Process(`|===|
+injectable string env = "dev";
+|===|
+[output = data]
+{
+  env: env;
+}`)
+		tAssert.NoError(err)
+
+		actual := requireOutputValue(result, "env")
+		assertExpectedValue(actual, expectedValue{kind: ValueString, string: "dev"})
+	})
+
+	It("rejects injectables without a provided value or initializer", func() {
+		processor := New()
+
+		_, err := processor.Process(`|===|
+injectable string env;
+|===|
+[output = data]
+{
+  env: env;
+}`)
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, "injectable")
+		tAssert.ErrorContains(err, "requires a runtime value")
+	})
+
 	It("rejects unknown injected values", func() {
 		processor := NewWithInjections(map[string]Value{
 			"missing": {Kind: ValueString, String: "prod"},
@@ -324,6 +367,88 @@ injectable string env = "dev";
 		tAssert.Error(err)
 		tAssert.ErrorContains(err, "unknown injectable")
 	})
+
+	DescribeTable("processes valid enum declarations",
+		func(input string, expected expectedValue) {
+			processor := New()
+			result, err := processor.Process(input)
+			tAssert.NoError(err)
+
+			actual := requireOutputValue(result, "result")
+			assertExpectedValue(actual, expected)
+		},
+		Entry("string enum with implicit values", `|===|
+enum Fruit: string {
+  Apple,
+  Strawberry,
+}
+Fruit result = "Apple";
+|===|
+[output = data]
+{
+  result: result;
+}`, expectedValue{kind: ValueString, string: "Apple"}),
+		Entry("int enum with explicit values", `|===|
+enum Status: int {
+  Pending = 0,
+  Running = 1,
+}
+Status result = 1;
+|===|
+[output = data]
+{
+  result: result;
+}`, expectedValue{kind: ValueInt, int64: 1}),
+	)
+
+	DescribeTable("rejects invalid enum declarations and assignments",
+		func(input string, message string) {
+			processor := New()
+			_, err := processor.Process(input)
+			tAssert.Error(err)
+			tAssert.ErrorContains(err, message)
+		},
+		Entry("duplicate enum member name", wrapScriptWithOutput(`|===|
+enum Fruit: string {
+  Apple,
+  Apple,
+}
+|===|`), "duplicate enum member"),
+		Entry("duplicate enum value", wrapScriptWithOutput(`|===|
+enum Fruit: string {
+  Apple = "fruit",
+  Strawberry = "fruit",
+}
+|===|`), "duplicate enum value"),
+		Entry("mixed implicit and explicit enum members", wrapScriptWithOutput(`|===|
+enum Fruit: string {
+  Apple = "apple",
+  Strawberry,
+}
+|===|`), "mixes implicit and explicit"),
+		Entry("int enum requires explicit values", wrapScriptWithOutput(`|===|
+enum Status: int {
+  Pending,
+  Running,
+}
+|===|`), "requires explicit values"),
+		Entry("enum explicit value type mismatch", wrapScriptWithOutput(`|===|
+enum Status: int {
+  Pending = "pending",
+}
+|===|`), "must use an int literal"),
+		Entry("invalid enum assignment", `|===|
+enum Fruit: string {
+  Apple,
+  Strawberry,
+}
+Fruit result = "Pear";
+|===|
+[output = data]
+{
+  result: result;
+}`, "invalid enum value"),
+	)
 })
 
 var _ = Describe("Imports", func() {
@@ -433,6 +558,36 @@ type Name = string;
 |===|
 [output = data] {}`, "duplicate declaration"),
 	)
+
+	It("imports enums exposed through schema output", func() {
+		workspace, err := os.MkdirTemp("", "mace-processor-enum-import-*")
+		tAssert.NoError(err)
+
+		sharedPath := writeFixtureFile(workspace, "shared.mace", `|===|
+enum Fruit: string {
+  Apple,
+  Strawberry,
+}
+|===|
+[output = schema]
+{
+  Fruit: Fruit;
+}`)
+		consumerPath := writeFixtureFile(workspace, "consumer.mace", `from "./shared.mace" import Fruit;
+|===|
+Fruit result = "Apple";
+|===|
+[output = data]
+{
+  result: result;
+}`)
+
+		processor := New()
+		result, err := processor.ProcessFile(consumerPath)
+		tAssert.NoError(err)
+		assertExpectedValue(requireOutputValue(result, "result"), expectedValue{kind: ValueString, string: "Apple"})
+		tAssert.FileExists(sharedPath)
+	})
 })
 
 var _ = Describe("Output block", func() {
@@ -548,6 +703,15 @@ schema Plot = { points: array<Point>; };
 |===|
 [output = data, schema = Plot]
 { points: [ { x: 1; y: 2; }, { x: 3; } ]; }`, "missing required field"),
+		Entry("enum field mismatch", `|===|
+enum Fruit: string {
+  Apple,
+  Strawberry,
+}
+schema Basket = { favorite: Fruit; };
+|===|
+[output = data, schema = Basket]
+{ favorite: "Pear"; }`, "invalid enum value"),
 	)
 
 	DescribeTable("rejects output surface mismatches",

@@ -1,4 +1,4 @@
-package lsp
+package main
 
 import (
 	"encoding/json"
@@ -6,24 +6,23 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
-	"github.com/stretchr/testify/assert"
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
 
-var tAssert *assert.Assertions
-
-func TestLSP(t *testing.T) {
-	tAssert = assert.New(t)
-	RunSpecs(t, "LSP Suite")
-}
-
 type capturedNotification struct {
 	method string
 	params any
+}
+
+func newTestLSPServer() *Server {
+	return newLSPServer()
+}
+
+func New() *Server {
+	return newTestLSPServer()
 }
 
 func invoke(handler *protocol.Handler, method string, params any, notifications *[]capturedNotification) (any, bool, bool, error) {
@@ -755,6 +754,93 @@ Us
 		tAssert.NotContains(labels, "string")
 	})
 
+	It("suggests enum in script scope", func() {
+		server := New()
+		initializeServer(server)
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+en
+|===|
+[output = data] {}`, nil)
+
+		labels := completeLabels(server, uri, 1, 2)
+		tAssert.Contains(labels, "enum")
+	})
+
+	It("suggests enum values when assigning an enum typed variable", func() {
+		server := New()
+		initializeServer(server)
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+enum Fruit: string {
+  Apple,
+  Strawberry = "strawberry",
+}
+Fruit selected =
+|===|
+[output = data] {}`, nil)
+
+		labels := completeLabels(server, uri, 5, uint32(len(`Fruit selected = `)))
+		tAssert.Equal([]string{`"Apple"`, `"strawberry"`}, labels)
+	})
+
+	It("suggests enum values for schema fields after a record colon", func() {
+		server := New()
+		initializeServer(server)
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+enum Fruit: string {
+  Apple,
+  Strawberry = "strawberry",
+}
+schema Basket = { favorite_fruit: Fruit; };
+Basket basket = {
+  favorite_fruit:
+};
+|===|
+[output = data] {}`, nil)
+
+		labels := completeLabels(server, uri, 7, uint32(len(`  favorite_fruit: `)))
+		tAssert.Equal([]string{`"Apple"`, `"strawberry"`}, labels)
+	})
+
+	It("suggests schema record literals for nested schema fields after a record colon", func() {
+		server := New()
+		initializeServer(server)
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+schema Profile = { name: string; age?: int; };
+schema Basket = { owner: Profile; };
+Basket basket = {
+  owner:
+};
+|===|
+[output = data] {}`, nil)
+
+		labels := completeLabels(server, uri, 4, uint32(len(`  owner: `)))
+		tAssert.Equal([]string{`{ name: ""; age?: 0; }`}, labels)
+	})
+
+	It("suggests enum values for output schema fields after a record colon", func() {
+		server := New()
+		initializeServer(server)
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+enum Fruit: string {
+  Apple,
+  Strawberry = "strawberry",
+}
+schema Basket = { favorite_fruit: Fruit; };
+|===|
+[output = data, schema = Basket]
+{
+  favorite_fruit:
+}`, nil)
+
+		labels := completeLabels(server, uri, 9, uint32(len(`  favorite_fruit: `)))
+		tAssert.Equal([]string{`"Apple"`, `"strawberry"`}, labels)
+	})
+
 	It("does not suggest schema directives after output schema and a comma", func() {
 		server := New()
 		initializeServer(server)
@@ -938,6 +1024,39 @@ schema User = { name: string; };
 		tAssert.True(ok)
 		if ok {
 			tAssert.Contains(content.Value, "record schema")
+		}
+	})
+
+	It("returns hover documentation for enum declarations", func() {
+		server := New()
+		initializeServer(server)
+		didOpen(server, uri, `|===|
+enum Fruit: string {
+  Apple,
+}
+|===|
+[output = data] { result: "Apple"; }`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 1, Character: 2},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, "enum type")
 		}
 	})
 
@@ -1378,6 +1497,64 @@ string env = "dev";
 			tAssert.Equal("output", symbols[2].Name)
 			tAssert.NotEmpty(symbols[0].Children)
 			tAssert.NotEmpty(symbols[2].Children)
+		}
+	})
+
+	It("includes enums in hierarchical document symbols", func() {
+		server := New()
+		initializeServer(server)
+		didOpen(server, uri, `|===|
+enum Fruit: string {
+  Apple,
+  Strawberry = "strawberry",
+}
+|===|
+[output = data]
+{
+  result: "Apple";
+}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentDocumentSymbol, protocol.DocumentSymbolParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		symbols, ok := resultValue.([]protocol.DocumentSymbol)
+		tAssert.True(ok)
+		if !ok || !tAssert.NotEmpty(symbols) {
+			return
+		}
+
+		tAssert.Equal("Fruit", symbols[0].Name)
+		tAssert.Equal(protocol.SymbolKindEnum, symbols[0].Kind)
+		if tAssert.Len(symbols[0].Children, 2) {
+			tAssert.Equal("Apple", symbols[0].Children[0].Name)
+		}
+	})
+
+	It("publishes enum diagnostics with enum-specific codes", func() {
+		server := New()
+		initializeServer(server)
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+enum Fruit: string {
+  Apple,
+  Strawberry,
+}
+Fruit selected = "Pear";
+|===|
+[output = data]
+{
+  selected: selected;
+}`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			tAssert.Len(params.Diagnostics, 1)
+			tAssert.Equal("mace.type.invalid-enum-value", params.Diagnostics[0].Code.Value)
 		}
 	})
 

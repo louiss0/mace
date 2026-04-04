@@ -383,6 +383,8 @@ func keywordToken(lexeme string) (TokenType, bool) {
 		return TokenTypeKeyword, true
 	case "schema":
 		return TokenSchema, true
+	case "enum":
+		return TokenEnum, true
 	case "array":
 		return TokenArray, true
 	case "string":

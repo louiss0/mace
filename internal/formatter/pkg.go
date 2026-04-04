@@ -138,17 +138,21 @@ func (f *formatter) writeLine(value string) {
 func formatDeclaration(declaration ast.Declaration) (string, error) {
 	switch typedDeclaration := declaration.(type) {
 	case ast.VariableDeclaration:
-		value, err := formatExpressionWithDepth(typedDeclaration.Value, 0)
-		if err != nil {
-			return "", err
-		}
-
 		prefix := ""
 		if typedDeclaration.Injectable {
 			prefix = "injectable "
 		}
 
 		typeReference, err := formatTypeReference(typedDeclaration.Type)
+		if err != nil {
+			return "", err
+		}
+
+		if !typedDeclaration.HasValue {
+			return fmt.Sprintf("%s%s %s;", prefix, typeReference, typedDeclaration.Name), nil
+		}
+
+		value, err := formatExpressionWithDepth(typedDeclaration.Value, 0)
 		if err != nil {
 			return "", err
 		}
@@ -168,9 +172,41 @@ func formatDeclaration(declaration ast.Declaration) (string, error) {
 		}
 
 		return fmt.Sprintf("schema %s = %s;", typedDeclaration.Name, recordType), nil
+	case ast.EnumDeclaration:
+		return formatEnumDeclaration(typedDeclaration)
 	default:
 		return "", fmt.Errorf("format declaration: unsupported %T", declaration)
 	}
+}
+
+func formatEnumDeclaration(declaration ast.EnumDeclaration) (string, error) {
+	if len(declaration.Members) == 0 {
+		return fmt.Sprintf("enum %s: %s {}", declaration.Name, declaration.BackingType.Name), nil
+	}
+
+	lines := []string{fmt.Sprintf("enum %s: %s {", declaration.Name, declaration.BackingType.Name)}
+	for _, member := range declaration.Members {
+		value, err := formatEnumMember(member)
+		if err != nil {
+			return "", err
+		}
+		lines = append(lines, "  "+value)
+	}
+	lines = append(lines, "}")
+	return strings.Join(lines, "\n"), nil
+}
+
+func formatEnumMember(member ast.EnumMember) (string, error) {
+	if !member.HasValue {
+		return member.Name + ",", nil
+	}
+
+	value, err := formatExpressionWithDepth(member.Value, 0)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("%s = %s,", member.Name, value), nil
 }
 
 func formatTypeReference(typeReference ast.TypeReference) (string, error) {

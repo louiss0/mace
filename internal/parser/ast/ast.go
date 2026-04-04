@@ -104,6 +104,7 @@ type Declaration interface {
 
 type VariableDeclaration struct {
 	Injectable bool
+	HasValue   bool
 	Type       TypeReference
 	NameToken  lexer.Token
 	Name       string
@@ -127,6 +128,22 @@ type SchemaDeclaration struct {
 }
 
 func (SchemaDeclaration) declarationNode() {}
+
+type EnumDeclaration struct {
+	NameToken   lexer.Token
+	Name        string
+	BackingType PrimitiveType
+	Members     []EnumMember
+}
+
+func (EnumDeclaration) declarationNode() {}
+
+type EnumMember struct {
+	NameToken lexer.Token
+	Name      string
+	HasValue  bool
+	Value     Expression
+}
 
 type TypeReference interface {
 	typeReferenceNode()
@@ -191,14 +208,14 @@ type OutputDirective struct {
 
 type OutputField struct {
 	NameToken lexer.Token
-	Name     string
-	Optional bool
-	Value    Expression
+	Name      string
+	Optional  bool
+	Value     Expression
 }
 
 type OutputSchemaField struct {
 	NameToken lexer.Token
-	Name     string
-	Optional bool
-	Type     TypeReference
+	Name      string
+	Optional  bool
+	Type      TypeReference
 }

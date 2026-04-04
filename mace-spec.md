@@ -36,7 +36,7 @@ Current import rules:
 - Import paths are resolved relative to the importing file.
 - Only named imports are supported.
 - Only symbols exposed through the imported file's output block are importable.
-- Top-level `type`, `schema`, and variable declarations are internal unless surfaced through the output block.
+- Top-level `type`, `enum`, `schema`, and variable declarations are internal unless surfaced through the output block.
 - There is no explicit `export` keyword.
 - Circular imports are rejected.
 
@@ -44,7 +44,7 @@ Imported symbols come from the referenced file's output mode:
 
 - `output = schema` exposes named type-like fields for import.
 - A field whose type is a record, or references a schema, is imported as a schema.
-- Other schema output fields are imported as types.
+- Other schema output fields are imported as types or enums.
 - `output = data` exposes named values for import.
 
 ## Script Block
@@ -65,6 +65,7 @@ at least three on each delimiter, for example `|===|` and `|====|`.
 The script block can contain:
 
 - `type` declarations
+- `enum` declarations
 - `schema` declarations
 - typed variable declarations
 
@@ -74,12 +75,16 @@ Variables are immutable and must have both a type and an initializer.
 
 ```mace
 int age = 27;
-injectable string env = "dev";
 ```
 
-`injectable` marks a variable whose runtime value may be overridden by an
-external injection. If no injected value is provided, the declared
-initializer is evaluated normally and used as the fallback value.
+Injectables don't need an initializer!
+```mace
+injectable string env;
+```
+`injectable` marks a variable as one where the value is determined at runtime.
+If it has no value then an error will be shown! 
+
+The Mace processor and CLI are responsible for making sure the values are injected.
 
 Variables declared in the script block are available to later declarations
 and to the output block.
@@ -114,6 +119,43 @@ schema User = {
 
 Field names must be unique within a schema.
 
+### Enum Declarations
+
+Enums define named scalar types with a declared backing type and a fixed set
+of unique member values.
+
+```mace
+enum Fruit: string {
+  Apple,
+  Strawberry,
+  Pecan,
+}
+```
+
+```mace
+enum Status: int {
+  Pending = 0,
+  Running = 1,
+  Done = 2,
+}
+```
+
+Current enum rules:
+
+- Supported backing types are `string` and `int`.
+- Enum member names must be unique within the enum.
+- Enum values must be unique within the enum.
+- `string` enums may use all-implicit members or all-explicit members.
+- An implicit `string` member uses its member name exactly as written.
+- `int` enums currently require explicit integer literal values.
+- Mixing implicit and explicit members in the same enum is invalid.
+- Explicit `string` enum values must be string literals.
+- Explicit `int` enum values must be integer literals.
+
+Enums are named types. They may be used anywhere a named non-schema type can
+be used, including variable declarations, schema fields, output schema
+fields, and imports.
+
 ## Types
 
 The current implementation supports:
@@ -124,6 +166,7 @@ The current implementation supports:
 - `boolean`
 - `array<T>`
 - named type aliases
+- named enums
 - named schemas
 
 Arrays must be homogeneous. Nested arrays and arrays of schemas are
@@ -251,13 +294,19 @@ fields that have already been evaluated.
 The processor validates:
 
 - duplicate declarations
+- duplicate enum member names
+- duplicate enum values
 - unknown type references
 - duplicate schema fields
 - duplicate output directives
 - duplicate output fields
 - import resolution failures
 - circular imports
+- invalid enum backing types
+- invalid enum member literal types
+- mixed implicit and explicit enum members
 - type mismatches in variables and expressions
+- enum-constrained values in variables and schema-validated output
 - schema conformance for record literals and output blocks
 - mixed-type array literals
 

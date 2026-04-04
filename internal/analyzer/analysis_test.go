@@ -1,4 +1,4 @@
-package lsp
+package analyzer
 
 import (
 	"os"
@@ -217,6 +217,15 @@ int count = "Ada";
 			tAssert.Equal(protocol.UInteger(4), snapshot.diagnostics[0].Range.Start.Character)
 			tAssert.Equal(string(diagnosticTypeInitializerMismatch), requireDiagnosticCode(snapshot.diagnostics[0]))
 		}
+	})
+
+	It("does not report diagnostics for an unused injectable without an initializer", func() {
+		snapshot := analyzeDocument(`|===|
+injectable string env;
+|===|
+[output = data] {}`)
+
+		tAssert.Empty(snapshot.diagnostics)
 	})
 
 	It("translates mixed array literal errors in script declarations into token-scoped diagnostics", func() {
