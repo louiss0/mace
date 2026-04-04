@@ -39,7 +39,6 @@ var declarationKeywordDocs = map[string]string{
 
 type document struct {
 	text     string
-	version  protocol.UInteger
 	analysis analysisSnapshot
 }
 
