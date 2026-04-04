@@ -1,23 +1,24 @@
 # Handoff
 
 ## Tests that are failing
-- No known failing tests at handoff time.
-- Verified on April 3, 2026 with `go test ./...`.
+- No automated tests are currently failing in the repository.
+- The reported enum completion bug is not covered by a regression test that
+  matches the editor behavior seen in Zed.
 
 ## What bugs are present
-- `textDocument/hover` now prefers output fields by cursor position, but
-  `textDocument/definition` still resolves by identifier name only. If an output
-  field shares a name with a schema, type, or variable, go-to-definition can
-  still jump to the wrong declaration.
-- Output field ranges are inferred from a token scan in
-  `outputFieldHeaderRanges`, so the position-aware behavior is currently a
-  narrow fix around top-level output headers rather than a general symbol
-  resolution path.
+- Enum-typed variable initialization is still surfacing global or script-scope
+  completions in the editor instead of enum member values.
+- Existing server-side completion coverage in `cmd/lsp_test.go` and
+  `internal/analyzer/completion_test.go` says enum value completion should work,
+  so the bug is likely in the exact incomplete-buffer path, completion scope
+  detection, or the way Zed is triggering the completion request.
 
 ## What to do next
-- Apply the same position-aware symbol resolution used by hover to
-  `definitionAt`, then add LSP tests for same-name collisions in output fields.
-- Decide whether output field locations should come from the parser/AST instead
-  of token scanning, and refactor if that is the intended long-term direction.
-- After the definition fix lands, run the full Go test suite before handing off
-  again.
+- Reproduce the bug from Zed with the exact buffer text and cursor position used
+  when completing `Fruit selected =`.
+- Add a failing regression test for that exact case before changing completion
+  logic.
+- Inspect `completionScopeAt`, `completionFileWithPlaceholder`,
+  `initializerCompletionItems`, and `placeholderCompletionType` in
+  `internal/analyzer/completion.go` to find where the request falls back to
+  normal script completions instead of enum-value completions.
