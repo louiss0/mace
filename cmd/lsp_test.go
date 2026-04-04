@@ -17,6 +17,14 @@ type capturedNotification struct {
 	params any
 }
 
+func newTestLSPServer() *Server {
+	return newLSPServer()
+}
+
+func New() *Server {
+	return newTestLSPServer()
+}
+
 func invoke(handler *protocol.Handler, method string, params any, notifications *[]capturedNotification) (any, bool, bool, error) {
 	payload := []byte("{}")
 	if params != nil {
