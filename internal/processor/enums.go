@@ -154,6 +154,16 @@ func (definition enumDefinition) ContainsValue(value Value) bool {
 	return exists
 }
 
+func (definition enumDefinition) Member(name string) (enumMember, bool) {
+	for _, member := range definition.Members {
+		if member.Name == name {
+			return member, true
+		}
+	}
+
+	return enumMember{}, false
+}
+
 type enumRegistry struct {
 	enums map[string]enumDefinition
 }

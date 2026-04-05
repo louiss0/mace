@@ -161,7 +161,7 @@ func ParseInjectionRecord(input string) (map[string]Value, error) {
 		return nil, err
 	}
 
-	value, err := evaluateExpression(expression, newValueEnvironment(), Value{})
+	value, err := evaluateExpression(expression, newValueEnvironment(), Value{}, newEnumRegistry())
 	if err != nil {
 		return nil, err
 	}
@@ -269,7 +269,7 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 		}
 	}
 
-	output, err := evaluateOutputFields(outputBlock.DataFields, outputContext.environment)
+	output, err := evaluateOutputFields(outputBlock.DataFields, outputContext.environment, outputContext.enums)
 	if err != nil {
 		return Result{}, err
 	}
@@ -655,7 +655,7 @@ func collectImportExports(output ast.OutputBlock, context processContext) (map[s
 		}
 	}
 
-	values, err := evaluateOutputFields(output.DataFields, outputContext.environment)
+	values, err := evaluateOutputFields(output.DataFields, outputContext.environment, outputContext.enums)
 	if err != nil {
 		return nil, err
 	}
@@ -751,7 +751,7 @@ func exportedOutputFieldType(field ast.OutputField, output ast.OutputBlock, cont
 		}
 	}
 
-	inferredType, err := inferExpressionType(field.Value, context.variables, context.symbols, context.types)
+	inferredType, err := inferExpressionType(field.Value, context.variables, context.symbols, context.types, context.enums)
 	if err != nil {
 		return valueType{}, err
 	}
@@ -933,7 +933,7 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 		}
 
 		if decl.HasValue {
-			actualType, err := inferExpressionType(decl.Value, variables, symbols, types)
+			actualType, err := inferExpressionType(decl.Value, variables, symbols, types, enums)
 			if err != nil {
 				return err
 			}
@@ -1210,7 +1210,7 @@ func validateOutputSchema(schemaName string, items []ast.OutputField, variables 
 		if err != nil {
 			return err
 		}
-		actualType, err := inferExpressionType(item.Value, variables, symbols, types)
+		actualType, err := inferExpressionType(item.Value, variables, symbols, types, enums)
 		if err != nil {
 			return err
 		}
@@ -1301,7 +1301,7 @@ func validateRecordLiteral(expr ast.RecordLiteral, schemaName string, variables 
 		if err != nil {
 			return err
 		}
-		actualType, err := inferExpressionType(recordField.Value, variables, symbols, types)
+		actualType, err := inferExpressionType(recordField.Value, variables, symbols, types, enums)
 		if err != nil {
 			return err
 		}
@@ -1552,7 +1552,7 @@ func evaluateScript(items []ast.Declaration, environment *valueEnvironment, inje
 			return validationErrorf("variable %q requires an initializer", variable.Name)
 		}
 
-		value, err := evaluateExpression(variable.Value, environment, Value{})
+		value, err := evaluateExpression(variable.Value, environment, Value{}, enums)
 		if err != nil {
 			return err
 		}
@@ -1571,11 +1571,11 @@ func evaluateScript(items []ast.Declaration, environment *valueEnvironment, inje
 	return nil
 }
 
-func evaluateOutputFields(items []ast.OutputField, environment *valueEnvironment) (map[string]Value, error) {
+func evaluateOutputFields(items []ast.OutputField, environment *valueEnvironment, enums *enumRegistry) (map[string]Value, error) {
 	fields := map[string]Value{}
 	self := Value{Kind: ValueRecord, Record: fields}
 	for _, item := range items {
-		value, err := evaluateExpression(item.Value, environment, self)
+		value, err := evaluateExpression(item.Value, environment, self, enums)
 		if err != nil {
 			return nil, err
 		}
@@ -1585,7 +1585,7 @@ func evaluateOutputFields(items []ast.OutputField, environment *valueEnvironment
 	return fields, nil
 }
 
-func evaluateExpression(expression ast.Expression, environment *valueEnvironment, self Value) (Value, error) {
+func evaluateExpression(expression ast.Expression, environment *valueEnvironment, self Value, enums *enumRegistry) (Value, error) {
 	switch expr := expression.(type) {
 	case ast.Identifier:
 		value, ok := environment.Get(expr.Name)
@@ -1596,6 +1596,8 @@ func evaluateExpression(expression ast.Expression, environment *valueEnvironment
 			return Value{}, validationErrorf("unknown identifier %q", expr.Name)
 		}
 		return value, nil
+	case ast.EnumMemberAccess:
+		return evaluateEnumMemberAccess(expr, enums)
 	case ast.IntLiteral:
 		return parseInt(expr.Lexeme)
 	case ast.FloatLiteral:
@@ -1605,17 +1607,17 @@ func evaluateExpression(expression ast.Expression, environment *valueEnvironment
 	case ast.BooleanLiteral:
 		return Value{Kind: ValueBoolean, Boolean: expr.Value}, nil
 	case ast.ArrayLiteral:
-		return evaluateArrayLiteral(expr, environment, self)
+		return evaluateArrayLiteral(expr, environment, self, enums)
 	case ast.RecordLiteral:
-		return evaluateRecordLiteral(expr, environment, self)
+		return evaluateRecordLiteral(expr, environment, self, enums)
 	case ast.SelfReference:
 		return evaluateSelfReference(expr, self)
 	case ast.PrefixExpression:
-		return evaluatePrefix(expr, environment, self)
+		return evaluatePrefix(expr, environment, self, enums)
 	case ast.InfixExpression:
-		return evaluateInfix(expr, environment, self)
+		return evaluateInfix(expr, environment, self, enums)
 	case ast.ConditionalExpression:
-		return evaluateConditional(expr, environment, self)
+		return evaluateConditional(expr, environment, self, enums)
 	default:
 		return Value{}, validationErrorf("unsupported expression")
 	}
@@ -1644,8 +1646,22 @@ func parseString(lexeme string) (Value, error) {
 	return Value{Kind: ValueString, String: lexeme[1 : len(lexeme)-1]}, nil
 }
 
-func evaluatePrefix(expr ast.PrefixExpression, environment *valueEnvironment, self Value) (Value, error) {
-	right, err := evaluateExpression(expr.Right, environment, self)
+func evaluateEnumMemberAccess(expr ast.EnumMemberAccess, enums *enumRegistry) (Value, error) {
+	enumDef, ok := enums.Get(expr.EnumName)
+	if !ok {
+		return Value{}, validationErrorf("unknown enum %q", expr.EnumName)
+	}
+
+	member, ok := enumDef.Member(expr.MemberName)
+	if !ok {
+		return Value{}, validationErrorf("unknown enum member %q in enum %q", expr.MemberName, expr.EnumName)
+	}
+
+	return member.Value, nil
+}
+
+func evaluatePrefix(expr ast.PrefixExpression, environment *valueEnvironment, self Value, enums *enumRegistry) (Value, error) {
+	right, err := evaluateExpression(expr.Right, environment, self, enums)
 	if err != nil {
 		return Value{}, err
 	}
@@ -1680,19 +1696,19 @@ func evaluatePrefix(expr ast.PrefixExpression, environment *valueEnvironment, se
 	}
 }
 
-func evaluateInfix(expr ast.InfixExpression, environment *valueEnvironment, self Value) (Value, error) {
+func evaluateInfix(expr ast.InfixExpression, environment *valueEnvironment, self Value, enums *enumRegistry) (Value, error) {
 	if expr.Operator == lexer.TokenAndAnd {
-		return evaluateLogicalAnd(expr, environment, self)
+		return evaluateLogicalAnd(expr, environment, self, enums)
 	}
 	if expr.Operator == lexer.TokenOrOr {
-		return evaluateLogicalOr(expr, environment, self)
+		return evaluateLogicalOr(expr, environment, self, enums)
 	}
 
-	left, err := evaluateExpression(expr.Left, environment, self)
+	left, err := evaluateExpression(expr.Left, environment, self, enums)
 	if err != nil {
 		return Value{}, err
 	}
-	right, err := evaluateExpression(expr.Right, environment, self)
+	right, err := evaluateExpression(expr.Right, environment, self, enums)
 	if err != nil {
 		return Value{}, err
 	}
@@ -1895,8 +1911,8 @@ func compareNumbers(operator lexer.TokenType, left, right float64) (Value, error
 	}
 }
 
-func evaluateLogicalAnd(expr ast.InfixExpression, environment *valueEnvironment, self Value) (Value, error) {
-	left, err := evaluateExpression(expr.Left, environment, self)
+func evaluateLogicalAnd(expr ast.InfixExpression, environment *valueEnvironment, self Value, enums *enumRegistry) (Value, error) {
+	left, err := evaluateExpression(expr.Left, environment, self, enums)
 	if err != nil {
 		return Value{}, err
 	}
@@ -1907,7 +1923,7 @@ func evaluateLogicalAnd(expr ast.InfixExpression, environment *valueEnvironment,
 		return Value{Kind: ValueBoolean, Boolean: false}, nil
 	}
 
-	right, err := evaluateExpression(expr.Right, environment, self)
+	right, err := evaluateExpression(expr.Right, environment, self, enums)
 	if err != nil {
 		return Value{}, err
 	}
@@ -1917,8 +1933,8 @@ func evaluateLogicalAnd(expr ast.InfixExpression, environment *valueEnvironment,
 	return Value{Kind: ValueBoolean, Boolean: right.Boolean}, nil
 }
 
-func evaluateLogicalOr(expr ast.InfixExpression, environment *valueEnvironment, self Value) (Value, error) {
-	left, err := evaluateExpression(expr.Left, environment, self)
+func evaluateLogicalOr(expr ast.InfixExpression, environment *valueEnvironment, self Value, enums *enumRegistry) (Value, error) {
+	left, err := evaluateExpression(expr.Left, environment, self, enums)
 	if err != nil {
 		return Value{}, err
 	}
@@ -1929,7 +1945,7 @@ func evaluateLogicalOr(expr ast.InfixExpression, environment *valueEnvironment, 
 		return Value{Kind: ValueBoolean, Boolean: true}, nil
 	}
 
-	right, err := evaluateExpression(expr.Right, environment, self)
+	right, err := evaluateExpression(expr.Right, environment, self, enums)
 	if err != nil {
 		return Value{}, err
 	}
@@ -1939,8 +1955,8 @@ func evaluateLogicalOr(expr ast.InfixExpression, environment *valueEnvironment, 
 	return Value{Kind: ValueBoolean, Boolean: right.Boolean}, nil
 }
 
-func evaluateConditional(expr ast.ConditionalExpression, environment *valueEnvironment, self Value) (Value, error) {
-	condition, err := evaluateExpression(expr.Condition, environment, self)
+func evaluateConditional(expr ast.ConditionalExpression, environment *valueEnvironment, self Value, enums *enumRegistry) (Value, error) {
+	condition, err := evaluateExpression(expr.Condition, environment, self, enums)
 	if err != nil {
 		return Value{}, err
 	}
@@ -1949,17 +1965,17 @@ func evaluateConditional(expr ast.ConditionalExpression, environment *valueEnvir
 	}
 
 	if condition.Boolean {
-		return evaluateExpression(expr.Then, environment, self)
+		return evaluateExpression(expr.Then, environment, self, enums)
 	}
 
-	return evaluateExpression(expr.Else, environment, self)
+	return evaluateExpression(expr.Else, environment, self, enums)
 }
 
-func evaluateArrayLiteral(expr ast.ArrayLiteral, environment *valueEnvironment, self Value) (Value, error) {
+func evaluateArrayLiteral(expr ast.ArrayLiteral, environment *valueEnvironment, self Value, enums *enumRegistry) (Value, error) {
 	values := make([]Value, 0, len(expr.Elements))
 	var elementType *valueType
 	for _, element := range expr.Elements {
-		value, err := evaluateExpression(element, environment, self)
+		value, err := evaluateExpression(element, environment, self, enums)
 		if err != nil {
 			return Value{}, err
 		}
@@ -1974,13 +1990,13 @@ func evaluateArrayLiteral(expr ast.ArrayLiteral, environment *valueEnvironment, 
 	return Value{Kind: ValueArray, Array: values}, nil
 }
 
-func evaluateRecordLiteral(expr ast.RecordLiteral, environment *valueEnvironment, self Value) (Value, error) {
+func evaluateRecordLiteral(expr ast.RecordLiteral, environment *valueEnvironment, self Value, enums *enumRegistry) (Value, error) {
 	fields := map[string]Value{}
 	for _, field := range expr.Fields {
 		if _, exists := fields[field.Name]; exists {
 			return Value{}, validationErrorf("duplicate record field %q", field.Name)
 		}
-		value, err := evaluateExpression(field.Value, environment, self)
+		value, err := evaluateExpression(field.Value, environment, self, enums)
 		if err != nil {
 			return Value{}, err
 		}
@@ -2174,13 +2190,22 @@ func schemaTypeFromTypeReference(typeRef ast.TypeReference) (SchemaType, error) 
 	}
 }
 
-func inferExpressionType(expression ast.Expression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry) (valueType, error) {
+func inferExpressionType(expression ast.Expression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, enums *enumRegistry) (valueType, error) {
 	switch expr := expression.(type) {
 	case ast.Identifier:
 		if variableType, ok := variables.Get(expr.Name); ok {
 			return variableType, nil
 		}
 		return valueType{kind: ValueUnknown}, nil
+	case ast.EnumMemberAccess:
+		enumDef, ok := enums.Get(expr.EnumName)
+		if !ok {
+			return valueType{}, validationErrorf("unknown enum %q", expr.EnumName)
+		}
+		if _, ok := enumDef.Member(expr.MemberName); !ok {
+			return valueType{}, validationErrorf("unknown enum member %q in enum %q", expr.MemberName, expr.EnumName)
+		}
+		return valueType{kind: enumDef.BackingType.kind, enumName: expr.EnumName}, nil
 	case ast.IntLiteral:
 		return valueType{kind: ValueInt}, nil
 	case ast.FloatLiteral:
@@ -2190,34 +2215,34 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 	case ast.BooleanLiteral:
 		return valueType{kind: ValueBoolean}, nil
 	case ast.ArrayLiteral:
-		return inferArrayLiteralType(expr, variables, symbols, types)
+		return inferArrayLiteralType(expr, variables, symbols, types, enums)
 	case ast.RecordLiteral:
 		return valueType{kind: ValueRecord}, nil
 	case ast.SelfReference:
 		return valueType{kind: ValueUnknown}, nil
 	case ast.PrefixExpression:
-		return inferPrefixType(expr, variables, symbols, types)
+		return inferPrefixType(expr, variables, symbols, types, enums)
 	case ast.InfixExpression:
-		return inferInfixType(expr, variables, symbols, types)
+		return inferInfixType(expr, variables, symbols, types, enums)
 	case ast.ConditionalExpression:
-		return inferConditionalType(expr, variables, symbols, types)
+		return inferConditionalType(expr, variables, symbols, types, enums)
 	default:
 		return valueType{}, validationErrorf("unknown expression")
 	}
 }
 
-func inferArrayLiteralType(expr ast.ArrayLiteral, variables *variableRegistry, symbols *symbolTable, types *typeRegistry) (valueType, error) {
+func inferArrayLiteralType(expr ast.ArrayLiteral, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, enums *enumRegistry) (valueType, error) {
 	if len(expr.Elements) == 0 {
 		return valueType{kind: ValueArray, element: &valueType{kind: ValueUnknown}}, nil
 	}
 
-	firstType, err := inferExpressionType(expr.Elements[0], variables, symbols, types)
+	firstType, err := inferExpressionType(expr.Elements[0], variables, symbols, types, enums)
 	if err != nil {
 		return valueType{}, err
 	}
 
 	for _, element := range expr.Elements[1:] {
-		elementType, err := inferExpressionType(element, variables, symbols, types)
+		elementType, err := inferExpressionType(element, variables, symbols, types, enums)
 		if err != nil {
 			return valueType{}, err
 		}
@@ -2229,8 +2254,8 @@ func inferArrayLiteralType(expr ast.ArrayLiteral, variables *variableRegistry, s
 	return valueType{kind: ValueArray, element: &firstType}, nil
 }
 
-func inferPrefixType(expr ast.PrefixExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry) (valueType, error) {
-	rightType, err := inferExpressionType(expr.Right, variables, symbols, types)
+func inferPrefixType(expr ast.PrefixExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, enums *enumRegistry) (valueType, error) {
+	rightType, err := inferExpressionType(expr.Right, variables, symbols, types, enums)
 	if err != nil {
 		return valueType{}, err
 	}
@@ -2256,12 +2281,12 @@ func inferPrefixType(expr ast.PrefixExpression, variables *variableRegistry, sym
 	}
 }
 
-func inferInfixType(expr ast.InfixExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry) (valueType, error) {
-	leftType, err := inferExpressionType(expr.Left, variables, symbols, types)
+func inferInfixType(expr ast.InfixExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, enums *enumRegistry) (valueType, error) {
+	leftType, err := inferExpressionType(expr.Left, variables, symbols, types, enums)
 	if err != nil {
 		return valueType{}, err
 	}
-	rightType, err := inferExpressionType(expr.Right, variables, symbols, types)
+	rightType, err := inferExpressionType(expr.Right, variables, symbols, types, enums)
 	if err != nil {
 		return valueType{}, err
 	}
@@ -2285,7 +2310,7 @@ func inferInfixType(expr ast.InfixExpression, variables *variableRegistry, symbo
 		}
 		return valueType{kind: ValueInt}, nil
 	case lexer.TokenEqualEqual, lexer.TokenNotEqual, lexer.TokenStrictEqual, lexer.TokenStrictNotEqual:
-		if leftType.kind != ValueUnknown && rightType.kind != ValueUnknown && leftType.kind != rightType.kind {
+		if leftType.kind != ValueUnknown && rightType.kind != ValueUnknown && !typesEqual(leftType, rightType) {
 			return valueType{}, validationErrorf("type mismatch: incompatible equality comparison")
 		}
 		return valueType{kind: ValueBoolean}, nil
@@ -2293,7 +2318,7 @@ func inferInfixType(expr ast.InfixExpression, variables *variableRegistry, symbo
 		if !leftType.isNumeric() || !rightType.isNumeric() {
 			return valueType{}, validationErrorf("type mismatch: expected numeric operands for comparison")
 		}
-		if leftType.kind != rightType.kind {
+		if !typesEqual(leftType, rightType) {
 			return valueType{}, validationErrorf("type mismatch: expected %s operands", leftType.name())
 		}
 		return valueType{kind: ValueBoolean}, nil
@@ -2317,8 +2342,8 @@ func inferNumericBinary(operator lexer.TokenType, leftType, rightType valueType)
 	return valueType{kind: leftType.kind}, nil
 }
 
-func inferConditionalType(expr ast.ConditionalExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry) (valueType, error) {
-	conditionType, err := inferExpressionType(expr.Condition, variables, symbols, types)
+func inferConditionalType(expr ast.ConditionalExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, enums *enumRegistry) (valueType, error) {
+	conditionType, err := inferExpressionType(expr.Condition, variables, symbols, types, enums)
 	if err != nil {
 		return valueType{}, err
 	}
@@ -2326,11 +2351,11 @@ func inferConditionalType(expr ast.ConditionalExpression, variables *variableReg
 		return valueType{}, validationErrorf("type mismatch: expected boolean condition")
 	}
 
-	thenType, err := inferExpressionType(expr.Then, variables, symbols, types)
+	thenType, err := inferExpressionType(expr.Then, variables, symbols, types, enums)
 	if err != nil {
 		return valueType{}, err
 	}
-	elseType, err := inferExpressionType(expr.Else, variables, symbols, types)
+	elseType, err := inferExpressionType(expr.Else, variables, symbols, types, enums)
 	if err != nil {
 		return valueType{}, err
 	}
@@ -2362,6 +2387,9 @@ func typesEqual(leftType, rightType valueType) bool {
 		}
 		return leftType.schemaName == rightType.schemaName
 	}
+	if (leftType.enumName == "") != (rightType.enumName == "") {
+		return false
+	}
 	if leftType.enumName != "" && rightType.enumName != "" {
 		return leftType.enumName == rightType.enumName
 	}
@@ -2376,6 +2404,9 @@ func ensureAssignable(expectedType, actualType valueType) error {
 		return validationErrorf("type mismatch: expected %s, got unknown", expectedType.name())
 	}
 	if expectedType.kind != actualType.kind {
+		return validationErrorf("type mismatch: expected %s, got %s", expectedType.name(), actualType.name())
+	}
+	if (expectedType.enumName == "") != (actualType.enumName == "") {
 		return validationErrorf("type mismatch: expected %s, got %s", expectedType.name(), actualType.name())
 	}
 	if expectedType.enumName != "" && actualType.enumName != "" && expectedType.enumName != actualType.enumName {

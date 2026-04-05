@@ -382,7 +382,7 @@ enum Fruit: string {
   Apple,
   Strawberry,
 }
-Fruit result = "Apple";
+Fruit result = Fruit.Apple;
 |===|
 [output = data]
 {
@@ -393,7 +393,7 @@ enum Status: int {
   Pending = 0,
   Running = 1,
 }
-Status result = 1;
+Status result = Status.Running;
 |===|
 [output = data]
 {
@@ -437,7 +437,7 @@ enum Status: int {
   Pending = "pending",
 }
 |===|`), "must use an int literal"),
-		Entry("invalid enum assignment", `|===|
+		Entry("raw enum backing value is not assignable", `|===|
 enum Fruit: string {
   Apple,
   Strawberry,
@@ -447,7 +447,18 @@ Fruit result = "Pear";
 [output = data]
 {
   result: result;
-}`, "invalid enum value"),
+}`, "type mismatch: expected Fruit, got string"),
+		Entry("unknown enum member", `|===|
+enum Fruit: string {
+  Apple,
+  Strawberry,
+}
+Fruit result = Fruit.Pear;
+|===|
+[output = data]
+{
+  result: result;
+}`, "unknown enum member"),
 	)
 })
 
@@ -575,7 +586,7 @@ enum Fruit: string {
 }`)
 		consumerPath := writeFixtureFile(workspace, "consumer.mace", `from "./shared.mace" import Fruit;
 |===|
-Fruit result = "Apple";
+Fruit result = Fruit.Apple;
 |===|
 [output = data]
 {
@@ -703,7 +714,7 @@ schema Plot = { points: array<Point>; };
 |===|
 [output = data, schema = Plot]
 { points: [ { x: 1; y: 2; }, { x: 3; } ]; }`, "missing required field"),
-		Entry("enum field mismatch", `|===|
+		Entry("enum field requires member access", `|===|
 enum Fruit: string {
   Apple,
   Strawberry,
@@ -711,7 +722,16 @@ enum Fruit: string {
 schema Basket = { favorite: Fruit; };
 |===|
 [output = data, schema = Basket]
-{ favorite: "Pear"; }`, "invalid enum value"),
+{ favorite: "Pear"; }`, "type mismatch: expected Fruit, got string"),
+		Entry("enum field rejects unknown member", `|===|
+enum Fruit: string {
+  Apple,
+  Strawberry,
+}
+schema Basket = { favorite: Fruit; };
+|===|
+[output = data, schema = Basket]
+{ favorite: Fruit.Pear; }`, "unknown enum member"),
 	)
 
 	DescribeTable("rejects output surface mismatches",

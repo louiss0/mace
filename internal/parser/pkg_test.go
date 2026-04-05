@@ -62,6 +62,17 @@ func requireIdentifier(expression ast.Expression, name string) ast.Identifier {
 	return identifier
 }
 
+func requireEnumMemberAccess(expression ast.Expression, enumName string, memberName string) ast.EnumMemberAccess {
+	access, ok := expression.(ast.EnumMemberAccess)
+	tAssert.True(ok)
+	if !ok {
+		return ast.EnumMemberAccess{}
+	}
+	tAssert.Equal(enumName, access.EnumName)
+	tAssert.Equal(memberName, access.MemberName)
+	return access
+}
+
 func requireIntLiteral(expression ast.Expression, lexeme string) ast.IntLiteral {
 	literal, ok := expression.(ast.IntLiteral)
 	tAssert.True(ok)
@@ -164,6 +175,9 @@ var _ = Describe("Parser", func() {
 		},
 		Entry("identifier", "user_name", func(expression ast.Expression) {
 			requireIdentifier(expression, "user_name")
+		}),
+		Entry("enum member access", "Fruit.Apple", func(expression ast.Expression) {
+			requireEnumMemberAccess(expression, "Fruit", "Apple")
 		}),
 		Entry("int literal", "42", func(expression ast.Expression) {
 			requireIntLiteral(expression, "42")

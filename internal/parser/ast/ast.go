@@ -12,6 +12,13 @@ type Identifier struct {
 
 func (Identifier) expressionNode() {}
 
+type EnumMemberAccess struct {
+	EnumName   string
+	MemberName string
+}
+
+func (EnumMemberAccess) expressionNode() {}
+
 type StringLiteral struct {
 	Lexeme string
 }

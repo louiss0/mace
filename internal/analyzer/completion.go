@@ -1048,9 +1048,9 @@ func completionItemsForType(typeReference ast.TypeReference, model completionMod
 	resolved := resolveCompletionType(typeReference, model, map[string]struct{}{})
 	switch resolved.kind {
 	case completionTypeEnum:
-		return lo.Map(resolved.enum.values, func(value string, _ int) protocol.CompletionItem {
+		return lo.Map(resolved.enum.members, func(member completionEnumMember, _ int) protocol.CompletionItem {
 			return protocol.CompletionItem{
-				Label: value,
+				Label: resolved.enum.access(member.Name),
 				Kind:  Ptr(protocol.CompletionItemKindEnumMember),
 			}
 		})
@@ -1124,7 +1124,7 @@ func buildCompletionModel(file ast.File, baseDir string, cache map[string]comple
 			case completionTypeSchema:
 				model.schemas[name] = resolved.record
 			case completionTypeEnum:
-				model.enums[name] = resolved.enum
+				model.enums[name] = resolved.enum.rename(name)
 			default:
 				model.aliases[name] = field.Type
 			}
@@ -1190,31 +1190,11 @@ func resolveCompletionType(typeReference ast.TypeReference, model completionMode
 }
 
 func completionEnumFromDeclaration(declaration ast.EnumDeclaration) completionEnum {
-	values := lo.Map(declaration.Members, func(member ast.EnumMember, _ int) string {
-		if member.HasValue {
-			switch literal := member.Value.(type) {
-			case ast.StringLiteral:
-				return literal.Lexeme
-			case ast.IntLiteral:
-				return literal.Lexeme
-			case ast.FloatLiteral:
-				return literal.Lexeme
-			case ast.BooleanLiteral:
-				if literal.Value {
-					return "true"
-				}
-				return "false"
-			}
-		}
-
-		if declaration.BackingType.Name == "string" {
-			return strconv.Quote(member.Name)
-		}
-
-		return member.Name
+	members := lo.Map(declaration.Members, func(member ast.EnumMember, _ int) completionEnumMember {
+		return completionEnumMember{Name: member.Name}
 	})
 
-	return completionEnum{values: values}
+	return completionEnum{name: declaration.Name, members: members}
 }
 
 func schemaLiteral(record ast.RecordType, model completionModel, seen map[string]struct{}) string {
@@ -1248,8 +1228,8 @@ func defaultLiteralForType(typeReference ast.TypeReference, model completionMode
 	case completionTypeArray:
 		return "[]"
 	case completionTypeEnum:
-		if len(resolved.enum.values) > 0 {
-			return resolved.enum.values[0]
+		if len(resolved.enum.members) > 0 {
+			return resolved.enum.access(resolved.enum.members[0].Name)
 		}
 		return `""`
 	case completionTypeSchema:
@@ -1398,7 +1378,26 @@ type completionModel struct {
 }
 
 type completionEnum struct {
-	values []string
+	name    string
+	members []completionEnumMember
+}
+
+type completionEnumMember struct {
+	Name string
+}
+
+func (enum completionEnum) access(memberName string) string {
+	if enum.name == "" {
+		return memberName
+	}
+
+	return enum.name + "." + memberName
+}
+
+func (enum completionEnum) rename(name string) completionEnum {
+	cloned := completionEnum{name: name, members: make([]completionEnumMember, len(enum.members))}
+	copy(cloned.members, enum.members)
+	return cloned
 }
 
 type completionTypeKind int

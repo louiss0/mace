@@ -70,7 +70,7 @@ schema Basket = { favorite_fruit: Fruit; };
 			return item.Label
 		})
 
-		tAssert.Equal([]string{`"Apple"`, `"strawberry"`}, labels)
+		tAssert.Equal([]string{"Fruit.Apple", "Fruit.Strawberry"}, labels)
 	})
 
 	It("suggests enum values for incomplete enum variable initializers", func() {
@@ -93,6 +93,6 @@ schema Basket = { favorite_fruit: Fruit; };
 			return item.Label
 		})
 
-		tAssert.Equal([]string{`"Apple"`, `"strawberry"`}, labels)
+		tAssert.Equal([]string{"Fruit.Apple", "Fruit.Strawberry"}, labels)
 	})
 })

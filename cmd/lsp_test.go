@@ -781,7 +781,7 @@ Fruit selected =
 [output = data] {}`, nil)
 
 		labels := completeLabels(server, uri, 5, uint32(len(`Fruit selected = `)))
-		tAssert.Equal([]string{`"Apple"`, `"strawberry"`}, labels)
+		tAssert.Equal([]string{"Fruit.Apple", "Fruit.Strawberry"}, labels)
 	})
 
 	It("suggests enum values when completion is requested on the assignment operator", func() {
@@ -798,7 +798,7 @@ Fruit selected =
 [output = data] {}`, nil)
 
 		labels := completeLabels(server, uri, 5, uint32(len(`Fruit selected `)))
-		tAssert.Equal([]string{`"Apple"`, `"strawberry"`}, labels)
+		tAssert.Equal([]string{"Fruit.Apple", "Fruit.Strawberry"}, labels)
 	})
 
 	It("suggests enum values for schema fields after a record colon", func() {
@@ -818,7 +818,7 @@ Basket basket = {
 [output = data] {}`, nil)
 
 		labels := completeLabels(server, uri, 7, uint32(len(`  favorite_fruit: `)))
-		tAssert.Equal([]string{`"Apple"`, `"strawberry"`}, labels)
+		tAssert.Equal([]string{"Fruit.Apple", "Fruit.Strawberry"}, labels)
 	})
 
 	It("suggests schema record literals for nested schema fields after a record colon", func() {
@@ -855,7 +855,7 @@ schema Basket = { favorite_fruit: Fruit; };
 }`, nil)
 
 		labels := completeLabels(server, uri, 9, uint32(len(`  favorite_fruit: `)))
-		tAssert.Equal([]string{`"Apple"`, `"strawberry"`}, labels)
+		tAssert.Equal([]string{"Fruit.Apple", "Fruit.Strawberry"}, labels)
 	})
 
 	It("does not suggest schema directives after output schema and a comma", func() {
@@ -1551,7 +1551,7 @@ enum Fruit: string {
 		}
 	})
 
-	It("publishes enum diagnostics with enum-specific codes", func() {
+	It("publishes diagnostics when raw enum backing values are assigned", func() {
 		server := New()
 		initializeServer(server)
 		notifications := []capturedNotification{}
@@ -1571,7 +1571,7 @@ Fruit selected = "Pear";
 		if tAssert.Len(notifications, 1) {
 			params := requireDiagnostics(notifications[0])
 			tAssert.Len(params.Diagnostics, 1)
-			tAssert.Equal("mace.type.invalid-enum-value", params.Diagnostics[0].Code.Value)
+			tAssert.Equal("mace.type.initializer-type-mismatch", params.Diagnostics[0].Code.Value)
 		}
 	})
 

@@ -323,6 +323,8 @@ func formatExpressionNode(expression ast.Expression, depth int) (string, int, er
 	switch typedExpression := expression.(type) {
 	case ast.Identifier:
 		return typedExpression.Name, precedencePrimary, nil
+	case ast.EnumMemberAccess:
+		return typedExpression.EnumName + "." + typedExpression.MemberName, precedencePrimary, nil
 	case ast.StringLiteral:
 		return typedExpression.Lexeme, precedencePrimary, nil
 	case ast.IntLiteral:

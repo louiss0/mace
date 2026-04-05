@@ -736,6 +736,14 @@ func (p *Parser) parsePrefix(token lexer.Token) (ast.Expression, error) {
 	switch token.Type {
 	case lexer.TokenIdentifier:
 		p.advance()
+		if p.current().Type == lexer.TokenDot {
+			p.advance()
+			memberToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier after '.' in enum member access")
+			if err != nil {
+				return nil, err
+			}
+			return ast.EnumMemberAccess{EnumName: token.Lexeme, MemberName: memberToken.Lexeme}, nil
+		}
 		return ast.Identifier{Name: token.Lexeme}, nil
 	case lexer.TokenString:
 		p.advance()
