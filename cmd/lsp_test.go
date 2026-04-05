@@ -784,6 +784,23 @@ Fruit selected =
 		tAssert.Equal([]string{`"Apple"`, `"strawberry"`}, labels)
 	})
 
+	It("suggests enum values when completion is requested on the assignment operator", func() {
+		server := New()
+		initializeServer(server)
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+enum Fruit: string {
+  Apple,
+  Strawberry = "strawberry",
+}
+Fruit selected =
+|===|
+[output = data] {}`, nil)
+
+		labels := completeLabels(server, uri, 5, uint32(len(`Fruit selected `)))
+		tAssert.Equal([]string{`"Apple"`, `"strawberry"`}, labels)
+	})
+
 	It("suggests enum values for schema fields after a record colon", func() {
 		server := New()
 		initializeServer(server)

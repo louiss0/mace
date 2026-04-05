@@ -72,4 +72,27 @@ schema Basket = { favorite_fruit: Fruit; };
 
 		tAssert.Equal([]string{`"Apple"`, `"strawberry"`}, labels)
 	})
+
+	It("suggests enum values for incomplete enum variable initializers", func() {
+		text := `|===|
+	enum Fruit: string {
+	  Apple,
+	  Strawberry = "strawberry",
+	}
+	Fruit selected =`
+
+		position := protocol.Position{
+			Line:      5,
+			Character: uint32(len(`Fruit selected =`)),
+		}
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+			return item.Label
+		})
+
+		tAssert.Equal([]string{`"Apple"`, `"strawberry"`}, labels)
+	})
 })

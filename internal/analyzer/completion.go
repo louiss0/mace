@@ -93,13 +93,12 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 }
 
 func initializerCompletionItems(document document, uri protocol.DocumentUri, position protocol.Position) ([]protocol.CompletionItem, bool) {
-	linePrefix := currentLinePrefix(document.text, position)
-	trimmedPrefix := strings.TrimSpace(linePrefix)
-	if !strings.HasSuffix(trimmedPrefix, "=") && !strings.HasSuffix(trimmedPrefix, ":") {
+	placeholderPosition, ok := completionPlaceholderPosition(document.text, position, "=:")
+	if !ok {
 		return nil, false
 	}
 
-	file, ok := completionFileWithPlaceholder(document.text, position)
+	file, ok := completionFileWithPlaceholder(document.text, placeholderPosition)
 	if !ok {
 		return nil, false
 	}
@@ -119,13 +118,12 @@ func initializerCompletionItems(document document, uri protocol.DocumentUri, pos
 }
 
 func outputInitializerCompletionItems(document document, uri protocol.DocumentUri, position protocol.Position) ([]protocol.CompletionItem, bool) {
-	linePrefix := currentLinePrefix(document.text, position)
-	trimmedPrefix := strings.TrimSpace(linePrefix)
-	if !strings.HasSuffix(trimmedPrefix, ":") {
+	placeholderPosition, ok := completionPlaceholderPosition(document.text, position, ":")
+	if !ok {
 		return nil, false
 	}
 
-	file, ok := completionFileWithPlaceholder(document.text, position)
+	file, ok := completionFileWithPlaceholder(document.text, placeholderPosition)
 	if !ok {
 		return nil, false
 	}
@@ -456,6 +454,47 @@ func currentLinePrefix(text string, position protocol.Position) string {
 	}
 
 	return lo.LastOrEmpty(strings.Split(text[:index], "\n"))
+}
+
+func currentLineSuffix(text string, position protocol.Position) string {
+	index := position.IndexIn(text)
+	if index < 0 {
+		return ""
+	}
+
+	lineEnd := strings.IndexByte(text[index:], '\n')
+	if lineEnd < 0 {
+		return text[index:]
+	}
+
+	return text[index : index+lineEnd]
+}
+
+func completionPlaceholderPosition(text string, position protocol.Position, operators string) (protocol.Position, bool) {
+	linePrefix := currentLinePrefix(text, position)
+	trimmedPrefix := strings.TrimSpace(linePrefix)
+	if trimmedPrefix != "" {
+		lastCharacter := trimmedPrefix[len(trimmedPrefix)-1]
+		if strings.ContainsRune(operators, rune(lastCharacter)) {
+			return position, true
+		}
+	}
+
+	lineSuffix := strings.TrimLeft(currentLineSuffix(text, position), " \t")
+	if lineSuffix == "" {
+		return protocol.Position{}, false
+	}
+	if !strings.ContainsRune(operators, rune(lineSuffix[0])) {
+		return protocol.Position{}, false
+	}
+
+	index := position.IndexIn(text)
+	if index < 0 {
+		return protocol.Position{}, false
+	}
+
+	whitespaceWidth := len(currentLineSuffix(text, position)) - len(lineSuffix)
+	return positionFromIndex(text, index+whitespaceWidth+1), true
 }
 
 func importableIdentifiers(uri protocol.DocumentUri, importPath string) ([]string, bool) {
@@ -847,12 +886,48 @@ func completionFileWithPlaceholder(text string, position protocol.Position) (*as
 		replacement += ";"
 	}
 
-	file, err := parseFile(text[:index] + replacement + text[index:])
-	if err != nil {
+	textWithPlaceholder := text[:index] + replacement + text[index:]
+	file, err := parseFile(textWithPlaceholder)
+	if err == nil {
+		return &file, true
+	}
+
+	if completionScopeAt(text, position) != completionScopeScript {
+		return nil, false
+	}
+
+	file, ok := partialScriptFileWithPlaceholder(textWithPlaceholder, position)
+	if !ok {
 		return nil, false
 	}
 
 	return &file, true
+}
+
+func partialScriptFileWithPlaceholder(text string, position protocol.Position) (ast.File, bool) {
+	index := position.IndexIn(text)
+	if index < 0 {
+		return ast.File{}, false
+	}
+
+	lineEnd := strings.Index(text[index:], "\n")
+	if lineEnd < 0 {
+		lineEnd = len(text)
+	} else {
+		lineEnd += index
+	}
+
+	prefix := text[:lineEnd]
+	if !strings.Contains(prefix, "|") {
+		return ast.File{}, false
+	}
+
+	file, err := parseFile(prefix + "\n|===|\n[output = data] {}")
+	if err != nil {
+		return ast.File{}, false
+	}
+
+	return file, true
 }
 
 func placeholderCompletionType(file ast.File, model completionModel) (ast.TypeReference, []string, bool) {
