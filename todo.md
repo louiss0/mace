@@ -1,25 +1,25 @@
 # Handoff
 
 ## Tests that are failing
-- No automated tests are currently failing in the repository.
-- The reported enum completion bug is not covered by a regression test that
-  matches the editor behavior seen in Zed.
+- `go test ./...` passes.
+- There is still no regression test that reproduces the enum completion problem
+  from the editor-side request path.
 
 ## What bugs are present
-- Enum-typed variable initialization is still surfacing global or script-scope
-  completions in the editor instead of enum member values.
-- Existing server-side completion coverage in `cmd/lsp_test.go` and
-  `internal/analyzer/completion_test.go` says enum value completion should work,
-  so the bug is likely in the exact incomplete-buffer path, completion scope
-  detection, or the way Zed is triggering the completion request.
+- Enum initializer completion may still fall back to script-scope symbols in
+  Zed instead of offering enum members for cases like `Fruit selected =`.
+- The server-side tests now cover parser and analyzer behavior, so the
+  remaining gap is likely in the exact completion request shape, placeholder
+  insertion path, or editor-triggered cursor position handling.
 
 ## What to do next
-- Reproduce the bug from Zed with the exact buffer text and cursor position used
-  when completing `Fruit selected =`.
-- Add a failing regression test for that exact case before changing completion
-  logic.
-- Inspect `completionScopeAt`, `completionFileWithPlaceholder`,
+- Reproduce the Zed completion request with the exact buffer contents and
+  cursor offset that still shows script-scope symbols.
+- Add a failing regression test for that exact request in `cmd/lsp_test.go` or
+  `internal/analyzer/completion_test.go` before changing the completion logic.
+- Trace `completionFileWithPlaceholder`, `completionScopeAt`,
   `initializerCompletionItems`, and `placeholderCompletionType` in
-  `internal/analyzer/completion.go` to find where the request falls back to
-  normal script completions instead of enum-value completions.
-- Require enum values to be accessed to satify Enum type
+  `internal/analyzer/completion.go` to find where enum-member completion stops
+  being selected.
+- If the bug only reproduces through LSP request wiring, inspect `cmd/lsp.go`
+  for differences between editor requests and the existing test setup.
