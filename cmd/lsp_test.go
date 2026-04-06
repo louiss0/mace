@@ -1356,6 +1356,47 @@ schema User = { name: string; };
 		}
 	})
 
+	It("returns hover details for nested output record fields", func() {
+		server := New()
+		initializeServer(server)
+		didOpen(server, uri, `|===|
+type Name = string;
+schema Profile = { age: int; };
+schema User = { name: Name; profile: Profile; };
+Name default_name = "Ada";
+int default_age = 30;
+|===|
+[output = data]
+{
+  User: {
+    name: default_name;
+    profile: { age: default_age; };
+  };
+}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 11, Character: 8},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, `output User.profile: { age: int } = { age: 30 }`)
+		}
+	})
+
 	It("prefers output field hover details when the same name is reused later in self references", func() {
 		server := New()
 		initializeServer(server)
@@ -1431,6 +1472,42 @@ int default_age = 30;
 		tAssert.True(ok)
 		if ok {
 			tAssert.Contains(content.Value, `output User.profile: { age: int } = { age: 30 }`)
+		}
+	})
+
+	It("returns hover details for deeply nested self record references", func() {
+		server := New()
+		initializeServer(server)
+		didOpen(server, uri, `[output = data]
+{
+  summary: {
+    stats: {
+      totals: { users: 3; };
+    };
+  };
+  result: $self.summary.stats.totals.users;
+}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 7, Character: 31},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, `output summary.stats.totals: { users: int } = { users: 3 }`)
 		}
 	})
 

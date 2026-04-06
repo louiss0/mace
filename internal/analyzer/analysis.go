@@ -85,6 +85,10 @@ func (snapshot analysisSnapshot) symbolAt(position protocol.Position) (semanticS
 		return symbol, true
 	}
 
+	if symbol, ok := snapshot.nestedOutputFieldSymbolAt(position); ok {
+		return symbol, true
+	}
+
 	identifier, found := identifierAt(snapshot.text, position)
 	if !found {
 		return semanticSymbol{}, false
@@ -182,13 +186,36 @@ func (snapshot analysisSnapshot) selfReferenceSymbolAt(position protocol.Positio
 	}
 
 	name := "$self." + strings.Join(path, ".")
+	return outputValueSymbol(name, path, rangeValue, value), true
+}
+
+func (snapshot analysisSnapshot) nestedOutputFieldSymbolAt(position protocol.Position) (semanticSymbol, bool) {
+	if snapshot.result == nil {
+		return semanticSymbol{}, false
+	}
+
+	path, rangeValue, ok := nestedOutputFieldPathAt(snapshot.text, snapshot.tokens, position)
+	if !ok || len(path) < 2 {
+		return semanticSymbol{}, false
+	}
+
+	value, ok := outputValueAtPath(snapshot.result.Output, path)
+	if !ok {
+		return semanticSymbol{}, false
+	}
+
+	name := strings.Join(path, ".")
+	return outputValueSymbol(name, path, rangeValue, value), true
+}
+
+func outputValueSymbol(name string, path []string, rangeValue protocol.Range, value processor.Value) semanticSymbol {
 	return semanticSymbol{
 		Name:   name,
 		Kind:   protocol.CompletionItemKindProperty,
 		Detail: fmt.Sprintf("output %s: %s = %s", strings.Join(path, "."), valueTypeSummary(value), summarizeValue(value)),
 		Origin: symbolOriginOutput,
 		Range:  rangeValue,
-	}, true
+	}
 }
 
 func enumMemberReferenceAt(tokens []lexer.Token, position protocol.Position) (string, string, bool) {
@@ -227,6 +254,70 @@ func selfReferencePathAt(tokens []lexer.Token, position protocol.Position) ([]st
 			rangeValue := tokenProtocolRange(segment)
 			if comparePositions(rangeValue.Start, position) <= 0 && comparePositions(position, rangeValue.End) <= 0 {
 				return append([]string{}, segments...), rangeValue, true
+			}
+		}
+	}
+
+	return nil, protocol.Range{}, false
+}
+
+func nestedOutputFieldPathAt(text string, tokens []lexer.Token, position protocol.Position) ([]string, protocol.Range, bool) {
+	outputOpenIndex, ok := outputBlockOpenIndex(text, tokens)
+	if !ok {
+		return nil, protocol.Range{}, false
+	}
+
+	outputTokens := lo.Filter(tokens, func(token lexer.Token, _ int) bool {
+		return tokenStartIndex(text, token) >= outputOpenIndex
+	})
+
+	type fieldScope struct {
+		path       []string
+		braceDepth int
+	}
+
+	braceDepth := 0
+	pendingRecordPath := []string(nil)
+	scopes := []fieldScope{}
+
+	for index := 0; index < len(outputTokens); index++ {
+		token := outputTokens[index]
+
+		switch token.Type {
+		case lexer.TokenLBrace:
+			braceDepth++
+			if braceDepth == 1 {
+				scopes = append(scopes, fieldScope{path: nil, braceDepth: braceDepth})
+				continue
+			}
+			if pendingRecordPath != nil {
+				scopes = append(scopes, fieldScope{path: append([]string{}, pendingRecordPath...), braceDepth: braceDepth})
+				pendingRecordPath = nil
+			}
+		case lexer.TokenRBrace:
+			if len(scopes) > 0 && scopes[len(scopes)-1].braceDepth == braceDepth {
+				scopes = scopes[:len(scopes)-1]
+			}
+			braceDepth--
+		case lexer.TokenIdentifier:
+			if len(scopes) == 0 || !isOutputFieldHeader(outputTokens, index) {
+				continue
+			}
+
+			rangeValue := tokenProtocolRange(token)
+			path := append(append([]string{}, scopes[len(scopes)-1].path...), token.Lexeme)
+			if comparePositions(rangeValue.Start, position) <= 0 && comparePositions(position, rangeValue.End) <= 0 {
+				return path, rangeValue, true
+			}
+
+			valueIndex := index + 2
+			if index+1 < len(outputTokens) && outputTokens[index+1].Type == lexer.TokenQuestion {
+				valueIndex = index + 3
+			}
+			if valueIndex < len(outputTokens) && outputTokens[valueIndex].Type == lexer.TokenLBrace {
+				pendingRecordPath = path
+			} else {
+				pendingRecordPath = nil
 			}
 		}
 	}
