@@ -7,6 +7,8 @@ injectable string name;
 
 enum Personality: string { friendly, nice, rude }
 
+enum Status: int { mad, happy, content }
+
 Personality is_type  = Personality.nice;
 
 schema User = { name: Name; profile: Profile; };
@@ -14,6 +16,8 @@ schema User = { name: Name; profile: Profile; };
 Name default_name = "Ada";
 
 Age default_age = 30;
+
+int num = Status.happy + 45;
 
 |=================================================|
 
