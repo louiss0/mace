@@ -172,6 +172,29 @@ int qux = 2;
 		tAssert.Equal(protocol.UInteger(4), definition.Range.Start.Character)
 	})
 
+	It("resolves enum member definitions from usage sites", func() {
+		workspace, err := os.MkdirTemp("", "mace-analysis-enum-member-definition-*")
+		tAssert.NoError(err)
+		documentPath := filepath.Join(workspace, "consumer.mace")
+
+		snapshot := analyzeDocumentAt(`|===|
+enum Fruit: string {
+  Apple,
+  Strawberry = "strawberry",
+}
+Fruit selected = Fruit.Apple;
+|===|
+[output = data]
+{
+  selected: selected;
+}`, documentPath)
+
+		definition := requireDefinition(snapshot, protocol.Position{Line: 5, Character: 23})
+		tAssert.Equal(protocol.DocumentUri(fileURI(documentPath)), definition.URI)
+		tAssert.Equal(protocol.UInteger(2), definition.Range.Start.Line)
+		tAssert.Equal(protocol.UInteger(2), definition.Range.Start.Character)
+	})
+
 	It("translates import path validation into an LSP diagnostic and quick fix", func() {
 		workspace, err := os.MkdirTemp("", "mace-analysis-import-fix-*")
 		tAssert.NoError(err)

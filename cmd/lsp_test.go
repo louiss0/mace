@@ -1077,6 +1077,44 @@ enum Fruit: string {
 		}
 	})
 
+	It("returns hover details for enum member access", func() {
+		server := New()
+		initializeServer(server)
+		didOpen(server, uri, `|===|
+enum Fruit: string {
+  Apple,
+  Strawberry = "strawberry",
+}
+Fruit selected = Fruit.Apple;
+|===|
+[output = data]
+{
+  selected: selected;
+}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 4, Character: 23},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, "enum member Fruit.Apple")
+		}
+	})
+
 	It("returns directive-aware hover documentation for schema inside output directives", func() {
 		server := New()
 		initializeServer(server)

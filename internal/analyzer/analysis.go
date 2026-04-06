@@ -77,6 +77,10 @@ func (snapshot analysisSnapshot) symbolAt(position protocol.Position) (semanticS
 		}
 	}
 
+	if symbol, ok := snapshot.enumMemberSymbolAt(position); ok {
+		return symbol, true
+	}
+
 	identifier, found := identifierAt(snapshot.text, position)
 	if !found {
 		return semanticSymbol{}, false
@@ -91,6 +95,12 @@ func (snapshot analysisSnapshot) definitionAt(position protocol.Position) (proto
 	}
 
 	symbol, ok := snapshot.documentSymbolAt(position)
+	if !ok {
+		if enumMember, memberOK := snapshot.enumMemberSymbolAt(position); memberOK {
+			symbol = enumMember
+			ok = true
+		}
+	}
 	if !ok {
 		identifier, found := identifierAt(snapshot.text, position)
 		if !found {
@@ -133,6 +143,68 @@ func findLastSymbol(symbols []semanticSymbol, predicate func(semanticSymbol) boo
 		symbol := symbols[index]
 		if predicate(symbol) {
 			return symbol, true
+		}
+	}
+
+	return semanticSymbol{}, false
+}
+
+func (snapshot analysisSnapshot) enumMemberSymbolAt(position protocol.Position) (semanticSymbol, bool) {
+	if snapshot.file == nil {
+		return semanticSymbol{}, false
+	}
+
+	enumName, memberName, ok := enumMemberReferenceAt(snapshot.tokens, position)
+	if !ok {
+		return semanticSymbol{}, false
+	}
+
+	return localEnumMemberSymbol(*snapshot.file, snapshot.documentURI, enumName, memberName)
+}
+
+func enumMemberReferenceAt(tokens []lexer.Token, position protocol.Position) (string, string, bool) {
+	for index, token := range tokens {
+		rangeValue := tokenProtocolRange(token)
+		if comparePositions(rangeValue.Start, position) > 0 || comparePositions(position, rangeValue.End) > 0 {
+			continue
+		}
+		if token.Type != lexer.TokenIdentifier || index < 2 {
+			continue
+		}
+		if tokens[index-1].Type != lexer.TokenDot || tokens[index-2].Type != lexer.TokenIdentifier {
+			continue
+		}
+
+		return tokens[index-2].Lexeme, token.Lexeme, true
+	}
+
+	return "", "", false
+}
+
+func localEnumMemberSymbol(file ast.File, uri protocol.DocumentUri, enumName string, memberName string) (semanticSymbol, bool) {
+	for _, item := range fileScriptDeclarations(file) {
+		declaration, ok := item.(ast.EnumDeclaration)
+		if !ok || declaration.Name != enumName {
+			continue
+		}
+
+		for _, member := range declaration.Members {
+			if member.Name != memberName {
+				continue
+			}
+
+			rangeValue := tokenProtocolRange(member.NameToken)
+			return semanticSymbol{
+				Name:   enumName + "." + memberName,
+				Kind:   protocol.CompletionItemKindEnumMember,
+				Detail: enumMemberDetail(declaration, member),
+				Origin: symbolOriginLocal,
+				Range:  rangeValue,
+				Definition: protocol.Location{
+					URI:   uri,
+					Range: rangeValue,
+				},
+			}, true
 		}
 	}
 
@@ -1045,6 +1117,18 @@ func enumDeclarationDetail(declaration ast.EnumDeclaration) string {
 	})
 
 	return fmt.Sprintf("enum %s: %s { %s }", declaration.Name, declaration.BackingType.Name, strings.Join(members, ", "))
+}
+
+func enumMemberDetail(declaration ast.EnumDeclaration, member ast.EnumMember) string {
+	if member.HasValue {
+		return fmt.Sprintf("enum member %s.%s = %s", declaration.Name, member.Name, expressionSummary(member.Value))
+	}
+
+	if declaration.BackingType.Name == "string" {
+		return fmt.Sprintf("enum member %s.%s = %q", declaration.Name, member.Name, member.Name)
+	}
+
+	return fmt.Sprintf("enum member %s.%s", declaration.Name, member.Name)
 }
 
 func indexSymbols(symbols []semanticSymbol) map[string]semanticSymbol {

@@ -18,6 +18,7 @@ is documented in [`mace-spec.md`](./mace-spec.md).
 ## Features
 
 - Typed script declarations for `type`, `schema`, `enum`, and variables
+- Enum member access with `EnumName.MemberName`
 - Deterministic expression evaluation
 - Output validation against local schemas or external schema files
 - Relative imports between Mace files
@@ -40,7 +41,12 @@ Example:
 from "./shared.mace" import User;
 
 |===|
-string env = "prod";
+enum Environment: string {
+  Dev,
+  Prod,
+}
+
+Environment env = Environment.Prod;
 User current = {
   name: "Ada";
   age: 27;
@@ -61,6 +67,7 @@ Mace supports:
 - named type aliases
 - schemas
 - enums backed by `string` or `int`
+- enum member access with `EnumName.MemberName`
 - record, array, arithmetic, logical, and conditional expressions
 - `$self` references inside output evaluation
 
@@ -153,7 +160,7 @@ mace source ./config.mace
 ```
 
 This is useful for inspecting how the formatter normalizes script delimiters,
-records, enums, and expressions.
+records, enums, enum member access, and expressions.
 
 ### `mace lsp`
 

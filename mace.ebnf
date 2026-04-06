@@ -217,6 +217,7 @@ expression
 
 primary_expression
   = identifier
+  | enum_member_access
   | int_literal
   | float_literal
   | string_literal
@@ -225,6 +226,9 @@ primary_expression
   | record_literal
   | self_reference
   | "(" , expression , ")" ;
+
+enum_member_access
+  = identifier , "." , identifier ;
 
 self_reference
   = "$self" , "." , identifier , { "." , identifier } ;

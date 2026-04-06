@@ -156,6 +156,18 @@ Enums are named types. They may be used anywhere a named non-schema type can
 be used, including variable declarations, schema fields, output schema
 fields, and imports.
 
+Enum values are accessed with the `.` operator using `EnumName.MemberName`.
+When an enum value is required, raw backing values are not assignable.
+
+```mace
+enum Fruit: string {
+  Apple,
+  Strawberry,
+}
+
+Fruit favorite = Fruit.Apple;
+```
+
 ## Types
 
 The current implementation supports:
@@ -256,6 +268,7 @@ directive list is invalid.
 Expressions are pure and deterministic. The implementation supports:
 
 - identifiers
+- enum member access with `EnumName.MemberName`
 - string, int, float, and boolean literals
 - array literals
 - record literals
