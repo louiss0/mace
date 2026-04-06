@@ -198,8 +198,10 @@ var _ = Describe("LSP server", func() {
 	const uri = "file:///workspace/test.mace"
 
 	var server *Server
+	var uninitializedServer *Server
 
 	BeforeEach(func() {
+		uninitializedServer = New()
 		server = New()
 		initializeServer(server)
 	})
@@ -207,12 +209,11 @@ var _ = Describe("LSP server", func() {
 	AfterEach(func() {
 		protocol.SetTraceValue(protocol.TraceValueOff)
 		server = nil
+		uninitializedServer = nil
 	})
 
 	It("advertises core capabilities during initialize", func() {
-		server := New()
-
-		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodInitialize, protocol.InitializeParams{}, nil)
+		resultValue, validMethod, validParams, err := invoke(uninitializedServer.Handler(), protocol.MethodInitialize, protocol.InitializeParams{}, nil)
 		tAssert.True(validMethod)
 		tAssert.True(validParams)
 		tAssert.NoError(err)
@@ -249,9 +250,7 @@ var _ = Describe("LSP server", func() {
 	})
 
 	It("rejects requests before initialize", func() {
-		server := New()
-
-		_, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{}, nil)
+		_, validMethod, validParams, err := invoke(uninitializedServer.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{}, nil)
 		tAssert.True(validMethod)
 		tAssert.True(validParams)
 		tAssert.ErrorContains(err, "server not initialized")
@@ -985,8 +984,6 @@ Personality value = Personality.
 
 	DescribeTable("suggests recursive keys from deeply nested self paths",
 		func(depth int) {
-			server := New()
-			initializeServer(server)
 			openEmptyDocument(server, uri, nil)
 
 			text := nestedSelfDocument(depth)
