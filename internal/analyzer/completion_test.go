@@ -95,4 +95,27 @@ schema Basket = { favorite_fruit: Fruit; };
 
 		tAssert.Equal([]string{"Fruit.Apple", "Fruit.Strawberry"}, labels)
 	})
+
+	It("suggests enum members after a dot for local enums", func() {
+		text := `|===|
+	enum Personality: string {
+	  is_type,
+	  has_defaults,
+	}
+	Personality value = Personality.`
+
+		position := protocol.Position{
+			Line:      5,
+			Character: uint32(len(`	Personality value = Personality.`)),
+		}
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+			return item.Label
+		})
+
+		tAssert.Equal([]string{"has_defaults", "is_type"}, labels)
+	})
 })

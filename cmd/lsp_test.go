@@ -435,6 +435,36 @@ int count = 7;
 		}
 	})
 
+	It("clears enum member parse diagnostics when the member access is fixed", func() {
+		server := New()
+		initializeServer(server)
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+enum Personality: string {
+  is_type,
+}
+Personality value = Personality.;
+|===|
+[output = data] {}`, &notifications)
+		didChange(server, uri, 2, `|===|
+enum Personality: string {
+  is_type,
+}
+Personality value = Personality.is_type;
+|===|
+[output = data] {}`, &notifications)
+
+		if tAssert.Len(notifications, 2) {
+			params := requireDiagnostics(notifications[0])
+			tAssert.Len(params.Diagnostics, 1)
+			tAssert.Contains(params.Diagnostics[0].Message, `expected identifier after '.' in enum member access`)
+
+			params = requireDiagnostics(notifications[1])
+			tAssert.Empty(params.Diagnostics)
+		}
+	})
+
 	It("refreshes diagnostics when a document is saved", func() {
 		server := New()
 		initializeServer(server)
@@ -801,6 +831,21 @@ Fruit selected =
 		tAssert.Equal([]string{"Fruit.Apple", "Fruit.Strawberry"}, labels)
 	})
 
+	It("suggests enum values when the completion request extends past the final line at eof", func() {
+		server := New()
+		initializeServer(server)
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+enum Fruit: string {
+  Apple,
+  Strawberry = "strawberry",
+}
+Fruit selected =`, nil)
+
+		labels := completeLabels(server, uri, 5, uint32(len(`Fruit selected = `)))
+		tAssert.Equal([]string{"Fruit.Apple", "Fruit.Strawberry"}, labels)
+	})
+
 	It("suggests enum values for schema fields after a record colon", func() {
 		server := New()
 		initializeServer(server)
@@ -819,6 +864,23 @@ Basket basket = {
 
 		labels := completeLabels(server, uri, 7, uint32(len(`  favorite_fruit: `)))
 		tAssert.Equal([]string{"Fruit.Apple", "Fruit.Strawberry"}, labels)
+	})
+
+	It("suggests enum members after a dot for local enums", func() {
+		server := New()
+		initializeServer(server)
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+enum Personality: string {
+  is_type,
+  has_defaults,
+}
+Personality value = Personality.
+|===|
+[output = data] {}`, nil)
+
+		labels := completeLabels(server, uri, 5, uint32(len(`Personality value = Personality.`)))
+		tAssert.Equal([]string{"has_defaults", "is_type"}, labels)
 	})
 
 	It("suggests schema record literals for nested schema fields after a record colon", func() {
@@ -890,6 +952,36 @@ schema LocalUser = { id: int; };
 
 		labels := completeLabels(server, uri, 4, uint32(len(`[output = data, schema = `)))
 		tAssert.Equal([]string{"ImportedUser", "LocalUser"}, labels)
+	})
+
+	It("suggests enum members after a dot for imported enums", func() {
+		server := New()
+		initializeServer(server)
+
+		workspace, err := os.MkdirTemp("", "mace-lsp-imported-enum-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "shared.mace", `|===|
+enum Personality: string {
+  is_type,
+  has_defaults,
+}
+|===|
+[output = schema]
+{
+  Personality: Personality;
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `from "./shared.mace" import Personality;
+|===|
+Personality value = Personality.
+|===|
+[output = data] {}`, nil)
+
+		labels := completeLabels(server, uri, 2, uint32(len(`Personality value = Personality.`)))
+		tAssert.Equal([]string{"has_defaults", "is_type"}, labels)
 	})
 
 	It("suggests schema files and excludes files already imported", func() {

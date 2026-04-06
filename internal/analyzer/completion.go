@@ -58,6 +58,10 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 	}
 
 	if scope == completionScopeScript {
+		if items, handled := enumMemberCompletionItems(document, uri, position, linePrefix); handled {
+			return items
+		}
+
 		if items, handled := initializerCompletionItems(document, uri, position); handled {
 			return items
 		}
@@ -73,6 +77,10 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 		}
 
 		if items, handled := selfCompletionItems(document, uri, position); handled {
+			return items
+		}
+
+		if items, handled := enumMemberCompletionItems(document, uri, position, linePrefix); handled {
 			return items
 		}
 	}
@@ -221,8 +229,91 @@ func selfCompletionContext(linePrefix string) ([]string, string, bool) {
 	return segments[:len(segments)-1], segments[len(segments)-1], true
 }
 
+func enumMemberCompletionItems(document document, uri protocol.DocumentUri, position protocol.Position, linePrefix string) ([]protocol.CompletionItem, bool) {
+	enumName, prefix, ok := enumMemberCompletionContext(linePrefix)
+	if !ok {
+		return nil, false
+	}
+
+	model, ok := completionModelAt(document, uri, position, linePrefix)
+	if !ok {
+		return []protocol.CompletionItem{}, true
+	}
+
+	resolved := resolveCompletionType(ast.NamedType{Name: enumName}, model, map[string]struct{}{})
+	if resolved.kind != completionTypeEnum {
+		return []protocol.CompletionItem{}, true
+	}
+
+	items := lo.FilterMap(resolved.enum.members, func(member completionEnumMember, _ int) (protocol.CompletionItem, bool) {
+		if !strings.HasPrefix(member.Name, prefix) {
+			return protocol.CompletionItem{}, false
+		}
+
+		return protocol.CompletionItem{
+			Label:  member.Name,
+			Kind:   Ptr(protocol.CompletionItemKindEnumMember),
+			Detail: Ptr(resolved.enum.access(member.Name)),
+		}, true
+	})
+	return sortCompletionItems(items), true
+}
+
+func enumMemberCompletionContext(linePrefix string) (string, string, bool) {
+	trimmedPrefix := strings.TrimRight(linePrefix, " \t")
+	if strings.HasSuffix(trimmedPrefix, "$self.") {
+		return "", "", false
+	}
+
+	segmentEnd := len(trimmedPrefix)
+	segmentStart := segmentEnd
+	for segmentStart > 0 {
+		character := trimmedPrefix[segmentStart-1]
+		if isIdentifierCharacter(character) || character == '.' {
+			segmentStart--
+			continue
+		}
+		break
+	}
+
+	segment := trimmedPrefix[segmentStart:segmentEnd]
+	parts := strings.Split(segment, ".")
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	if parts[0] == "" || parts[1] == "" && !strings.HasSuffix(segment, ".") {
+		return "", "", false
+	}
+	if strings.Contains(parts[0], "$") {
+		return "", "", false
+	}
+
+	return parts[0], parts[1], true
+}
+
+func completionModelAt(document document, uri protocol.DocumentUri, position protocol.Position, linePrefix string) (completionModel, bool) {
+	file := document.analysis.file
+	if file == nil {
+		if partialFile, ok := partialScriptFile(document.text, position); ok {
+			file = &partialFile
+		} else {
+			file = completionFile(document, linePrefix)
+		}
+	}
+	if file == nil {
+		return completionModel{}, false
+	}
+
+	baseDir := filepath.Dir(documentPath(uri))
+	if baseDir == "" {
+		baseDir = "."
+	}
+
+	return buildCompletionModel(*file, baseDir, map[string]completionModel{}), true
+}
+
 func partialScriptFile(text string, position protocol.Position) (ast.File, bool) {
-	index := position.IndexIn(text)
+	index := positionIndex(text, position)
 	if index < 0 {
 		return ast.File{}, false
 	}
@@ -248,7 +339,7 @@ func partialScriptFile(text string, position protocol.Position) (ast.File, bool)
 }
 
 func completionScopeAt(text string, position protocol.Position) completionScope {
-	index := position.IndexIn(text)
+	index := positionIndex(text, position)
 	if index < 0 {
 		return completionScopeFile
 	}
@@ -448,7 +539,7 @@ func trailingIdentifierPrefix(value string) string {
 }
 
 func currentLinePrefix(text string, position protocol.Position) string {
-	index := position.IndexIn(text)
+	index := positionIndex(text, position)
 	if index < 0 {
 		return ""
 	}
@@ -457,7 +548,7 @@ func currentLinePrefix(text string, position protocol.Position) string {
 }
 
 func currentLineSuffix(text string, position protocol.Position) string {
-	index := position.IndexIn(text)
+	index := positionIndex(text, position)
 	if index < 0 {
 		return ""
 	}
@@ -488,7 +579,7 @@ func completionPlaceholderPosition(text string, position protocol.Position, oper
 		return protocol.Position{}, false
 	}
 
-	index := position.IndexIn(text)
+	index := positionIndex(text, position)
 	if index < 0 {
 		return protocol.Position{}, false
 	}
@@ -726,7 +817,7 @@ func partialOutputResult(document document, uri protocol.DocumentUri, position p
 		return processor.Result{}, false
 	}
 
-	cursorIndex := position.IndexIn(text)
+	cursorIndex := positionIndex(text, position)
 	if cursorIndex < 0 {
 		return processor.Result{}, false
 	}
@@ -861,7 +952,7 @@ func tokenStartIndex(text string, token lexer.Token) int {
 		Line:      protocol.UInteger(token.Line - 1),
 		Character: protocol.UInteger(token.Column - 1),
 	}
-	return position.IndexIn(text)
+	return positionIndex(text, position)
 }
 
 func stringLiteralValue(literal ast.StringLiteral) (string, bool) {
@@ -874,7 +965,7 @@ func stringLiteralValue(literal ast.StringLiteral) (string, bool) {
 }
 
 func completionFileWithPlaceholder(text string, position protocol.Position) (*ast.File, bool) {
-	index := position.IndexIn(text)
+	index := positionIndex(text, position)
 	if index < 0 {
 		return nil, false
 	}
@@ -905,7 +996,7 @@ func completionFileWithPlaceholder(text string, position protocol.Position) (*as
 }
 
 func partialScriptFileWithPlaceholder(text string, position protocol.Position) (ast.File, bool) {
-	index := position.IndexIn(text)
+	index := positionIndex(text, position)
 	if index < 0 {
 		return ast.File{}, false
 	}
