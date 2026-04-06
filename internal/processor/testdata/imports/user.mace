@@ -7,7 +7,7 @@ injectable string name;
 
 enum Personality: string { friendly, nice, rude }
 
-Personality is_type  = "friendly";
+Personality is_type  = Personality.nice;
 
 schema User = { name: Name; profile: Profile; };
 
@@ -21,6 +21,7 @@ Age default_age = 30;
 {
   User: {
     name: default_name;
+    is_type: is_type;
     profile: { age: default_age; };
   };
   foo: $self.User.profile.age;
