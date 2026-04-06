@@ -66,7 +66,7 @@ Mace supports:
 - arrays: `array<T>`
 - named type aliases
 - schemas
-- enums backed by `string` or `int`
+- enums backed by `string` or `int`, with implicit or explicit member values
 - enum member access with `EnumName.MemberName`
 - record, array, arithmetic, logical, and conditional expressions
 - `$self` references inside output evaluation

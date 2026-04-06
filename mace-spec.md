@@ -134,9 +134,9 @@ enum Fruit: string {
 
 ```mace
 enum Status: int {
-  Pending = 0,
-  Running = 1,
-  Done = 2,
+  Pending,
+  Running,
+  Done,
 }
 ```
 
@@ -145,9 +145,9 @@ Current enum rules:
 - Supported backing types are `string` and `int`.
 - Enum member names must be unique within the enum.
 - Enum values must be unique within the enum.
-- `string` enums may use all-implicit members or all-explicit members.
+- `string` and `int` enums may use all-implicit members or all-explicit members.
 - An implicit `string` member uses its member name exactly as written.
-- `int` enums currently require explicit integer literal values.
+- An implicit `int` member uses its zero-based declaration index.
 - Mixing implicit and explicit members in the same enum is invalid.
 - Explicit `string` enum values must be string literals.
 - Explicit `int` enum values must be integer literals.

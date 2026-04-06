@@ -2,6 +2,7 @@ package processor
 
 import (
 	"fmt"
+	"maps"
 	"strconv"
 
 	"github.com/louiss0/mace/internal/parser/ast"
@@ -31,13 +32,13 @@ func enumDefinitionFromDeclaration(declaration ast.EnumDeclaration) (enumDefinit
 	hasExplicitValues := false
 	hasImplicitValues := false
 
-	for _, member := range declaration.Members {
+	for index, member := range declaration.Members {
 		if _, exists := memberNames[member.Name]; exists {
 			return enumDefinition{}, validationErrorf("duplicate enum member %q in enum %q", member.Name, declaration.Name)
 		}
 		memberNames[member.Name] = struct{}{}
 
-		value, err := enumMemberValue(declaration, member, backingType)
+		value, err := enumMemberValue(declaration, member, backingType, index)
 		if err != nil {
 			return enumDefinition{}, err
 		}
@@ -64,10 +65,6 @@ func enumDefinitionFromDeclaration(declaration ast.EnumDeclaration) (enumDefinit
 		return enumDefinition{}, validationErrorf("enum %q mixes implicit and explicit member values", declaration.Name)
 	}
 
-	if backingType.kind == ValueInt && hasImplicitValues {
-		return enumDefinition{}, validationErrorf("enum %q requires explicit values for int members", declaration.Name)
-	}
-
 	return enumDefinition{
 		Name:        declaration.Name,
 		BackingType: backingType,
@@ -76,9 +73,16 @@ func enumDefinitionFromDeclaration(declaration ast.EnumDeclaration) (enumDefinit
 	}, nil
 }
 
-func enumMemberValue(declaration ast.EnumDeclaration, member ast.EnumMember, backingType valueType) (Value, error) {
+func enumMemberValue(declaration ast.EnumDeclaration, member ast.EnumMember, backingType valueType, index int) (Value, error) {
 	if !member.HasValue {
-		return Value{Kind: ValueString, String: member.Name}, nil
+		switch backingType.kind {
+		case ValueString:
+			return Value{Kind: ValueString, String: member.Name}, nil
+		case ValueInt:
+			return Value{Kind: ValueInt, Int: int64(index)}, nil
+		default:
+			return Value{}, validationErrorf("invalid enum backing type %q for enum %q", declaration.BackingType.Name, declaration.Name)
+		}
 	}
 
 	switch backingType.kind {
@@ -123,9 +127,7 @@ func enumValueDisplay(value Value) string {
 
 func (definition enumDefinition) Clone() enumDefinition {
 	values := make(map[string]Value, len(definition.values))
-	for key, value := range definition.values {
-		values[key] = value
-	}
+	maps.Copy(values, definition.values)
 
 	members := make([]enumMember, len(definition.Members))
 	copy(members, definition.Members)
