@@ -1203,7 +1203,45 @@ Fruit selected = Fruit.Apple;
 		content, ok := hover.Contents.(protocol.MarkupContent)
 		tAssert.True(ok)
 		if ok {
-			tAssert.Contains(content.Value, "enum member Fruit.Apple")
+			tAssert.Contains(content.Value, `enum member Fruit.Apple = "Apple"`)
+		}
+	})
+
+	It("returns implicit int values in enum hover details", func() {
+		server := New()
+		initializeServer(server)
+		didOpen(server, uri, `|===|
+enum Status: int {
+  Pending,
+  Running,
+}
+Status current = Status.Running;
+|===|
+[output = data]
+{
+  result: current;
+}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 4, Character: 24},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, `enum member Status.Running = 1`)
 		}
 	})
 

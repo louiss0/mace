@@ -1108,12 +1108,20 @@ func variableDeclarationDetail(declaration ast.VariableDeclaration) string {
 }
 
 func enumDeclarationDetail(declaration ast.EnumDeclaration) string {
-	members := lo.Map(declaration.Members, func(member ast.EnumMember, _ int) string {
-		if !member.HasValue {
-			return member.Name
+	members := lo.Map(declaration.Members, func(member ast.EnumMember, index int) string {
+		if member.HasValue {
+			return member.Name + " = " + expressionSummary(member.Value)
 		}
 
-		return member.Name + " = " + expressionSummary(member.Value)
+		if declaration.BackingType.Name == "string" {
+			return member.Name + " = " + fmt.Sprintf("%q", member.Name)
+		}
+
+		if declaration.BackingType.Name == "int" {
+			return member.Name + " = " + fmt.Sprintf("%d", index)
+		}
+
+		return member.Name
 	})
 
 	return fmt.Sprintf("enum %s: %s { %s }", declaration.Name, declaration.BackingType.Name, strings.Join(members, ", "))
@@ -1126,6 +1134,14 @@ func enumMemberDetail(declaration ast.EnumDeclaration, member ast.EnumMember) st
 
 	if declaration.BackingType.Name == "string" {
 		return fmt.Sprintf("enum member %s.%s = %q", declaration.Name, member.Name, member.Name)
+	}
+
+	if declaration.BackingType.Name == "int" {
+		for index, declarationMember := range declaration.Members {
+			if declarationMember.Name == member.Name {
+				return fmt.Sprintf("enum member %s.%s = %d", declaration.Name, member.Name, index)
+			}
+		}
 	}
 
 	return fmt.Sprintf("enum member %s.%s", declaration.Name, member.Name)

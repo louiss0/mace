@@ -250,10 +250,15 @@ func enumMemberCompletionItems(document document, uri protocol.DocumentUri, posi
 			return protocol.CompletionItem{}, false
 		}
 
+		detail := resolved.enum.access(member.Name)
+		if member.Detail != "" {
+			detail = member.Detail
+		}
+
 		return protocol.CompletionItem{
 			Label:  member.Name,
 			Kind:   Ptr(protocol.CompletionItemKindEnumMember),
-			Detail: Ptr(resolved.enum.access(member.Name)),
+			Detail: Ptr(detail),
 		}, true
 	})
 	return sortCompletionItems(items), true
@@ -1140,9 +1145,15 @@ func completionItemsForType(typeReference ast.TypeReference, model completionMod
 	switch resolved.kind {
 	case completionTypeEnum:
 		return lo.Map(resolved.enum.members, func(member completionEnumMember, _ int) protocol.CompletionItem {
+			detail := member.Detail
+			if detail == "" {
+				detail = resolved.enum.access(member.Name)
+			}
+
 			return protocol.CompletionItem{
-				Label: resolved.enum.access(member.Name),
-				Kind:  Ptr(protocol.CompletionItemKindEnumMember),
+				Label:  resolved.enum.access(member.Name),
+				Kind:   Ptr(protocol.CompletionItemKindEnumMember),
+				Detail: Ptr(detail),
 			}
 		})
 	case completionTypeSchema:
@@ -1281,11 +1292,30 @@ func resolveCompletionType(typeReference ast.TypeReference, model completionMode
 }
 
 func completionEnumFromDeclaration(declaration ast.EnumDeclaration) completionEnum {
-	members := lo.Map(declaration.Members, func(member ast.EnumMember, _ int) completionEnumMember {
-		return completionEnumMember{Name: member.Name}
+	members := lo.Map(declaration.Members, func(member ast.EnumMember, index int) completionEnumMember {
+		return completionEnumMember{
+			Name:   member.Name,
+			Detail: completionEnumMemberDetail(declaration, member, index),
+		}
 	})
 
 	return completionEnum{name: declaration.Name, members: members}
+}
+
+func completionEnumMemberDetail(declaration ast.EnumDeclaration, member ast.EnumMember, index int) string {
+	if member.HasValue {
+		return fmt.Sprintf("enum member %s.%s = %s", declaration.Name, member.Name, expressionSummary(member.Value))
+	}
+
+	if declaration.BackingType.Name == "string" {
+		return fmt.Sprintf("enum member %s.%s = %q", declaration.Name, member.Name, member.Name)
+	}
+
+	if declaration.BackingType.Name == "int" {
+		return fmt.Sprintf("enum member %s.%s = %d", declaration.Name, member.Name, index)
+	}
+
+	return fmt.Sprintf("enum member %s.%s", declaration.Name, member.Name)
 }
 
 func schemaLiteral(record ast.RecordType, model completionModel, seen map[string]struct{}) string {
@@ -1474,7 +1504,8 @@ type completionEnum struct {
 }
 
 type completionEnumMember struct {
-	Name string
+	Name   string
+	Detail string
 }
 
 func (enum completionEnum) access(memberName string) string {
