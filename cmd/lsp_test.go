@@ -1039,6 +1039,20 @@ Personality value = Personality.
 		tAssert.Equal([]string{"details", "name"}, labels)
 	})
 
+	It("suggests nested keys from uppercase self paths", func() {
+		server := New()
+		initializeServer(server)
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data]
+{
+  User: { profile: { age: 30; }; };
+  result: $self.User.profile.
+}`, nil)
+
+		labels := completeLabels(server, uri, 3, uint32(len(`  result: $self.User.profile.`)))
+		tAssert.Equal([]string{"age"}, labels)
+	})
+
 	DescribeTable("suggests recursive keys from deeply nested self paths",
 		func(depth int) {
 			server := New()
@@ -1385,6 +1399,38 @@ int default_age = 30;
 			tAssert.Contains(content.Value, `output User: { name: string; profile: { age: int; } }`)
 			tAssert.Contains(content.Value, `name: "Ada"`)
 			tAssert.NotContains(content.Value, "schema User")
+		}
+	})
+
+	It("returns hover details for nested self references", func() {
+		server := New()
+		initializeServer(server)
+		didOpen(server, uri, `[output = data]
+{
+  User: { profile: { age: 30; }; };
+  foo: $self.User.profile.age;
+}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 3, Character: 20},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, `output User.profile: { age: int } = { age: 30 }`)
 		}
 	})
 

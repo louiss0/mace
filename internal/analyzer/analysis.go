@@ -81,6 +81,10 @@ func (snapshot analysisSnapshot) symbolAt(position protocol.Position) (semanticS
 		return symbol, true
 	}
 
+	if symbol, ok := snapshot.selfReferenceSymbolAt(position); ok {
+		return symbol, true
+	}
+
 	identifier, found := identifierAt(snapshot.text, position)
 	if !found {
 		return semanticSymbol{}, false
@@ -162,6 +166,31 @@ func (snapshot analysisSnapshot) enumMemberSymbolAt(position protocol.Position) 
 	return localEnumMemberSymbol(*snapshot.file, snapshot.documentURI, enumName, memberName)
 }
 
+func (snapshot analysisSnapshot) selfReferenceSymbolAt(position protocol.Position) (semanticSymbol, bool) {
+	if snapshot.result == nil {
+		return semanticSymbol{}, false
+	}
+
+	path, rangeValue, ok := selfReferencePathAt(snapshot.tokens, position)
+	if !ok {
+		return semanticSymbol{}, false
+	}
+
+	value, ok := outputValueAtPath(snapshot.result.Output, path)
+	if !ok {
+		return semanticSymbol{}, false
+	}
+
+	name := "$self." + strings.Join(path, ".")
+	return semanticSymbol{
+		Name:   name,
+		Kind:   protocol.CompletionItemKindProperty,
+		Detail: fmt.Sprintf("output %s: %s = %s", strings.Join(path, "."), valueTypeSummary(value), summarizeValue(value)),
+		Origin: symbolOriginOutput,
+		Range:  rangeValue,
+	}, true
+}
+
 func enumMemberReferenceAt(tokens []lexer.Token, position protocol.Position) (string, string, bool) {
 	for index, token := range tokens {
 		rangeValue := tokenProtocolRange(token)
@@ -179,6 +208,55 @@ func enumMemberReferenceAt(tokens []lexer.Token, position protocol.Position) (st
 	}
 
 	return "", "", false
+}
+
+func selfReferencePathAt(tokens []lexer.Token, position protocol.Position) ([]string, protocol.Range, bool) {
+	for index := 0; index < len(tokens); index++ {
+		if tokens[index].Type != lexer.TokenSelf {
+			continue
+		}
+
+		segments := []string{}
+		for cursor := index + 1; cursor+1 < len(tokens); cursor += 2 {
+			if tokens[cursor].Type != lexer.TokenDot || tokens[cursor+1].Type != lexer.TokenIdentifier {
+				break
+			}
+
+			segment := tokens[cursor+1]
+			segments = append(segments, segment.Lexeme)
+			rangeValue := tokenProtocolRange(segment)
+			if comparePositions(rangeValue.Start, position) <= 0 && comparePositions(position, rangeValue.End) <= 0 {
+				return append([]string{}, segments...), rangeValue, true
+			}
+		}
+	}
+
+	return nil, protocol.Range{}, false
+}
+
+func outputValueAtPath(output map[string]processor.Value, path []string) (processor.Value, bool) {
+	if len(path) == 0 {
+		return processor.Value{}, false
+	}
+
+	current, ok := output[path[0]]
+	if !ok {
+		return processor.Value{}, false
+	}
+
+	for _, segment := range path[1:] {
+		if current.Kind != processor.ValueRecord {
+			return processor.Value{}, false
+		}
+
+		next, ok := current.Record[segment]
+		if !ok {
+			return processor.Value{}, false
+		}
+		current = next
+	}
+
+	return current, true
 }
 
 func localEnumMemberSymbol(file ast.File, uri protocol.DocumentUri, enumName string, memberName string) (semanticSymbol, bool) {
