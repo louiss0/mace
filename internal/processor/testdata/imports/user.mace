@@ -31,4 +31,5 @@ int num = Status.happy + 45;
   foo: $self.User.profile.age;
   bar: ($self.foo + 5);
   baz: ($self.User.name);
+  bi: $self.bar;
 }
