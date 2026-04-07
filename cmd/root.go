@@ -84,52 +84,43 @@ func newJSONCommand() *cobra.Command {
 }
 
 func newImportCommand() *cobra.Command {
-	var inputFormat string
-	var schemaOnly bool
+	var outputDir string
 
 	command := &cobra.Command{
 		Use:   "import <path> [path...]",
-		Short: "Convert JSON, YAML, or TOML into a Mace document",
+		Short: "Convert JSON, YAML, or TOML files into Mace files",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
-			if !schemaOnly && len(args) != 1 {
-				return fmt.Errorf("`mace import` accepts multiple paths only with --schema")
-			}
-
-			resolvedFormat, err := importFormat(args[0], inputFormat)
-			if err != nil {
-				return err
-			}
-
-			inputs := make([]string, 0, len(args))
+			writtenPaths := make([]string, 0, len(args))
 			for _, path := range args {
-				pathFormat, err := importFormat(path, inputFormat)
+				source, err := importSourceFromPath(path)
 				if err != nil {
 					return err
 				}
-				if pathFormat != resolvedFormat {
-					return fmt.Errorf("all import paths must use the same format")
-				}
 
-				contents, err := os.ReadFile(path)
+				targetPath, err := importOutputPath(path, outputDir)
 				if err != nil {
-					return fmt.Errorf("read import file: %w", err)
+					return err
 				}
-				inputs = append(inputs, string(contents))
+
+				if err := os.WriteFile(targetPath, []byte(source), 0o600); err != nil {
+					return fmt.Errorf("write mace file: %w", err)
+				}
+
+				writtenPaths = append(writtenPaths, targetPath)
 			}
 
-			source, err := importSource(resolvedFormat, inputs, schemaOnly)
-			if err != nil {
-				return err
+			for _, writtenPath := range writtenPaths {
+				if _, err := fmt.Fprintln(command.OutOrStdout(), writtenPath); err != nil {
+					return err
+				}
 			}
-
-			_, err = fmt.Fprintln(command.OutOrStdout(), source)
+			_, err := fmt.Fprintf(command.OutOrStdout(), "Generated %d Mace file(s).\n", len(writtenPaths))
 			return err
 		},
 	}
 
-	command.Flags().StringVar(&inputFormat, "format", "", "Input format: json, yaml, or toml")
-	command.Flags().BoolVar(&schemaOnly, "schema", false, "Infer a Mace schema document from the input shape")
+	command.Flags().StringVar(&outputDir, "output-dir", "", "Directory where generated .mace files are written")
 
 	return command
 }
@@ -215,17 +206,13 @@ func valueToAny(value processor.Value) any {
 	}
 }
 
-func importFormat(path string, inputFormat string) (string, error) {
-	if inputFormat != "" {
-		switch strings.ToLower(inputFormat) {
-		case "json", "yaml", "toml":
-			return strings.ToLower(inputFormat), nil
-		default:
-			return "", fmt.Errorf("unsupported import format %q", inputFormat)
-		}
+func importFormat(path string) (string, error) {
+	extension := strings.ToLower(filepath.Ext(path))
+	if extension == "" {
+		return "", fmt.Errorf("missing file extension for %q", path)
 	}
 
-	switch strings.ToLower(filepath.Ext(path)) {
+	switch extension {
 	case ".json":
 		return "json", nil
 	case ".yaml", ".yml":
@@ -233,34 +220,42 @@ func importFormat(path string, inputFormat string) (string, error) {
 	case ".toml":
 		return "toml", nil
 	default:
-		return "", fmt.Errorf("cannot infer import format from %q; use --format", path)
+		return "", fmt.Errorf("unsupported import extension %q", extension)
 	}
 }
 
-func importSource(inputFormat string, inputs []string, schemaOnly bool) (string, error) {
-	if len(inputs) == 0 {
-		return "", fmt.Errorf("missing import input")
+func importSourceFromPath(path string) (string, error) {
+	inputFormat, err := importFormat(path)
+	if err != nil {
+		return "", err
+	}
+
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read import file: %w", err)
 	}
 
 	switch inputFormat {
 	case "json":
-		if schemaOnly {
-			return codec.ImportJSONSchemaSamples(inputs)
-		}
-		return codec.ImportJSON(inputs[0])
+		return codec.ImportJSON(string(contents))
 	case "yaml":
-		if schemaOnly {
-			return codec.ImportYAMLSchemaSamples(inputs)
-		}
-		return codec.ImportYAML(inputs[0])
+		return codec.ImportYAML(string(contents))
 	case "toml":
-		if schemaOnly {
-			return codec.ImportTOMLSchemaSamples(inputs)
-		}
-		return codec.ImportTOML(inputs[0])
+		return codec.ImportTOML(string(contents))
 	default:
 		return "", fmt.Errorf("unsupported import format %q", inputFormat)
 	}
+}
+
+func importOutputPath(path string, outputDir string) (string, error) {
+	baseName := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)) + ".mace"
+	if outputDir == "" {
+		return filepath.Join(filepath.Dir(path), baseName), nil
+	}
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", fmt.Errorf("create output directory: %w", err)
+	}
+	return filepath.Join(outputDir, baseName), nil
 }
 
 func parseFile(path string) (ast.File, error) {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -104,7 +105,7 @@ injectable string env;
 	})
 
 	Describe("import", func() {
-		It("imports JSON files into typed Mace source", func() {
+		It("writes a Mace output block next to a JSON data file", func() {
 			path := writeTempFile("config.json", `{
   "name": "Ada",
   "enabled": true,
@@ -112,6 +113,7 @@ injectable string env;
     "level": 2
   }
 }`)
+			outputPath := strings.TrimSuffix(path, ".json") + ".mace"
 
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer
@@ -122,83 +124,62 @@ injectable string env;
 			err := command.Execute()
 			tAssert.NoError(err)
 			tAssert.Equal("", stderr.String())
-			tAssert.Equal(`|===|
-schema Document: {
-  enabled: boolean;
-  name: string;
-  profile: {
-    level: int;
-  };
-};
-|===|
-[output = data, schema = Document]
+			tAssert.Contains(stdout.String(), outputPath)
+
+			contents, err := os.ReadFile(outputPath)
+			tAssert.NoError(err)
+			tAssert.Equal(`[output = data]
 {
   enabled: true;
   name: "Ada";
   profile: {
     level: 2;
   };
-}
-`, stdout.String())
+}`, string(contents))
 		})
 
-		It("imports JSON files into Mace schema source with --schema", func() {
-			path := writeTempFile("config.json", `{
-  "name": "Ada",
-  "enabled": true,
-  "profile": {
-    "level": 2
-  }
+		It("writes a Mace output schema block for JSON schema files", func() {
+			path := writeTempFile("profile.json", `{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" },
+    "age": { "type": "integer" }
+  },
+  "required": ["name"]
 }`)
+			outputPath := strings.TrimSuffix(path, ".json") + ".mace"
 
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer
 
 			command := newRootCommand(&stdout, &stderr)
-			command.SetArgs([]string{"import", path, "--schema"})
+			command.SetArgs([]string{"import", path})
 
 			err := command.Execute()
 			tAssert.NoError(err)
 			tAssert.Equal("", stderr.String())
+			tAssert.Contains(stdout.String(), outputPath)
+
+			contents, err := os.ReadFile(outputPath)
+			tAssert.NoError(err)
 			tAssert.Equal(`[output = schema]
 {
-  enabled: boolean;
+  age?: int;
   name: string;
-  profile: {
-    level: int;
-  };
-}
-`, stdout.String())
+}`, string(contents))
 		})
 
-		It("infers optional fields from multiple JSON samples with --schema", func() {
-			firstPath := writeTempFile("first.json", `{
-  "name": "Ada",
-  "profile": {
-    "level": 2
-  }
-}`)
-			secondPath := writeTempFile("second.json", `{
-  "name": "Bob"
-}`)
+		It("fails for files without an extension", func() {
+			path := writeTempFile("config", `name: Ada`)
 
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer
 
-			command := newRootCommand(&stdout, &stderr)
-			command.SetArgs([]string{"import", firstPath, secondPath, "--schema"})
-
-			err := command.Execute()
-			tAssert.NoError(err)
-			tAssert.Equal("", stderr.String())
-			tAssert.Equal(`[output = schema]
-{
-  name: string;
-  profile?: {
-    level: int;
-  };
-}
-`, stdout.String())
+			exitCode := run([]string{"import", path}, &stdout, &stderr)
+			tAssert.Equal(1, exitCode)
+			tAssert.Equal("", stdout.String())
+			tAssert.Contains(stderr.String(), "missing file extension")
 		})
 	})
 

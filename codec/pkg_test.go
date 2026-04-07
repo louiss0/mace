@@ -194,7 +194,7 @@ var _ = Describe("MarshalOutput", func() {
 })
 
 var _ = Describe("Import", func() {
-	It("imports JSON objects into a typed Mace document", func() {
+	It("imports JSON objects into a Mace output block", func() {
 		source, err := ImportJSON(`{
   "name": "Ada",
   "enabled": true,
@@ -204,17 +204,7 @@ var _ = Describe("Import", func() {
   }
 }`)
 		tAssert.NoError(err)
-		tAssert.Equal(`|===|
-schema Document: {
-  enabled: boolean;
-  name: string;
-  profile: {
-    level: int;
-  };
-  scores: array<int>;
-};
-|===|
-[output = data, schema = Document]
+		tAssert.Equal(`[output = data]
 {
   enabled: true;
   name: "Ada";
@@ -225,23 +215,14 @@ schema Document: {
 }`, source)
 	})
 
-	It("imports YAML mappings into a typed Mace document", func() {
+	It("imports YAML mappings into a Mace output block", func() {
 		source, err := ImportYAML(`name: Ada
 enabled: true
 profile:
   level: 2
 `)
 		tAssert.NoError(err)
-		tAssert.Equal(`|===|
-schema Document: {
-  enabled: boolean;
-  name: string;
-  profile: {
-    level: int;
-  };
-};
-|===|
-[output = data, schema = Document]
+		tAssert.Equal(`[output = data]
 {
   enabled: true;
   name: "Ada";
@@ -251,7 +232,7 @@ schema Document: {
 }`, source)
 	})
 
-	It("imports TOML tables into a typed Mace document", func() {
+	It("imports TOML tables into a Mace output block", func() {
 		source, err := ImportTOML(`name = "Ada"
 enabled = true
 scores = [1, 2, 3]
@@ -260,17 +241,7 @@ scores = [1, 2, 3]
 level = 2
 `)
 		tAssert.NoError(err)
-		tAssert.Equal(`|===|
-schema Document: {
-  enabled: boolean;
-  name: string;
-  profile: {
-    level: int;
-  };
-  scores: array<int>;
-};
-|===|
-[output = data, schema = Document]
+		tAssert.Equal(`[output = data]
 {
   enabled: true;
   name: "Ada";
@@ -288,89 +259,31 @@ schema Document: {
 })
 
 var _ = Describe("ImportSchema", func() {
-	It("infers a schema document from JSON objects", func() {
+	It("imports JSON schema documents into a Mace output schema block", func() {
 		source, err := ImportJSONSchema(`{
-  "name": "Ada",
-  "enabled": true,
-  "scores": [1, 2, 3],
-  "profile": {
-    "level": 2
-  }
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" },
+    "age": { "type": "integer" }
+  },
+  "required": ["name"]
 }`)
 		tAssert.NoError(err)
 		tAssert.Equal(`[output = schema]
 {
-  enabled: boolean;
+  age?: int;
   name: string;
-  profile: {
-    level: int;
-  };
-  scores: array<int>;
 }`, source)
 	})
 
-	It("infers a schema document from YAML mappings", func() {
-		source, err := ImportYAMLSchema(`name: Ada
-enabled: true
-profile:
-  level: 2
-`)
+	It("treats TOML datetimes as strings in output values", func() {
+		source, err := ImportTOML(`created_at = 1979-05-27T07:32:00Z`)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = schema]
+		tAssert.Equal(`[output = data]
 {
-  enabled: boolean;
-  name: string;
-  profile: {
-    level: int;
-  };
+  created_at: "1979-05-27T07:32:00Z";
 }`, source)
-	})
-
-	It("falls back to array<string> for empty arrays", func() {
-		source, err := ImportJSONSchema(`{
-  "values": []
-}`)
-		tAssert.NoError(err)
-		tAssert.Equal(`[output = schema]
-{
-  values: array<string>;
-}`, source)
-	})
-
-	It("marks fields optional across multiple JSON samples", func() {
-		source, err := ImportJSONSchemaSamples([]string{`{
-  "name": "Ada",
-  "profile": {
-    "level": 2
-  }
-}`,
-			`{
-  "name": "Bob"
-}`})
-		tAssert.NoError(err)
-		tAssert.Equal(`[output = schema]
-{
-  name: string;
-  profile?: {
-    level: int;
-  };
-}`, source)
-	})
-
-	It("treats TOML datetimes as strings", func() {
-		source, err := ImportTOMLSchema(`created_at = 1979-05-27T07:32:00Z`)
-		tAssert.NoError(err)
-		tAssert.Equal(`[output = schema]
-{
-  created_at: string;
-}`, source)
-	})
-
-	It("rejects heterogeneous arrays", func() {
-		_, err := ImportJSONSchema(`{
-  "values": [1, "Ada"]
-}`)
-		tAssert.ErrorContains(err, "heterogeneous array")
 	})
 })
 

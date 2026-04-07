@@ -118,6 +118,10 @@ func ImportJSON(input string) (string, error) {
 		return "", err
 	}
 
+	if isJSONSchemaDocument(value) {
+		return importJSONSchemaDocument(value)
+	}
+
 	return importDocument(value)
 }
 
@@ -140,54 +144,12 @@ func ImportTOML(input string) (string, error) {
 }
 
 func ImportJSONSchema(input string) (string, error) {
-	return ImportJSONSchemaSamples([]string{input})
-}
-
-func ImportYAMLSchema(input string) (string, error) {
-	return ImportYAMLSchemaSamples([]string{input})
-}
-
-func ImportTOMLSchema(input string) (string, error) {
-	return ImportTOMLSchemaSamples([]string{input})
-}
-
-func ImportJSONSchemaSamples(inputs []string) (string, error) {
-	values := make([]any, 0, len(inputs))
-	for _, input := range inputs {
-		value, err := parseImportedJSON(input)
-		if err != nil {
-			return "", err
-		}
-		values = append(values, value)
+	value, err := parseImportedJSON(input)
+	if err != nil {
+		return "", err
 	}
 
-	return importSchemaSamples(values)
-}
-
-func ImportYAMLSchemaSamples(inputs []string) (string, error) {
-	values := make([]any, 0, len(inputs))
-	for _, input := range inputs {
-		value, err := parseImportedYAML(input)
-		if err != nil {
-			return "", err
-		}
-		values = append(values, value)
-	}
-
-	return importSchemaSamples(values)
-}
-
-func ImportTOMLSchemaSamples(inputs []string) (string, error) {
-	values := make([]any, 0, len(inputs))
-	for _, input := range inputs {
-		value, err := parseImportedTOML(input)
-		if err != nil {
-			return "", err
-		}
-		values = append(values, value)
-	}
-
-	return importSchemaSamples(values)
+	return importJSONSchemaDocument(value)
 }
 
 func parseImportedJSON(input string) (any, error) {
@@ -226,40 +188,26 @@ func importDocument(value any) (string, error) {
 		return "", err
 	}
 
-	record, ok := normalized.(map[string]any)
-	if !ok {
+	output, err := MarshalOutput(normalized)
+	if err != nil {
 		return "", fmt.Errorf("import mace: expected record root")
 	}
 
-	schema, err := inferRecordSchemaSamples([]map[string]any{record})
+	return "[output = data]\n" + output, nil
+}
+
+func importJSONSchemaDocument(value any) (string, error) {
+	normalized, err := normalizeImportedValue(reflect.ValueOf(value))
 	if err != nil {
 		return "", err
 	}
 
-	output, err := MarshalOutput(record)
-	if err != nil {
-		return "", fmt.Errorf("import mace: expected record root")
+	record, ok := normalized.(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("import mace schema: expected record root")
 	}
 
-	return fmt.Sprintf("|===|\nschema Document: %s;\n|===|\n[output = data, schema = Document]\n%s", formatSchemaRecord(schema.fields, 0), output), nil
-}
-
-func importSchemaSamples(values []any) (string, error) {
-	records := make([]map[string]any, 0, len(values))
-	for _, value := range values {
-		normalized, err := normalizeImportedValue(reflect.ValueOf(value))
-		if err != nil {
-			return "", err
-		}
-
-		record, ok := normalized.(map[string]any)
-		if !ok {
-			return "", fmt.Errorf("import mace schema: expected record root")
-		}
-		records = append(records, record)
-	}
-
-	schema, err := inferRecordSchemaSamples(records)
+	schema, err := jsonSchemaRecord(record)
 	if err != nil {
 		return "", err
 	}
@@ -870,6 +818,120 @@ func schemaFieldIndex(fields []schemaField) map[string]schemaField {
 		index[field.name] = field
 	}
 	return index
+}
+
+func isJSONSchemaDocument(value any) bool {
+	record, ok := value.(map[string]any)
+	if !ok {
+		return false
+	}
+
+	_, hasSchema := record["$schema"]
+	return hasSchema
+}
+
+func jsonSchemaRecord(record map[string]any) (recordSchema, error) {
+	typeName, _ := record["type"].(string)
+	if typeName != "" && typeName != "object" {
+		return recordSchema{}, fmt.Errorf("import mace schema: root schema must use type object")
+	}
+
+	propertiesValue, ok := record["properties"]
+	if !ok {
+		return recordSchema{fields: []schemaField{}}, nil
+	}
+
+	properties, ok := propertiesValue.(map[string]any)
+	if !ok {
+		return recordSchema{}, fmt.Errorf("import mace schema: properties must be an object")
+	}
+
+	requiredNames := jsonSchemaRequiredNames(record["required"])
+	names := make([]string, 0, len(properties))
+	for name := range properties {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+
+	fields := make([]schemaField, 0, len(names))
+	for _, name := range names {
+		property, ok := properties[name].(map[string]any)
+		if !ok {
+			return recordSchema{}, fmt.Errorf("import mace schema: property %q must be an object", name)
+		}
+
+		valueType, err := jsonSchemaType(property)
+		if err != nil {
+			return recordSchema{}, fmt.Errorf("import mace schema: property %q: %w", name, err)
+		}
+
+		_, required := requiredNames[name]
+		fields = append(fields, schemaField{name: name, optional: !required, value: valueType})
+	}
+
+	return recordSchema{fields: fields}, nil
+}
+
+func jsonSchemaRequiredNames(value any) map[string]struct{} {
+	requiredNames := map[string]struct{}{}
+	items, ok := value.([]any)
+	if !ok {
+		return requiredNames
+	}
+
+	for _, item := range items {
+		name, ok := item.(string)
+		if !ok {
+			continue
+		}
+		requiredNames[name] = struct{}{}
+	}
+
+	return requiredNames
+}
+
+func jsonSchemaType(record map[string]any) (inferredType, error) {
+	typeName, _ := record["type"].(string)
+	if typeName == "" {
+		if _, ok := record["properties"]; ok {
+			typeName = "object"
+		}
+	}
+
+	switch typeName {
+	case "string":
+		return inferredType{kind: inferredTypePrimitive, primitive: "string"}, nil
+	case "integer":
+		return inferredType{kind: inferredTypePrimitive, primitive: "int"}, nil
+	case "number":
+		return inferredType{kind: inferredTypePrimitive, primitive: "float"}, nil
+	case "boolean":
+		return inferredType{kind: inferredTypePrimitive, primitive: "boolean"}, nil
+	case "array":
+		itemsValue, ok := record["items"]
+		if !ok {
+			return inferredType{kind: inferredTypeArray, element: &inferredType{kind: inferredTypePrimitive, primitive: "string"}}, nil
+		}
+
+		itemsRecord, ok := itemsValue.(map[string]any)
+		if !ok {
+			return inferredType{}, fmt.Errorf("items must be an object")
+		}
+
+		elementType, err := jsonSchemaType(itemsRecord)
+		if err != nil {
+			return inferredType{}, err
+		}
+		return inferredType{kind: inferredTypeArray, element: &elementType}, nil
+	case "object":
+		nestedRecord, err := jsonSchemaRecord(record)
+		if err != nil {
+			return inferredType{}, err
+		}
+		return inferredType{kind: inferredTypeRecord, record: nestedRecord}, nil
+	default:
+		return inferredType{}, fmt.Errorf("unsupported json schema type %q", typeName)
+	}
 }
 
 func fieldName(field reflect.StructField) (string, bool) {
