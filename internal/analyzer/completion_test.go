@@ -82,8 +82,8 @@ var _ = Describe("completion analysis", func() {
 enum Fruit: string {
   Apple,
   Strawberry = "strawberry",
-}
-schema Basket = { favorite_fruit: Fruit; };
+};
+schema Basket: { favorite_fruit: Fruit; };
 |===|
 [output = data, schema = Basket]
 {
@@ -116,8 +116,8 @@ schema Basket = { favorite_fruit: Fruit; };
 enum Fruit: string {
   Apple,
   Strawberry = "strawberry",
-}
-schema Basket = { favorite_fruit: Fruit; };
+};
+schema Basket: { favorite_fruit: Fruit; };
 |===|
 [output = data, schema = Basket]
 {
@@ -146,8 +146,8 @@ schema Basket = { favorite_fruit: Fruit; };
 enum Fruit: string {
   Apple,
   Strawberry = "strawberry",
-}
-schema Basket = { favorite_fruit: Fruit; };
+};
+schema Basket: { favorite_fruit: Fruit; };
 |===|
 [output = data, schema = Basket]
 {
@@ -176,7 +176,7 @@ schema Basket = { favorite_fruit: Fruit; };
 	enum Fruit: string {
 	  Apple,
 	  Strawberry = "strawberry",
-	}
+	};
 	Fruit selected =`
 
 		position := protocol.Position{
@@ -199,7 +199,7 @@ schema Basket = { favorite_fruit: Fruit; };
 	enum Personality: string {
 	  is_type,
 	  has_defaults,
-	}
+	};
 	Personality value = Personality.`
 
 		position := protocol.Position{
@@ -223,7 +223,7 @@ schema Basket = { favorite_fruit: Fruit; };
 	enum Status: int {
 	  Pending,
 	  Running,
-	}
+	};
 	Status current = Status.`
 
 		position := protocol.Position{
@@ -251,7 +251,7 @@ schema Basket = { favorite_fruit: Fruit; };
 enum InternalStatus: int {
   Pending,
   Running,
-}
+};
 |===|
 [output = schema]
 {

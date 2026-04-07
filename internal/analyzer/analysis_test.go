@@ -67,8 +67,8 @@ var _ = Describe("LSP analysis", func() {
 		tAssert.NoError(err)
 
 		writeAnalysisFile(workspace, "shared.mace", `|===|
-type Hidden = string;
-schema User = { name: string; };
+type Hidden: string;
+schema User: { name: string; };
 string local = "Ada";
 |===|
 [output = schema]
@@ -79,7 +79,7 @@ string local = "Ada";
 
 		snapshot := analyzeDocumentAt(`from "./shared.mace" import User;
 |===|
-schema Local = { id: int; };
+schema Local: { id: int; };
 User current = { name: "Ada"; };
 |===|
 [output = data]
@@ -129,7 +129,7 @@ User current = { name: "Ada"; };
 		documentPath := filepath.Join(workspace, "consumer.mace")
 
 		snapshot := analyzeDocumentAt(`|===|
-schema User = { name: string; };
+schema User: { name: string; };
 |===|
 [output = data]
 {
@@ -181,7 +181,7 @@ int qux = 2;
 enum Fruit: string {
   Apple,
   Strawberry = "strawberry",
-}
+};
 Fruit selected = Fruit.Apple;
 |===|
 [output = data]
@@ -270,8 +270,8 @@ array<int> foo = ["4", 6];
 
 	It("translates schema output value exports into schema-field diagnostics", func() {
 		snapshot := analyzeDocument(`|===|
-type Name = string;
-schema User = { name: Name; age: int; };
+type Name: string;
+schema User: { name: Name; age: int; };
 int local = 1;
 |===|
 [output = schema]
@@ -292,8 +292,8 @@ int local = 1;
 
 	It("translates data output type exports into value diagnostics", func() {
 		snapshot := analyzeDocument(`|===|
-type Name = string;
-schema User = { name: string; };
+type Name: string;
+schema User: { name: string; };
 string value = "Ada";
 |===|
 {
@@ -311,8 +311,8 @@ string value = "Ada";
 
 	It("translates processor schema validation errors into schema-scoped diagnostics", func() {
 		snapshot := analyzeDocument(`|===|
-schema Point = { x: int; y: int; };
-schema Plot = { points: array<Point>; };
+schema Point: { x: int; y: int; };
+schema Plot: { points: array<Point>; };
 |===|
 [output = data, schema = Plot]
 {
@@ -337,7 +337,7 @@ schema Plot = { points: array<Point>; };
 		documentPath := filepath.Join(workspace, "consumer.mace")
 		snapshot := analyzeDocumentAt(`from "./shared.mace" import User;
 |===|
-schema User = { name: string; };
+schema User: { name: string; };
 |===|
 [output = data, schema = User, schema_file = "./shared.mace"]
 {
@@ -360,7 +360,7 @@ schema User = { name: string; };
 
 	It("warns when script variables are present in schema output mode", func() {
 		snapshot := analyzeDocument(`|===|
-schema User = { name: string; };
+schema User: { name: string; };
 string value = "Ada";
 |===|
 [output = schema]
@@ -393,7 +393,7 @@ string value = "Ada";
 
 	It("recovers visible declarations for incomplete edits used by interactive LSP features", func() {
 		snapshot := analyzeCompletionContext(`|===|
-schema User = { name: string; };
+schema User: { name: string; };
 Us`, "", protocol.Position{Line: 2, Character: 2})
 
 		tAssert.True(snapshot.recovered)

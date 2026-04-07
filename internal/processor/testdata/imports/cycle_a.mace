@@ -1,7 +1,7 @@
 from "./cycle_b.mace" import Name;
 
 |===|
-type Name = string;
+type Name: string;
 |===|
 
 [output = data] {}

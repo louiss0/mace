@@ -435,14 +435,14 @@ int count = 7;
 		didOpen(server, uri, `|===|
 enum Personality: string {
   is_type,
-}
+};
 Personality value = Personality.;
 |===|
 [output = data] {}`, &notifications)
 		didChange(server, uri, 2, `|===|
 enum Personality: string {
   is_type,
-}
+};
 Personality value = Personality.is_type;
 |===|
 [output = data] {}`, &notifications)
@@ -484,8 +484,8 @@ Personality value = Personality.is_type;
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `|===|
-schema Point = { x: int; y: int; };
-schema Plot = { points: array<Point>; };
+schema Point: { x: int; y: int; };
+schema Plot: { points: array<Point>; };
 |===|
 [output = data, schema = Plot]
 {
@@ -508,8 +508,8 @@ schema Plot = { points: array<Point>; };
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `|===|
-schema Point = { x: int; y: int; };
-schema Plot = { points: array<Point>; };
+schema Point: { x: int; y: int; };
+schema Plot: { points: array<Point>; };
 |===|
 [output = data, schema = Plot]
 {
@@ -519,8 +519,8 @@ schema Plot = { points: array<Point>; };
   ];
 }`, &notifications)
 		didChange(server, uri, 2, `|===|
-schema Point = { x: int; y: int; };
-schema Plot = { points: array<Point>; };
+schema Point: { x: int; y: int; };
+schema Plot: { points: array<Point>; };
 |===|
 [output = data, schema = Plot]
 {
@@ -763,7 +763,7 @@ en
 enum Fruit: string {
   Apple,
   Strawberry = "strawberry",
-}
+};
 Fruit selected =
 |===|
 [output = data] {}`, nil)
@@ -778,7 +778,7 @@ Fruit selected =
 enum Fruit: string {
   Apple,
   Strawberry = "strawberry",
-}
+};
 Fruit selected =
 |===|
 [output = data] {}`, nil)
@@ -793,7 +793,7 @@ Fruit selected =
 enum Fruit: string {
   Apple,
   Strawberry = "strawberry",
-}
+};
 Fruit selected =`, nil)
 
 		labels := completeLabels(server, uri, 5, uint32(len(`Fruit selected = `)))
@@ -806,8 +806,8 @@ Fruit selected =`, nil)
 enum Fruit: string {
   Apple,
   Strawberry = "strawberry",
-}
-schema Basket = { favorite_fruit: Fruit; };
+};
+schema Basket: { favorite_fruit: Fruit; };
 Basket basket = {
   favorite_fruit:
 };
@@ -824,7 +824,7 @@ Basket basket = {
 enum Personality: string {
   is_type,
   has_defaults,
-}
+};
 Personality value = Personality.
 |===|
 [output = data] {}`, nil)
@@ -836,8 +836,8 @@ Personality value = Personality.
 	It("suggests schema record literals for nested schema fields after a record colon", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
-schema Profile = { name: string; age?: int; };
-schema Basket = { owner: Profile; };
+schema Profile: { name: string; age?: int; };
+schema Basket: { owner: Profile; };
 Basket basket = {
   owner:
 };
@@ -854,8 +854,8 @@ Basket basket = {
 enum Fruit: string {
   Apple,
   Strawberry = "strawberry",
-}
-schema Basket = { favorite_fruit: Fruit; };
+};
+schema Basket: { favorite_fruit: Fruit; };
 |===|
 [output = data, schema = Basket]
 {
@@ -874,8 +874,8 @@ schema Basket = { favorite_fruit: Fruit; };
 enum Fruit: string {
   Apple,
   Strawberry = "strawberry",
-}
-schema Basket = { favorite_fruit: Fruit; };
+};
+schema Basket: { favorite_fruit: Fruit; };
 |===|
 [output = data, schema = Basket]
 {
@@ -910,7 +910,7 @@ schema Basket = { favorite_fruit: Fruit; };
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `from "./shared.mace" import ImportedUser;
 |===|
-schema LocalUser = { id: int; };
+schema LocalUser: { id: int; };
 |===|
 [output = data, schema = `, nil)
 
@@ -927,7 +927,7 @@ schema LocalUser = { id: int; };
 enum Personality: string {
   is_type,
   has_defaults,
-}
+};
 |===|
 [output = schema]
 {
@@ -1103,7 +1103,7 @@ Personality value = Personality.
 
 	It("returns hover documentation for language keywords", func() {
 		didOpen(server, uri, `|===|
-schema User = { name: string; };
+schema User: { name: string; };
 |===|
 [output = data] { name: "Ada"; }`, nil)
 
@@ -1134,7 +1134,7 @@ schema User = { name: string; };
 		didOpen(server, uri, `|===|
 enum Fruit: string {
   Apple,
-}
+};
 |===|
 [output = data] { result: "Apple"; }`, nil)
 
@@ -1166,7 +1166,7 @@ enum Fruit: string {
 enum Fruit: string {
   Apple,
   Strawberry = "strawberry",
-}
+};
 Fruit selected = Fruit.Apple;
 |===|
 [output = data]
@@ -1202,7 +1202,7 @@ Fruit selected = Fruit.Apple;
 enum Status: int {
   Pending,
   Running,
-}
+};
 Status current = Status.Running;
 |===|
 [output = data]
@@ -1293,7 +1293,7 @@ string env = "dev";
 
 	It("prefers output field hover details over same-named schema declarations", func() {
 		didOpen(server, uri, `|===|
-schema User = { name: string; };
+schema User: { name: string; };
 |===|
 [output = data]
 {
@@ -1326,9 +1326,9 @@ schema User = { name: string; };
 
 	It("returns hover details for nested output record fields", func() {
 		didOpen(server, uri, `|===|
-type Name = string;
-schema Profile = { age: int; };
-schema User = { name: Name; profile: Profile; };
+type Name: string;
+schema Profile: { age: int; };
+schema User: { name: Name; profile: Profile; };
 Name default_name = "Ada";
 int default_age = 30;
 |===|
@@ -1365,9 +1365,9 @@ int default_age = 30;
 
 	It("prefers output field hover details when the same name is reused later in self references", func() {
 		didOpen(server, uri, `|===|
-type Name = string;
-schema Profile = { age: int; };
-schema User = { name: Name; profile: Profile; };
+type Name: string;
+schema Profile: { age: int; };
+schema User: { name: Name; profile: Profile; };
 Name default_name = "Ada";
 int default_age = 30;
 |===|
@@ -1557,7 +1557,7 @@ User current = { name: "Ada"; };
 
 	It("prefers output field definitions over same-named schema declarations", func() {
 		didOpen(server, uri, `|===|
-schema User = { name: string; };
+schema User: { name: string; };
 |===|
 [output = data]
 {
@@ -1684,7 +1684,7 @@ int qux = 2;
 
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `from "./shared.mace" import User;
 |===|
-schema User = { name: string; };
+schema User: { name: string; };
 |===|
 [output = data, schema = User, schema_file = "./shared.mace"]
 {
@@ -1693,7 +1693,7 @@ schema User = { name: string; };
 
 		didOpen(server, uri, `from "./shared.mace" import User;
 |===|
-schema User = { name: string; };
+schema User: { name: string; };
 |===|
 [output = data, schema = User, schema_file = "./shared.mace"]
 {
@@ -1724,7 +1724,7 @@ schema User = { name: string; };
 
 	It("returns hierarchical document symbols", func() {
 		didOpen(server, uri, `|===|
-schema User = { name: string; age?: int; };
+schema User: { name: string; age?: int; };
 string env = "dev";
 |===|
 [output = data]
@@ -1759,7 +1759,7 @@ string env = "dev";
 enum Fruit: string {
   Apple,
   Strawberry = "strawberry",
-}
+};
 |===|
 [output = data]
 {
@@ -1793,7 +1793,7 @@ enum Fruit: string {
 enum Fruit: string {
   Apple,
   Strawberry,
-}
+};
 Fruit selected = "Pear";
 |===|
 [output = data]
@@ -1812,7 +1812,7 @@ Fruit selected = "Pear";
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `|===|
-schema User = { name: string; };
+schema User: { name: string; };
 string value = "Ada";
 |===|
 [output = schema]

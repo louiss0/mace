@@ -1,14 +1,14 @@
 from "./profile.mace" import Age;
 
 |===================|
-type Name = string;
+type Name: string;
 
-schema User = {
+schema User: {
   name: Name;
   age: Age;
 };
 
-schema Secret = {
+schema Secret: {
   token: int;
 };
 

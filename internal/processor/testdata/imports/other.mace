@@ -1,6 +1,6 @@
 |===|
-type Name = int;
-schema Admin = { level: int; };
+type Name: int;
+schema Admin: { level: int; };
 |===|
 [output = schema]
 {

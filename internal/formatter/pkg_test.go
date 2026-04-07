@@ -41,9 +41,9 @@ var _ = Describe("FormatFile", func() {
 	It("formats imports, script declarations, and output", func() {
 		file, err := parseMaceFile(`from "./base.mace" import User, Config;
 |===|
-type Name = string;
-schema User = { name: string; age?: int; };
-enum Fruit: string { Apple, Strawberry = "strawberry" }
+type Name: string;
+schema User: { name: string; age?: int; };
+enum Fruit: string { Apple, Strawberry = "strawberry" };
 injectable string user = "Ada";
 |===|
 [output = data, schema = User]
@@ -55,15 +55,15 @@ injectable string user = "Ada";
 		tAssert.Equal(`from "./base.mace" import User, Config;
 
 |===============================|
-type Name = string;
-schema User = {
+type Name: string;
+schema User: {
   name: string;
   age?: int;
 };
 enum Fruit: string {
   Apple,
   Strawberry = "strawberry",
-}
+};
 injectable string user = "Ada";
 |===============================|
 [output = data, schema = User]

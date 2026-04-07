@@ -208,8 +208,8 @@ var _ = Describe("Script block", func() {
 			tAssert.NoError(err)
 		},
 		Entry("type and schema declarations", wrapScriptWithOutput(`|===|
-type Name = string;
-schema User = { name: string; };
+type Name: string;
+schema User: { name: string; };
 |===|`)),
 		Entry("variables with literals", wrapScriptWithOutput(`|===|
 string name = "Ada";
@@ -245,8 +245,8 @@ int total = 1.5;
 float total = 1 + 2.0;
 |===|`), "type mismatch"),
 		Entry("duplicate declaration name", wrapScriptWithOutput(`|===|
-type User = string;
-schema User = { name: string; };
+type User: string;
+schema User: { name: string; };
 |===|`), "duplicate declaration"),
 		Entry("duplicate imports", `from "testdata/imports/base.mace" import User, User;
 [output = data] {}`, "duplicate import"),
@@ -259,11 +259,11 @@ schema User = { name: string; };
 			tAssert.NoError(err)
 		},
 		Entry("optional fields omitted", wrapScriptWithOutput(`|===|
-schema User = { name: string; age?: int; };
+schema User: { name: string; age?: int; };
 User user = { name: "Ada"; };
 |===|`)),
 		Entry("array of schema records", wrapScriptWithOutput(`|===|
-schema Point = { x: int; y: int; };
+schema Point: { x: int; y: int; };
 array<Point> points = [
   { x: 1; y: 2; },
   { x: 3; y: 4; }
@@ -282,23 +282,23 @@ injectable string env = "dev";
 			tAssert.ErrorContains(err, message)
 		},
 		Entry("missing required field", wrapScriptWithOutput(`|===|
-schema User = { name: string; age: int; };
+schema User: { name: string; age: int; };
 User user = { name: "Ada"; };
 |===|`), "missing required field"),
 		Entry("unknown field", wrapScriptWithOutput(`|===|
-schema User = { name: string; };
+schema User: { name: string; };
 User user = { name: "Ada"; age: 30; };
 |===|`), "unknown field"),
 		Entry("optional field mismatch", wrapScriptWithOutput(`|===|
-schema User = { name: string; age: int; };
+schema User: { name: string; age: int; };
 User user = { name: "Ada"; age?: 30; };
 |===|`), "not optional"),
 		Entry("field type mismatch", wrapScriptWithOutput(`|===|
-schema User = { name: string; age: int; };
+schema User: { name: string; age: int; };
 User user = { name: 5; age: 30; };
 |===|`), "type mismatch"),
 		Entry("array element schema mismatch", wrapScriptWithOutput(`|===|
-schema Point = { x: int; y: int; };
+schema Point: { x: int; y: int; };
 array<Point> points = [
   { x: 1; y: 2; },
   { x: 3; }
@@ -381,7 +381,7 @@ injectable string env = "dev";
 enum Fruit: string {
   Apple,
   Strawberry,
-}
+};
 Fruit result = Fruit.Apple;
 |===|
 [output = data]
@@ -392,7 +392,7 @@ Fruit result = Fruit.Apple;
 enum Status: int {
   Pending,
   Running,
-}
+};
 Status result = Status.Running;
 |===|
 [output = data]
@@ -403,7 +403,7 @@ Status result = Status.Running;
 enum Status: int {
   Pending = 0,
   Running = 1,
-}
+};
 Status result = Status.Running;
 |===|
 [output = data]
@@ -423,30 +423,30 @@ Status result = Status.Running;
 enum Fruit: string {
   Apple,
   Apple,
-}
+};
 |===|`), "duplicate enum member"),
 		Entry("duplicate enum value", wrapScriptWithOutput(`|===|
 enum Fruit: string {
   Apple = "fruit",
   Strawberry = "fruit",
-}
+};
 |===|`), "duplicate enum value"),
 		Entry("mixed implicit and explicit enum members", wrapScriptWithOutput(`|===|
 enum Fruit: string {
   Apple = "apple",
   Strawberry,
-}
+};
 |===|`), "mixes implicit and explicit"),
 		Entry("enum explicit value type mismatch", wrapScriptWithOutput(`|===|
 enum Status: int {
   Pending = "pending",
-}
+};
 |===|`), "must use an int literal"),
 		Entry("raw enum backing value is not assignable", `|===|
 enum Fruit: string {
   Apple,
   Strawberry,
-}
+};
 Fruit result = "Pear";
 |===|
 [output = data]
@@ -457,7 +457,7 @@ Fruit result = "Pear";
 enum Fruit: string {
   Apple,
   Strawberry,
-}
+};
 Fruit result = Fruit.Pear;
 |===|
 [output = data]
@@ -570,7 +570,7 @@ from "testdata/imports/other.mace" import Name;
 [output = data] {}`, "unable to read import file"),
 		Entry("import collides with local declaration", `from "testdata/imports/base.mace" import Name;
 |===|
-type Name = string;
+type Name: string;
 |===|
 [output = data] {}`, "duplicate declaration"),
 	)
@@ -583,7 +583,7 @@ type Name = string;
 enum Fruit: string {
   Apple,
   Strawberry,
-}
+};
 |===|
 [output = schema]
 {
@@ -615,7 +615,7 @@ var _ = Describe("Output block", func() {
 			tAssert.ErrorContains(err, message)
 		},
 		Entry("missing output directive", `|===|
-schema User = { name: string; };
+schema User: { name: string; };
 |===|
 [schema = User] {}`, "missing output directive"),
 		Entry("duplicate output directive", "[output = data, output = schema] {}", "duplicate output directive"),
@@ -649,7 +649,7 @@ schema User = { name: string; };
 			{name: "matrix"}: schemaArray(schemaArray(schemaPrimitive("int"))),
 		}),
 		Entry("record fields", `|===|
-schema User = { name: string; };
+schema User: { name: string; };
 |===|
 [output = schema]
 {
@@ -671,14 +671,14 @@ schema User = { name: string; };
 			tAssert.NoError(err)
 		},
 		Entry("optional field omitted", `|===|
-schema User = { name: string; age?: int; };
+schema User: { name: string; age?: int; };
 string name = "Ada";
 |===|
 [output = data, schema = User]
 { name: name; }`),
 		Entry("nested record literal", `|===|
-schema Profile = { age: int; };
-schema User = { profile: Profile; };
+schema Profile: { age: int; };
+schema User: { profile: Profile; };
 |===|
 [output = data, schema = User]
 { profile: { age: 30; }; }`),
@@ -693,29 +693,29 @@ schema User = { profile: Profile; };
 			tAssert.ErrorContains(err, message)
 		},
 		Entry("missing required field", `|===|
-schema User = { name: string; age: int; };
+schema User: { name: string; age: int; };
 |===|
 [output = data, schema = User]
 { name: "Ada"; }`, "missing required field"),
 		Entry("unknown output field", `|===|
-schema User = { name: string; };
+schema User: { name: string; };
 |===|
 [output = data, schema = User]
 { name: "Ada"; extra: 1; }`, "unknown output field"),
 		Entry("optional output mismatch", `|===|
-schema User = { name: string; age: int; };
+schema User: { name: string; age: int; };
 |===|
 [output = data, schema = User]
 { name: "Ada"; age?: 30; }`, "not optional"),
 		Entry("nested record mismatch", `|===|
-schema Profile = { age: int; };
-schema User = { profile: Profile; };
+schema Profile: { age: int; };
+schema User: { profile: Profile; };
 |===|
 [output = data, schema = User]
 { profile: { }; }`, "missing required field"),
 		Entry("array element mismatch", `|===|
-schema Point = { x: int; y: int; };
-schema Plot = { points: array<Point>; };
+schema Point: { x: int; y: int; };
+schema Plot: { points: array<Point>; };
 |===|
 [output = data, schema = Plot]
 { points: [ { x: 1; y: 2; }, { x: 3; } ]; }`, "missing required field"),
@@ -723,8 +723,8 @@ schema Plot = { points: array<Point>; };
 enum Fruit: string {
   Apple,
   Strawberry,
-}
-schema Basket = { favorite: Fruit; };
+};
+schema Basket: { favorite: Fruit; };
 |===|
 [output = data, schema = Basket]
 { favorite: "Pear"; }`, "type mismatch: expected Fruit, got string"),
@@ -732,8 +732,8 @@ schema Basket = { favorite: Fruit; };
 enum Fruit: string {
   Apple,
   Strawberry,
-}
-schema Basket = { favorite: Fruit; };
+};
+schema Basket: { favorite: Fruit; };
 |===|
 [output = data, schema = Basket]
 { favorite: Fruit.Pear; }`, "unknown enum member"),
@@ -747,8 +747,8 @@ schema Basket = { favorite: Fruit; };
 			tAssert.ErrorContains(err, message)
 		},
 		Entry("schema output cannot export variable declarations", `|===|
-type Name = string;
-schema User = { name: Name; age: int; };
+type Name: string;
+schema User: { name: Name; age: int; };
 int local = 1;
 |===|
 [output = schema]
@@ -758,8 +758,8 @@ int local = 1;
   foo: local;
 }`, "invalid field type"),
 		Entry("data output cannot export type declarations as values", `|===|
-type Name = string;
-schema User = { name: string; };
+type Name: string;
+schema User: { name: string; };
 string value = "Ada";
 |===|
 {
@@ -1017,7 +1017,7 @@ array<array<int> > result = [[base, base + 1], [base + 2, base + 3]];
 			}},
 		}}),
 		Entry("record literal", wrapScriptWithOutputFields(`|===|
-schema User = { name: string; age: int; };
+schema User: { name: string; age: int; };
 int base = 20 + 10;
 User result = { name: "Ada"; age: base; };
 |===|`, "result: result;"), expectedValue{kind: ValueRecord, record: map[string]expectedValue{
@@ -1025,8 +1025,8 @@ User result = { name: "Ada"; age: base; };
 			"age":  {kind: ValueInt, int64: 30},
 		}}),
 		Entry("nested record literal", wrapScriptWithOutputFields(`|===|
-schema Inner = { value: int; };
-schema Outer = { inner: Inner; };
+schema Inner: { value: int; };
+schema Outer: { inner: Inner; };
 int base = 8 + 2;
 Outer result = { inner: { value: base; }; };
 |===|`, "result: result;"), expectedValue{kind: ValueRecord, record: map[string]expectedValue{
@@ -1035,7 +1035,7 @@ Outer result = { inner: { value: base; }; };
 			}},
 		}}),
 		Entry("array of records", wrapScriptWithOutputFields(`|===|
-schema Point = { x: int; y: int; };
+schema Point: { x: int; y: int; };
 int base = 1 + 1;
 array<Point> result = [
   { x: base; y: base + 1; },

@@ -44,7 +44,7 @@ from "./shared.mace" import User;
 enum Environment: string {
   Dev,
   Prod,
-}
+};
 
 Environment env = Environment.Prod;
 User current = {
@@ -62,6 +62,8 @@ User current = {
 
 Mace supports:
 
+- `:` for type declarations (`type`, `schema`, `enum`)
+- `=` for variable initializers and enum member values
 - primitive types: `string`, `int`, `float`, `boolean`
 - arrays: `array<T>`
 - named type aliases

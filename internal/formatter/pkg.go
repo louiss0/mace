@@ -164,14 +164,14 @@ func formatDeclaration(declaration ast.Declaration) (string, error) {
 			return "", err
 		}
 
-		return fmt.Sprintf("type %s = %s;", typedDeclaration.Name, typeReference), nil
+		return fmt.Sprintf("type %s: %s;", typedDeclaration.Name, typeReference), nil
 	case ast.SchemaDeclaration:
 		recordType, err := formatRecordType(typedDeclaration.Type, 0)
 		if err != nil {
 			return "", err
 		}
 
-		return fmt.Sprintf("schema %s = %s;", typedDeclaration.Name, recordType), nil
+		return fmt.Sprintf("schema %s: %s;", typedDeclaration.Name, recordType), nil
 	case ast.EnumDeclaration:
 		return formatEnumDeclaration(typedDeclaration)
 	default:
@@ -181,7 +181,7 @@ func formatDeclaration(declaration ast.Declaration) (string, error) {
 
 func formatEnumDeclaration(declaration ast.EnumDeclaration) (string, error) {
 	if len(declaration.Members) == 0 {
-		return fmt.Sprintf("enum %s: %s {}", declaration.Name, declaration.BackingType.Name), nil
+		return fmt.Sprintf("enum %s: %s {};", declaration.Name, declaration.BackingType.Name), nil
 	}
 
 	lines := []string{fmt.Sprintf("enum %s: %s {", declaration.Name, declaration.BackingType.Name)}
@@ -192,7 +192,7 @@ func formatEnumDeclaration(declaration ast.EnumDeclaration) (string, error) {
 		}
 		lines = append(lines, "  "+value)
 	}
-	lines = append(lines, "}")
+	lines = append(lines, "};")
 	return strings.Join(lines, "\n"), nil
 }
 

@@ -253,7 +253,7 @@ func (p *Parser) parseTypeDeclaration() (ast.Declaration, error) {
 		return nil, err
 	}
 
-	if _, err := p.consume(lexer.TokenAssign, "parser: expected '=' in type declaration"); err != nil {
+	if _, err := p.consume(lexer.TokenColon, "parser: expected ':' in type declaration"); err != nil {
 		return nil, err
 	}
 
@@ -283,7 +283,7 @@ func (p *Parser) parseSchemaDeclaration() (ast.Declaration, error) {
 		return nil, err
 	}
 
-	if _, err := p.consume(lexer.TokenAssign, "parser: expected '=' in schema declaration"); err != nil {
+	if _, err := p.consume(lexer.TokenColon, "parser: expected ':' in schema declaration"); err != nil {
 		return nil, err
 	}
 
@@ -340,6 +340,10 @@ func (p *Parser) parseEnumDeclaration() (ast.Declaration, error) {
 	}
 
 	if _, err := p.consume(lexer.TokenRBrace, "parser: expected '}' to close enum declaration"); err != nil {
+		return nil, err
+	}
+
+	if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after enum declaration"); err != nil {
 		return nil, err
 	}
 
