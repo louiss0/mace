@@ -243,7 +243,7 @@ var _ = Describe("LSP server", func() {
 		}
 		tAssert.NotNil(result.Capabilities.CompletionProvider)
 		if result.Capabilities.CompletionProvider != nil {
-			tAssert.Equal([]string{".", ":", "$"}, result.Capabilities.CompletionProvider.TriggerCharacters)
+			tAssert.Equal([]string{".", ":", "=", "$"}, result.Capabilities.CompletionProvider.TriggerCharacters)
 		}
 		tAssert.Equal(true, result.Capabilities.HoverProvider)
 		tAssert.Equal(true, result.Capabilities.DefinitionProvider)
