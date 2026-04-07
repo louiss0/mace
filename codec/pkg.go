@@ -207,12 +207,18 @@ func importJSONSchemaDocument(value any) (string, error) {
 		return "", fmt.Errorf("import mace schema: expected record root")
 	}
 
-	schema, err := jsonSchemaRecord(record)
+	context := newJSONSchemaContext(record)
+	schema, err := context.record(record, nil)
 	if err != nil {
 		return "", err
 	}
 
-	return "[output = schema]\n" + formatSchemaRecord(schema.fields, 0), nil
+	if len(context.declarations) == 0 {
+		return "[output = schema]\n" + formatSchemaRecord(schema.fields, 0), nil
+	}
+
+	declarations := strings.Join(context.declarations, "\n")
+	return fmt.Sprintf("|===|\n%s\n|===|\n[output = schema]\n%s", declarations, formatSchemaRecord(schema.fields, 0)), nil
 }
 
 type marshaller struct{}
@@ -566,6 +572,7 @@ const (
 	inferredTypePrimitive inferredTypeKind = iota
 	inferredTypeArray
 	inferredTypeRecord
+	inferredTypeNamed
 )
 
 type schemaField struct {
@@ -581,6 +588,7 @@ type recordSchema struct {
 type inferredType struct {
 	kind      inferredTypeKind
 	primitive string
+	name      string
 	element   *inferredType
 	record    recordSchema
 }
@@ -627,6 +635,8 @@ func formatSchemaType(value inferredType, depth int) string {
 	switch value.kind {
 	case inferredTypePrimitive:
 		return value.primitive
+	case inferredTypeNamed:
+		return value.name
 	case inferredTypeArray:
 		if value.element == nil {
 			return "array<string>"
@@ -830,10 +840,40 @@ func isJSONSchemaDocument(value any) bool {
 	return hasSchema
 }
 
-func jsonSchemaRecord(record map[string]any) (recordSchema, error) {
+type jsonSchemaContext struct {
+	root                map[string]any
+	declarations        []string
+	declarationIndex    map[string]int
+	definitionTypes     map[string]inferredType
+	inlineEnumTypes     map[string]inferredType
+	usedDeclarationName map[string]struct{}
+}
+
+func newJSONSchemaContext(root map[string]any) *jsonSchemaContext {
+	return &jsonSchemaContext{
+		root:                root,
+		declarationIndex:    map[string]int{},
+		definitionTypes:     map[string]inferredType{},
+		inlineEnumTypes:     map[string]inferredType{},
+		usedDeclarationName: map[string]struct{}{},
+	}
+}
+
+func (context *jsonSchemaContext) record(record map[string]any, path []string) (recordSchema, error) {
 	typeName, _ := record["type"].(string)
 	if typeName != "" && typeName != "object" {
 		return recordSchema{}, fmt.Errorf("import mace schema: root schema must use type object")
+	}
+
+	if additionalProperties, ok := record["additionalProperties"]; ok {
+		switch typed := additionalProperties.(type) {
+		case bool:
+			if typed {
+				return recordSchema{}, fmt.Errorf("import mace schema: additionalProperties=true is not supported")
+			}
+		case map[string]any:
+			return recordSchema{}, fmt.Errorf("import mace schema: additionalProperties schemas are not supported")
+		}
 	}
 
 	propertiesValue, ok := record["properties"]
@@ -860,7 +900,7 @@ func jsonSchemaRecord(record map[string]any) (recordSchema, error) {
 			return recordSchema{}, fmt.Errorf("import mace schema: property %q must be an object", name)
 		}
 
-		valueType, err := jsonSchemaType(property)
+		valueType, err := context.schemaType(property, append(append([]string{}, path...), name))
 		if err != nil {
 			return recordSchema{}, fmt.Errorf("import mace schema: property %q: %w", name, err)
 		}
@@ -890,7 +930,42 @@ func jsonSchemaRequiredNames(value any) map[string]struct{} {
 	return requiredNames
 }
 
-func jsonSchemaType(record map[string]any) (inferredType, error) {
+func jsonSchemaReference(path string, root map[string]any) (map[string]any, error) {
+	if !strings.HasPrefix(path, "#/") {
+		return nil, fmt.Errorf("unsupported $ref %q", path)
+	}
+
+	current := any(root)
+	for _, segment := range strings.Split(strings.TrimPrefix(path, "#/"), "/") {
+		record, ok := current.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("invalid $ref %q", path)
+		}
+
+		next, ok := record[segment]
+		if !ok {
+			return nil, fmt.Errorf("unknown $ref %q", path)
+		}
+		current = next
+	}
+
+	resolved, ok := current.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("invalid $ref %q", path)
+	}
+
+	return resolved, nil
+}
+
+func (context *jsonSchemaContext) schemaType(record map[string]any, path []string) (inferredType, error) {
+	if refValue, ok := record["$ref"].(string); ok {
+		return context.referenceType(refValue)
+	}
+
+	if enumValues, ok := record["enum"].([]any); ok && len(enumValues) > 0 {
+		return context.enumType(enumValues, path)
+	}
+
 	typeName, _ := record["type"].(string)
 	if typeName == "" {
 		if _, ok := record["properties"]; ok {
@@ -918,19 +993,220 @@ func jsonSchemaType(record map[string]any) (inferredType, error) {
 			return inferredType{}, fmt.Errorf("items must be an object")
 		}
 
-		elementType, err := jsonSchemaType(itemsRecord)
+		elementType, err := context.schemaType(itemsRecord, append(append([]string{}, path...), "item"))
 		if err != nil {
 			return inferredType{}, err
 		}
 		return inferredType{kind: inferredTypeArray, element: &elementType}, nil
 	case "object":
-		nestedRecord, err := jsonSchemaRecord(record)
+		nestedRecord, err := context.record(record, path)
 		if err != nil {
 			return inferredType{}, err
 		}
 		return inferredType{kind: inferredTypeRecord, record: nestedRecord}, nil
 	default:
 		return inferredType{}, fmt.Errorf("unsupported json schema type %q", typeName)
+	}
+}
+
+func (context *jsonSchemaContext) referenceType(path string) (inferredType, error) {
+	if declarationType, ok := context.definitionTypes[path]; ok {
+		return declarationType, nil
+	}
+
+	resolved, err := jsonSchemaReference(path, context.root)
+	if err != nil {
+		return inferredType{}, err
+	}
+
+	name := jsonSchemaDefinitionName(path)
+	if name == "" {
+		return context.schemaType(resolved, nil)
+	}
+
+	declarationType, declarationSource, err := context.declarationForSchema(name, resolved, []string{name})
+	if err != nil {
+		return inferredType{}, err
+	}
+	context.addDeclaration(name, declarationSource)
+	context.definitionTypes[path] = declarationType
+	return declarationType, nil
+}
+
+func (context *jsonSchemaContext) enumType(values []any, path []string) (inferredType, error) {
+	name := context.uniqueDeclarationName(jsonSchemaPathName(path))
+	if cached, ok := context.inlineEnumTypes[name]; ok {
+		return cached, nil
+	}
+
+	declarationSource, declarationType, err := jsonSchemaEnumDeclaration(name, values)
+	if err != nil {
+		return inferredType{}, err
+	}
+	context.addDeclaration(name, declarationSource)
+	context.inlineEnumTypes[name] = declarationType
+	return declarationType, nil
+}
+
+func (context *jsonSchemaContext) declarationForSchema(name string, record map[string]any, path []string) (inferredType, string, error) {
+	if enumValues, ok := record["enum"].([]any); ok && len(enumValues) > 0 {
+		declarationSource, declarationType, err := jsonSchemaEnumDeclaration(name, enumValues)
+		return declarationType, declarationSource, err
+	}
+
+	valueType, err := context.schemaType(record, path)
+	if err != nil {
+		return inferredType{}, "", err
+	}
+
+	switch valueType.kind {
+	case inferredTypeRecord:
+		return inferredType{kind: inferredTypeNamed, name: name}, fmt.Sprintf("schema %s: %s;", name, formatSchemaRecord(valueType.record.fields, 0)), nil
+	default:
+		return inferredType{kind: inferredTypeNamed, name: name}, fmt.Sprintf("type %s: %s;", name, formatSchemaType(valueType, 0)), nil
+	}
+}
+
+func (context *jsonSchemaContext) addDeclaration(name string, source string) {
+	if index, ok := context.declarationIndex[name]; ok {
+		context.declarations[index] = source
+		return
+	}
+
+	context.declarationIndex[name] = len(context.declarations)
+	context.declarations = append(context.declarations, source)
+}
+
+func (context *jsonSchemaContext) uniqueDeclarationName(base string) string {
+	if base == "" {
+		base = "Generated"
+	}
+
+	candidate := base
+	index := 2
+	for {
+		if _, exists := context.usedDeclarationName[candidate]; !exists {
+			context.usedDeclarationName[candidate] = struct{}{}
+			return candidate
+		}
+		candidate = fmt.Sprintf("%s%d", base, index)
+		index++
+	}
+}
+
+func jsonSchemaDefinitionName(path string) string {
+	segments := strings.Split(strings.TrimPrefix(path, "#/"), "/")
+	if len(segments) != 2 || segments[0] != "$defs" {
+		return ""
+	}
+
+	return jsonSchemaIdentifier(segments[1])
+}
+
+func jsonSchemaPathName(path []string) string {
+	parts := make([]string, 0, len(path))
+	for _, segment := range path {
+		parts = append(parts, jsonSchemaIdentifier(segment))
+	}
+	return strings.Join(parts, "")
+}
+
+func jsonSchemaIdentifier(value string) string {
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9')
+	})
+	if len(parts) == 0 {
+		return "Generated"
+	}
+
+	builder := strings.Builder{}
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		builder.WriteString(strings.ToUpper(part[:1]))
+		if len(part) > 1 {
+			builder.WriteString(part[1:])
+		}
+	}
+
+	result := builder.String()
+	if result == "" {
+		return "Generated"
+	}
+	if result[0] >= '0' && result[0] <= '9' {
+		return "Value" + result
+	}
+	return result
+}
+
+func jsonSchemaEnumDeclaration(name string, values []any) (string, inferredType, error) {
+	backingType, members, err := jsonSchemaEnumMembers(values)
+	if err != nil {
+		return "", inferredType{}, err
+	}
+
+	lines := []string{fmt.Sprintf("enum %s: %s {", name, backingType)}
+	for _, member := range members {
+		lines = append(lines, fmt.Sprintf("  %s = %s,", member.name, member.value))
+	}
+	lines = append(lines, "};")
+
+	return strings.Join(lines, "\n"), inferredType{kind: inferredTypeNamed, name: name}, nil
+}
+
+type jsonSchemaEnumMember struct {
+	name  string
+	value string
+}
+
+func jsonSchemaEnumMembers(values []any) (string, []jsonSchemaEnumMember, error) {
+	members := make([]jsonSchemaEnumMember, 0, len(values))
+	usedNames := map[string]struct{}{}
+	backingType := ""
+
+	for index, value := range values {
+		member, memberType, err := jsonSchemaEnumMemberValue(value, index)
+		if err != nil {
+			return "", nil, err
+		}
+		if backingType == "" {
+			backingType = memberType
+		} else if backingType != memberType {
+			return "", nil, fmt.Errorf("mixed enum value types are not supported")
+		}
+
+		name := member.name
+		suffix := 2
+		for {
+			if _, exists := usedNames[name]; !exists {
+				usedNames[name] = struct{}{}
+				member.name = name
+				break
+			}
+			name = fmt.Sprintf("%s%d", member.name, suffix)
+			suffix++
+		}
+		members = append(members, member)
+	}
+
+	if backingType != "string" && backingType != "int" {
+		return "", nil, fmt.Errorf("unsupported enum backing type %q", backingType)
+	}
+
+	return backingType, members, nil
+}
+
+func jsonSchemaEnumMemberValue(value any, index int) (jsonSchemaEnumMember, string, error) {
+	switch typed := value.(type) {
+	case string:
+		return jsonSchemaEnumMember{name: jsonSchemaIdentifier(typed), value: strconv.Quote(typed)}, "string", nil
+	case int64:
+		return jsonSchemaEnumMember{name: fmt.Sprintf("Value%d", typed), value: strconv.FormatInt(typed, 10)}, "int", nil
+	case int:
+		return jsonSchemaEnumMember{name: fmt.Sprintf("Value%d", typed), value: strconv.Itoa(typed)}, "int", nil
+	default:
+		return jsonSchemaEnumMember{}, "", fmt.Errorf("unsupported enum value %v at index %d", value, index)
 	}
 }
 

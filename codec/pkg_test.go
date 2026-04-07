@@ -277,6 +277,111 @@ var _ = Describe("ImportSchema", func() {
 }`, source)
 	})
 
+	It("imports nested objects and array items from JSON schema", func() {
+		source, err := ImportJSONSchema(`{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "users": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" }
+        },
+        "required": ["name"]
+      }
+    }
+  },
+  "required": ["users"]
+}`)
+		tAssert.NoError(err)
+		tAssert.Equal(`[output = schema]
+{
+  users: array<{
+    name: string;
+  }>;
+}`, source)
+	})
+
+	It("maps inline enums to Mace enums", func() {
+		source, err := ImportJSONSchema(`{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "status": {
+      "enum": ["draft", "published"]
+    }
+  },
+  "required": ["status"]
+}`)
+		tAssert.NoError(err)
+		tAssert.Equal(`|===|
+enum Status: string {
+  Draft = "draft",
+  Published = "published",
+};
+|===|
+[output = schema]
+{
+  status: Status;
+}`, source)
+	})
+
+	It("maps $defs references into reusable Mace declarations", func() {
+		source, err := ImportJSONSchema(`{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Profile": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "Role": {
+      "enum": ["admin", "member"]
+    }
+  },
+  "type": "object",
+  "properties": {
+    "profile": {
+      "$ref": "#/$defs/Profile"
+    },
+    "role": {
+      "$ref": "#/$defs/Role"
+    }
+  },
+  "required": ["profile", "role"]
+}`)
+		tAssert.NoError(err)
+		tAssert.Equal(`|===|
+schema Profile: {
+  name: string;
+};
+enum Role: string {
+  Admin = "admin",
+  Member = "member",
+};
+|===|
+[output = schema]
+{
+  profile: Profile;
+  role: Role;
+}`, source)
+	})
+
+	It("rejects unsupported additionalProperties schemas", func() {
+		_, err := ImportJSONSchema(`{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": {
+    "type": "string"
+  }
+}`)
+		tAssert.ErrorContains(err, "additionalProperties")
+	})
+
 	It("treats TOML datetimes as strings in output values", func() {
 		source, err := ImportTOML(`created_at = 1979-05-27T07:32:00Z`)
 		tAssert.NoError(err)
