@@ -54,6 +54,28 @@ var _ = Describe("completion analysis", func() {
 		tAssert.Equal([]string{"$self"}, labels)
 	})
 
+	It("suggests $self after earlier self references on the same line", func() {
+		text := `[output = data]
+{
+  foo: 1;
+  result: (true ? $self.foo : $)
+}`
+
+		position := protocol.Position{
+			Line:      3,
+			Character: uint32(len(`  result: (true ? $self.foo : $`)),
+		}
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+			return item.Label
+		})
+
+		tAssert.Equal([]string{"$self"}, labels)
+	})
+
 	It("resolves enum field types for output schema placeholders", func() {
 		text := `|===|
 enum Fruit: string {

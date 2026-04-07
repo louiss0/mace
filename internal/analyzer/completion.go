@@ -176,7 +176,7 @@ func selfKeywordCompletionItems(linePrefix string) ([]protocol.CompletionItem, b
 	if trimmedPrefix == "" {
 		return nil, false
 	}
-	if strings.HasSuffix(trimmedPrefix, "$self.") || strings.Contains(trimmedPrefix, "$self.") {
+	if strings.HasSuffix(trimmedPrefix, "$self.") {
 		return nil, false
 	}
 
