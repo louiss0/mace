@@ -1591,6 +1591,19 @@ func (enum completionEnum) access(memberName string) string {
 func (enum completionEnum) rename(name string) completionEnum {
 	cloned := completionEnum{name: name, members: make([]completionEnumMember, len(enum.members))}
 	copy(cloned.members, enum.members)
+	if enum.name == "" || enum.name == name {
+		return cloned
+	}
+
+	oldPrefix := "enum member " + enum.name + "."
+	newPrefix := "enum member " + name + "."
+	for index, member := range cloned.members {
+		if strings.HasPrefix(member.Detail, oldPrefix) {
+			member.Detail = newPrefix + strings.TrimPrefix(member.Detail, oldPrefix)
+			cloned.members[index] = member
+		}
+	}
+
 	return cloned
 }
 

@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"os"
 	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -230,6 +231,42 @@ schema Basket = { favorite_fruit: Fruit; };
 			Character: uint32(len(`	Status current = Status.`)),
 		}
 		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+			return item.Label
+		})
+
+		tAssert.Equal([]string{"Pending", "Running"}, labels)
+		tAssert.Equal("enum member Status.Pending = 0", lo.FromPtr(items[0].Detail))
+		tAssert.Equal("enum member Status.Running = 1", lo.FromPtr(items[1].Detail))
+	})
+
+	It("uses imported enum aliases in member completion details", func() {
+		workspace, err := os.MkdirTemp("", "mace-completion-imported-enum-*")
+		tAssert.NoError(err)
+
+		writeAnalysisFile(workspace, "shared.mace", `|===|
+enum InternalStatus: int {
+  Pending,
+  Running,
+}
+|===|
+[output = schema]
+{
+  Status: InternalStatus;
+}`)
+
+		text := `from "./shared.mace" import Status;
+|===|
+Status current = Status.`
+
+		position := protocol.Position{
+			Line:      2,
+			Character: uint32(len(`Status current = Status.`)),
+		}
+		documentPath := filepath.Join(workspace, "consumer.mace")
 		snapshot := AnalyzeCompletionContext(text, documentPath, position)
 
 		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
