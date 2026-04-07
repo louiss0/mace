@@ -132,6 +132,24 @@ func completeLabels(server *Server, uri protocol.DocumentUri, line uint32, chara
 			},
 		},
 	}, nil)
+	return requireCompletionLabels(resultValue, validMethod, validParams, err)
+}
+
+func completeLabelsWithContext(server *Server, uri protocol.DocumentUri, line uint32, character uint32, context protocol.CompletionContext) []string {
+	resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentCompletion, protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+			Position: protocol.Position{
+				Line:      protocol.UInteger(line),
+				Character: protocol.UInteger(character),
+			},
+		},
+		Context: &context,
+	}, nil)
+	return requireCompletionLabels(resultValue, validMethod, validParams, err)
+}
+
+func requireCompletionLabels(resultValue any, validMethod bool, validParams bool, err error) []string {
 	tAssert.True(validMethod)
 	tAssert.True(validParams)
 	tAssert.NoError(err)
@@ -243,7 +261,7 @@ var _ = Describe("LSP server", func() {
 		}
 		tAssert.NotNil(result.Capabilities.CompletionProvider)
 		if result.Capabilities.CompletionProvider != nil {
-			tAssert.Equal([]string{".", ":", "$"}, result.Capabilities.CompletionProvider.TriggerCharacters)
+			tAssert.Equal([]string{".", ":", "=", "$"}, result.Capabilities.CompletionProvider.TriggerCharacters)
 		}
 		tAssert.Equal(true, result.Capabilities.HoverProvider)
 		tAssert.Equal(true, result.Capabilities.DefinitionProvider)
@@ -769,6 +787,25 @@ Fruit selected =
 [output = data] {}`, nil)
 
 		labels := completeLabels(server, uri, 5, uint32(len(`Fruit selected = `)))
+		tAssert.Equal([]string{"Fruit.Apple", "Fruit.Strawberry"}, labels)
+	})
+
+	It("suggests enum values for assignment-triggered completion requests", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+enum Fruit: string {
+  Apple,
+  Strawberry = "strawberry",
+};
+Fruit selected =
+|===|
+[output = data] {}`, nil)
+
+		triggerCharacter := "="
+		labels := completeLabelsWithContext(server, uri, 5, uint32(len(`Fruit selected =`)), protocol.CompletionContext{
+			TriggerKind:      protocol.CompletionTriggerKindTriggerCharacter,
+			TriggerCharacter: &triggerCharacter,
+		})
 		tAssert.Equal([]string{"Fruit.Apple", "Fruit.Strawberry"}, labels)
 	})
 
