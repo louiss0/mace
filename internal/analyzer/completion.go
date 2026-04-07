@@ -68,11 +68,17 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 	}
 
 	if scope == completionScopeOutput {
+		bareSelfItems := bareSelfCompletionItems(linePrefix)
+
 		if items, handled := directiveCompletionItems(document, uri, linePrefix); handled {
 			return items
 		}
 
 		if items, handled := outputInitializerCompletionItems(document, uri, position); handled {
+			return mergeCompletionItems(items, bareSelfItems)
+		}
+
+		if items, handled := selfKeywordCompletionItems(linePrefix); handled {
 			return items
 		}
 
@@ -95,6 +101,7 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 		items = append(items, itemsFromDeclarations(declarations, prefix)...)
 	case completionScopeOutput:
 		items = itemsFromDeclarations(declarations, prefix)
+		items = mergeCompletionItems(items, bareSelfCompletionItems(linePrefix))
 	}
 
 	return sortCompletionItems(items)
@@ -148,6 +155,51 @@ func outputInitializerCompletionItems(document document, uri protocol.DocumentUr
 	}
 
 	return sortCompletionItems(completionItemsForType(expectedType, model, len(path) > 1)), true
+}
+
+func bareSelfCompletionItems(linePrefix string) []protocol.CompletionItem {
+	trimmedPrefix := strings.TrimRight(linePrefix, " \t")
+	if trimmedPrefix == "" {
+		return nil
+	}
+
+	lastCharacter := trimmedPrefix[len(trimmedPrefix)-1]
+	if !strings.ContainsRune(":([,{+-*/%&|^!?=<>", rune(lastCharacter)) {
+		return nil
+	}
+
+	return selfReferenceCompletionItems("")
+}
+
+func selfKeywordCompletionItems(linePrefix string) ([]protocol.CompletionItem, bool) {
+	trimmedPrefix := strings.TrimRight(linePrefix, " \t")
+	if trimmedPrefix == "" {
+		return nil, false
+	}
+	if strings.HasSuffix(trimmedPrefix, "$self.") || strings.Contains(trimmedPrefix, "$self.") {
+		return nil, false
+	}
+
+	segmentEnd := len(trimmedPrefix)
+	segmentStart := segmentEnd
+	for segmentStart > 0 {
+		character := trimmedPrefix[segmentStart-1]
+		if character == '$' || isIdentifierCharacter(character) {
+			segmentStart--
+			continue
+		}
+		break
+	}
+
+	segment := trimmedPrefix[segmentStart:segmentEnd]
+	if segment == "" || segment[0] != '$' {
+		return nil, false
+	}
+	if !strings.HasPrefix("$self", segment) {
+		return []protocol.CompletionItem{}, true
+	}
+
+	return selfReferenceCompletionItems(segment), true
 }
 
 func selfCompletionItems(document document, uri protocol.DocumentUri, position protocol.Position) ([]protocol.CompletionItem, bool) {
@@ -1461,6 +1513,14 @@ func itemsFromDefinitions(definitions []completionDefinition, prefix string) []p
 	return sortCompletionItems(items)
 }
 
+func selfReferenceCompletionItems(prefix string) []protocol.CompletionItem {
+	return itemsFromDefinitions([]completionDefinition{{
+		Label:  "$self",
+		Kind:   protocol.CompletionItemKindKeyword,
+		Detail: "output self reference",
+	}}, prefix)
+}
+
 func itemsFromDeclarations(declarations []declarationDefinition, prefix string) []protocol.CompletionItem {
 	items := lo.FilterMap(declarations, func(declaration declarationDefinition, _ int) (protocol.CompletionItem, bool) {
 		if declaration.Name == "" || !strings.HasPrefix(declaration.Name, prefix) {
@@ -1476,6 +1536,18 @@ func itemsFromDeclarations(declarations []declarationDefinition, prefix string) 
 		}
 		return item, true
 	})
+	return sortCompletionItems(items)
+}
+
+func mergeCompletionItems(groups ...[]protocol.CompletionItem) []protocol.CompletionItem {
+	itemsByLabel := map[string]protocol.CompletionItem{}
+	for _, group := range groups {
+		for _, item := range group {
+			itemsByLabel[item.Label] = item
+		}
+	}
+
+	items := lo.Values(itemsByLabel)
 	return sortCompletionItems(items)
 }
 

@@ -242,6 +242,9 @@ var _ = Describe("LSP server", func() {
 			tAssert.True(*saveOptions.IncludeText)
 		}
 		tAssert.NotNil(result.Capabilities.CompletionProvider)
+		if result.Capabilities.CompletionProvider != nil {
+			tAssert.Equal([]string{".", ":", "$"}, result.Capabilities.CompletionProvider.TriggerCharacters)
+		}
 		tAssert.Equal(true, result.Capabilities.HoverProvider)
 		tAssert.Equal(true, result.Capabilities.DefinitionProvider)
 		tAssert.Equal(true, result.Capabilities.DocumentSymbolProvider)
@@ -845,6 +848,26 @@ Basket basket = {
 		tAssert.Equal([]string{`{ name: ""; age?: 0; }`}, labels)
 	})
 
+	It("keeps typed output completions alongside $self in output schema fields", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+enum Fruit: string {
+  Apple,
+  Strawberry = "strawberry",
+}
+schema Basket = { favorite_fruit: Fruit; };
+|===|
+[output = data, schema = Basket]
+{
+  favorite_fruit: 
+}`, nil)
+
+		labels := completeLabels(server, uri, 9, uint32(len(`  favorite_fruit: `)))
+		tAssert.Contains(labels, "$self")
+		tAssert.Contains(labels, "Fruit.Apple")
+		tAssert.Contains(labels, "Fruit.Strawberry")
+	})
+
 	It("suggests enum values for output schema fields after a record colon", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
@@ -860,7 +883,9 @@ schema Basket = { favorite_fruit: Fruit; };
 }`, nil)
 
 		labels := completeLabels(server, uri, 9, uint32(len(`  favorite_fruit: `)))
-		tAssert.Equal([]string{"Fruit.Apple", "Fruit.Strawberry"}, labels)
+		tAssert.Contains(labels, "$self")
+		tAssert.Contains(labels, "Fruit.Apple")
+		tAssert.Contains(labels, "Fruit.Strawberry")
 	})
 
 	It("does not suggest schema directives after output schema and a comma", func() {
@@ -943,6 +968,40 @@ Personality value = Personality.
 		labels := completeLabels(server, uri, 1, uint32(len(`[output = data, schema_file = "`)))
 		tAssert.NotContains(labels, "./shared.mace")
 		tAssert.Contains(labels, "./other.mace")
+	})
+
+	It("suggests $self in an empty output expression", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data]
+{
+  base: 1;
+  result: 
+}`, nil)
+
+		labels := completeLabels(server, uri, 3, uint32(len(`  result: `)))
+		tAssert.Contains(labels, "$self")
+	})
+
+	It("suggests $self after typing a dollar in the output block", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data]
+{
+  result: $
+}`, nil)
+
+		labels := completeLabels(server, uri, 2, uint32(len(`  result: $`)))
+		tAssert.Equal([]string{"$self"}, labels)
+	})
+
+	It("filters $self completion by typed prefix in the output block", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data]
+{
+  result: $s
+}`, nil)
+
+		labels := completeLabels(server, uri, 2, uint32(len(`  result: $s`)))
+		tAssert.Equal([]string{"$self"}, labels)
 	})
 
 	It("suggests only previously evaluated output fields after $self dot", func() {
