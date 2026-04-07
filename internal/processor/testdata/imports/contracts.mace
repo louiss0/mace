@@ -1,7 +1,7 @@
 |===|
-type ID = string;
-schema Member = { id: ID; role: string; };
-schema Team = { name: string; members: array<Member>; };
+type ID: string;
+schema Member: { id: ID; role: string; };
+schema Team: { name: string; members: array<Member>; };
 string hidden_name = "ops";
 |===|
 

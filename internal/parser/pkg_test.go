@@ -297,8 +297,8 @@ var _ = Describe("Parser", func() {
 		It("parses imports, script block, and output block", func() {
 			input := `from "base.mace" import User, Config;
 |===|
-type Name = string;
-schema User = { name: string; age?: int; };
+type Name: string;
+schema User: { name: string; age?: int; };
 string user = "Ada";
 |===|
 [output = data, schema = User]
@@ -381,7 +381,7 @@ injectable string env;
 
 		It("parses nested array type references without spacing between closers", func() {
 			input := `|===|
-type Matrix = array<array<int>>;
+type Matrix: array<array<int>>;
 |===|
 [output = data] {}`
 
@@ -414,7 +414,7 @@ type Matrix = array<array<int>>;
 enum Fruit: string {
   Apple,
   Strawberry = "strawberry",
-}
+};
 |===|
 [output = data] {}`
 

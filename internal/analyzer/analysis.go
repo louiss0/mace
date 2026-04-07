@@ -985,11 +985,11 @@ func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *process
 		symbols = append(symbols, lo.FilterMap(file.Script.Items, func(item ast.Declaration, _ int) (semanticSymbol, bool) {
 			switch declaration := item.(type) {
 			case ast.TypeDeclaration:
-				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindClass, symbolOriginLocal, fmt.Sprintf("type %s = %s;", declaration.Name, typeReferenceDetail(declaration.Type))), true
+				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindClass, symbolOriginLocal, fmt.Sprintf("type %s: %s;", declaration.Name, typeReferenceDetail(declaration.Type))), true
 			case ast.EnumDeclaration:
 				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindEnum, symbolOriginLocal, enumDeclarationDetail(declaration)), true
 			case ast.SchemaDeclaration:
-				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindStruct, symbolOriginLocal, fmt.Sprintf("schema %s = %s;", declaration.Name, recordTypeDetail(declaration.Type))), true
+				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindStruct, symbolOriginLocal, fmt.Sprintf("schema %s: %s;", declaration.Name, recordTypeDetail(declaration.Type))), true
 			case ast.VariableDeclaration:
 				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindVariable, symbolOriginLocal, variableDeclarationDetail(declaration)), true
 			default:
@@ -1082,10 +1082,10 @@ func importedSemanticSymbol(file ast.File, path string, name string) (semanticSy
 		rangeValue := tokenProtocolRange(field.NameToken)
 
 		kind := protocol.CompletionItemKindClass
-		detail := fmt.Sprintf("type %s = %s;", field.Name, fieldTypeDetail(field.Type))
+		detail := fmt.Sprintf("type %s: %s;", field.Name, fieldTypeDetail(field.Type))
 		if isSchemaTypeReference(field.Type, file) {
 			kind = protocol.CompletionItemKindStruct
-			detail = fmt.Sprintf("schema %s = %s;", field.Name, fieldTypeDetail(field.Type))
+			detail = fmt.Sprintf("schema %s: %s;", field.Name, fieldTypeDetail(field.Type))
 		} else if isEnumTypeReference(field.Type, file) {
 			kind = protocol.CompletionItemKindEnum
 			detail = fmt.Sprintf("enum %s: %s;", field.Name, fieldTypeDetail(field.Type))

@@ -53,8 +53,8 @@ The script block is delimited by matching pipe delimiters:
 
 ```mace
 |===|
-type Name = string;
-schema User = { name: Name; age?: int; };
+type Name: string;
+schema User: { name: Name; age?: int; };
 string user_name = "Ada";
 |===|
 ```
@@ -72,6 +72,7 @@ The script block can contain:
 ### Variable Declarations
 
 Variables are immutable and must have both a type and an initializer.
+Variable bindings use `=`. Type declarations use `:`.
 
 ```mace
 int age = 27;
@@ -93,6 +94,9 @@ Type inference for declarations is not part of the current language.
 
 ### Type Declarations
 
+Type declarations use `:` after the declared name. `=` is reserved for variable
+initializers and enum member values.
+
 Type aliases can target:
 
 - primitive types
@@ -102,16 +106,17 @@ Type aliases can target:
 Example:
 
 ```mace
-type Name = string;
-type Scores = array<int>;
+type Name: string;
+type Scores: array<int>;
 ```
 
 ### Schema Declarations
 
+Schemas are type declarations, so they also use `:` after the declared name.
 Schemas define record types with required and optional fields.
 
 ```mace
-schema User = {
+schema User: {
   name: string;
   age?: int;
 };
@@ -129,7 +134,7 @@ enum Fruit: string {
   Apple,
   Strawberry,
   Pecan,
-}
+};
 ```
 
 ```mace
@@ -137,7 +142,7 @@ enum Status: int {
   Pending,
   Running,
   Done,
-}
+};
 ```
 
 Current enum rules:
@@ -163,7 +168,7 @@ When an enum value is required, raw backing values are not assignable.
 enum Fruit: string {
   Apple,
   Strawberry,
-}
+};
 
 Fruit favorite = Fruit.Apple;
 ```

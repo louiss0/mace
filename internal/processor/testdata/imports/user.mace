@@ -1,17 +1,17 @@
 from "./profile.mace" import Profile, Age;
 
 |=================================================|
-type Name = string;
+type Name: string;
 
 injectable string name;
 
-enum Personality: string { friendly, nice, rude }
+enum Personality: string { friendly, nice, rude };
 
-enum Status: int { mad, happy, content }
+enum Status: int { mad, happy, content };
 
 Personality is_type  = Personality.nice;
 
-schema User = { name: Name; profile: Profile; };
+schema User: { name: Name; profile: Profile; };
 
 Name default_name = "Ada";
 

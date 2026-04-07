@@ -99,7 +99,7 @@ initialized_variable_declaration
 type_declaration
   = "type" , ws1 ,
     identifier , ws0 ,
-    "=" , ws0 ,
+    ":" , ws0 ,
     type_reference ,
     ws0 , ";" ;
 
@@ -114,7 +114,7 @@ enum_declaration
     enum_backing_type , ws0 ,
     "{" , ws0 ,
     [ enum_member , { ws0 , "," , ws0 , enum_member } , [ ws0 , "," ] ] ,
-    ws0 , "}" ;
+    ws0 , "}" , ws0 , ";" ;
 
 enum_backing_type
   = primitive_type ;
@@ -140,7 +140,7 @@ enum_member_value
 schema_declaration
   = "schema" , ws1 ,
     identifier , ws0 ,
-    "=" , ws0 ,
+    ":" , ws0 ,
     record_type ,
     ws0 , ";" ;
 

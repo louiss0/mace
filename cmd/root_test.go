@@ -145,7 +145,7 @@ Unknown value = 1;
 		It("prints canonical Mace source from the parsed file", func() {
 			path := writeMaceFile(`from "./base.mace" import User;
 |===|
-schema User = { name: string; age?: int; };
+schema User: { name: string; age?: int; };
 |===|
 [output = data, schema = User]
 { name: "Ada"; age: 1 + 2 * 3; }`)
@@ -162,7 +162,7 @@ schema User = { name: string; age?: int; };
 			tAssert.Equal(`from "./base.mace" import User;
 
 |===============|
-schema User = {
+schema User: {
   name: string;
   age?: int;
 };

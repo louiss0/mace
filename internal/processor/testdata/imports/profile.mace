@@ -1,6 +1,6 @@
 |===|
-type Age = int;
-schema Profile = { age: Age; bio?: string; };
+type Age: int;
+schema Profile: { age: Age; bio?: string; };
 |===|
 [output = schema]
 {
