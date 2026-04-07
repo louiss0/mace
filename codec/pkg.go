@@ -1,11 +1,16 @@
 package codec
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
+
+	toml "github.com/pelletier/go-toml/v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/louiss0/mace/internal/processor"
 )
@@ -105,6 +110,161 @@ func MarshalOutput(value any) (string, error) {
 	}
 
 	return marshaled, nil
+}
+
+func ImportJSON(input string) (string, error) {
+	value, err := parseImportedJSON(input)
+	if err != nil {
+		return "", err
+	}
+
+	return importDocument(value)
+}
+
+func ImportYAML(input string) (string, error) {
+	value, err := parseImportedYAML(input)
+	if err != nil {
+		return "", err
+	}
+
+	return importDocument(value)
+}
+
+func ImportTOML(input string) (string, error) {
+	value, err := parseImportedTOML(input)
+	if err != nil {
+		return "", err
+	}
+
+	return importDocument(value)
+}
+
+func ImportJSONSchema(input string) (string, error) {
+	return ImportJSONSchemaSamples([]string{input})
+}
+
+func ImportYAMLSchema(input string) (string, error) {
+	return ImportYAMLSchemaSamples([]string{input})
+}
+
+func ImportTOMLSchema(input string) (string, error) {
+	return ImportTOMLSchemaSamples([]string{input})
+}
+
+func ImportJSONSchemaSamples(inputs []string) (string, error) {
+	values := make([]any, 0, len(inputs))
+	for _, input := range inputs {
+		value, err := parseImportedJSON(input)
+		if err != nil {
+			return "", err
+		}
+		values = append(values, value)
+	}
+
+	return importSchemaSamples(values)
+}
+
+func ImportYAMLSchemaSamples(inputs []string) (string, error) {
+	values := make([]any, 0, len(inputs))
+	for _, input := range inputs {
+		value, err := parseImportedYAML(input)
+		if err != nil {
+			return "", err
+		}
+		values = append(values, value)
+	}
+
+	return importSchemaSamples(values)
+}
+
+func ImportTOMLSchemaSamples(inputs []string) (string, error) {
+	values := make([]any, 0, len(inputs))
+	for _, input := range inputs {
+		value, err := parseImportedTOML(input)
+		if err != nil {
+			return "", err
+		}
+		values = append(values, value)
+	}
+
+	return importSchemaSamples(values)
+}
+
+func parseImportedJSON(input string) (any, error) {
+	decoder := json.NewDecoder(strings.NewReader(input))
+	decoder.UseNumber()
+
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return nil, fmt.Errorf("import json: %w", err)
+	}
+
+	return value, nil
+}
+
+func parseImportedYAML(input string) (any, error) {
+	var value any
+	if err := yaml.Unmarshal([]byte(input), &value); err != nil {
+		return nil, fmt.Errorf("import yaml: %w", err)
+	}
+
+	return value, nil
+}
+
+func parseImportedTOML(input string) (any, error) {
+	var value any
+	if err := toml.Unmarshal([]byte(input), &value); err != nil {
+		return nil, fmt.Errorf("import toml: %w", err)
+	}
+
+	return value, nil
+}
+
+func importDocument(value any) (string, error) {
+	normalized, err := normalizeImportedValue(reflect.ValueOf(value))
+	if err != nil {
+		return "", err
+	}
+
+	record, ok := normalized.(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("import mace: expected record root")
+	}
+
+	schema, err := inferRecordSchemaSamples([]map[string]any{record})
+	if err != nil {
+		return "", err
+	}
+
+	output, err := MarshalOutput(record)
+	if err != nil {
+		return "", fmt.Errorf("import mace: expected record root")
+	}
+
+	return fmt.Sprintf("|===|\nschema Document: %s;\n|===|\n[output = data, schema = Document]\n%s", formatSchemaRecord(schema.fields, 0), output), nil
+}
+
+func importSchemaSamples(values []any) (string, error) {
+	records := make([]map[string]any, 0, len(values))
+	for _, value := range values {
+		normalized, err := normalizeImportedValue(reflect.ValueOf(value))
+		if err != nil {
+			return "", err
+		}
+
+		record, ok := normalized.(map[string]any)
+		if !ok {
+			return "", fmt.Errorf("import mace schema: expected record root")
+		}
+		records = append(records, record)
+	}
+
+	schema, err := inferRecordSchemaSamples(records)
+	if err != nil {
+		return "", err
+	}
+
+	return "[output = schema]\n" + formatSchemaRecord(schema.fields, 0), nil
 }
 
 type marshaller struct{}
@@ -243,6 +403,99 @@ func processorValueFromReflect(value reflect.Value) processor.Value {
 	}
 }
 
+func normalizeImportedValue(value reflect.Value) (any, error) {
+	if !value.IsValid() {
+		return nil, fmt.Errorf("import mace: nil is not supported")
+	}
+
+	for value.Kind() == reflect.Interface || value.Kind() == reflect.Pointer {
+		if value.IsNil() {
+			return nil, fmt.Errorf("import mace: nil is not supported")
+		}
+		value = value.Elem()
+	}
+
+	if number, ok := value.Interface().(json.Number); ok {
+		return importedJSONNumber(number)
+	}
+
+	if timestamp, ok := value.Interface().(time.Time); ok {
+		return timestamp.Format(time.RFC3339Nano), nil
+	}
+
+	switch value.Kind() {
+	case reflect.String:
+		return value.String(), nil
+	case reflect.Bool:
+		return value.Bool(), nil
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return value.Int(), nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return int64(value.Uint()), nil
+	case reflect.Float32, reflect.Float64:
+		return value.Float(), nil
+	case reflect.Slice, reflect.Array:
+		items := make([]any, 0, value.Len())
+		for index := 0; index < value.Len(); index++ {
+			item, err := normalizeImportedValue(value.Index(index))
+			if err != nil {
+				return nil, err
+			}
+			items = append(items, item)
+		}
+		return items, nil
+	case reflect.Map:
+		record := map[string]any{}
+		for _, key := range value.MapKeys() {
+			name, err := importedMapKey(key)
+			if err != nil {
+				return nil, err
+			}
+
+			item, err := normalizeImportedValue(value.MapIndex(key))
+			if err != nil {
+				return nil, err
+			}
+			record[name] = item
+		}
+		return record, nil
+	default:
+		return nil, fmt.Errorf("import mace: unsupported value %T", value.Interface())
+	}
+}
+
+func importedMapKey(value reflect.Value) (string, error) {
+	if !value.IsValid() {
+		return "", fmt.Errorf("import mace: invalid map key")
+	}
+
+	for value.Kind() == reflect.Interface || value.Kind() == reflect.Pointer {
+		if value.IsNil() {
+			return "", fmt.Errorf("import mace: invalid map key")
+		}
+		value = value.Elem()
+	}
+
+	if value.Kind() != reflect.String {
+		return "", fmt.Errorf("import mace: maps must use string keys")
+	}
+
+	return value.String(), nil
+}
+
+func importedJSONNumber(value json.Number) (any, error) {
+	if integer, err := value.Int64(); err == nil {
+		return integer, nil
+	}
+
+	floatValue, err := value.Float64()
+	if err != nil {
+		return nil, fmt.Errorf("import mace: invalid json number %q", value.String())
+	}
+
+	return floatValue, nil
+}
+
 func (m *marshaller) marshalValue(value reflect.Value, depth int) (string, error) {
 	if !value.IsValid() {
 		return "", fmt.Errorf("marshal mace: nil is not supported")
@@ -359,6 +612,31 @@ type recordField struct {
 	value string
 }
 
+type inferredTypeKind int
+
+const (
+	inferredTypePrimitive inferredTypeKind = iota
+	inferredTypeArray
+	inferredTypeRecord
+)
+
+type schemaField struct {
+	name     string
+	optional bool
+	value    inferredType
+}
+
+type recordSchema struct {
+	fields []schemaField
+}
+
+type inferredType struct {
+	kind      inferredTypeKind
+	primitive string
+	element   *inferredType
+	record    recordSchema
+}
+
 func formatRecord(fields []recordField, depth int) string {
 	if len(fields) == 0 {
 		return "{}"
@@ -374,6 +652,224 @@ func formatRecord(fields []recordField, depth int) string {
 
 	lines = append(lines, closingIndent+"}")
 	return strings.Join(lines, "\n")
+}
+
+func formatSchemaRecord(fields []schemaField, depth int) string {
+	if len(fields) == 0 {
+		return "{}"
+	}
+
+	indent := strings.Repeat("  ", depth+1)
+	closingIndent := strings.Repeat("  ", depth)
+	lines := []string{"{"}
+
+	for _, field := range fields {
+		optionalMarker := ""
+		if field.optional {
+			optionalMarker = "?"
+		}
+		lines = append(lines, fmt.Sprintf("%s%s%s: %s;", indent, field.name, optionalMarker, formatSchemaType(field.value, depth+1)))
+	}
+
+	lines = append(lines, closingIndent+"}")
+	return strings.Join(lines, "\n")
+}
+
+func formatSchemaType(value inferredType, depth int) string {
+	switch value.kind {
+	case inferredTypePrimitive:
+		return value.primitive
+	case inferredTypeArray:
+		if value.element == nil {
+			return "array<string>"
+		}
+		return fmt.Sprintf("array<%s>", formatSchemaType(*value.element, depth))
+	case inferredTypeRecord:
+		return formatSchemaRecord(value.record.fields, depth)
+	default:
+		return "string"
+	}
+}
+
+func inferRecordSchemaSamples(records []map[string]any) (recordSchema, error) {
+	fieldNames := map[string]struct{}{}
+	for _, record := range records {
+		for name := range record {
+			fieldNames[name] = struct{}{}
+		}
+	}
+
+	names := make([]string, 0, len(fieldNames))
+	for name := range fieldNames {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+
+	fields := make([]schemaField, 0, len(names))
+	for _, name := range names {
+		samples := make([]any, 0, len(records))
+		occurrences := 0
+		for _, record := range records {
+			value, ok := record[name]
+			if !ok {
+				continue
+			}
+			occurrences++
+			samples = append(samples, value)
+		}
+
+		valueType, err := inferMergedSchemaType(samples)
+		if err != nil {
+			return recordSchema{}, fmt.Errorf("infer schema for %q: %w", name, err)
+		}
+		fields = append(fields, schemaField{
+			name:     name,
+			optional: occurrences < len(records),
+			value:    valueType,
+		})
+	}
+
+	return recordSchema{fields: fields}, nil
+}
+
+func inferMergedSchemaType(samples []any) (inferredType, error) {
+	if len(samples) == 0 {
+		return inferredType{}, fmt.Errorf("missing samples")
+	}
+
+	merged, err := inferSchemaType(samples[0])
+	if err != nil {
+		return inferredType{}, err
+	}
+
+	for index := 1; index < len(samples); index++ {
+		nextType, err := inferSchemaType(samples[index])
+		if err != nil {
+			return inferredType{}, err
+		}
+
+		merged, err = mergeSchemaTypes(merged, nextType)
+		if err != nil {
+			return inferredType{}, err
+		}
+	}
+
+	return merged, nil
+}
+
+func inferSchemaType(value any) (inferredType, error) {
+	switch typed := value.(type) {
+	case string:
+		return inferredType{kind: inferredTypePrimitive, primitive: "string"}, nil
+	case bool:
+		return inferredType{kind: inferredTypePrimitive, primitive: "boolean"}, nil
+	case int, int8, int16, int32, int64:
+		return inferredType{kind: inferredTypePrimitive, primitive: "int"}, nil
+	case uint, uint8, uint16, uint32, uint64, uintptr:
+		return inferredType{kind: inferredTypePrimitive, primitive: "int"}, nil
+	case float32, float64:
+		return inferredType{kind: inferredTypePrimitive, primitive: "float"}, nil
+	case []any:
+		if len(typed) == 0 {
+			return inferredType{
+				kind:    inferredTypeArray,
+				element: &inferredType{kind: inferredTypePrimitive, primitive: "string"},
+			}, nil
+		}
+
+		elementType, err := inferMergedSchemaType(typed)
+		if err != nil {
+			return inferredType{}, err
+		}
+
+		return inferredType{kind: inferredTypeArray, element: &elementType}, nil
+	case map[string]any:
+		record, err := inferRecordSchemaSamples([]map[string]any{typed})
+		if err != nil {
+			return inferredType{}, err
+		}
+		return inferredType{kind: inferredTypeRecord, record: record}, nil
+	default:
+		return inferredType{}, fmt.Errorf("unsupported value %T", value)
+	}
+}
+
+func mergeSchemaTypes(left inferredType, right inferredType) (inferredType, error) {
+	if left.kind != right.kind {
+		return inferredType{}, fmt.Errorf("heterogeneous array")
+	}
+
+	switch left.kind {
+	case inferredTypePrimitive:
+		if left.primitive != right.primitive {
+			return inferredType{}, fmt.Errorf("heterogeneous array")
+		}
+		return left, nil
+	case inferredTypeArray:
+		if left.element == nil {
+			return right, nil
+		}
+		if right.element == nil {
+			return left, nil
+		}
+		element, err := mergeSchemaTypes(*left.element, *right.element)
+		if err != nil {
+			return inferredType{}, err
+		}
+		return inferredType{kind: inferredTypeArray, element: &element}, nil
+	case inferredTypeRecord:
+		return mergeRecordTypes(left.record, right.record)
+	default:
+		return inferredType{}, fmt.Errorf("heterogeneous array")
+	}
+}
+
+func mergeRecordTypes(left recordSchema, right recordSchema) (inferredType, error) {
+	leftFields := schemaFieldIndex(left.fields)
+	rightFields := schemaFieldIndex(right.fields)
+	fieldNames := map[string]struct{}{}
+	for name := range leftFields {
+		fieldNames[name] = struct{}{}
+	}
+	for name := range rightFields {
+		fieldNames[name] = struct{}{}
+	}
+
+	names := make([]string, 0, len(fieldNames))
+	for name := range fieldNames {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+
+	fields := make([]schemaField, 0, len(names))
+	for _, name := range names {
+		leftField, hasLeft := leftFields[name]
+		rightField, hasRight := rightFields[name]
+
+		optional := !hasLeft || !hasRight || leftField.optional || rightField.optional
+		switch {
+		case hasLeft && hasRight:
+			mergedType, err := mergeSchemaTypes(leftField.value, rightField.value)
+			if err != nil {
+				return inferredType{}, err
+			}
+			fields = append(fields, schemaField{name: name, optional: optional, value: mergedType})
+		case hasLeft:
+			fields = append(fields, schemaField{name: name, optional: true, value: leftField.value})
+		case hasRight:
+			fields = append(fields, schemaField{name: name, optional: true, value: rightField.value})
+		}
+	}
+
+	return inferredType{kind: inferredTypeRecord, record: recordSchema{fields: fields}}, nil
+}
+
+func schemaFieldIndex(fields []schemaField) map[string]schemaField {
+	index := make(map[string]schemaField, len(fields))
+	for _, field := range fields {
+		index[field.name] = field
+	}
+	return index
 }
 
 func fieldName(field reflect.StructField) (string, bool) {

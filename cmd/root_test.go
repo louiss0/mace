@@ -17,13 +17,17 @@ func TestCLI(t *testing.T) {
 	RunSpecs(t, "Cmd Suite")
 }
 
-func writeMaceFile(contents string) string {
+func writeTempFile(name string, contents string) string {
 	tempDir, err := os.MkdirTemp("", "mace-cli-*")
 	tAssert.NoError(err)
-	path := filepath.Join(tempDir, "config.mace")
+	path := filepath.Join(tempDir, name)
 	err = os.WriteFile(path, []byte(contents), 0o600)
 	tAssert.NoError(err)
 	return path
+}
+
+func writeMaceFile(contents string) string {
+	return writeTempFile("config.mace", contents)
 }
 
 var _ = Describe("CLI", func() {
@@ -96,6 +100,105 @@ injectable string env;
 			tAssert.Equal(1, exitCode)
 			tAssert.Equal("", stdout.String())
 			tAssert.Contains(stderr.String(), `injectable "env" requires a runtime value`)
+		})
+	})
+
+	Describe("import", func() {
+		It("imports JSON files into typed Mace source", func() {
+			path := writeTempFile("config.json", `{
+  "name": "Ada",
+  "enabled": true,
+  "profile": {
+    "level": 2
+  }
+}`)
+
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			command := newRootCommand(&stdout, &stderr)
+			command.SetArgs([]string{"import", path})
+
+			err := command.Execute()
+			tAssert.NoError(err)
+			tAssert.Equal("", stderr.String())
+			tAssert.Equal(`|===|
+schema Document: {
+  enabled: boolean;
+  name: string;
+  profile: {
+    level: int;
+  };
+};
+|===|
+[output = data, schema = Document]
+{
+  enabled: true;
+  name: "Ada";
+  profile: {
+    level: 2;
+  };
+}
+`, stdout.String())
+		})
+
+		It("imports JSON files into Mace schema source with --schema", func() {
+			path := writeTempFile("config.json", `{
+  "name": "Ada",
+  "enabled": true,
+  "profile": {
+    "level": 2
+  }
+}`)
+
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			command := newRootCommand(&stdout, &stderr)
+			command.SetArgs([]string{"import", path, "--schema"})
+
+			err := command.Execute()
+			tAssert.NoError(err)
+			tAssert.Equal("", stderr.String())
+			tAssert.Equal(`[output = schema]
+{
+  enabled: boolean;
+  name: string;
+  profile: {
+    level: int;
+  };
+}
+`, stdout.String())
+		})
+
+		It("infers optional fields from multiple JSON samples with --schema", func() {
+			firstPath := writeTempFile("first.json", `{
+  "name": "Ada",
+  "profile": {
+    "level": 2
+  }
+}`)
+			secondPath := writeTempFile("second.json", `{
+  "name": "Bob"
+}`)
+
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			command := newRootCommand(&stdout, &stderr)
+			command.SetArgs([]string{"import", firstPath, secondPath, "--schema"})
+
+			err := command.Execute()
+			tAssert.NoError(err)
+			tAssert.Equal("", stderr.String())
+			tAssert.Equal(`[output = schema]
+{
+  name: string;
+  profile?: {
+    level: int;
+  };
+}
+`, stdout.String())
 		})
 	})
 

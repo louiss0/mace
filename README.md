@@ -102,6 +102,7 @@ The root command is `mace`.
 
 ```text
 mace json <path>
+mace import <path>
 mace nodes <path>
 mace source <path>
 mace lsp
@@ -142,6 +143,33 @@ Example output:
   "base": 4,
   "env": "prod"
 }
+```
+
+### `mace import <path>`
+
+Converts a JSON, YAML, or TOML file into a typed Mace document by default.
+It generates a root schema declaration plus a validated output block.
+
+```bash
+mace import ./config.yaml
+mace import ./config.toml
+mace import ./config.json
+```
+
+Use `--schema` to infer only a Mace schema document from one or more samples:
+
+```bash
+mace import ./config.json --schema
+mace import ./base.json ./override.json --schema
+```
+
+Empty arrays currently fall back to `array<string>`. Optional fields are
+inferred only when `--schema` is given with multiple sample files.
+
+Use `--format` to override extension-based detection:
+
+```bash
+mace import ./config.data --format yaml
 ```
 
 ### `mace nodes <path>`
@@ -248,6 +276,27 @@ source, err := codec.Marshal(map[string]any{
 	"name": "Ada",
 	"enabled": true,
 	"scores": []int{1, 2, 3},
+})
+```
+
+### Import JSON, YAML, or TOML into Mace
+
+```go
+source, err := codec.ImportYAML(`name: Ada
+enabled: true
+profile:
+  level: 2
+`)
+
+schemaSource, err := codec.ImportYAMLSchema(`name: Ada
+enabled: true
+profile:
+  level: 2
+`)
+
+mergedSchemaSource, err := codec.ImportJSONSchemaSamples([]string{
+	`{"name":"Ada","profile":{"level":2}}`,
+	`{"name":"Bob"}`,
 })
 ```
 
