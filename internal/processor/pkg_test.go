@@ -388,6 +388,17 @@ Fruit result = Fruit.Apple;
 {
   result: result;
 }`, expectedValue{kind: ValueString, string: "Apple"}),
+		Entry("int enum with implicit values", `|===|
+enum Status: int {
+  Pending,
+  Running,
+}
+Status result = Status.Running;
+|===|
+[output = data]
+{
+  result: result;
+}`, expectedValue{kind: ValueInt, int64: 1}),
 		Entry("int enum with explicit values", `|===|
 enum Status: int {
   Pending = 0,
@@ -426,12 +437,6 @@ enum Fruit: string {
   Strawberry,
 }
 |===|`), "mixes implicit and explicit"),
-		Entry("int enum requires explicit values", wrapScriptWithOutput(`|===|
-enum Status: int {
-  Pending,
-  Running,
-}
-|===|`), "requires explicit values"),
 		Entry("enum explicit value type mismatch", wrapScriptWithOutput(`|===|
 enum Status: int {
   Pending = "pending",

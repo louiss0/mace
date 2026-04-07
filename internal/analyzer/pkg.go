@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf16"
 
 	"github.com/samber/lo"
 	protocol "github.com/tliron/glsp/protocol_3_16"
@@ -347,7 +348,7 @@ func positionFromIndex(text string, index int) protocol.Position {
 }
 
 func identifierPrefixAt(text string, position protocol.Position) string {
-	index := position.IndexIn(text)
+	index := positionIndex(text, position)
 	if index < 0 {
 		return ""
 	}
@@ -361,7 +362,7 @@ func identifierPrefixAt(text string, position protocol.Position) string {
 }
 
 func identifierAt(text string, position protocol.Position) (string, bool) {
-	index := position.IndexIn(text)
+	index := positionIndex(text, position)
 	if index < 0 || index > len(text) {
 		return "", false
 	}
@@ -384,7 +385,7 @@ func identifierAt(text string, position protocol.Position) (string, bool) {
 }
 
 func isDirectivePosition(text string, position protocol.Position) bool {
-	index := position.IndexIn(text)
+	index := positionIndex(text, position)
 	if index < 0 || index > len(text) {
 		return false
 	}
@@ -407,6 +408,54 @@ func isIdentifierCharacter(value byte) bool {
 		(value >= 'a' && value <= 'z') ||
 		(value >= 'A' && value <= 'Z') ||
 		(value >= '0' && value <= '9')
+}
+
+func positionIndex(text string, position protocol.Position) int {
+	return clampPosition(text, position).IndexIn(text)
+}
+
+func clampPosition(text string, position protocol.Position) protocol.Position {
+	lineStart, ok := lineStartIndex(text, position.Line)
+	if !ok {
+		return protocol.Position{}
+	}
+
+	lineLength := utf16LineLength(text[lineStart:])
+	if position.Character > lineLength {
+		position.Character = lineLength
+	}
+
+	return position
+}
+
+func lineStartIndex(text string, line protocol.UInteger) (int, bool) {
+	index := 0
+	for currentLine := protocol.UInteger(0); currentLine < line; currentLine++ {
+		next := strings.IndexByte(text[index:], '\n')
+		if next < 0 {
+			return 0, false
+		}
+		index += next + 1
+	}
+
+	return index, true
+}
+
+func utf16LineLength(text string) protocol.UInteger {
+	lineLength := protocol.UInteger(0)
+	for _, runeValue := range text {
+		if runeValue == '\n' {
+			break
+		}
+
+		runeLength := utf16.RuneLen(runeValue)
+		if runeLength < 0 {
+			continue
+		}
+		lineLength += protocol.UInteger(runeLength)
+	}
+
+	return lineLength
 }
 
 func Ptr[T any](value T) *T {

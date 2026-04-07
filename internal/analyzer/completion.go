@@ -58,21 +58,35 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 	}
 
 	if scope == completionScopeScript {
+		if items, handled := enumMemberCompletionItems(document, uri, position, linePrefix); handled {
+			return items
+		}
+
 		if items, handled := initializerCompletionItems(document, uri, position); handled {
 			return items
 		}
 	}
 
 	if scope == completionScopeOutput {
+		bareSelfItems := bareSelfCompletionItems(linePrefix)
+
 		if items, handled := directiveCompletionItems(document, uri, linePrefix); handled {
 			return items
 		}
 
 		if items, handled := outputInitializerCompletionItems(document, uri, position); handled {
+			return mergeCompletionItems(items, bareSelfItems)
+		}
+
+		if items, handled := selfKeywordCompletionItems(linePrefix); handled {
 			return items
 		}
 
 		if items, handled := selfCompletionItems(document, uri, position); handled {
+			return items
+		}
+
+		if items, handled := enumMemberCompletionItems(document, uri, position, linePrefix); handled {
 			return items
 		}
 	}
@@ -87,6 +101,7 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 		items = append(items, itemsFromDeclarations(declarations, prefix)...)
 	case completionScopeOutput:
 		items = itemsFromDeclarations(declarations, prefix)
+		items = mergeCompletionItems(items, bareSelfCompletionItems(linePrefix))
 	}
 
 	return sortCompletionItems(items)
@@ -140,6 +155,51 @@ func outputInitializerCompletionItems(document document, uri protocol.DocumentUr
 	}
 
 	return sortCompletionItems(completionItemsForType(expectedType, model, len(path) > 1)), true
+}
+
+func bareSelfCompletionItems(linePrefix string) []protocol.CompletionItem {
+	trimmedPrefix := strings.TrimRight(linePrefix, " \t")
+	if trimmedPrefix == "" {
+		return nil
+	}
+
+	lastCharacter := trimmedPrefix[len(trimmedPrefix)-1]
+	if !strings.ContainsRune(":([,{+-*/%&|^!?=<>", rune(lastCharacter)) {
+		return nil
+	}
+
+	return selfReferenceCompletionItems("")
+}
+
+func selfKeywordCompletionItems(linePrefix string) ([]protocol.CompletionItem, bool) {
+	trimmedPrefix := strings.TrimRight(linePrefix, " \t")
+	if trimmedPrefix == "" {
+		return nil, false
+	}
+	if strings.HasSuffix(trimmedPrefix, "$self.") {
+		return nil, false
+	}
+
+	segmentEnd := len(trimmedPrefix)
+	segmentStart := segmentEnd
+	for segmentStart > 0 {
+		character := trimmedPrefix[segmentStart-1]
+		if character == '$' || isIdentifierCharacter(character) {
+			segmentStart--
+			continue
+		}
+		break
+	}
+
+	segment := trimmedPrefix[segmentStart:segmentEnd]
+	if segment == "" || segment[0] != '$' {
+		return nil, false
+	}
+	if !strings.HasPrefix("$self", segment) {
+		return []protocol.CompletionItem{}, true
+	}
+
+	return selfReferenceCompletionItems(segment), true
 }
 
 func selfCompletionItems(document document, uri protocol.DocumentUri, position protocol.Position) ([]protocol.CompletionItem, bool) {
@@ -221,8 +281,96 @@ func selfCompletionContext(linePrefix string) ([]string, string, bool) {
 	return segments[:len(segments)-1], segments[len(segments)-1], true
 }
 
+func enumMemberCompletionItems(document document, uri protocol.DocumentUri, position protocol.Position, linePrefix string) ([]protocol.CompletionItem, bool) {
+	enumName, prefix, ok := enumMemberCompletionContext(linePrefix)
+	if !ok {
+		return nil, false
+	}
+
+	model, ok := completionModelAt(document, uri, position, linePrefix)
+	if !ok {
+		return []protocol.CompletionItem{}, true
+	}
+
+	resolved := resolveCompletionType(ast.NamedType{Name: enumName}, model, map[string]struct{}{})
+	if resolved.kind != completionTypeEnum {
+		return []protocol.CompletionItem{}, true
+	}
+
+	items := lo.FilterMap(resolved.enum.members, func(member completionEnumMember, _ int) (protocol.CompletionItem, bool) {
+		if !strings.HasPrefix(member.Name, prefix) {
+			return protocol.CompletionItem{}, false
+		}
+
+		detail := resolved.enum.access(member.Name)
+		if member.Detail != "" {
+			detail = member.Detail
+		}
+
+		return protocol.CompletionItem{
+			Label:  member.Name,
+			Kind:   Ptr(protocol.CompletionItemKindEnumMember),
+			Detail: Ptr(detail),
+		}, true
+	})
+	return sortCompletionItems(items), true
+}
+
+func enumMemberCompletionContext(linePrefix string) (string, string, bool) {
+	trimmedPrefix := strings.TrimRight(linePrefix, " \t")
+	if strings.HasSuffix(trimmedPrefix, "$self.") {
+		return "", "", false
+	}
+
+	segmentEnd := len(trimmedPrefix)
+	segmentStart := segmentEnd
+	for segmentStart > 0 {
+		character := trimmedPrefix[segmentStart-1]
+		if isIdentifierCharacter(character) || character == '.' {
+			segmentStart--
+			continue
+		}
+		break
+	}
+
+	segment := trimmedPrefix[segmentStart:segmentEnd]
+	parts := strings.Split(segment, ".")
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	if parts[0] == "" || parts[1] == "" && !strings.HasSuffix(segment, ".") {
+		return "", "", false
+	}
+	if strings.Contains(parts[0], "$") {
+		return "", "", false
+	}
+
+	return parts[0], parts[1], true
+}
+
+func completionModelAt(document document, uri protocol.DocumentUri, position protocol.Position, linePrefix string) (completionModel, bool) {
+	file := document.analysis.file
+	if file == nil {
+		if partialFile, ok := partialScriptFile(document.text, position); ok {
+			file = &partialFile
+		} else {
+			file = completionFile(document, linePrefix)
+		}
+	}
+	if file == nil {
+		return completionModel{}, false
+	}
+
+	baseDir := filepath.Dir(documentPath(uri))
+	if baseDir == "" {
+		baseDir = "."
+	}
+
+	return buildCompletionModel(*file, baseDir, map[string]completionModel{}), true
+}
+
 func partialScriptFile(text string, position protocol.Position) (ast.File, bool) {
-	index := position.IndexIn(text)
+	index := positionIndex(text, position)
 	if index < 0 {
 		return ast.File{}, false
 	}
@@ -248,7 +396,7 @@ func partialScriptFile(text string, position protocol.Position) (ast.File, bool)
 }
 
 func completionScopeAt(text string, position protocol.Position) completionScope {
-	index := position.IndexIn(text)
+	index := positionIndex(text, position)
 	if index < 0 {
 		return completionScopeFile
 	}
@@ -448,7 +596,7 @@ func trailingIdentifierPrefix(value string) string {
 }
 
 func currentLinePrefix(text string, position protocol.Position) string {
-	index := position.IndexIn(text)
+	index := positionIndex(text, position)
 	if index < 0 {
 		return ""
 	}
@@ -457,7 +605,7 @@ func currentLinePrefix(text string, position protocol.Position) string {
 }
 
 func currentLineSuffix(text string, position protocol.Position) string {
-	index := position.IndexIn(text)
+	index := positionIndex(text, position)
 	if index < 0 {
 		return ""
 	}
@@ -488,7 +636,7 @@ func completionPlaceholderPosition(text string, position protocol.Position, oper
 		return protocol.Position{}, false
 	}
 
-	index := position.IndexIn(text)
+	index := positionIndex(text, position)
 	if index < 0 {
 		return protocol.Position{}, false
 	}
@@ -726,7 +874,7 @@ func partialOutputResult(document document, uri protocol.DocumentUri, position p
 		return processor.Result{}, false
 	}
 
-	cursorIndex := position.IndexIn(text)
+	cursorIndex := positionIndex(text, position)
 	if cursorIndex < 0 {
 		return processor.Result{}, false
 	}
@@ -861,7 +1009,7 @@ func tokenStartIndex(text string, token lexer.Token) int {
 		Line:      protocol.UInteger(token.Line - 1),
 		Character: protocol.UInteger(token.Column - 1),
 	}
-	return position.IndexIn(text)
+	return positionIndex(text, position)
 }
 
 func stringLiteralValue(literal ast.StringLiteral) (string, bool) {
@@ -874,7 +1022,7 @@ func stringLiteralValue(literal ast.StringLiteral) (string, bool) {
 }
 
 func completionFileWithPlaceholder(text string, position protocol.Position) (*ast.File, bool) {
-	index := position.IndexIn(text)
+	index := positionIndex(text, position)
 	if index < 0 {
 		return nil, false
 	}
@@ -905,7 +1053,7 @@ func completionFileWithPlaceholder(text string, position protocol.Position) (*as
 }
 
 func partialScriptFileWithPlaceholder(text string, position protocol.Position) (ast.File, bool) {
-	index := position.IndexIn(text)
+	index := positionIndex(text, position)
 	if index < 0 {
 		return ast.File{}, false
 	}
@@ -1049,9 +1197,15 @@ func completionItemsForType(typeReference ast.TypeReference, model completionMod
 	switch resolved.kind {
 	case completionTypeEnum:
 		return lo.Map(resolved.enum.members, func(member completionEnumMember, _ int) protocol.CompletionItem {
+			detail := member.Detail
+			if detail == "" {
+				detail = resolved.enum.access(member.Name)
+			}
+
 			return protocol.CompletionItem{
-				Label: resolved.enum.access(member.Name),
-				Kind:  Ptr(protocol.CompletionItemKindEnumMember),
+				Label:  resolved.enum.access(member.Name),
+				Kind:   Ptr(protocol.CompletionItemKindEnumMember),
+				Detail: Ptr(detail),
 			}
 		})
 	case completionTypeSchema:
@@ -1190,11 +1344,30 @@ func resolveCompletionType(typeReference ast.TypeReference, model completionMode
 }
 
 func completionEnumFromDeclaration(declaration ast.EnumDeclaration) completionEnum {
-	members := lo.Map(declaration.Members, func(member ast.EnumMember, _ int) completionEnumMember {
-		return completionEnumMember{Name: member.Name}
+	members := lo.Map(declaration.Members, func(member ast.EnumMember, index int) completionEnumMember {
+		return completionEnumMember{
+			Name:   member.Name,
+			Detail: completionEnumMemberDetail(declaration, member, index),
+		}
 	})
 
 	return completionEnum{name: declaration.Name, members: members}
+}
+
+func completionEnumMemberDetail(declaration ast.EnumDeclaration, member ast.EnumMember, index int) string {
+	if member.HasValue {
+		return fmt.Sprintf("enum member %s.%s = %s", declaration.Name, member.Name, expressionSummary(member.Value))
+	}
+
+	if declaration.BackingType.Name == "string" {
+		return fmt.Sprintf("enum member %s.%s = %q", declaration.Name, member.Name, member.Name)
+	}
+
+	if declaration.BackingType.Name == "int" {
+		return fmt.Sprintf("enum member %s.%s = %d", declaration.Name, member.Name, index)
+	}
+
+	return fmt.Sprintf("enum member %s.%s", declaration.Name, member.Name)
 }
 
 func schemaLiteral(record ast.RecordType, model completionModel, seen map[string]struct{}) string {
@@ -1340,6 +1513,14 @@ func itemsFromDefinitions(definitions []completionDefinition, prefix string) []p
 	return sortCompletionItems(items)
 }
 
+func selfReferenceCompletionItems(prefix string) []protocol.CompletionItem {
+	return itemsFromDefinitions([]completionDefinition{{
+		Label:  "$self",
+		Kind:   protocol.CompletionItemKindKeyword,
+		Detail: "output self reference",
+	}}, prefix)
+}
+
 func itemsFromDeclarations(declarations []declarationDefinition, prefix string) []protocol.CompletionItem {
 	items := lo.FilterMap(declarations, func(declaration declarationDefinition, _ int) (protocol.CompletionItem, bool) {
 		if declaration.Name == "" || !strings.HasPrefix(declaration.Name, prefix) {
@@ -1355,6 +1536,18 @@ func itemsFromDeclarations(declarations []declarationDefinition, prefix string) 
 		}
 		return item, true
 	})
+	return sortCompletionItems(items)
+}
+
+func mergeCompletionItems(groups ...[]protocol.CompletionItem) []protocol.CompletionItem {
+	itemsByLabel := map[string]protocol.CompletionItem{}
+	for _, group := range groups {
+		for _, item := range group {
+			itemsByLabel[item.Label] = item
+		}
+	}
+
+	items := lo.Values(itemsByLabel)
 	return sortCompletionItems(items)
 }
 
@@ -1383,7 +1576,8 @@ type completionEnum struct {
 }
 
 type completionEnumMember struct {
-	Name string
+	Name   string
+	Detail string
 }
 
 func (enum completionEnum) access(memberName string) string {
@@ -1397,6 +1591,19 @@ func (enum completionEnum) access(memberName string) string {
 func (enum completionEnum) rename(name string) completionEnum {
 	cloned := completionEnum{name: name, members: make([]completionEnumMember, len(enum.members))}
 	copy(cloned.members, enum.members)
+	if enum.name == "" || enum.name == name {
+		return cloned
+	}
+
+	oldPrefix := "enum member " + enum.name + "."
+	newPrefix := "enum member " + name + "."
+	for index, member := range cloned.members {
+		if strings.HasPrefix(member.Detail, oldPrefix) {
+			member.Detail = newPrefix + strings.TrimPrefix(member.Detail, oldPrefix)
+			cloned.members[index] = member
+		}
+	}
+
 	return cloned
 }
 

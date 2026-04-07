@@ -81,6 +81,14 @@ func (snapshot analysisSnapshot) symbolAt(position protocol.Position) (semanticS
 		return symbol, true
 	}
 
+	if symbol, ok := snapshot.selfReferenceSymbolAt(position); ok {
+		return symbol, true
+	}
+
+	if symbol, ok := snapshot.nestedOutputFieldSymbolAt(position); ok {
+		return symbol, true
+	}
+
 	identifier, found := identifierAt(snapshot.text, position)
 	if !found {
 		return semanticSymbol{}, false
@@ -162,6 +170,54 @@ func (snapshot analysisSnapshot) enumMemberSymbolAt(position protocol.Position) 
 	return localEnumMemberSymbol(*snapshot.file, snapshot.documentURI, enumName, memberName)
 }
 
+func (snapshot analysisSnapshot) selfReferenceSymbolAt(position protocol.Position) (semanticSymbol, bool) {
+	if snapshot.result == nil {
+		return semanticSymbol{}, false
+	}
+
+	path, rangeValue, ok := selfReferencePathAt(snapshot.tokens, position)
+	if !ok {
+		return semanticSymbol{}, false
+	}
+
+	value, ok := outputValueAtPath(snapshot.result.Output, path)
+	if !ok {
+		return semanticSymbol{}, false
+	}
+
+	name := "$self." + strings.Join(path, ".")
+	return outputValueSymbol(name, path, rangeValue, value), true
+}
+
+func (snapshot analysisSnapshot) nestedOutputFieldSymbolAt(position protocol.Position) (semanticSymbol, bool) {
+	if snapshot.result == nil {
+		return semanticSymbol{}, false
+	}
+
+	path, rangeValue, ok := nestedOutputFieldPathAt(snapshot.text, snapshot.tokens, position)
+	if !ok || len(path) < 2 {
+		return semanticSymbol{}, false
+	}
+
+	value, ok := outputValueAtPath(snapshot.result.Output, path)
+	if !ok {
+		return semanticSymbol{}, false
+	}
+
+	name := strings.Join(path, ".")
+	return outputValueSymbol(name, path, rangeValue, value), true
+}
+
+func outputValueSymbol(name string, path []string, rangeValue protocol.Range, value processor.Value) semanticSymbol {
+	return semanticSymbol{
+		Name:   name,
+		Kind:   protocol.CompletionItemKindProperty,
+		Detail: fmt.Sprintf("output %s: %s = %s", strings.Join(path, "."), valueTypeSummary(value), summarizeValue(value)),
+		Origin: symbolOriginOutput,
+		Range:  rangeValue,
+	}
+}
+
 func enumMemberReferenceAt(tokens []lexer.Token, position protocol.Position) (string, string, bool) {
 	for index, token := range tokens {
 		rangeValue := tokenProtocolRange(token)
@@ -179,6 +235,119 @@ func enumMemberReferenceAt(tokens []lexer.Token, position protocol.Position) (st
 	}
 
 	return "", "", false
+}
+
+func selfReferencePathAt(tokens []lexer.Token, position protocol.Position) ([]string, protocol.Range, bool) {
+	for index := 0; index < len(tokens); index++ {
+		if tokens[index].Type != lexer.TokenSelf {
+			continue
+		}
+
+		segments := []string{}
+		for cursor := index + 1; cursor+1 < len(tokens); cursor += 2 {
+			if tokens[cursor].Type != lexer.TokenDot || tokens[cursor+1].Type != lexer.TokenIdentifier {
+				break
+			}
+
+			segment := tokens[cursor+1]
+			segments = append(segments, segment.Lexeme)
+			rangeValue := tokenProtocolRange(segment)
+			if comparePositions(rangeValue.Start, position) <= 0 && comparePositions(position, rangeValue.End) <= 0 {
+				return append([]string{}, segments...), rangeValue, true
+			}
+		}
+	}
+
+	return nil, protocol.Range{}, false
+}
+
+func nestedOutputFieldPathAt(text string, tokens []lexer.Token, position protocol.Position) ([]string, protocol.Range, bool) {
+	outputOpenIndex, ok := outputBlockOpenIndex(text, tokens)
+	if !ok {
+		return nil, protocol.Range{}, false
+	}
+
+	outputTokens := lo.Filter(tokens, func(token lexer.Token, _ int) bool {
+		return tokenStartIndex(text, token) >= outputOpenIndex
+	})
+
+	type fieldScope struct {
+		path       []string
+		braceDepth int
+	}
+
+	braceDepth := 0
+	pendingRecordPath := []string(nil)
+	scopes := []fieldScope{}
+
+	for index := 0; index < len(outputTokens); index++ {
+		token := outputTokens[index]
+
+		switch token.Type {
+		case lexer.TokenLBrace:
+			braceDepth++
+			if braceDepth == 1 {
+				scopes = append(scopes, fieldScope{path: nil, braceDepth: braceDepth})
+				continue
+			}
+			if pendingRecordPath != nil {
+				scopes = append(scopes, fieldScope{path: append([]string{}, pendingRecordPath...), braceDepth: braceDepth})
+				pendingRecordPath = nil
+			}
+		case lexer.TokenRBrace:
+			if len(scopes) > 0 && scopes[len(scopes)-1].braceDepth == braceDepth {
+				scopes = scopes[:len(scopes)-1]
+			}
+			braceDepth--
+		case lexer.TokenIdentifier:
+			if len(scopes) == 0 || !isOutputFieldHeader(outputTokens, index) {
+				continue
+			}
+
+			rangeValue := tokenProtocolRange(token)
+			path := append(append([]string{}, scopes[len(scopes)-1].path...), token.Lexeme)
+			if comparePositions(rangeValue.Start, position) <= 0 && comparePositions(position, rangeValue.End) <= 0 {
+				return path, rangeValue, true
+			}
+
+			valueIndex := index + 2
+			if index+1 < len(outputTokens) && outputTokens[index+1].Type == lexer.TokenQuestion {
+				valueIndex = index + 3
+			}
+			if valueIndex < len(outputTokens) && outputTokens[valueIndex].Type == lexer.TokenLBrace {
+				pendingRecordPath = path
+			} else {
+				pendingRecordPath = nil
+			}
+		}
+	}
+
+	return nil, protocol.Range{}, false
+}
+
+func outputValueAtPath(output map[string]processor.Value, path []string) (processor.Value, bool) {
+	if len(path) == 0 {
+		return processor.Value{}, false
+	}
+
+	current, ok := output[path[0]]
+	if !ok {
+		return processor.Value{}, false
+	}
+
+	for _, segment := range path[1:] {
+		if current.Kind != processor.ValueRecord {
+			return processor.Value{}, false
+		}
+
+		next, ok := current.Record[segment]
+		if !ok {
+			return processor.Value{}, false
+		}
+		current = next
+	}
+
+	return current, true
 }
 
 func localEnumMemberSymbol(file ast.File, uri protocol.DocumentUri, enumName string, memberName string) (semanticSymbol, bool) {
@@ -1108,12 +1277,20 @@ func variableDeclarationDetail(declaration ast.VariableDeclaration) string {
 }
 
 func enumDeclarationDetail(declaration ast.EnumDeclaration) string {
-	members := lo.Map(declaration.Members, func(member ast.EnumMember, _ int) string {
-		if !member.HasValue {
-			return member.Name
+	members := lo.Map(declaration.Members, func(member ast.EnumMember, index int) string {
+		if member.HasValue {
+			return member.Name + " = " + expressionSummary(member.Value)
 		}
 
-		return member.Name + " = " + expressionSummary(member.Value)
+		if declaration.BackingType.Name == "string" {
+			return member.Name + " = " + fmt.Sprintf("%q", member.Name)
+		}
+
+		if declaration.BackingType.Name == "int" {
+			return member.Name + " = " + fmt.Sprintf("%d", index)
+		}
+
+		return member.Name
 	})
 
 	return fmt.Sprintf("enum %s: %s { %s }", declaration.Name, declaration.BackingType.Name, strings.Join(members, ", "))
@@ -1126,6 +1303,14 @@ func enumMemberDetail(declaration ast.EnumDeclaration, member ast.EnumMember) st
 
 	if declaration.BackingType.Name == "string" {
 		return fmt.Sprintf("enum member %s.%s = %q", declaration.Name, member.Name, member.Name)
+	}
+
+	if declaration.BackingType.Name == "int" {
+		for index, declarationMember := range declaration.Members {
+			if declarationMember.Name == member.Name {
+				return fmt.Sprintf("enum member %s.%s = %d", declaration.Name, member.Name, index)
+			}
+		}
 	}
 
 	return fmt.Sprintf("enum member %s.%s", declaration.Name, member.Name)

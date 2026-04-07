@@ -197,10 +197,23 @@ func nestedSelfDocument(depth int) string {
 var _ = Describe("LSP server", func() {
 	const uri = "file:///workspace/test.mace"
 
-	It("advertises core capabilities during initialize", func() {
-		server := New()
+	var server *Server
+	var uninitializedServer *Server
 
-		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodInitialize, protocol.InitializeParams{}, nil)
+	BeforeEach(func() {
+		uninitializedServer = New()
+		server = New()
+		initializeServer(server)
+	})
+
+	AfterEach(func() {
+		protocol.SetTraceValue(protocol.TraceValueOff)
+		server = nil
+		uninitializedServer = nil
+	})
+
+	It("advertises core capabilities during initialize", func() {
+		resultValue, validMethod, validParams, err := invoke(uninitializedServer.Handler(), protocol.MethodInitialize, protocol.InitializeParams{}, nil)
 		tAssert.True(validMethod)
 		tAssert.True(validParams)
 		tAssert.NoError(err)
@@ -229,6 +242,9 @@ var _ = Describe("LSP server", func() {
 			tAssert.True(*saveOptions.IncludeText)
 		}
 		tAssert.NotNil(result.Capabilities.CompletionProvider)
+		if result.Capabilities.CompletionProvider != nil {
+			tAssert.Equal([]string{".", ":", "$"}, result.Capabilities.CompletionProvider.TriggerCharacters)
+		}
 		tAssert.Equal(true, result.Capabilities.HoverProvider)
 		tAssert.Equal(true, result.Capabilities.DefinitionProvider)
 		tAssert.Equal(true, result.Capabilities.DocumentSymbolProvider)
@@ -237,17 +253,13 @@ var _ = Describe("LSP server", func() {
 	})
 
 	It("rejects requests before initialize", func() {
-		server := New()
-
-		_, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{}, nil)
+		_, validMethod, validParams, err := invoke(uninitializedServer.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{}, nil)
 		tAssert.True(validMethod)
 		tAssert.True(validParams)
 		tAssert.ErrorContains(err, "server not initialized")
 	})
 
 	It("accepts the initialized notification", func() {
-		server := New()
-		initializeServer(server)
 
 		_, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodInitialized, protocol.InitializedParams{}, nil)
 		tAssert.True(validMethod)
@@ -256,8 +268,6 @@ var _ = Describe("LSP server", func() {
 	})
 
 	It("updates the trace level", func() {
-		server := New()
-		initializeServer(server)
 
 		_, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodSetTrace, protocol.SetTraceParams{
 			Value: protocol.TraceValueVerbose,
@@ -269,8 +279,6 @@ var _ = Describe("LSP server", func() {
 	})
 
 	It("shuts down and rejects later requests", func() {
-		server := New()
-		initializeServer(server)
 
 		_, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodShutdown, nil, nil)
 		tAssert.True(validMethod)
@@ -284,8 +292,6 @@ var _ = Describe("LSP server", func() {
 	})
 
 	It("publishes empty diagnostics when a valid document opens", func() {
-		server := New()
-		initializeServer(server)
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `[output = data] { result: 1 + 2; }`, &notifications)
@@ -298,8 +304,6 @@ var _ = Describe("LSP server", func() {
 	})
 
 	It("resolves top-level imports relative to the opened file", func() {
-		server := New()
-		initializeServer(server)
 		notifications := []capturedNotification{}
 
 		workspace, err := os.MkdirTemp("", "mace-lsp-import-diagnostics-*")
@@ -334,8 +338,6 @@ Name user = "Ada";
 	})
 
 	It("publishes syntax diagnostics when an invalid document opens", func() {
-		server := New()
-		initializeServer(server)
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `[output = data] { result: ; }`, &notifications)
@@ -350,8 +352,6 @@ Name user = "Ada";
 	})
 
 	It("publishes processor diagnostics for invalid variable declarations", func() {
-		server := New()
-		initializeServer(server)
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `|===|
@@ -373,8 +373,6 @@ int count = "Ada";
 	})
 
 	It("publishes variable mismatch diagnostics for the failing declaration", func() {
-		server := New()
-		initializeServer(server)
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `|===|
@@ -396,8 +394,6 @@ int count = "seven";
 	})
 
 	It("replaces document content on change and clears diagnostics", func() {
-		server := New()
-		initializeServer(server)
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `[output = data] { result: ; }`, &notifications)
@@ -410,8 +406,6 @@ int count = "seven";
 	})
 
 	It("clears processor diagnostics when a variable declaration is fixed on change", func() {
-		server := New()
-		initializeServer(server)
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `|===|
@@ -435,9 +429,35 @@ int count = 7;
 		}
 	})
 
+	It("clears enum member parse diagnostics when the member access is fixed", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+enum Personality: string {
+  is_type,
+}
+Personality value = Personality.;
+|===|
+[output = data] {}`, &notifications)
+		didChange(server, uri, 2, `|===|
+enum Personality: string {
+  is_type,
+}
+Personality value = Personality.is_type;
+|===|
+[output = data] {}`, &notifications)
+
+		if tAssert.Len(notifications, 2) {
+			params := requireDiagnostics(notifications[0])
+			tAssert.Len(params.Diagnostics, 1)
+			tAssert.Contains(params.Diagnostics[0].Message, `expected identifier after '.' in enum member access`)
+
+			params = requireDiagnostics(notifications[1])
+			tAssert.Empty(params.Diagnostics)
+		}
+	})
+
 	It("refreshes diagnostics when a document is saved", func() {
-		server := New()
-		initializeServer(server)
 		notifications := []capturedNotification{}
 
 		workspace, err := os.MkdirTemp("", "mace-lsp-save-diagnostics-*")
@@ -461,8 +481,6 @@ int count = 7;
 	})
 
 	It("publishes processor diagnostics for invalid output data structures", func() {
-		server := New()
-		initializeServer(server)
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `|===|
@@ -487,8 +505,6 @@ schema Plot = { points: array<Point>; };
 	})
 
 	It("clears output structure diagnostics when nested data is fixed on change", func() {
-		server := New()
-		initializeServer(server)
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `|===|
@@ -521,8 +537,6 @@ schema Plot = { points: array<Point>; };
 	})
 
 	It("drops document state on close and clears diagnostics", func() {
-		server := New()
-		initializeServer(server)
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `[output = data] { result: 1; }`, &notifications)
@@ -545,8 +559,6 @@ schema Plot = { points: array<Point>; };
 	})
 
 	It("returns script keyword completions only inside the script block", func() {
-		server := New()
-		initializeServer(server)
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, "|===|\nsche", nil)
 
@@ -571,8 +583,6 @@ schema Plot = { points: array<Point>; };
 	})
 
 	It("returns import completions only at file scope", func() {
-		server := New()
-		initializeServer(server)
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, "fr", nil)
 
@@ -585,8 +595,6 @@ schema Plot = { points: array<Point>; };
 	})
 
 	It("only suggests import after a valid from path", func() {
-		server := New()
-		initializeServer(server)
 
 		workspace, err := os.MkdirTemp("", "mace-lsp-import-*")
 		tAssert.NoError(err)
@@ -606,8 +614,6 @@ schema Plot = { points: array<Point>; };
 	})
 
 	It("uses the current directory as the default import path baseline", func() {
-		server := New()
-		initializeServer(server)
 
 		workspace, err := os.MkdirTemp("", "mace-lsp-import-path-*")
 		tAssert.NoError(err)
@@ -625,8 +631,6 @@ schema Plot = { points: array<Point>; };
 	})
 
 	It("suggests parent relative import paths while the from string changes", func() {
-		server := New()
-		initializeServer(server)
 
 		workspace, err := os.MkdirTemp("", "mace-lsp-parent-import-path-*")
 		tAssert.NoError(err)
@@ -642,8 +646,6 @@ schema Plot = { points: array<Point>; };
 	})
 
 	It("suggests import after a valid from path change with trailing space", func() {
-		server := New()
-		initializeServer(server)
 
 		workspace, err := os.MkdirTemp("", "mace-lsp-import-space-*")
 		tAssert.NoError(err)
@@ -662,8 +664,6 @@ schema Plot = { points: array<Point>; };
 	})
 
 	It("only suggests identifiers exported by the import path after change", func() {
-		server := New()
-		initializeServer(server)
 
 		workspace, err := os.MkdirTemp("", "mace-lsp-imported-*")
 		tAssert.NoError(err)
@@ -683,8 +683,6 @@ schema Plot = { points: array<Point>; };
 	})
 
 	It("suggests all exported identifiers after import changes", func() {
-		server := New()
-		initializeServer(server)
 
 		workspace, err := os.MkdirTemp("", "mace-lsp-imported-all-*")
 		tAssert.NoError(err)
@@ -704,8 +702,6 @@ schema Plot = { points: array<Point>; };
 	})
 
 	It("suggests imported identifiers inside the script block", func() {
-		server := New()
-		initializeServer(server)
 
 		workspace, err := os.MkdirTemp("", "mace-lsp-imported-script-*")
 		tAssert.NoError(err)
@@ -728,8 +724,6 @@ Us
 	})
 
 	It("only suggests directives inside directive delimiters", func() {
-		server := New()
-		initializeServer(server)
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `out`, nil)
 
@@ -742,8 +736,6 @@ Us
 	})
 
 	It("does not suggest script keywords in the output block", func() {
-		server := New()
-		initializeServer(server)
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = data]
 {
@@ -755,8 +747,6 @@ Us
 	})
 
 	It("suggests enum in script scope", func() {
-		server := New()
-		initializeServer(server)
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
 en
@@ -768,8 +758,6 @@ en
 	})
 
 	It("suggests enum values when assigning an enum typed variable", func() {
-		server := New()
-		initializeServer(server)
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
 enum Fruit: string {
@@ -785,8 +773,6 @@ Fruit selected =
 	})
 
 	It("suggests enum values when completion is requested on the assignment operator", func() {
-		server := New()
-		initializeServer(server)
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
 enum Fruit: string {
@@ -801,9 +787,20 @@ Fruit selected =
 		tAssert.Equal([]string{"Fruit.Apple", "Fruit.Strawberry"}, labels)
 	})
 
+	It("suggests enum values when the completion request extends past the final line at eof", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+enum Fruit: string {
+  Apple,
+  Strawberry = "strawberry",
+}
+Fruit selected =`, nil)
+
+		labels := completeLabels(server, uri, 5, uint32(len(`Fruit selected = `)))
+		tAssert.Equal([]string{"Fruit.Apple", "Fruit.Strawberry"}, labels)
+	})
+
 	It("suggests enum values for schema fields after a record colon", func() {
-		server := New()
-		initializeServer(server)
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
 enum Fruit: string {
@@ -821,9 +818,22 @@ Basket basket = {
 		tAssert.Equal([]string{"Fruit.Apple", "Fruit.Strawberry"}, labels)
 	})
 
+	It("suggests enum members after a dot for local enums", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+enum Personality: string {
+  is_type,
+  has_defaults,
+}
+Personality value = Personality.
+|===|
+[output = data] {}`, nil)
+
+		labels := completeLabels(server, uri, 5, uint32(len(`Personality value = Personality.`)))
+		tAssert.Equal([]string{"has_defaults", "is_type"}, labels)
+	})
+
 	It("suggests schema record literals for nested schema fields after a record colon", func() {
-		server := New()
-		initializeServer(server)
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
 schema Profile = { name: string; age?: int; };
@@ -838,9 +848,27 @@ Basket basket = {
 		tAssert.Equal([]string{`{ name: ""; age?: 0; }`}, labels)
 	})
 
+	It("keeps typed output completions alongside $self in output schema fields", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+enum Fruit: string {
+  Apple,
+  Strawberry = "strawberry",
+}
+schema Basket = { favorite_fruit: Fruit; };
+|===|
+[output = data, schema = Basket]
+{
+  favorite_fruit: 
+}`, nil)
+
+		labels := completeLabels(server, uri, 9, uint32(len(`  favorite_fruit: `)))
+		tAssert.Contains(labels, "$self")
+		tAssert.Contains(labels, "Fruit.Apple")
+		tAssert.Contains(labels, "Fruit.Strawberry")
+	})
+
 	It("suggests enum values for output schema fields after a record colon", func() {
-		server := New()
-		initializeServer(server)
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
 enum Fruit: string {
@@ -855,12 +883,12 @@ schema Basket = { favorite_fruit: Fruit; };
 }`, nil)
 
 		labels := completeLabels(server, uri, 9, uint32(len(`  favorite_fruit: `)))
-		tAssert.Equal([]string{"Fruit.Apple", "Fruit.Strawberry"}, labels)
+		tAssert.Contains(labels, "$self")
+		tAssert.Contains(labels, "Fruit.Apple")
+		tAssert.Contains(labels, "Fruit.Strawberry")
 	})
 
 	It("does not suggest schema directives after output schema and a comma", func() {
-		server := New()
-		initializeServer(server)
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = schema, s`, nil)
 
@@ -869,8 +897,6 @@ schema Basket = { favorite_fruit: Fruit; };
 	})
 
 	It("suggests local and imported schemas after schema directive", func() {
-		server := New()
-		initializeServer(server)
 
 		workspace, err := os.MkdirTemp("", "mace-lsp-schema-ref-*")
 		tAssert.NoError(err)
@@ -892,9 +918,35 @@ schema LocalUser = { id: int; };
 		tAssert.Equal([]string{"ImportedUser", "LocalUser"}, labels)
 	})
 
+	It("suggests enum members after a dot for imported enums", func() {
+
+		workspace, err := os.MkdirTemp("", "mace-lsp-imported-enum-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "shared.mace", `|===|
+enum Personality: string {
+  is_type,
+  has_defaults,
+}
+|===|
+[output = schema]
+{
+  Personality: Personality;
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `from "./shared.mace" import Personality;
+|===|
+Personality value = Personality.
+|===|
+[output = data] {}`, nil)
+
+		labels := completeLabels(server, uri, 2, uint32(len(`Personality value = Personality.`)))
+		tAssert.Equal([]string{"has_defaults", "is_type"}, labels)
+	})
+
 	It("suggests schema files and excludes files already imported", func() {
-		server := New()
-		initializeServer(server)
 
 		workspace, err := os.MkdirTemp("", "mace-lsp-schema-file-*")
 		tAssert.NoError(err)
@@ -918,9 +970,41 @@ schema LocalUser = { id: int; };
 		tAssert.Contains(labels, "./other.mace")
 	})
 
+	It("suggests $self in an empty output expression", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data]
+{
+  base: 1;
+  result: 
+}`, nil)
+
+		labels := completeLabels(server, uri, 3, uint32(len(`  result: `)))
+		tAssert.Contains(labels, "$self")
+	})
+
+	It("suggests $self after typing a dollar in the output block", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data]
+{
+  result: $
+}`, nil)
+
+		labels := completeLabels(server, uri, 2, uint32(len(`  result: $`)))
+		tAssert.Equal([]string{"$self"}, labels)
+	})
+
+	It("filters $self completion by typed prefix in the output block", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data]
+{
+  result: $s
+}`, nil)
+
+		labels := completeLabels(server, uri, 2, uint32(len(`  result: $s`)))
+		tAssert.Equal([]string{"$self"}, labels)
+	})
+
 	It("suggests only previously evaluated output fields after $self dot", func() {
-		server := New()
-		initializeServer(server)
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = data]
 {
@@ -934,8 +1018,6 @@ schema LocalUser = { id: int; };
 	})
 
 	It("suggests nested keys from previously evaluated self fields", func() {
-		server := New()
-		initializeServer(server)
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = data]
 {
@@ -947,10 +1029,20 @@ schema LocalUser = { id: int; };
 		tAssert.Equal([]string{"details", "name"}, labels)
 	})
 
+	It("suggests nested keys from uppercase self paths", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data]
+{
+  User: { profile: { age: 30; }; };
+  result: $self.User.profile.
+}`, nil)
+
+		labels := completeLabels(server, uri, 3, uint32(len(`  result: $self.User.profile.`)))
+		tAssert.Equal([]string{"age"}, labels)
+	})
+
 	DescribeTable("suggests recursive keys from deeply nested self paths",
 		func(depth int) {
-			server := New()
-			initializeServer(server)
 			openEmptyDocument(server, uri, nil)
 
 			text := nestedSelfDocument(depth)
@@ -975,8 +1067,6 @@ schema LocalUser = { id: int; };
 	)
 
 	It("suggests recursive keys when prior fields combine into a nested calculation source", func() {
-		server := New()
-		initializeServer(server)
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = data]
 {
@@ -995,8 +1085,6 @@ schema LocalUser = { id: int; };
 	})
 
 	It("suggests recursive keys when nested records reuse self values across multiple places", func() {
-		server := New()
-		initializeServer(server)
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = data]
 {
@@ -1014,8 +1102,6 @@ schema LocalUser = { id: int; };
 	})
 
 	It("returns hover documentation for language keywords", func() {
-		server := New()
-		initializeServer(server)
 		didOpen(server, uri, `|===|
 schema User = { name: string; };
 |===|
@@ -1045,8 +1131,6 @@ schema User = { name: string; };
 	})
 
 	It("returns hover documentation for enum declarations", func() {
-		server := New()
-		initializeServer(server)
 		didOpen(server, uri, `|===|
 enum Fruit: string {
   Apple,
@@ -1078,8 +1162,6 @@ enum Fruit: string {
 	})
 
 	It("returns hover details for enum member access", func() {
-		server := New()
-		initializeServer(server)
 		didOpen(server, uri, `|===|
 enum Fruit: string {
   Apple,
@@ -1111,13 +1193,47 @@ Fruit selected = Fruit.Apple;
 		content, ok := hover.Contents.(protocol.MarkupContent)
 		tAssert.True(ok)
 		if ok {
-			tAssert.Contains(content.Value, "enum member Fruit.Apple")
+			tAssert.Contains(content.Value, `enum member Fruit.Apple = "Apple"`)
+		}
+	})
+
+	It("returns implicit int values in enum hover details", func() {
+		didOpen(server, uri, `|===|
+enum Status: int {
+  Pending,
+  Running,
+}
+Status current = Status.Running;
+|===|
+[output = data]
+{
+  result: current;
+}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 4, Character: 24},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, `enum member Status.Running = 1`)
 		}
 	})
 
 	It("returns directive-aware hover documentation for schema inside output directives", func() {
-		server := New()
-		initializeServer(server)
 		didOpen(server, uri, `[output = data, schema = User]
 {
   result: 1;
@@ -1147,8 +1263,6 @@ Fruit selected = Fruit.Apple;
 	})
 
 	It("returns hover details for user declarations", func() {
-		server := New()
-		initializeServer(server)
 		didOpen(server, uri, `|===|
 string env = "dev";
 |===|
@@ -1178,8 +1292,6 @@ string env = "dev";
 	})
 
 	It("prefers output field hover details over same-named schema declarations", func() {
-		server := New()
-		initializeServer(server)
 		didOpen(server, uri, `|===|
 schema User = { name: string; };
 |===|
@@ -1212,9 +1324,46 @@ schema User = { name: string; };
 		}
 	})
 
+	It("returns hover details for nested output record fields", func() {
+		didOpen(server, uri, `|===|
+type Name = string;
+schema Profile = { age: int; };
+schema User = { name: Name; profile: Profile; };
+Name default_name = "Ada";
+int default_age = 30;
+|===|
+[output = data]
+{
+  User: {
+    name: default_name;
+    profile: { age: default_age; };
+  };
+}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 11, Character: 8},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, `output User.profile: { age: int } = { age: 30 }`)
+		}
+	})
+
 	It("prefers output field hover details when the same name is reused later in self references", func() {
-		server := New()
-		initializeServer(server)
 		didOpen(server, uri, `|===|
 type Name = string;
 schema Profile = { age: int; };
@@ -1258,9 +1407,71 @@ int default_age = 30;
 		}
 	})
 
+	It("returns hover details for nested self references", func() {
+		didOpen(server, uri, `[output = data]
+{
+  User: { profile: { age: 30; }; };
+  foo: $self.User.profile.age;
+}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 3, Character: 20},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, `output User.profile: { age: int } = { age: 30 }`)
+		}
+	})
+
+	It("returns hover details for deeply nested self record references", func() {
+		didOpen(server, uri, `[output = data]
+{
+  summary: {
+    stats: {
+      totals: { users: 3; };
+    };
+  };
+  result: $self.summary.stats.totals.users;
+}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 7, Character: 31},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, `output summary.stats.totals: { users: int } = { users: 3 }`)
+		}
+	})
+
 	It("returns hover details for imported declarations", func() {
-		server := New()
-		initializeServer(server)
 
 		workspace, err := os.MkdirTemp("", "mace-lsp-hover-import-*")
 		tAssert.NoError(err)
@@ -1305,8 +1516,6 @@ User current = { name: "Ada"; };
 	})
 
 	It("returns definition locations for imported symbols", func() {
-		server := New()
-		initializeServer(server)
 
 		workspace, err := os.MkdirTemp("", "mace-lsp-definition-import-*")
 		tAssert.NoError(err)
@@ -1347,8 +1556,6 @@ User current = { name: "Ada"; };
 	})
 
 	It("prefers output field definitions over same-named schema declarations", func() {
-		server := New()
-		initializeServer(server)
 		didOpen(server, uri, `|===|
 schema User = { name: string; };
 |===|
@@ -1379,8 +1586,6 @@ schema User = { name: string; };
 	})
 
 	It("prefers current document definitions over imported symbols with matching coordinates", func() {
-		server := New()
-		initializeServer(server)
 
 		workspace, err := os.MkdirTemp("", "mace-lsp-definition-coordinates-*")
 		tAssert.NoError(err)
@@ -1434,8 +1639,6 @@ int qux = 2;
 	})
 
 	It("returns code actions for import path fixes", func() {
-		server := New()
-		initializeServer(server)
 
 		workspace, err := os.MkdirTemp("", "mace-lsp-code-action-*")
 		tAssert.NoError(err)
@@ -1475,8 +1678,6 @@ int qux = 2;
 	})
 
 	It("returns code actions for schema and schema_file conflicts", func() {
-		server := New()
-		initializeServer(server)
 
 		workspace, err := os.MkdirTemp("", "mace-lsp-schema-file-conflict-*")
 		tAssert.NoError(err)
@@ -1522,8 +1723,6 @@ schema User = { name: string; };
 	})
 
 	It("returns hierarchical document symbols", func() {
-		server := New()
-		initializeServer(server)
 		didOpen(server, uri, `|===|
 schema User = { name: string; age?: int; };
 string env = "dev";
@@ -1556,8 +1755,6 @@ string env = "dev";
 	})
 
 	It("includes enums in hierarchical document symbols", func() {
-		server := New()
-		initializeServer(server)
 		didOpen(server, uri, `|===|
 enum Fruit: string {
   Apple,
@@ -1590,8 +1787,6 @@ enum Fruit: string {
 	})
 
 	It("publishes diagnostics when raw enum backing values are assigned", func() {
-		server := New()
-		initializeServer(server)
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `|===|
@@ -1614,8 +1809,6 @@ Fruit selected = "Pear";
 	})
 
 	It("publishes warnings for script variables ignored by schema output mode", func() {
-		server := New()
-		initializeServer(server)
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `|===|
@@ -1636,8 +1829,6 @@ string value = "Ada";
 	})
 
 	It("formats a document into canonical source", func() {
-		server := New()
-		initializeServer(server)
 		didOpen(server, uri, `[output = data]{result:1+2;}`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentFormatting, protocol.DocumentFormattingParams{
@@ -1663,8 +1854,6 @@ string value = "Ada";
 	})
 
 	It("preserves existing spacing while resizing script delimiters", func() {
-		server := New()
-		initializeServer(server)
 		didOpen(server, uri, `|===|
 string display_name = "Ada";
 |===|

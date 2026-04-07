@@ -130,8 +130,8 @@ enum_member_value
   | boolean_literal ;
 
 (* The current implementation accepts primitive backing-type syntax but
-   validates only `string` and `int`. String enums may use implicit values.
-   Int enums require explicit integer literals. *)
+   validates only `string` and `int`. String and int enums may use implicit
+   values. Implicit int values use zero-based declaration order. *)
 
 (* ===================================================== *)
 (* 8. SCHEMA DECLARATIONS                               *)
