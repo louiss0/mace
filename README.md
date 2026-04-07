@@ -145,31 +145,26 @@ Example output:
 }
 ```
 
-### `mace import <path>`
+### `mace import <path> [path...]`
 
-Converts a JSON, YAML, or TOML file into a typed Mace document by default.
-It generates a root schema declaration plus a validated output block.
+Converts JSON, YAML, and TOML files into `.mace` files.
+
+- input format is determined from each file extension
+- generated files are written next to the source files by default
+- JSON files with a `$schema` key are converted into Mace output schema blocks
+- other JSON, YAML, and TOML files are converted into Mace output data blocks
 
 ```bash
 mace import ./config.yaml
 mace import ./config.toml
 mace import ./config.json
+mace import ./config.json ./config.yaml ./config.toml
 ```
 
-Use `--schema` to infer only a Mace schema document from one or more samples:
+Use `--output-dir` to write generated files to a different directory:
 
 ```bash
-mace import ./config.json --schema
-mace import ./base.json ./override.json --schema
-```
-
-Empty arrays currently fall back to `array<string>`. Optional fields are
-inferred only when `--schema` is given with multiple sample files.
-
-Use `--format` to override extension-based detection:
-
-```bash
-mace import ./config.data --format yaml
+mace import ./config.json --output-dir ./generated
 ```
 
 ### `mace nodes <path>`
@@ -288,16 +283,14 @@ profile:
   level: 2
 `)
 
-schemaSource, err := codec.ImportYAMLSchema(`name: Ada
-enabled: true
-profile:
-  level: 2
-`)
-
-mergedSchemaSource, err := codec.ImportJSONSchemaSamples([]string{
-	`{"name":"Ada","profile":{"level":2}}`,
-	`{"name":"Bob"}`,
-})
+schemaSource, err := codec.ImportJSONSchema(`{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" }
+  },
+  "required": ["name"]
+}`)
 ```
 
 For schema output, `codec.Parse` also returns structured schema metadata in

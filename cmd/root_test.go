@@ -170,6 +170,51 @@ injectable string env;
 }`, string(contents))
 		})
 
+		It("writes multiple input files based on their extensions", func() {
+			jsonPath := writeTempFile("config.json", `{
+  "name": "Ada"
+}`)
+			yamlPath := writeTempFile("config.yaml", `name: Bob`)
+
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			command := newRootCommand(&stdout, &stderr)
+			command.SetArgs([]string{"import", jsonPath, yamlPath})
+
+			err := command.Execute()
+			tAssert.NoError(err)
+			tAssert.Equal("", stderr.String())
+			tAssert.Contains(stdout.String(), strings.TrimSuffix(jsonPath, ".json")+".mace")
+			tAssert.Contains(stdout.String(), strings.TrimSuffix(yamlPath, ".yaml")+".mace")
+			tAssert.Contains(stdout.String(), "Generated 2 Mace file(s).")
+		})
+
+		It("writes generated files to --output-dir when requested", func() {
+			path := writeTempFile("config.toml", `name = "Ada"`)
+			outputDir, err := os.MkdirTemp("", "mace-import-output-*")
+			tAssert.NoError(err)
+			outputPath := filepath.Join(outputDir, "config.mace")
+
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			command := newRootCommand(&stdout, &stderr)
+			command.SetArgs([]string{"import", path, "--output-dir", outputDir})
+
+			err = command.Execute()
+			tAssert.NoError(err)
+			tAssert.Equal("", stderr.String())
+			tAssert.Contains(stdout.String(), outputPath)
+
+			contents, err := os.ReadFile(outputPath)
+			tAssert.NoError(err)
+			tAssert.Equal(`[output = data]
+{
+  name: "Ada";
+}`, string(contents))
+		})
+
 		It("fails for files without an extension", func() {
 			path := writeTempFile("config", `name: Ada`)
 
