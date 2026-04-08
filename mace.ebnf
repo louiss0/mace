@@ -162,6 +162,7 @@ schema_field
 type_reference
   = primitive_type
   | array_type
+  | union_type
   | identifier ;
 
 primitive_type
@@ -171,6 +172,11 @@ array_type
   = "array" , ws0 , "<" , ws0 ,
     type_reference ,
     ws0 , ">" ;
+
+union_type
+  = "union" , ws0 , "[" , ws0 ,
+    type_reference , { ws0 , "," , ws0 , type_reference } ,
+    ws0 , "]" ;
 
 (* ===================================================== *)
 (* 10. OUTPUT BLOCK                                      *)

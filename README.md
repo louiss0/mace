@@ -66,6 +66,7 @@ Mace supports:
 - `=` for variable initializers and enum member values
 - primitive types: `string`, `int`, `float`, `boolean`
 - arrays: `array<T>`
+- unions: `union[T1, T2, ...]`
 - named type aliases
 - schemas
 - enums backed by `string` or `int`, with implicit or explicit member values
@@ -153,6 +154,10 @@ Converts JSON, YAML, and TOML files into `.mace` files.
 - generated files are written next to the source files by default
 - JSON files with a `$schema` key are converted into Mace output schema blocks
 - other JSON, YAML, and TOML files are converted into Mace output data blocks
+- JSON Schema `null` maps to field optionality during schema conversion
+- JSON Schema unions can be emitted as Mace `union[...]` types during import
+- when multiple files are imported, successful files are still written even if
+  some files fail
 
 ```bash
 mace import ./config.yaml

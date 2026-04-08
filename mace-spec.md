@@ -175,19 +175,34 @@ Fruit favorite = Fruit.Apple;
 
 ## Types
 
-The current implementation supports:
+The current type system supports:
 
 - `string`
 - `int`
 - `float`
 - `boolean`
 - `array<T>`
+- `union[T1, T2, ...]`
 - named type aliases
 - named enums
 - named schemas
 
 Arrays must be homogeneous. Nested arrays and arrays of schemas are
 supported.
+
+Union types may be written inline or behind named type aliases.
+
+```mace
+type Scalar: union[string, int];
+
+schema ValueBox: {
+  value: union[string, int];
+};
+```
+
+For JSON Schema interoperability, `null` should be treated as field
+optionality when converting schemas. For example, a JSON Schema property with
+`type: ["string", "null"]` maps to an optional Mace field of type `string`.
 
 ## Output Block
 
