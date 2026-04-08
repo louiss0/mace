@@ -379,6 +379,31 @@ injectable string env;
 			}
 		})
 
+		It("parses union type references", func() {
+			input := `|===|
+type Value: union[string, int];
+|===|
+[output = data] {}`
+
+			file, err := parseFileInput(input)
+			tAssert.NoError(err)
+
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 1) {
+				typeDecl, ok := file.Script.Items[0].(ast.TypeDeclaration)
+				tAssert.True(ok)
+				if ok {
+					unionType, ok := typeDecl.Type.(ast.UnionType)
+					tAssert.True(ok)
+					if ok && tAssert.Len(unionType.Members, 2) {
+						_, firstIsPrimitive := unionType.Members[0].(ast.PrimitiveType)
+						_, secondIsPrimitive := unionType.Members[1].(ast.PrimitiveType)
+						tAssert.True(firstIsPrimitive)
+						tAssert.True(secondIsPrimitive)
+					}
+				}
+			}
+		})
+
 		It("parses nested array type references without spacing between closers", func() {
 			input := `|===|
 type Matrix: array<array<int>>;

@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -226,6 +227,10 @@ Name user = "Ada";
 |===|
 [output = data]
 { user: user; }`),
+		Entry("union declarations and assignments", wrapScriptWithOutput(`|===|
+type Scalar: union[string, int];
+Scalar value = "Ada";
+|===|`)),
 	)
 
 	DescribeTable("rejects invalid script blocks",
@@ -251,6 +256,74 @@ schema User: { name: string; };
 		Entry("duplicate imports", `from "testdata/imports/base.mace" import User, User;
 [output = data] {}`, "duplicate import"),
 	)
+
+	DescribeTable("accepts primitive union combinations",
+		func(typeReference string, firstValue string, secondValue string) {
+			processor := New()
+			_, err := processor.Process(wrapScriptWithOutput(fmt.Sprintf(`|===|
+type Value: %s;
+Value first = %s;
+Value second = %s;
+|===|`, typeReference, firstValue, secondValue)))
+			tAssert.NoError(err)
+		},
+		Entry("string-int", "union[string, int]", `"Ada"`, `42`),
+		Entry("string-float", "union[string, float]", `"Ada"`, `1.5`),
+		Entry("string-boolean", "union[string, boolean]", `"Ada"`, `true`),
+		Entry("int-float", "union[int, float]", `42`, `1.5`),
+		Entry("int-boolean", "union[int, boolean]", `42`, `true`),
+		Entry("float-boolean", "union[float, boolean]", `1.5`, `true`),
+	)
+
+	It("accepts schema and primitive unions", func() {
+		processor := New()
+		_, err := processor.Process(wrapScriptWithOutput(`|===|
+schema User: { name: string; };
+type Value: union[User, string];
+Value first = { name: "Ada"; };
+Value second = "fallback";
+|===|`))
+		tAssert.NoError(err)
+	})
+
+	It("accepts same-backing enum unions", func() {
+		processor := New()
+		_, err := processor.Process(wrapScriptWithOutput(`|===|
+enum Role: string {
+  Admin = "admin",
+};
+enum State: string {
+  Active = "active",
+};
+type Value: union[Role, State];
+Value first = Role.Admin;
+Value second = State.Active;
+|===|`))
+		tAssert.NoError(err)
+	})
+
+	It("rejects union typed variables with non-matching values", func() {
+		processor := New()
+		_, err := processor.Process(wrapScriptWithOutput(`|===|
+type Scalar: union[string, int];
+Scalar value = true;
+|===|`))
+		tAssert.ErrorContains(err, "type mismatch")
+	})
+
+	It("rejects mixed-backing enum unions", func() {
+		processor := New()
+		_, err := processor.Process(wrapScriptWithOutput(`|===|
+enum Role: string {
+  Admin = "admin",
+};
+enum Status: int {
+  Ready = 1,
+};
+type Value: union[Role, Status];
+|===|`))
+		tAssert.ErrorContains(err, "same backing type")
+	})
 
 	DescribeTable("accepts schema record literals",
 		func(input string) {
@@ -661,6 +734,12 @@ schema User: { name: string; };
 				{name: "age", optional: true}: schemaPrimitive("int"),
 			}),
 			{name: "user"}: schemaNamed("User"),
+		}),
+		Entry("union fields", `[output = schema]
+{
+  value: union[string, int];
+}`, map[expectedSchemaField]SchemaType{
+			{name: "value"}: {Kind: SchemaTypeUnion, Members: []SchemaType{schemaPrimitive("string"), schemaPrimitive("int")}},
 		}),
 	)
 
