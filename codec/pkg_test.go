@@ -785,6 +785,40 @@ schema Profile: {
 		tAssert.ErrorContains(err, "enum variants")
 	})
 
+	It("supports recursive $defs schema references", func() {
+		source, err := ImportJSONSchema(`{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Node": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "child": { "$ref": "#/$defs/Node" }
+      },
+      "required": ["name"]
+    }
+  },
+  "type": "object",
+  "properties": {
+    "root": {
+      "$ref": "#/$defs/Node"
+    }
+  },
+  "required": ["root"]
+}`)
+		tAssert.NoError(err)
+		tAssert.Equal(`|===|
+schema Node: {
+  child?: Node;
+  name: string;
+};
+|===|
+[output = schema]
+{
+  root: Node;
+}`, source)
+	})
+
 	It("maps object and array-of-object $defs into schemas and aliases", func() {
 		source, err := ImportJSONSchema(`{
   "$schema": "https://json-schema.org/draft/2020-12/schema",

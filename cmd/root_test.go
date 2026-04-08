@@ -252,6 +252,27 @@ injectable string env;
 			tAssert.Equal("", stdout.String())
 			tAssert.Contains(stderr.String(), "missing file extension")
 		})
+
+		It("fails when output-dir would overwrite another generated file", func() {
+			firstDir, err := os.MkdirTemp("", "mace-import-first-*")
+			tAssert.NoError(err)
+			secondDir, err := os.MkdirTemp("", "mace-import-second-*")
+			tAssert.NoError(err)
+			outputDir, err := os.MkdirTemp("", "mace-import-output-*")
+			tAssert.NoError(err)
+
+			firstPath := filepath.Join(firstDir, "config.json")
+			secondPath := filepath.Join(secondDir, "config.yaml")
+			tAssert.NoError(os.WriteFile(firstPath, []byte(`{"name":"Ada"}`), 0o600))
+			tAssert.NoError(os.WriteFile(secondPath, []byte("name: Bob"), 0o600))
+
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			exitCode := run([]string{"import", firstPath, secondPath, "--output-dir", outputDir}, &stdout, &stderr)
+			tAssert.Equal(1, exitCode)
+			tAssert.Contains(stderr.String(), "would overwrite generated file")
+		})
 	})
 
 	Describe("nodes", func() {

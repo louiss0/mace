@@ -92,6 +92,7 @@ func newImportCommand() *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
 			writtenPaths := make([]string, 0, len(args))
+			targetsByPath := map[string]string{}
 			failedPaths := 0
 			for _, path := range args {
 				source, err := importSourceFromPath(path)
@@ -107,6 +108,11 @@ func newImportCommand() *cobra.Command {
 					failedPaths++
 					continue
 				}
+				if priorPath, exists := targetsByPath[targetPath]; exists {
+					_, _ = fmt.Fprintf(command.ErrOrStderr(), "%s: would overwrite generated file for %s\n", path, priorPath)
+					failedPaths++
+					continue
+				}
 
 				if err := os.WriteFile(targetPath, []byte(source), 0o600); err != nil {
 					_, _ = fmt.Fprintf(command.ErrOrStderr(), "%s: write mace file: %v\n", path, err)
@@ -114,6 +120,7 @@ func newImportCommand() *cobra.Command {
 					continue
 				}
 
+				targetsByPath[targetPath] = path
 				writtenPaths = append(writtenPaths, targetPath)
 			}
 

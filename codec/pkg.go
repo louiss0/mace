@@ -888,6 +888,7 @@ type jsonSchemaContext struct {
 	root                map[string]any
 	declarations        []string
 	declarationIndex    map[string]int
+	definitionNames     map[string]string
 	definitionTypes     map[string]inferredType
 	inlineEnumTypes     map[string]inferredType
 	usedDeclarationName map[string]struct{}
@@ -897,6 +898,7 @@ func newJSONSchemaContext(root map[string]any) *jsonSchemaContext {
 	return &jsonSchemaContext{
 		root:                root,
 		declarationIndex:    map[string]int{},
+		definitionNames:     map[string]string{},
 		definitionTypes:     map[string]inferredType{},
 		inlineEnumTypes:     map[string]inferredType{},
 		usedDeclarationName: map[string]struct{}{},
@@ -1204,13 +1206,21 @@ func (context *jsonSchemaContext) referenceType(path string) (inferredType, erro
 		return inferredType{}, err
 	}
 
-	name := jsonSchemaDefinitionName(path)
-	if name == "" {
+	baseName := jsonSchemaDefinitionName(path)
+	if baseName == "" {
 		return context.schemaType(resolved, nil)
 	}
 
+	name, ok := context.definitionNames[path]
+	if !ok {
+		name = context.uniqueDeclarationName(baseName)
+		context.definitionNames[path] = name
+	}
+
+	context.definitionTypes[path] = inferredType{kind: inferredTypeNamed, name: name, namedCategory: "schema"}
 	declarationType, declarationSource, err := context.declarationForSchema(name, resolved, []string{name})
 	if err != nil {
+		delete(context.definitionTypes, path)
 		return inferredType{}, err
 	}
 	context.addDeclaration(name, declarationSource)
