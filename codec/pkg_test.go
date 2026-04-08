@@ -1,6 +1,7 @@
 package codec
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -252,6 +253,25 @@ level = 2
 }`, source)
 	})
 
+	It("omits null fields from imported JSON data", func() {
+		source, err := ImportJSON(`{
+  "name": "Ada",
+  "nickname": null
+}`)
+		tAssert.NoError(err)
+		tAssert.Equal(`[output = data]
+{
+  name: "Ada";
+}`, source)
+	})
+
+	It("rejects empty output blocks after omitting null fields", func() {
+		_, err := ImportJSON(`{
+  "nickname": null
+}`)
+		tAssert.ErrorContains(err, "output block is empty")
+	})
+
 	It("rejects non-record roots", func() {
 		_, err := ImportJSON(`[1, 2, 3]`)
 		tAssert.ErrorContains(err, "record root")
@@ -259,6 +279,47 @@ level = 2
 })
 
 var _ = Describe("ImportSchema", func() {
+	DescribeTable("maps primitive union combinations inline",
+		func(types string, expected string) {
+			source, err := ImportJSONSchema(fmt.Sprintf(`{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "value": {
+      "type": %s
+    }
+  },
+  "required": ["value"]
+}`, types))
+			tAssert.NoError(err)
+			tAssert.Equal(expected, source)
+		},
+		Entry("string-int", `["string", "integer"]`, `[output = schema]
+{
+  value: union[string, int];
+}`),
+		Entry("string-float", `["string", "number"]`, `[output = schema]
+{
+  value: union[string, float];
+}`),
+		Entry("string-boolean", `["string", "boolean"]`, `[output = schema]
+{
+  value: union[string, boolean];
+}`),
+		Entry("int-float", `["integer", "number"]`, `[output = schema]
+{
+  value: union[int, float];
+}`),
+		Entry("int-boolean", `["integer", "boolean"]`, `[output = schema]
+{
+  value: union[int, boolean];
+}`),
+		Entry("float-boolean", `["number", "boolean"]`, `[output = schema]
+{
+  value: union[float, boolean];
+}`),
+	)
+
 	It("imports JSON schema documents into a Mace output schema block", func() {
 		source, err := ImportJSONSchema(`{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -274,6 +335,41 @@ var _ = Describe("ImportSchema", func() {
 {
   age?: int;
   name: string;
+}`, source)
+	})
+
+	It("maps nullable fields to optional schema fields", func() {
+		source, err := ImportJSONSchema(`{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "nickname": {
+      "type": ["string", "null"]
+    }
+  }
+}`)
+		tAssert.NoError(err)
+		tAssert.Equal(`[output = schema]
+{
+  nickname?: string;
+}`, source)
+	})
+
+	It("maps multi-type unions inline", func() {
+		source, err := ImportJSONSchema(`{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "value": {
+      "type": ["string", "integer"]
+    }
+  },
+  "required": ["value"]
+}`)
+		tAssert.NoError(err)
+		tAssert.Equal(`[output = schema]
+{
+  value: union[string, int];
 }`, source)
 	})
 
@@ -371,6 +467,29 @@ enum Role: string {
 }`, source)
 	})
 
+	It("maps const values to single-member enums", func() {
+		source, err := ImportJSONSchema(`{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "status": {
+      "const": "draft"
+    }
+  },
+  "required": ["status"]
+}`)
+		tAssert.NoError(err)
+		tAssert.Equal(`|===|
+enum Status: string {
+  Draft = "draft",
+};
+|===|
+[output = schema]
+{
+  status: Status;
+}`, source)
+	})
+
 	It("maps primitive and array $defs into Mace type aliases", func() {
 		source, err := ImportJSONSchema(`{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -430,6 +549,160 @@ type Tags: array<string>;
   ratio: Ratio;
   tags: Tags;
 }`, source)
+	})
+
+	It("maps union $defs into type aliases", func() {
+		source, err := ImportJSONSchema(`{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Value": {
+      "type": ["string", "integer"]
+    }
+  },
+  "type": "object",
+  "properties": {
+    "value": {
+      "$ref": "#/$defs/Value"
+    }
+  },
+  "required": ["value"]
+}`)
+		tAssert.NoError(err)
+		tAssert.Equal(`|===|
+type Value: union[string, int];
+|===|
+[output = schema]
+{
+  value: Value;
+}`, source)
+	})
+
+	It("maps same-backing enum unions", func() {
+		source, err := ImportJSONSchema(`{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Role": {
+      "enum": ["admin", "member"]
+    },
+    "State": {
+      "enum": ["active", "paused"]
+    }
+  },
+  "type": "object",
+  "properties": {
+    "value": {
+      "oneOf": [
+        { "$ref": "#/$defs/Role" },
+        { "$ref": "#/$defs/State" }
+      ]
+    }
+  },
+  "required": ["value"]
+}`)
+		tAssert.NoError(err)
+		tAssert.Equal(`|===|
+enum Role: string {
+  Admin = "admin",
+  Member = "member",
+};
+enum State: string {
+  Active = "active",
+  Paused = "paused",
+};
+|===|
+[output = schema]
+{
+  value: union[Role, State];
+}`, source)
+	})
+
+	It("rejects enum unions with mixed backing types", func() {
+		_, err := ImportJSONSchema(`{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Role": {
+      "enum": ["admin", "member"]
+    },
+    "Status": {
+      "enum": [0, 1]
+    }
+  },
+  "type": "object",
+  "properties": {
+    "value": {
+      "oneOf": [
+        { "$ref": "#/$defs/Role" },
+        { "$ref": "#/$defs/Status" }
+      ]
+    }
+  },
+  "required": ["value"]
+}`)
+		tAssert.ErrorContains(err, "same backing type")
+	})
+
+	It("maps schema and primitive unions", func() {
+		source, err := ImportJSONSchema(`{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Profile": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" }
+      },
+      "required": ["name"]
+    }
+  },
+  "type": "object",
+  "properties": {
+    "value": {
+      "oneOf": [
+        { "$ref": "#/$defs/Profile" },
+        { "type": "string" }
+      ]
+    }
+  },
+  "required": ["value"]
+}`)
+		tAssert.NoError(err)
+		tAssert.Equal(`|===|
+schema Profile: {
+  name: string;
+};
+|===|
+[output = schema]
+{
+  value: union[Profile, string];
+}`, source)
+	})
+
+	It("rejects schema and enum unions", func() {
+		_, err := ImportJSONSchema(`{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Profile": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "Role": {
+      "enum": ["admin", "member"]
+    }
+  },
+  "type": "object",
+  "properties": {
+    "value": {
+      "oneOf": [
+        { "$ref": "#/$defs/Profile" },
+        { "$ref": "#/$defs/Role" }
+      ]
+    }
+  },
+  "required": ["value"]
+}`)
+		tAssert.ErrorContains(err, "enum unions")
 	})
 
 	It("maps object and array-of-object $defs into schemas and aliases", func() {

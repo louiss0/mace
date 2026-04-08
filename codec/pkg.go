@@ -188,7 +188,15 @@ func importDocument(value any) (string, error) {
 		return "", err
 	}
 
-	output, err := MarshalOutput(normalized)
+	record, ok := normalized.(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("import mace: expected record root")
+	}
+	if len(record) == 0 {
+		return "", fmt.Errorf("import mace: output block is empty after omitting null values")
+	}
+
+	output, err := MarshalOutput(record)
 	if err != nil {
 		return "", fmt.Errorf("import mace: expected record root")
 	}
@@ -357,14 +365,16 @@ func processorValueFromReflect(value reflect.Value) processor.Value {
 	}
 }
 
+type omittedValue struct{}
+
 func normalizeImportedValue(value reflect.Value) (any, error) {
 	if !value.IsValid() {
-		return nil, fmt.Errorf("import mace: nil is not supported")
+		return omittedValue{}, nil
 	}
 
 	for value.Kind() == reflect.Interface || value.Kind() == reflect.Pointer {
 		if value.IsNil() {
-			return nil, fmt.Errorf("import mace: nil is not supported")
+			return omittedValue{}, nil
 		}
 		value = value.Elem()
 	}
@@ -395,6 +405,9 @@ func normalizeImportedValue(value reflect.Value) (any, error) {
 			if err != nil {
 				return nil, err
 			}
+			if _, ok := item.(omittedValue); ok {
+				continue
+			}
 			items = append(items, item)
 		}
 		return items, nil
@@ -409,6 +422,9 @@ func normalizeImportedValue(value reflect.Value) (any, error) {
 			item, err := normalizeImportedValue(value.MapIndex(key))
 			if err != nil {
 				return nil, err
+			}
+			if _, ok := item.(omittedValue); ok {
+				continue
 			}
 			record[name] = item
 		}
@@ -573,6 +589,7 @@ const (
 	inferredTypeArray
 	inferredTypeRecord
 	inferredTypeNamed
+	inferredTypeUnion
 )
 
 type schemaField struct {
@@ -586,11 +603,14 @@ type recordSchema struct {
 }
 
 type inferredType struct {
-	kind      inferredTypeKind
-	primitive string
-	name      string
-	element   *inferredType
-	record    recordSchema
+	kind          inferredTypeKind
+	primitive     string
+	name          string
+	namedCategory string
+	backingType   string
+	element       *inferredType
+	record        recordSchema
+	members       []inferredType
 }
 
 func formatRecord(fields []recordField, depth int) string {
@@ -644,6 +664,12 @@ func formatSchemaType(value inferredType, depth int) string {
 		return fmt.Sprintf("array<%s>", formatSchemaType(*value.element, depth))
 	case inferredTypeRecord:
 		return formatSchemaRecord(value.record.fields, depth)
+	case inferredTypeUnion:
+		parts := make([]string, 0, len(value.members))
+		for _, member := range value.members {
+			parts = append(parts, formatSchemaType(member, depth))
+		}
+		return fmt.Sprintf("union[%s]", strings.Join(parts, ", "))
 	default:
 		return "string"
 	}
@@ -900,13 +926,13 @@ func (context *jsonSchemaContext) record(record map[string]any, path []string) (
 			return recordSchema{}, fmt.Errorf("import mace schema: property %q must be an object", name)
 		}
 
-		valueType, err := context.schemaType(property, append(append([]string{}, path...), name))
+		valueType, nullable, err := context.propertyType(property, append(append([]string{}, path...), name))
 		if err != nil {
 			return recordSchema{}, fmt.Errorf("import mace schema: property %q: %w", name, err)
 		}
 
 		_, required := requiredNames[name]
-		fields = append(fields, schemaField{name: name, optional: !required, value: valueType})
+		fields = append(fields, schemaField{name: name, optional: !required || nullable, value: valueType})
 	}
 
 	return recordSchema{fields: fields}, nil
@@ -957,9 +983,112 @@ func jsonSchemaReference(path string, root map[string]any) (map[string]any, erro
 	return resolved, nil
 }
 
+func (context *jsonSchemaContext) propertyType(record map[string]any, path []string) (inferredType, bool, error) {
+	nullable := false
+
+	if constValue, ok := record["const"]; ok {
+		if constValue == nil {
+			return inferredType{}, true, fmt.Errorf("null-only const is not representable")
+		}
+		valueType, err := context.enumType([]any{constValue}, path)
+		return valueType, false, err
+	}
+
+	if enumValues, ok := record["enum"].([]any); ok && len(enumValues) > 0 {
+		filtered := make([]any, 0, len(enumValues))
+		for _, value := range enumValues {
+			if value == nil {
+				nullable = true
+				continue
+			}
+			filtered = append(filtered, value)
+		}
+		if len(filtered) == 0 {
+			return inferredType{}, false, fmt.Errorf("null-only enum is not representable")
+		}
+		valueType, err := context.enumType(filtered, path)
+		return valueType, nullable, err
+	}
+
+	if variants, ok := record["oneOf"].([]any); ok {
+		valueType, variantNullable, err := context.unionSchemaType(variants, path)
+		return valueType, variantNullable, err
+	}
+	if variants, ok := record["anyOf"].([]any); ok {
+		valueType, variantNullable, err := context.unionSchemaType(variants, path)
+		return valueType, variantNullable, err
+	}
+
+	typeArray, hasTypeArray := record["type"].([]any)
+	if hasTypeArray {
+		members := make([]inferredType, 0, len(typeArray))
+		for _, item := range typeArray {
+			typeName, ok := item.(string)
+			if !ok {
+				return inferredType{}, false, fmt.Errorf("type arrays must contain strings")
+			}
+			if typeName == "null" {
+				nullable = true
+				continue
+			}
+			memberType, err := context.typeNameSchemaType(typeName, record, path)
+			if err != nil {
+				return inferredType{}, false, err
+			}
+			members = append(members, memberType)
+		}
+		if len(members) == 0 {
+			return inferredType{}, false, fmt.Errorf("null-only unions are not representable")
+		}
+		if len(members) == 1 {
+			return members[0], nullable, nil
+		}
+		unionType, err := validateUnionMembers(members)
+		return unionType, nullable, err
+	}
+
+	valueType, err := context.schemaType(record, path)
+	return valueType, nullable, err
+}
+
+func (context *jsonSchemaContext) unionSchemaType(variants []any, path []string) (inferredType, bool, error) {
+	nullable := false
+	members := make([]inferredType, 0, len(variants))
+	for index, variant := range variants {
+		record, ok := variant.(map[string]any)
+		if !ok {
+			return inferredType{}, false, fmt.Errorf("union variants must be objects")
+		}
+
+		valueType, variantNullable, err := context.propertyType(record, append(append([]string{}, path...), fmt.Sprintf("variant%d", index+1)))
+		if err != nil {
+			return inferredType{}, false, err
+		}
+		nullable = nullable || variantNullable
+		members = append(members, valueType)
+	}
+
+	if len(members) == 0 {
+		return inferredType{}, false, fmt.Errorf("empty unions are not representable")
+	}
+	if len(members) == 1 {
+		return members[0], nullable, nil
+	}
+
+	unionType, err := validateUnionMembers(members)
+	return unionType, nullable, err
+}
+
 func (context *jsonSchemaContext) schemaType(record map[string]any, path []string) (inferredType, error) {
 	if refValue, ok := record["$ref"].(string); ok {
 		return context.referenceType(refValue)
+	}
+
+	if constValue, ok := record["const"]; ok {
+		if constValue == nil {
+			return inferredType{}, fmt.Errorf("null-only const is not representable")
+		}
+		return context.enumType([]any{constValue}, path)
 	}
 
 	if enumValues, ok := record["enum"].([]any); ok && len(enumValues) > 0 {
@@ -973,6 +1102,10 @@ func (context *jsonSchemaContext) schemaType(record map[string]any, path []strin
 		}
 	}
 
+	return context.typeNameSchemaType(typeName, record, path)
+}
+
+func (context *jsonSchemaContext) typeNameSchemaType(typeName string, record map[string]any, path []string) (inferredType, error) {
 	switch typeName {
 	case "string":
 		return inferredType{kind: inferredTypePrimitive, primitive: "string"}, nil
@@ -1004,6 +1137,8 @@ func (context *jsonSchemaContext) schemaType(record map[string]any, path []strin
 			return inferredType{}, err
 		}
 		return inferredType{kind: inferredTypeRecord, record: nestedRecord}, nil
+	case "":
+		return inferredType{}, fmt.Errorf("unsupported json schema type %q", typeName)
 	default:
 		return inferredType{}, fmt.Errorf("unsupported json schema type %q", typeName)
 	}
@@ -1054,16 +1189,16 @@ func (context *jsonSchemaContext) declarationForSchema(name string, record map[s
 		return declarationType, declarationSource, err
 	}
 
-	valueType, err := context.schemaType(record, path)
+	valueType, _, err := context.propertyType(record, path)
 	if err != nil {
 		return inferredType{}, "", err
 	}
 
 	switch valueType.kind {
 	case inferredTypeRecord:
-		return inferredType{kind: inferredTypeNamed, name: name}, fmt.Sprintf("schema %s: %s;", name, formatSchemaRecord(valueType.record.fields, 0)), nil
+		return inferredType{kind: inferredTypeNamed, name: name, namedCategory: "schema"}, fmt.Sprintf("schema %s: %s;", name, formatSchemaRecord(valueType.record.fields, 0)), nil
 	default:
-		return inferredType{kind: inferredTypeNamed, name: name}, fmt.Sprintf("type %s: %s;", name, formatSchemaType(valueType, 0)), nil
+		return inferredType{kind: inferredTypeNamed, name: name, namedCategory: "alias"}, fmt.Sprintf("type %s: %s;", name, formatSchemaType(valueType, 0)), nil
 	}
 }
 
@@ -1152,7 +1287,7 @@ func jsonSchemaEnumDeclaration(name string, values []any) (string, inferredType,
 	}
 	lines = append(lines, "};")
 
-	return strings.Join(lines, "\n"), inferredType{kind: inferredTypeNamed, name: name}, nil
+	return strings.Join(lines, "\n"), inferredType{kind: inferredTypeNamed, name: name, namedCategory: "enum", backingType: backingType}, nil
 }
 
 type jsonSchemaEnumMember struct {
@@ -1208,6 +1343,44 @@ func jsonSchemaEnumMemberValue(value any, index int) (jsonSchemaEnumMember, stri
 	default:
 		return jsonSchemaEnumMember{}, "", fmt.Errorf("unsupported enum value %v at index %d", value, index)
 	}
+}
+
+func validateUnionMembers(members []inferredType) (inferredType, error) {
+	hasEnum := false
+	hasSchema := false
+	hasPrimitive := false
+	enumBacking := ""
+
+	for _, member := range members {
+		switch member.kind {
+		case inferredTypePrimitive:
+			hasPrimitive = true
+		case inferredTypeNamed:
+			switch member.namedCategory {
+			case "enum":
+				hasEnum = true
+				if enumBacking == "" {
+					enumBacking = member.backingType
+				} else if enumBacking != member.backingType {
+					return inferredType{}, fmt.Errorf("enum unions require the same backing type")
+				}
+			case "schema":
+				hasSchema = true
+			case "alias":
+				return inferredType{}, fmt.Errorf("union members cannot include type aliases")
+			default:
+				return inferredType{}, fmt.Errorf("unsupported named union member")
+			}
+		default:
+			return inferredType{}, fmt.Errorf("union members must be primitives, schemas, or enums")
+		}
+	}
+
+	if hasEnum && (hasPrimitive || hasSchema) {
+		return inferredType{}, fmt.Errorf("enum unions may only combine enums with the same backing type")
+	}
+
+	return inferredType{kind: inferredTypeUnion, members: members}, nil
 }
 
 func fieldName(field reflect.StructField) (string, bool) {

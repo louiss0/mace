@@ -92,19 +92,26 @@ func newImportCommand() *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
 			writtenPaths := make([]string, 0, len(args))
+			failedPaths := 0
 			for _, path := range args {
 				source, err := importSourceFromPath(path)
 				if err != nil {
-					return err
+					_, _ = fmt.Fprintf(command.ErrOrStderr(), "%s: %v\n", path, err)
+					failedPaths++
+					continue
 				}
 
 				targetPath, err := importOutputPath(path, outputDir)
 				if err != nil {
-					return err
+					_, _ = fmt.Fprintf(command.ErrOrStderr(), "%s: %v\n", path, err)
+					failedPaths++
+					continue
 				}
 
 				if err := os.WriteFile(targetPath, []byte(source), 0o600); err != nil {
-					return fmt.Errorf("write mace file: %w", err)
+					_, _ = fmt.Fprintf(command.ErrOrStderr(), "%s: write mace file: %v\n", path, err)
+					failedPaths++
+					continue
 				}
 
 				writtenPaths = append(writtenPaths, targetPath)
@@ -115,6 +122,16 @@ func newImportCommand() *cobra.Command {
 					return err
 				}
 			}
+
+			if failedPaths > 0 {
+				if len(args) > 1 {
+					if _, err := fmt.Fprintf(command.OutOrStdout(), "Generated %d Mace file(s); %d file(s) failed.\n", len(writtenPaths), failedPaths); err != nil {
+						return err
+					}
+				}
+				return fmt.Errorf("%d file(s) failed", failedPaths)
+			}
+
 			_, err := fmt.Fprintf(command.OutOrStdout(), "Generated %d Mace file(s).\n", len(writtenPaths))
 			return err
 		},

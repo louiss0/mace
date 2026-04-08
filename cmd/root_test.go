@@ -215,6 +215,32 @@ injectable string env;
 }`, string(contents))
 		})
 
+		It("continues importing other files when one file fails", func() {
+			validPath := writeTempFile("valid.json", `{
+  "name": "Ada"
+}`)
+			invalidPath := writeTempFile("invalid.json", `{
+  "nickname": null
+}`)
+			outputPath := strings.TrimSuffix(validPath, ".json") + ".mace"
+
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			exitCode := run([]string{"import", validPath, invalidPath}, &stdout, &stderr)
+			tAssert.Equal(1, exitCode)
+			tAssert.Contains(stdout.String(), outputPath)
+			tAssert.Contains(stdout.String(), "Generated 1 Mace file(s); 1 file(s) failed.")
+			tAssert.Contains(stderr.String(), invalidPath)
+
+			contents, err := os.ReadFile(outputPath)
+			tAssert.NoError(err)
+			tAssert.Equal(`[output = data]
+{
+  name: "Ada";
+}`, string(contents))
+		})
+
 		It("fails for files without an extension", func() {
 			path := writeTempFile("config", `name: Ada`)
 
