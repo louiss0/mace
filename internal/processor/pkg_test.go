@@ -302,6 +302,18 @@ Value second = State.Active;
 		tAssert.NoError(err)
 	})
 
+	It("accepts nested union aliases", func() {
+		processor := New()
+		_, err := processor.Process(wrapScriptWithOutput(`|===|
+type Scalar: union[string, int];
+type Value: union[Scalar, boolean];
+Value first = "Ada";
+Value second = 42;
+Value third = true;
+|===|`))
+		tAssert.NoError(err)
+	})
+
 	It("rejects union typed variables with non-matching values", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
@@ -579,6 +591,39 @@ Team result = { name: team_name; members: [{ id: "u1"; role: "owner"; }]; };
 			}},
 		}}),
 	)
+
+	It("imports union aliases reused across files", func() {
+		workspace, err := os.MkdirTemp("", "mace-processor-union-import-*")
+		tAssert.NoError(err)
+
+		writeFixtureFile(workspace, "shared.mace", `|===|
+type Identity: union[string, int];
+|===|
+[output = schema]
+{
+  Identity: Identity;
+}`)
+		processor := New()
+		result, err := processor.ProcessFile(writeFixtureFile(workspace, "consumer.mace", `from "./shared.mace" import Identity;
+|===|
+Identity first = "Ada";
+Identity second = 42;
+|===|
+[output = data]
+{
+  result: {
+    first: first;
+    second: second;
+  };
+}`))
+		tAssert.NoError(err)
+
+		actual := requireOutputValue(result, "result")
+		assertExpectedValue(actual, expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+			"first":  {kind: ValueString, string: "Ada"},
+			"second": {kind: ValueInt, int64: 42},
+		}})
+	})
 
 	DescribeTable("keeps hidden declarations internal",
 		func(file string, message string) {

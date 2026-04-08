@@ -171,6 +171,40 @@ schema Basket: { favorite_fruit: Fruit; };
 		tAssert.Contains(labels, "Fruit.Strawberry")
 	})
 
+	It("suggests union members for nested output schema aliases", func() {
+		text := `|===|
+enum Role: string {
+  Admin,
+};
+schema User: { name: string; };
+type Identity: union[Role, User];
+schema Envelope: { value: Identity; };
+schema Response: { payload: Envelope; };
+|===|
+[output = data, schema = Response]
+{
+  payload: {
+    value: 
+  };
+}`
+
+		position := protocol.Position{
+			Line:      12,
+			Character: uint32(len(`    value: `)),
+		}
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+			return item.Label
+		})
+
+		tAssert.Contains(labels, "$self")
+		tAssert.Contains(labels, "Role.Admin")
+		tAssert.Contains(labels, `{ name: ""; }`)
+	})
+
 	It("suggests enum values for incomplete enum variable initializers", func() {
 		text := `|===|
 	enum Fruit: string {

@@ -885,6 +885,30 @@ Basket basket = {
 		tAssert.Equal([]string{`{ name: ""; age?: 0; }`}, labels)
 	})
 
+	It("suggests union members for nested output schema aliases", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+enum Role: string {
+  Admin,
+};
+schema User: { name: string; };
+type Identity: union[Role, User];
+schema Envelope: { value: Identity; };
+schema Response: { payload: Envelope; };
+|===|
+[output = data, schema = Response]
+{
+  payload: {
+    value: 
+  };
+}`, nil)
+
+		labels := completeLabels(server, uri, 12, uint32(len(`    value: `)))
+		tAssert.Contains(labels, "$self")
+		tAssert.Contains(labels, "Role.Admin")
+		tAssert.Contains(labels, `{ name: ""; }`)
+	})
+
 	It("keeps typed output completions alongside $self in output schema fields", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|

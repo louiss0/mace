@@ -803,6 +803,18 @@ func resolveExportedTypeReference(typeRef ast.TypeReference, types *typeRegistry
 		}
 
 		return ast.ArrayType{Element: element}, nil
+	case ast.UnionType:
+		members := make([]ast.TypeReference, 0, len(ref.Members))
+		for _, member := range ref.Members {
+			resolvedMember, err := resolveExportedTypeReference(member, types, schemas, aliasStack, schemaStack)
+			if err != nil {
+				return nil, err
+			}
+
+			members = append(members, resolvedMember)
+		}
+
+		return ast.UnionType{Members: members}, nil
 	case ast.RecordType:
 		return resolveExportedRecordType(ref, types, schemas, aliasStack, schemaStack)
 	case ast.NamedType:
@@ -2188,13 +2200,14 @@ func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *ty
 }
 
 func validateUnionValueTypes(members []valueType) error {
+	members = flattenUnionValueTypes(members)
 	hasEnum := false
 	hasSchema := false
 	hasPrimitive := false
 	enumBacking := ValueUnknown
 
 	for _, member := range members {
-		if len(member.members) > 0 || member.kind == ValueArray {
+		if member.kind == ValueArray {
 			return validationErrorf("union members must be primitives, schemas, or enums")
 		}
 		switch {
@@ -2219,6 +2232,20 @@ func validateUnionValueTypes(members []valueType) error {
 	}
 
 	return nil
+}
+
+func flattenUnionValueTypes(members []valueType) []valueType {
+	flattened := make([]valueType, 0, len(members))
+	for _, member := range members {
+		if len(member.members) == 0 {
+			flattened = append(flattened, member)
+			continue
+		}
+
+		flattened = append(flattened, flattenUnionValueTypes(member.members)...)
+	}
+
+	return flattened
 }
 
 func primitiveValueType(name string) (valueType, error) {
