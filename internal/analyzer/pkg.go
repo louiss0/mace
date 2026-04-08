@@ -25,6 +25,8 @@ var keywordDocs = map[string]string{
 	"enum":       "Declares a named scalar enum type backed by `string` or `int`.",
 	"injectable": "Marks a script variable as overrideable through injections.",
 	"type":       "Declares a reusable type alias.",
+	"union":      "Declares schema composition like `union[Profile, Audit]`.",
+	"variant":    "Declares a closed variant type like `variant[string, int]`.",
 }
 
 var directiveKeywordDocs = map[string]string{
@@ -268,6 +270,16 @@ func typeReferenceDetail(typeReference ast.TypeReference) string {
 		return value.Name
 	case ast.ArrayType:
 		return fmt.Sprintf("array<%s>", typeReferenceDetail(value.Element))
+	case ast.UnionType:
+		parts := lo.Map(value.Members, func(member ast.TypeReference, _ int) string {
+			return typeReferenceDetail(member)
+		})
+		return fmt.Sprintf("union[%s]", strings.Join(parts, ", "))
+	case ast.VariantType:
+		parts := lo.Map(value.Members, func(member ast.TypeReference, _ int) string {
+			return typeReferenceDetail(member)
+		})
+		return fmt.Sprintf("variant[%s]", strings.Join(parts, ", "))
 	case ast.RecordType:
 		return recordTypeDetail(value)
 	default:

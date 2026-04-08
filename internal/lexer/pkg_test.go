@@ -295,6 +295,26 @@ var _ = Describe("Lexer", func() {
 		}),
 	)
 
+	DescribeTable("lexes variant and union type references",
+		func(input string, expected []TokenType) {
+			tokens, err := collectTokens(input)
+			tAssert.NoError(err)
+			assertTokenTypes(tokens, expected)
+		},
+		Entry("primitive variant", "type Value: variant[string, int];", []TokenType{
+			TokenTypeKeyword, TokenIdentifier, TokenColon, TokenVariant, TokenLBracket,
+			TokenStringType, TokenComma, TokenIntType, TokenRBracket, TokenSemicolon, TokenEOF,
+		}),
+		Entry("variant with array and identifier", "type Value: variant[array<string>, User];", []TokenType{
+			TokenTypeKeyword, TokenIdentifier, TokenColon, TokenVariant, TokenLBracket,
+			TokenArray, TokenLess, TokenStringType, TokenGreater, TokenComma, TokenIdentifier, TokenRBracket, TokenSemicolon, TokenEOF,
+		}),
+		Entry("schema union", "type Value: union[Profile, Audit];", []TokenType{
+			TokenTypeKeyword, TokenIdentifier, TokenColon, TokenUnion, TokenLBracket,
+			TokenIdentifier, TokenComma, TokenIdentifier, TokenRBracket, TokenSemicolon, TokenEOF,
+		}),
+	)
+
 	DescribeTable("lexes array type references with nested schemas",
 		func(input string, expected []TokenType) {
 			tokens, err := collectTokens(input)

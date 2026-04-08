@@ -44,6 +44,8 @@ var scriptKeywordCompletions = []completionDefinition{
 	{Label: "schema", Kind: protocol.CompletionItemKindKeyword, Detail: "schema declaration"},
 	{Label: "string", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
 	{Label: "type", Kind: protocol.CompletionItemKindKeyword, Detail: "type declaration"},
+	{Label: "union", Kind: protocol.CompletionItemKindKeyword, Detail: "schema composition"},
+	{Label: "variant", Kind: protocol.CompletionItemKindKeyword, Detail: "type constructor"},
 }
 
 func completionItems(document document, uri protocol.DocumentUri, position protocol.Position) []protocol.CompletionItem {
@@ -1219,6 +1221,12 @@ func completionItemsForType(typeReference ast.TypeReference, model completionMod
 				Kind:  Ptr(protocol.CompletionItemKindStruct),
 			},
 		}
+	case completionTypeVariant:
+		groups := make([][]protocol.CompletionItem, 0, len(resolved.members))
+		for _, member := range resolved.members {
+			groups = append(groups, completionItemsForType(member, model, allowSchemaLiteral))
+		}
+		return mergeCompletionItems(groups...)
 	default:
 		return nil
 	}
@@ -1315,6 +1323,14 @@ func resolveCompletionType(typeReference ast.TypeReference, model completionMode
 		return completionType{kind: completionTypePrimitive, primitive: typed.Name}
 	case ast.ArrayType:
 		return completionType{kind: completionTypeArray}
+	case ast.UnionType:
+		record, ok := completionUnionRecord(typed.Members, model, seen)
+		if !ok {
+			return completionType{}
+		}
+		return completionType{kind: completionTypeSchema, record: record}
+	case ast.VariantType:
+		return completionType{kind: completionTypeVariant, members: typed.Members}
 	case ast.RecordType:
 		return completionType{kind: completionTypeSchema, record: typed}
 	case ast.NamedType:
@@ -1341,6 +1357,35 @@ func resolveCompletionType(typeReference ast.TypeReference, model completionMode
 	default:
 		return completionType{}
 	}
+}
+
+func completionUnionRecord(members []ast.TypeReference, model completionModel, seen map[string]struct{}) (ast.RecordType, bool) {
+	merged := ast.RecordType{}
+	fieldIndexes := map[string]int{}
+
+	for _, member := range members {
+		resolved := resolveCompletionType(member, model, seen)
+		if resolved.kind != completionTypeSchema {
+			return ast.RecordType{}, false
+		}
+
+		for _, field := range resolved.record.Fields {
+			index, exists := fieldIndexes[field.Name]
+			if !exists {
+				fieldIndexes[field.Name] = len(merged.Fields)
+				merged.Fields = append(merged.Fields, field)
+				continue
+			}
+
+			existing := merged.Fields[index]
+			if typeReferenceDetail(existing.Type) != typeReferenceDetail(field.Type) {
+				return ast.RecordType{}, false
+			}
+			merged.Fields[index].Optional = existing.Optional && field.Optional
+		}
+	}
+
+	return merged, true
 }
 
 func completionEnumFromDeclaration(declaration ast.EnumDeclaration) completionEnum {
@@ -1416,6 +1461,14 @@ func defaultLiteralForType(typeReference ast.TypeReference, model completionMode
 			nextSeen[name] = struct{}{}
 		}
 		return schemaLiteral(resolved.record, model, nextSeen)
+	case completionTypeVariant:
+		for _, member := range resolved.members {
+			literal := defaultLiteralForType(member, model, seen)
+			if literal != "{}" {
+				return literal
+			}
+		}
+		return "{}"
 	default:
 		return "{}"
 	}
@@ -1615,6 +1668,7 @@ const (
 	completionTypeArray
 	completionTypeSchema
 	completionTypeEnum
+	completionTypeVariant
 )
 
 type completionType struct {
@@ -1622,6 +1676,7 @@ type completionType struct {
 	primitive string
 	record    ast.RecordType
 	enum      completionEnum
+	members   []ast.TypeReference
 }
 
 type completionScope int

@@ -379,6 +379,56 @@ injectable string env;
 			}
 		})
 
+		It("parses variant type references", func() {
+			input := `|===|
+type Value: variant[string, int];
+|===|
+[output = data] {}`
+
+			file, err := parseFileInput(input)
+			tAssert.NoError(err)
+
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 1) {
+				typeDecl, ok := file.Script.Items[0].(ast.TypeDeclaration)
+				tAssert.True(ok)
+				if ok {
+					variantType, ok := typeDecl.Type.(ast.VariantType)
+					tAssert.True(ok)
+					if ok && tAssert.Len(variantType.Members, 2) {
+						_, firstIsPrimitive := variantType.Members[0].(ast.PrimitiveType)
+						_, secondIsPrimitive := variantType.Members[1].(ast.PrimitiveType)
+						tAssert.True(firstIsPrimitive)
+						tAssert.True(secondIsPrimitive)
+					}
+				}
+			}
+		})
+
+		It("parses union type references", func() {
+			input := `|===|
+type Value: union[Profile, Audit];
+|===|
+[output = data] {}`
+
+			file, err := parseFileInput(input)
+			tAssert.NoError(err)
+
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 1) {
+				typeDecl, ok := file.Script.Items[0].(ast.TypeDeclaration)
+				tAssert.True(ok)
+				if ok {
+					unionType, ok := typeDecl.Type.(ast.UnionType)
+					tAssert.True(ok)
+					if ok && tAssert.Len(unionType.Members, 2) {
+						_, firstIsNamed := unionType.Members[0].(ast.NamedType)
+						_, secondIsNamed := unionType.Members[1].(ast.NamedType)
+						tAssert.True(firstIsNamed)
+						tAssert.True(secondIsNamed)
+					}
+				}
+			}
+		})
+
 		It("parses nested array type references without spacing between closers", func() {
 			input := `|===|
 type Matrix: array<array<int>>;

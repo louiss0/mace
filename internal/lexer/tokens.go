@@ -13,6 +13,8 @@ const (
 	TokenSchema
 	TokenEnum
 	TokenArray
+	TokenUnion
+	TokenVariant
 	TokenStringType
 	TokenIntType
 	TokenFloatType

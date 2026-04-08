@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 
+	"github.com/louiss0/mace/codec"
 	"github.com/louiss0/mace/internal/formatter"
 	"github.com/sanity-io/litter"
 	"github.com/spf13/cobra"
@@ -38,7 +41,7 @@ func newRootCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
 
 	command.SetOut(stdout)
 	command.SetErr(stderr)
-	command.AddCommand(newJSONCommand(), newNodesCommand(), newSourceCommand(), newLSPCommand())
+	command.AddCommand(newJSONCommand(), newImportCommand(), newNodesCommand(), newSourceCommand(), newLSPCommand())
 
 	return command
 }
@@ -76,6 +79,72 @@ func newJSONCommand() *cobra.Command {
 	}
 
 	command.Flags().StringVar(&injectionInput, "inject", "", "Mace record literal used for injectable values")
+
+	return command
+}
+
+func newImportCommand() *cobra.Command {
+	var outputDir string
+
+	command := &cobra.Command{
+		Use:   "import <path> [path...]",
+		Short: "Convert JSON, YAML, or TOML files into Mace files",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(command *cobra.Command, args []string) error {
+			writtenPaths := make([]string, 0, len(args))
+			targetsByPath := map[string]string{}
+			failedPaths := 0
+			for _, path := range args {
+				source, err := importSourceFromPath(path)
+				if err != nil {
+					_, _ = fmt.Fprintf(command.ErrOrStderr(), "%s: %v\n", path, err)
+					failedPaths++
+					continue
+				}
+
+				targetPath, err := importOutputPath(path, outputDir)
+				if err != nil {
+					_, _ = fmt.Fprintf(command.ErrOrStderr(), "%s: %v\n", path, err)
+					failedPaths++
+					continue
+				}
+				if priorPath, exists := targetsByPath[targetPath]; exists {
+					_, _ = fmt.Fprintf(command.ErrOrStderr(), "%s: would overwrite generated file for %s\n", path, priorPath)
+					failedPaths++
+					continue
+				}
+
+				if err := os.WriteFile(targetPath, []byte(source), 0o600); err != nil {
+					_, _ = fmt.Fprintf(command.ErrOrStderr(), "%s: write mace file: %v\n", path, err)
+					failedPaths++
+					continue
+				}
+
+				targetsByPath[targetPath] = path
+				writtenPaths = append(writtenPaths, targetPath)
+			}
+
+			for _, writtenPath := range writtenPaths {
+				if _, err := fmt.Fprintln(command.OutOrStdout(), writtenPath); err != nil {
+					return err
+				}
+			}
+
+			if failedPaths > 0 {
+				if len(args) > 1 {
+					if _, err := fmt.Fprintf(command.OutOrStdout(), "Generated %d Mace file(s); %d file(s) failed.\n", len(writtenPaths), failedPaths); err != nil {
+						return err
+					}
+				}
+				return fmt.Errorf("%d file(s) failed", failedPaths)
+			}
+
+			_, err := fmt.Fprintf(command.OutOrStdout(), "Generated %d Mace file(s).\n", len(writtenPaths))
+			return err
+		},
+	}
+
+	command.Flags().StringVar(&outputDir, "output-dir", "", "Directory where generated .mace files are written")
 
 	return command
 }
@@ -159,6 +228,58 @@ func valueToAny(value processor.Value) any {
 	default:
 		return nil
 	}
+}
+
+func importFormat(path string) (string, error) {
+	extension := strings.ToLower(filepath.Ext(path))
+	if extension == "" {
+		return "", fmt.Errorf("missing file extension for %q", path)
+	}
+
+	switch extension {
+	case ".json":
+		return "json", nil
+	case ".yaml", ".yml":
+		return "yaml", nil
+	case ".toml":
+		return "toml", nil
+	default:
+		return "", fmt.Errorf("unsupported import extension %q", extension)
+	}
+}
+
+func importSourceFromPath(path string) (string, error) {
+	inputFormat, err := importFormat(path)
+	if err != nil {
+		return "", err
+	}
+
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read import file: %w", err)
+	}
+
+	switch inputFormat {
+	case "json":
+		return codec.ImportJSON(string(contents))
+	case "yaml":
+		return codec.ImportYAML(string(contents))
+	case "toml":
+		return codec.ImportTOML(string(contents))
+	default:
+		return "", fmt.Errorf("unsupported import format %q", inputFormat)
+	}
+}
+
+func importOutputPath(path string, outputDir string) (string, error) {
+	baseName := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)) + ".mace"
+	if outputDir == "" {
+		return filepath.Join(filepath.Dir(path), baseName), nil
+	}
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", fmt.Errorf("create output directory: %w", err)
+	}
+	return filepath.Join(outputDir, baseName), nil
 }
 
 func parseFile(path string) (ast.File, error) {

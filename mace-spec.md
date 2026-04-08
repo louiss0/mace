@@ -175,19 +175,55 @@ Fruit favorite = Fruit.Apple;
 
 ## Types
 
-The current implementation supports:
+The current type system supports:
 
 - `string`
 - `int`
 - `float`
 - `boolean`
 - `array<T>`
+- `union[T1, T2, ...]`
+- `variant[T1, T2, ...]`
 - named type aliases
 - named enums
 - named schemas
 
 Arrays must be homogeneous. Nested arrays and arrays of schemas are
 supported.
+
+Union and variant types may be written inline or behind named type aliases.
+
+```mace
+type User: union[Profile, Audit];
+type Scalar: variant[string, int];
+
+schema ValueBox: {
+  value: variant[string, int];
+};
+```
+
+Mace unions use schema-composition semantics.
+
+- Union members must be schemas.
+- A union combines all member schema fields into one closed record shape.
+- Conflicting fields across member schemas are invalid.
+- Required fields stay required unless every member marks the field optional.
+
+Mace variants use closed alternative semantics.
+
+- A variant value must match exactly one member.
+- Record members are closed: unknown fields are rejected.
+- Record values may not mix fields that belong to different variant members.
+- If a value matches zero members or more than one member, validation fails.
+
+This means Mace maps JSON Schema `allOf` into `union[...]`, and maps JSON
+Schema `anyOf` and `oneOf` into the stricter Mace `variant[...]` behavior.
+Schemas that rely on overlapping alternatives, non-structural exclusivity
+rules, or external validation logic are not represented exactly in Mace.
+
+For JSON Schema interoperability, `null` should be treated as field
+optionality when converting schemas. For example, a JSON Schema property with
+`type: ["string", "null"]` maps to an optional Mace field of type `string`.
 
 ## Output Block
 
