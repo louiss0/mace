@@ -182,7 +182,7 @@ The current type system supports:
 - `float`
 - `boolean`
 - `array<T>`
-- `union[T1, T2, ...]`
+- `variant[T1, T2, ...]`
 - named type aliases
 - named enums
 - named schemas
@@ -190,25 +190,25 @@ The current type system supports:
 Arrays must be homogeneous. Nested arrays and arrays of schemas are
 supported.
 
-Union types may be written inline or behind named type aliases.
+Variant types may be written inline or behind named type aliases.
 
 ```mace
-type Scalar: union[string, int];
+type Scalar: variant[string, int];
 
 schema ValueBox: {
-  value: union[string, int];
+  value: variant[string, int];
 };
 ```
 
-Mace unions use closed variant semantics.
+Mace variants use closed variant semantics.
 
-- A union value must match exactly one member.
+- A variant value must match exactly one member.
 - Record members are closed: unknown fields are rejected.
-- Record values may not mix fields that belong to different union members.
+- Record values may not mix fields that belong to different variant members.
 - If a value matches zero members or more than one member, validation fails.
 
 This means Mace does not preserve JSON Schema's distinction between `anyOf`
-and `oneOf`. Both concepts map into the same stricter Mace `union[...]`
+and `oneOf`. Both concepts map into the same stricter Mace `variant[...]`
 behavior when imported. Schemas that rely on overlapping alternatives,
 non-structural exclusivity rules, or external validation logic are not
 represented exactly in Mace. `allOf`-style schema composition is not currently

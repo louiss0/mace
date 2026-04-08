@@ -387,8 +387,8 @@ func keywordToken(lexeme string) (TokenType, bool) {
 		return TokenEnum, true
 	case "array":
 		return TokenArray, true
-	case "union":
-		return TokenUnion, true
+	case "variant":
+		return TokenVariant, true
 	case "string":
 		return TokenStringType, true
 	case "int":

@@ -227,8 +227,8 @@ Name user = "Ada";
 |===|
 [output = data]
 { user: user; }`),
-		Entry("union declarations and assignments", wrapScriptWithOutput(`|===|
-type Scalar: union[string, int];
+		Entry("variant declarations and assignments", wrapScriptWithOutput(`|===|
+type Scalar: variant[string, int];
 Scalar value = "Ada";
 |===|`)),
 	)
@@ -257,7 +257,7 @@ schema User: { name: string; };
 [output = data] {}`, "duplicate import"),
 	)
 
-	DescribeTable("accepts primitive union variants",
+	DescribeTable("accepts primitive variant alternatives",
 		func(typeReference string, firstValue string, secondValue string) {
 			processor := New()
 			_, err := processor.Process(wrapScriptWithOutput(fmt.Sprintf(`|===|
@@ -267,26 +267,26 @@ Value second = %s;
 |===|`, typeReference, firstValue, secondValue)))
 			tAssert.NoError(err)
 		},
-		Entry("string-int", "union[string, int]", `"Ada"`, `42`),
-		Entry("string-float", "union[string, float]", `"Ada"`, `1.5`),
-		Entry("string-boolean", "union[string, boolean]", `"Ada"`, `true`),
-		Entry("int-float", "union[int, float]", `42`, `1.5`),
-		Entry("int-boolean", "union[int, boolean]", `42`, `true`),
-		Entry("float-boolean", "union[float, boolean]", `1.5`, `true`),
+		Entry("string-int", "variant[string, int]", `"Ada"`, `42`),
+		Entry("string-float", "variant[string, float]", `"Ada"`, `1.5`),
+		Entry("string-boolean", "variant[string, boolean]", `"Ada"`, `true`),
+		Entry("int-float", "variant[int, float]", `42`, `1.5`),
+		Entry("int-boolean", "variant[int, boolean]", `42`, `true`),
+		Entry("float-boolean", "variant[float, boolean]", `1.5`, `true`),
 	)
 
-	It("accepts schema and primitive union variants", func() {
+	It("accepts schema and primitive variant alternatives", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
 schema User: { name: string; };
-type Value: union[User, string];
+type Value: variant[User, string];
 Value first = { name: "Ada"; };
 Value second = "fallback";
 |===|`))
 		tAssert.NoError(err)
 	})
 
-	It("accepts same-backing enum union variants", func() {
+	It("accepts same-backing enum variant alternatives", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
 enum Role: string {
@@ -295,18 +295,18 @@ enum Role: string {
 enum State: string {
   Active = "active",
 };
-type Value: union[Role, State];
+type Value: variant[Role, State];
 Value first = Role.Admin;
 Value second = State.Active;
 |===|`))
 		tAssert.NoError(err)
 	})
 
-	It("accepts nested union variant aliases", func() {
+	It("accepts nested variant aliases", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
-type Scalar: union[string, int];
-type Value: union[Scalar, boolean];
+type Scalar: variant[string, int];
+type Value: variant[Scalar, boolean];
 Value first = "Ada";
 Value second = 42;
 Value third = true;
@@ -314,21 +314,21 @@ Value third = true;
 		tAssert.NoError(err)
 	})
 
-	It("rejects union variant variables with non-matching values", func() {
+	It("rejects variant variables with non-matching values", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
-type Scalar: union[string, int];
+type Scalar: variant[string, int];
 Scalar value = true;
 |===|`))
 		tAssert.ErrorContains(err, "type mismatch")
 	})
 
-	It("rejects record literals that mix fields across union variants", func() {
+	It("rejects record literals that mix fields across variant alternatives", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
 schema EmailLogin: { email: string; password: string; };
 schema ApiKeyLogin: { api_key: string; };
-type Login: union[EmailLogin, ApiKeyLogin];
+type Login: variant[EmailLogin, ApiKeyLogin];
 Login value = {
   email: "ada@example.com";
   password: "secret";
@@ -338,18 +338,18 @@ Login value = {
 		tAssert.ErrorContains(err, "type mismatch")
 	})
 
-	It("rejects record literals that match multiple union variants", func() {
+	It("rejects record literals that match multiple variant alternatives", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
 schema Named: { id: string; };
 schema OptionallyNamed: { id: string; nickname?: string; };
-type Identity: union[Named, OptionallyNamed];
+type Identity: variant[Named, OptionallyNamed];
 Identity value = { id: "u1"; };
 |===|`))
-		tAssert.ErrorContains(err, "exactly one union member")
+		tAssert.ErrorContains(err, "exactly one variant member")
 	})
 
-	It("rejects mixed-backing enum union variants", func() {
+	It("rejects mixed-backing enum variant alternatives", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
 enum Role: string {
@@ -358,7 +358,7 @@ enum Role: string {
 enum Status: int {
   Ready = 1,
 };
-type Value: union[Role, Status];
+type Value: variant[Role, Status];
 |===|`))
 		tAssert.ErrorContains(err, "same backing type")
 	})
@@ -618,12 +618,12 @@ Team result = { name: team_name; members: [{ id: "u1"; role: "owner"; }]; };
 		}}),
 	)
 
-	It("imports union aliases reused across files", func() {
-		workspace, err := os.MkdirTemp("", "mace-processor-union-import-*")
+	It("imports variant aliases reused across files", func() {
+		workspace, err := os.MkdirTemp("", "mace-processor-variant-import-*")
 		tAssert.NoError(err)
 
 		writeFixtureFile(workspace, "shared.mace", `|===|
-type Identity: union[string, int];
+type Identity: variant[string, int];
 |===|
 [output = schema]
 {
@@ -806,11 +806,11 @@ schema User: { name: string; };
 			}),
 			{name: "user"}: schemaNamed("User"),
 		}),
-		Entry("union fields", `[output = schema]
+		Entry("variant fields", `[output = schema]
 {
-  value: union[string, int];
+  value: variant[string, int];
 }`, map[expectedSchemaField]SchemaType{
-			{name: "value"}: {Kind: SchemaTypeUnion, Members: []SchemaType{schemaPrimitive("string"), schemaPrimitive("int")}},
+			{name: "value"}: {Kind: SchemaTypeVariant, Members: []SchemaType{schemaPrimitive("string"), schemaPrimitive("int")}},
 		}),
 	)
 

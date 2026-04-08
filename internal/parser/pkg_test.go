@@ -379,9 +379,9 @@ injectable string env;
 			}
 		})
 
-		It("parses union type references", func() {
+		It("parses variant type references", func() {
 			input := `|===|
-type Value: union[string, int];
+type Value: variant[string, int];
 |===|
 [output = data] {}`
 
@@ -392,11 +392,11 @@ type Value: union[string, int];
 				typeDecl, ok := file.Script.Items[0].(ast.TypeDeclaration)
 				tAssert.True(ok)
 				if ok {
-					unionType, ok := typeDecl.Type.(ast.UnionType)
+					variantType, ok := typeDecl.Type.(ast.VariantType)
 					tAssert.True(ok)
-					if ok && tAssert.Len(unionType.Members, 2) {
-						_, firstIsPrimitive := unionType.Members[0].(ast.PrimitiveType)
-						_, secondIsPrimitive := unionType.Members[1].(ast.PrimitiveType)
+					if ok && tAssert.Len(variantType.Members, 2) {
+						_, firstIsPrimitive := variantType.Members[0].(ast.PrimitiveType)
+						_, secondIsPrimitive := variantType.Members[1].(ast.PrimitiveType)
 						tAssert.True(firstIsPrimitive)
 						tAssert.True(secondIsPrimitive)
 					}

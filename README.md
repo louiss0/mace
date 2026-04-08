@@ -66,7 +66,7 @@ Mace supports:
 - `=` for variable initializers and enum member values
 - primitive types: `string`, `int`, `float`, `boolean`
 - arrays: `array<T>`
-- unions: `union[T1, T2, ...]`
+- variants: `variant[T1, T2, ...]`
 - named type aliases
 - schemas
 - enums backed by `string` or `int`, with implicit or explicit member values
@@ -74,15 +74,15 @@ Mace supports:
 - record, array, arithmetic, logical, and conditional expressions
 - `$self` references inside output evaluation
 
-Union types are first-class across the language, including named aliases,
+Variant types are first-class across the language, including named aliases,
 output schema validation, imports, formatter output, and editor tooling.
-Mace treats unions as closed variants: values must match exactly one member,
+Mace treats variants as closed alternatives: values must match exactly one member,
 record members reject unknown fields, and record values may not combine
-fields from different union branches.
+fields from different variant branches.
 
 ```mace
 |===|
-type Identity: union[string, int];
+type Identity: variant[string, int];
 Identity primary = "Ada";
 Identity fallback = 42;
 |===|
@@ -175,11 +175,11 @@ Converts JSON, YAML, and TOML files into `.mace` files.
 - other JSON, YAML, and TOML files are converted into Mace output data blocks
 - JSON Schema `null` maps to field optionality during schema conversion
 - JSON Schema `anyOf` and `oneOf` alternatives can be emitted as Mace
-  `union[...]` types during import
-- imported `union[...]` types use Mace's closed variant semantics rather than
+  `variant[...]` types during import
+- imported `variant[...]` types use Mace's closed variant semantics rather than
   preserving a distinct `anyOf` versus `oneOf` behavior
 - `allOf`-style schema composition is not currently represented in Mace import
-- imported `union[...]` types remain regular Mace types that work in scripts,
+- imported `variant[...]` types remain regular Mace types that work in scripts,
   schema validation, formatting, and LSP tooling
 - when multiple files are imported, successful files are still written even if
   some files fail

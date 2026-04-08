@@ -279,7 +279,7 @@ level = 2
 })
 
 var _ = Describe("ImportSchema", func() {
-	DescribeTable("maps primitive union variants inline",
+	DescribeTable("maps primitive variant alternatives inline",
 		func(types string, expected string) {
 			source, err := ImportJSONSchema(fmt.Sprintf(`{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -296,27 +296,27 @@ var _ = Describe("ImportSchema", func() {
 		},
 		Entry("string-int", `["string", "integer"]`, `[output = schema]
 {
-  value: union[string, int];
+  value: variant[string, int];
 }`),
 		Entry("string-float", `["string", "number"]`, `[output = schema]
 {
-  value: union[string, float];
+  value: variant[string, float];
 }`),
 		Entry("string-boolean", `["string", "boolean"]`, `[output = schema]
 {
-  value: union[string, boolean];
+  value: variant[string, boolean];
 }`),
 		Entry("int-float", `["integer", "number"]`, `[output = schema]
 {
-  value: union[int, float];
+  value: variant[int, float];
 }`),
 		Entry("int-boolean", `["integer", "boolean"]`, `[output = schema]
 {
-  value: union[int, boolean];
+  value: variant[int, boolean];
 }`),
 		Entry("float-boolean", `["number", "boolean"]`, `[output = schema]
 {
-  value: union[float, boolean];
+  value: variant[float, boolean];
 }`),
 	)
 
@@ -355,7 +355,7 @@ var _ = Describe("ImportSchema", func() {
 }`, source)
 	})
 
-	It("maps multi-type union variants inline", func() {
+	It("maps multi-type variant alternatives inline", func() {
 		source, err := ImportJSONSchema(`{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
@@ -369,7 +369,7 @@ var _ = Describe("ImportSchema", func() {
 		tAssert.NoError(err)
 		tAssert.Equal(`[output = schema]
 {
-  value: union[string, int];
+  value: variant[string, int];
 }`, source)
 	})
 
@@ -551,7 +551,7 @@ type Tags: array<string>;
 }`, source)
 	})
 
-	It("maps union variant $defs into type aliases", func() {
+	It("maps variant $defs into type aliases", func() {
 		source, err := ImportJSONSchema(`{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$defs": {
@@ -569,7 +569,7 @@ type Tags: array<string>;
 }`)
 		tAssert.NoError(err)
 		tAssert.Equal(`|===|
-type Value: union[string, int];
+type Value: variant[string, int];
 |===|
 [output = schema]
 {
@@ -577,7 +577,7 @@ type Value: union[string, int];
 }`, source)
 	})
 
-	It("maps same-backing enum union variants", func() {
+	It("maps same-backing enum variant alternatives", func() {
 		source, err := ImportJSONSchema(`{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$defs": {
@@ -612,11 +612,11 @@ enum State: string {
 |===|
 [output = schema]
 {
-  value: union[Role, State];
+  value: variant[Role, State];
 }`, source)
 	})
 
-	It("maps anyOf alternatives into union variants", func() {
+	It("maps anyOf alternatives into variant alternatives", func() {
 		source, err := ImportJSONSchema(`{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$defs": {
@@ -647,7 +647,7 @@ schema Profile: {
 |===|
 [output = schema]
 {
-  value: union[Profile, string];
+  value: variant[Profile, string];
 }`, source)
 	})
 
@@ -668,7 +668,7 @@ schema Profile: {
 		tAssert.ErrorContains(err, "allOf")
 	})
 
-	It("rejects enum union variants with mixed backing types", func() {
+	It("rejects enum variant alternatives with mixed backing types", func() {
 		_, err := ImportJSONSchema(`{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$defs": {
@@ -693,7 +693,7 @@ schema Profile: {
 		tAssert.ErrorContains(err, "same backing type")
 	})
 
-	It("maps schema and primitive union variants", func() {
+	It("maps schema and primitive variant alternatives", func() {
 		source, err := ImportJSONSchema(`{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$defs": {
@@ -724,11 +724,11 @@ schema Profile: {
 |===|
 [output = schema]
 {
-  value: union[Profile, string];
+  value: variant[Profile, string];
 }`, source)
 	})
 
-	It("rejects schema and enum union variants", func() {
+	It("rejects schema and enum variant alternatives", func() {
 		_, err := ImportJSONSchema(`{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$defs": {
@@ -754,7 +754,7 @@ schema Profile: {
   },
   "required": ["value"]
 }`)
-		tAssert.ErrorContains(err, "enum unions")
+		tAssert.ErrorContains(err, "enum variants")
 	})
 
 	It("maps object and array-of-object $defs into schemas and aliases", func() {

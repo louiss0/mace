@@ -44,7 +44,7 @@ var scriptKeywordCompletions = []completionDefinition{
 	{Label: "schema", Kind: protocol.CompletionItemKindKeyword, Detail: "schema declaration"},
 	{Label: "string", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
 	{Label: "type", Kind: protocol.CompletionItemKindKeyword, Detail: "type declaration"},
-	{Label: "union", Kind: protocol.CompletionItemKindKeyword, Detail: "type constructor"},
+	{Label: "variant", Kind: protocol.CompletionItemKindKeyword, Detail: "type constructor"},
 }
 
 func completionItems(document document, uri protocol.DocumentUri, position protocol.Position) []protocol.CompletionItem {
@@ -1220,7 +1220,7 @@ func completionItemsForType(typeReference ast.TypeReference, model completionMod
 				Kind:  Ptr(protocol.CompletionItemKindStruct),
 			},
 		}
-	case completionTypeUnion:
+	case completionTypeVariant:
 		groups := make([][]protocol.CompletionItem, 0, len(resolved.members))
 		for _, member := range resolved.members {
 			groups = append(groups, completionItemsForType(member, model, allowSchemaLiteral))
@@ -1322,8 +1322,8 @@ func resolveCompletionType(typeReference ast.TypeReference, model completionMode
 		return completionType{kind: completionTypePrimitive, primitive: typed.Name}
 	case ast.ArrayType:
 		return completionType{kind: completionTypeArray}
-	case ast.UnionType:
-		return completionType{kind: completionTypeUnion, members: typed.Members}
+	case ast.VariantType:
+		return completionType{kind: completionTypeVariant, members: typed.Members}
 	case ast.RecordType:
 		return completionType{kind: completionTypeSchema, record: typed}
 	case ast.NamedType:
@@ -1425,7 +1425,7 @@ func defaultLiteralForType(typeReference ast.TypeReference, model completionMode
 			nextSeen[name] = struct{}{}
 		}
 		return schemaLiteral(resolved.record, model, nextSeen)
-	case completionTypeUnion:
+	case completionTypeVariant:
 		for _, member := range resolved.members {
 			literal := defaultLiteralForType(member, model, seen)
 			if literal != "{}" {
@@ -1632,7 +1632,7 @@ const (
 	completionTypeArray
 	completionTypeSchema
 	completionTypeEnum
-	completionTypeUnion
+	completionTypeVariant
 )
 
 type completionType struct {

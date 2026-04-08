@@ -33,7 +33,7 @@ const (
 	SchemaTypeNamed
 	SchemaTypeArray
 	SchemaTypeRecord
-	SchemaTypeUnion
+	SchemaTypeVariant
 )
 
 type SchemaType struct {
@@ -599,7 +599,7 @@ const (
 	inferredTypeArray
 	inferredTypeRecord
 	inferredTypeNamed
-	inferredTypeUnion
+	inferredTypeVariant
 )
 
 type schemaField struct {
@@ -674,12 +674,12 @@ func formatSchemaType(value inferredType, depth int) string {
 		return fmt.Sprintf("array<%s>", formatSchemaType(*value.element, depth))
 	case inferredTypeRecord:
 		return formatSchemaRecord(value.record.fields, depth)
-	case inferredTypeUnion:
+	case inferredTypeVariant:
 		parts := make([]string, 0, len(value.members))
 		for _, member := range value.members {
 			parts = append(parts, formatSchemaType(member, depth))
 		}
-		return fmt.Sprintf("union[%s]", strings.Join(parts, ", "))
+		return fmt.Sprintf("variant[%s]", strings.Join(parts, ", "))
 	default:
 		return "string"
 	}
@@ -1021,11 +1021,11 @@ func (context *jsonSchemaContext) propertyType(record map[string]any, path []str
 	}
 
 	if variants, ok := record["oneOf"].([]any); ok {
-		valueType, variantNullable, err := context.unionSchemaType(variants, path)
+		valueType, variantNullable, err := context.variantSchemaType(variants, path)
 		return valueType, variantNullable, err
 	}
 	if variants, ok := record["anyOf"].([]any); ok {
-		valueType, variantNullable, err := context.unionSchemaType(variants, path)
+		valueType, variantNullable, err := context.variantSchemaType(variants, path)
 		return valueType, variantNullable, err
 	}
 	if _, ok := record["allOf"].([]any); ok {
@@ -1051,26 +1051,26 @@ func (context *jsonSchemaContext) propertyType(record map[string]any, path []str
 			members = append(members, memberType)
 		}
 		if len(members) == 0 {
-			return inferredType{}, false, fmt.Errorf("null-only unions are not representable")
+			return inferredType{}, false, fmt.Errorf("null-only variants are not representable")
 		}
 		if len(members) == 1 {
 			return members[0], nullable, nil
 		}
-		unionType, err := validateUnionMembers(members)
-		return unionType, nullable, err
+		variantType, err := validateVariantMembers(members)
+		return variantType, nullable, err
 	}
 
 	valueType, err := context.schemaType(record, path)
 	return valueType, nullable, err
 }
 
-func (context *jsonSchemaContext) unionSchemaType(variants []any, path []string) (inferredType, bool, error) {
+func (context *jsonSchemaContext) variantSchemaType(variants []any, path []string) (inferredType, bool, error) {
 	nullable := false
 	members := make([]inferredType, 0, len(variants))
 	for index, variant := range variants {
 		record, ok := variant.(map[string]any)
 		if !ok {
-			return inferredType{}, false, fmt.Errorf("union variants must be objects")
+			return inferredType{}, false, fmt.Errorf("variant alternatives must be objects")
 		}
 
 		valueType, variantNullable, err := context.propertyType(record, append(append([]string{}, path...), fmt.Sprintf("variant%d", index+1)))
@@ -1082,14 +1082,14 @@ func (context *jsonSchemaContext) unionSchemaType(variants []any, path []string)
 	}
 
 	if len(members) == 0 {
-		return inferredType{}, false, fmt.Errorf("empty unions are not representable")
+		return inferredType{}, false, fmt.Errorf("empty variants are not representable")
 	}
 	if len(members) == 1 {
 		return members[0], nullable, nil
 	}
 
-	unionType, err := validateUnionMembers(members)
-	return unionType, nullable, err
+	variantType, err := validateVariantMembers(members)
+	return variantType, nullable, err
 }
 
 func (context *jsonSchemaContext) schemaType(record map[string]any, path []string) (inferredType, error) {
@@ -1358,7 +1358,7 @@ func jsonSchemaEnumMemberValue(value any, index int) (jsonSchemaEnumMember, stri
 	}
 }
 
-func validateUnionMembers(members []inferredType) (inferredType, error) {
+func validateVariantMembers(members []inferredType) (inferredType, error) {
 	hasEnum := false
 	hasSchema := false
 	hasPrimitive := false
@@ -1375,25 +1375,25 @@ func validateUnionMembers(members []inferredType) (inferredType, error) {
 				if enumBacking == "" {
 					enumBacking = member.backingType
 				} else if enumBacking != member.backingType {
-					return inferredType{}, fmt.Errorf("enum unions require the same backing type")
+					return inferredType{}, fmt.Errorf("enum variants require the same backing type")
 				}
 			case "schema":
 				hasSchema = true
 			case "alias":
-				return inferredType{}, fmt.Errorf("union members cannot include type aliases")
+				return inferredType{}, fmt.Errorf("variant members cannot include type aliases")
 			default:
-				return inferredType{}, fmt.Errorf("unsupported named union member")
+				return inferredType{}, fmt.Errorf("unsupported named variant member")
 			}
 		default:
-			return inferredType{}, fmt.Errorf("union members must be primitives, schemas, or enums")
+			return inferredType{}, fmt.Errorf("variant members must be primitives, schemas, or enums")
 		}
 	}
 
 	if hasEnum && (hasPrimitive || hasSchema) {
-		return inferredType{}, fmt.Errorf("enum unions may only combine enums with the same backing type")
+		return inferredType{}, fmt.Errorf("enum variants may only combine enums with the same backing type")
 	}
 
-	return inferredType{kind: inferredTypeUnion, members: members}, nil
+	return inferredType{kind: inferredTypeVariant, members: members}, nil
 }
 
 func fieldName(field reflect.StructField) (string, bool) {

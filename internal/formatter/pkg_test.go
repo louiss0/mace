@@ -139,24 +139,24 @@ injectable string user = "Ada";
 }`, output)
 	})
 
-	It("formats union type references", func() {
+	It("formats variant type references", func() {
 		file, err := parseMaceFile(`|===|
-type Value: union[string, int];
+type Value: variant[string, int];
 |===|
 [output = schema]
 {
-  value: union[string, int];
+  value: variant[string, int];
 }`)
 		tAssert.NoError(err)
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
-		tAssert.Equal(`|===============================|
-type Value: union[string, int];
-|===============================|
+		tAssert.Equal(`|=================================|
+type Value: variant[string, int];
+|=================================|
 [output = schema]
 {
-  value: union[string, int];
+  value: variant[string, int];
 }`, output)
 	})
 })

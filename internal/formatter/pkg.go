@@ -220,7 +220,7 @@ func formatTypeReference(typeReference ast.TypeReference) (string, error) {
 		}
 
 		return fmt.Sprintf("array<%s>", element), nil
-	case ast.UnionType:
+	case ast.VariantType:
 		members := make([]string, 0, len(typedReference.Members))
 		for _, member := range typedReference.Members {
 			formatted, err := formatTypeReference(member)
@@ -229,7 +229,7 @@ func formatTypeReference(typeReference ast.TypeReference) (string, error) {
 			}
 			members = append(members, formatted)
 		}
-		return fmt.Sprintf("union[%s]", strings.Join(members, ", ")), nil
+		return fmt.Sprintf("variant[%s]", strings.Join(members, ", ")), nil
 	case ast.RecordType:
 		return formatRecordType(typedReference, 0)
 	case ast.NamedType:

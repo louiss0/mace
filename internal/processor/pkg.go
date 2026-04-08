@@ -44,7 +44,7 @@ const (
 	SchemaTypeNamed
 	SchemaTypeArray
 	SchemaTypeRecord
-	SchemaTypeUnion
+	SchemaTypeVariant
 )
 
 type SchemaType struct {
@@ -803,7 +803,7 @@ func resolveExportedTypeReference(typeRef ast.TypeReference, types *typeRegistry
 		}
 
 		return ast.ArrayType{Element: element}, nil
-	case ast.UnionType:
+	case ast.VariantType:
 		members := make([]ast.TypeReference, 0, len(ref.Members))
 		for _, member := range ref.Members {
 			resolvedMember, err := resolveExportedTypeReference(member, types, schemas, aliasStack, schemaStack)
@@ -814,7 +814,7 @@ func resolveExportedTypeReference(typeRef ast.TypeReference, types *typeRegistry
 			members = append(members, resolvedMember)
 		}
 
-		return ast.UnionType{Members: members}, nil
+		return ast.VariantType{Members: members}, nil
 	case ast.RecordType:
 		return resolveExportedRecordType(ref, types, schemas, aliasStack, schemaStack)
 	case ast.NamedType:
@@ -1023,7 +1023,7 @@ func validateTypeReference(typeRef ast.TypeReference, symbols *symbolTable, type
 		return nil
 	case ast.ArrayType:
 		return validateTypeReference(ref.Element, symbols, types, schemas, enums)
-	case ast.UnionType:
+	case ast.VariantType:
 		for _, member := range ref.Members {
 			if err := validateTypeReference(member, symbols, types, schemas, enums); err != nil {
 				return err
@@ -1033,7 +1033,7 @@ func validateTypeReference(typeRef ast.TypeReference, symbols *symbolTable, type
 		if err != nil {
 			return err
 		}
-		return validateUnionValueTypes(resolved.members)
+		return validateVariantValueTypes(resolved.members)
 	case ast.RecordType:
 		return validateRecordType(ref, symbols, types, schemas, enums)
 	case ast.NamedType:
@@ -1267,7 +1267,7 @@ func validateOutputSchema(schemaName string, items []ast.OutputField, variables 
 
 func validateExpressionAgainstType(expression ast.Expression, expectedType valueType, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) error {
 	if len(expectedType.members) > 0 {
-		return validateExpressionAgainstUnionMembers(expression, expectedType.members, variables, symbols, types, schemas, enums)
+		return validateExpressionAgainstVariantMembers(expression, expectedType.members, variables, symbols, types, schemas, enums)
 	}
 
 	switch expectedType.kind {
@@ -1315,7 +1315,7 @@ func validateExpressionAgainstType(expression ast.Expression, expectedType value
 	return nil
 }
 
-func validateExpressionAgainstUnionMembers(expression ast.Expression, members []valueType, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) error {
+func validateExpressionAgainstVariantMembers(expression ast.Expression, members []valueType, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) error {
 	actualType, err := inferExpressionType(expression, variables, symbols, types, enums)
 	if err != nil {
 		return err
@@ -1338,7 +1338,7 @@ func validateExpressionAgainstUnionMembers(expression ast.Expression, members []
 		return validationErrorf("type mismatch: expected %s, got %s", valueType{members: members}.name(), actualType.name())
 	}
 
-	return validationErrorf("type mismatch: expected exactly one union member for %s", valueType{members: members}.name())
+	return validationErrorf("type mismatch: expected exactly one variant member for %s", valueType{members: members}.name())
 }
 
 func validateRecordLiteral(expr ast.RecordLiteral, schemaName string, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) error {
@@ -1428,7 +1428,7 @@ func validateEvaluatedOutputSchema(schemaName string, fields map[string]Value, s
 
 func validateEvaluatedValueAgainstType(value Value, expectedType valueType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) error {
 	if len(expectedType.members) > 0 {
-		return validateEvaluatedValueAgainstUnionMembers(value, expectedType.members, symbols, types, schemas, enums)
+		return validateEvaluatedValueAgainstVariantMembers(value, expectedType.members, symbols, types, schemas, enums)
 	}
 	if expectedType.enumName != "" {
 		enumDef, ok := enums.Get(expectedType.enumName)
@@ -1499,7 +1499,7 @@ func validateEvaluatedValueAgainstType(value Value, expectedType valueType, symb
 	return nil
 }
 
-func validateEvaluatedValueAgainstUnionMembers(value Value, members []valueType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) error {
+func validateEvaluatedValueAgainstVariantMembers(value Value, members []valueType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) error {
 	matchCount := 0
 	for _, member := range members {
 		if err := validateEvaluatedValueAgainstType(value, member, symbols, types, schemas, enums); err == nil {
@@ -1514,7 +1514,7 @@ func validateEvaluatedValueAgainstUnionMembers(value Value, members []valueType,
 		return validationErrorf("type mismatch: expected %s, got %s", valueType{members: members}.name(), value.kindName())
 	}
 
-	return validationErrorf("type mismatch: expected exactly one union member for %s", valueType{members: members}.name())
+	return validationErrorf("type mismatch: expected exactly one variant member for %s", valueType{members: members}.name())
 }
 
 func schemaFieldMap(schema ast.RecordType) map[string]ast.SchemaField {
@@ -2209,7 +2209,7 @@ func (t valueType) name() string {
 			parts := lo.Map(t.members, func(member valueType, _ int) string {
 				return member.name()
 			})
-			return fmt.Sprintf("union[%s]", strings.Join(parts, ", "))
+			return fmt.Sprintf("variant[%s]", strings.Join(parts, ", "))
 		}
 		return "unknown"
 	}
@@ -2225,7 +2225,7 @@ func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *ty
 			return valueType{}, err
 		}
 		return valueType{kind: ValueArray, element: &element}, nil
-	case ast.UnionType:
+	case ast.VariantType:
 		members := make([]valueType, 0, len(ref.Members))
 		for _, member := range ref.Members {
 			resolved, err := resolveValueType(member, symbols, types, schemas, enums)
@@ -2234,7 +2234,7 @@ func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *ty
 			}
 			members = append(members, resolved)
 		}
-		if err := validateUnionValueTypes(members); err != nil {
+		if err := validateVariantValueTypes(members); err != nil {
 			return valueType{}, err
 		}
 		return valueType{members: members}, nil
@@ -2260,8 +2260,8 @@ func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *ty
 	}
 }
 
-func validateUnionValueTypes(members []valueType) error {
-	members = flattenUnionValueTypes(members)
+func validateVariantValueTypes(members []valueType) error {
+	members = flattenVariantValueTypes(members)
 	hasEnum := false
 	hasSchema := false
 	hasPrimitive := false
@@ -2269,7 +2269,7 @@ func validateUnionValueTypes(members []valueType) error {
 
 	for _, member := range members {
 		if member.kind == ValueArray {
-			return validationErrorf("union members must be primitives, schemas, or enums")
+			return validationErrorf("variant members must be primitives, schemas, or enums")
 		}
 		switch {
 		case member.enumName != "":
@@ -2277,25 +2277,25 @@ func validateUnionValueTypes(members []valueType) error {
 			if enumBacking == ValueUnknown {
 				enumBacking = member.kind
 			} else if enumBacking != member.kind {
-				return validationErrorf("enum unions require the same backing type")
+				return validationErrorf("enum variants require the same backing type")
 			}
 		case member.kind == ValueRecord:
 			hasSchema = true
 		case member.kind == ValueString || member.kind == ValueInt || member.kind == ValueFloat || member.kind == ValueBoolean:
 			hasPrimitive = true
 		default:
-			return validationErrorf("union members must be primitives, schemas, or enums")
+			return validationErrorf("variant members must be primitives, schemas, or enums")
 		}
 	}
 
 	if hasEnum && (hasPrimitive || hasSchema) {
-		return validationErrorf("enum unions may only combine enums with the same backing type")
+		return validationErrorf("enum variants may only combine enums with the same backing type")
 	}
 
 	return nil
 }
 
-func flattenUnionValueTypes(members []valueType) []valueType {
+func flattenVariantValueTypes(members []valueType) []valueType {
 	flattened := make([]valueType, 0, len(members))
 	for _, member := range members {
 		if len(member.members) == 0 {
@@ -2303,7 +2303,7 @@ func flattenUnionValueTypes(members []valueType) []valueType {
 			continue
 		}
 
-		flattened = append(flattened, flattenUnionValueTypes(member.members)...)
+		flattened = append(flattened, flattenVariantValueTypes(member.members)...)
 	}
 
 	return flattened
@@ -2337,7 +2337,7 @@ func schemaTypeFromTypeReference(typeRef ast.TypeReference) (SchemaType, error) 
 		}
 
 		return SchemaType{Kind: SchemaTypeArray, Element: &element}, nil
-	case ast.UnionType:
+	case ast.VariantType:
 		members := make([]SchemaType, 0, len(ref.Members))
 		for _, member := range ref.Members {
 			resolved, err := schemaTypeFromTypeReference(member)
@@ -2346,7 +2346,7 @@ func schemaTypeFromTypeReference(typeRef ast.TypeReference) (SchemaType, error) 
 			}
 			members = append(members, resolved)
 		}
-		return SchemaType{Kind: SchemaTypeUnion, Members: members}, nil
+		return SchemaType{Kind: SchemaTypeVariant, Members: members}, nil
 	case ast.RecordType:
 		fields := make(map[SchemaField]SchemaType, len(ref.Fields))
 		for _, field := range ref.Fields {

@@ -168,11 +168,11 @@ type ArrayType struct {
 
 func (ArrayType) typeReferenceNode() {}
 
-type UnionType struct {
+type VariantType struct {
 	Members []TypeReference
 }
 
-func (UnionType) typeReferenceNode() {}
+func (VariantType) typeReferenceNode() {}
 
 type NamedType struct {
 	Name string
