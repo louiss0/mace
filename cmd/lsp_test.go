@@ -885,7 +885,7 @@ Basket basket = {
 		tAssert.Equal([]string{`{ name: ""; age?: 0; }`}, labels)
 	})
 
-	It("suggests union members for nested output schema aliases", func() {
+	It("suggests union variant members for nested output schema aliases", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
 enum Role: string {

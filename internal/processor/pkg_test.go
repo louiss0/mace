@@ -257,7 +257,7 @@ schema User: { name: string; };
 [output = data] {}`, "duplicate import"),
 	)
 
-	DescribeTable("accepts primitive union combinations",
+	DescribeTable("accepts primitive union variants",
 		func(typeReference string, firstValue string, secondValue string) {
 			processor := New()
 			_, err := processor.Process(wrapScriptWithOutput(fmt.Sprintf(`|===|
@@ -275,7 +275,7 @@ Value second = %s;
 		Entry("float-boolean", "union[float, boolean]", `1.5`, `true`),
 	)
 
-	It("accepts schema and primitive unions", func() {
+	It("accepts schema and primitive union variants", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
 schema User: { name: string; };
@@ -286,7 +286,7 @@ Value second = "fallback";
 		tAssert.NoError(err)
 	})
 
-	It("accepts same-backing enum unions", func() {
+	It("accepts same-backing enum union variants", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
 enum Role: string {
@@ -302,7 +302,7 @@ Value second = State.Active;
 		tAssert.NoError(err)
 	})
 
-	It("accepts nested union aliases", func() {
+	It("accepts nested union variant aliases", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
 type Scalar: union[string, int];
@@ -314,7 +314,7 @@ Value third = true;
 		tAssert.NoError(err)
 	})
 
-	It("rejects union typed variables with non-matching values", func() {
+	It("rejects union variant variables with non-matching values", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
 type Scalar: union[string, int];
@@ -323,7 +323,7 @@ Scalar value = true;
 		tAssert.ErrorContains(err, "type mismatch")
 	})
 
-	It("rejects record literals that mix fields across union schemas", func() {
+	It("rejects record literals that mix fields across union variants", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
 schema EmailLogin: { email: string; password: string; };
@@ -338,7 +338,7 @@ Login value = {
 		tAssert.ErrorContains(err, "type mismatch")
 	})
 
-	It("rejects record literals that match multiple union schemas", func() {
+	It("rejects record literals that match multiple union variants", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
 schema Named: { id: string; };
@@ -349,7 +349,7 @@ Identity value = { id: "u1"; };
 		tAssert.ErrorContains(err, "exactly one union member")
 	})
 
-	It("rejects mixed-backing enum unions", func() {
+	It("rejects mixed-backing enum union variants", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
 enum Role: string {

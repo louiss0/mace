@@ -1028,6 +1028,9 @@ func (context *jsonSchemaContext) propertyType(record map[string]any, path []str
 		valueType, variantNullable, err := context.unionSchemaType(variants, path)
 		return valueType, variantNullable, err
 	}
+	if _, ok := record["allOf"].([]any); ok {
+		return inferredType{}, false, fmt.Errorf("allOf schema composition is not representable")
+	}
 
 	typeArray, hasTypeArray := record["type"].([]any)
 	if hasTypeArray {

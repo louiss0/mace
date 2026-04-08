@@ -279,7 +279,7 @@ level = 2
 })
 
 var _ = Describe("ImportSchema", func() {
-	DescribeTable("maps primitive union combinations inline",
+	DescribeTable("maps primitive union variants inline",
 		func(types string, expected string) {
 			source, err := ImportJSONSchema(fmt.Sprintf(`{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -355,7 +355,7 @@ var _ = Describe("ImportSchema", func() {
 }`, source)
 	})
 
-	It("maps multi-type unions inline", func() {
+	It("maps multi-type union variants inline", func() {
 		source, err := ImportJSONSchema(`{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
@@ -551,7 +551,7 @@ type Tags: array<string>;
 }`, source)
 	})
 
-	It("maps union $defs into type aliases", func() {
+	It("maps union variant $defs into type aliases", func() {
 		source, err := ImportJSONSchema(`{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$defs": {
@@ -577,7 +577,7 @@ type Value: union[string, int];
 }`, source)
 	})
 
-	It("maps same-backing enum unions", func() {
+	It("maps same-backing enum union variants", func() {
 		source, err := ImportJSONSchema(`{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$defs": {
@@ -616,7 +616,59 @@ enum State: string {
 }`, source)
 	})
 
-	It("rejects enum unions with mixed backing types", func() {
+	It("maps anyOf alternatives into union variants", func() {
+		source, err := ImportJSONSchema(`{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Profile": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" }
+      },
+      "required": ["name"]
+    }
+  },
+  "type": "object",
+  "properties": {
+    "value": {
+      "anyOf": [
+        { "$ref": "#/$defs/Profile" },
+        { "type": "string" }
+      ]
+    }
+  },
+  "required": ["value"]
+}`)
+		tAssert.NoError(err)
+		tAssert.Equal(`|===|
+schema Profile: {
+  name: string;
+};
+|===|
+[output = schema]
+{
+  value: union[Profile, string];
+}`, source)
+	})
+
+	It("rejects allOf composition", func() {
+		_, err := ImportJSONSchema(`{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "value": {
+      "allOf": [
+        { "type": "string" },
+        { "type": "integer" }
+      ]
+    }
+  },
+  "required": ["value"]
+}`)
+		tAssert.ErrorContains(err, "allOf")
+	})
+
+	It("rejects enum union variants with mixed backing types", func() {
 		_, err := ImportJSONSchema(`{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$defs": {
@@ -641,7 +693,7 @@ enum State: string {
 		tAssert.ErrorContains(err, "same backing type")
 	})
 
-	It("maps schema and primitive unions", func() {
+	It("maps schema and primitive union variants", func() {
 		source, err := ImportJSONSchema(`{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$defs": {
@@ -676,7 +728,7 @@ schema Profile: {
 }`, source)
 	})
 
-	It("rejects schema and enum unions", func() {
+	It("rejects schema and enum union variants", func() {
 		_, err := ImportJSONSchema(`{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$defs": {

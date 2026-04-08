@@ -171,7 +171,7 @@ schema Basket: { favorite_fruit: Fruit; };
 		tAssert.Contains(labels, "Fruit.Strawberry")
 	})
 
-	It("suggests union members for nested output schema aliases", func() {
+	It("suggests union variant members for nested output schema aliases", func() {
 		text := `|===|
 enum Role: string {
   Admin,
