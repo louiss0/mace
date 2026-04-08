@@ -6,6 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+
+	"github.com/samber/lo"
 
 	"github.com/louiss0/mace/internal/lexer"
 	"github.com/louiss0/mace/internal/parser"
@@ -41,6 +44,7 @@ const (
 	SchemaTypeNamed
 	SchemaTypeArray
 	SchemaTypeRecord
+	SchemaTypeUnion
 )
 
 type SchemaType struct {
@@ -48,6 +52,7 @@ type SchemaType struct {
 	Name    string
 	Element *SchemaType
 	Fields  map[SchemaField]SchemaType
+	Members []SchemaType
 }
 
 type processContext struct {
@@ -248,7 +253,7 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 	}
 
 	if outputBlock.Mode == ast.OutputModeSchema {
-		if err := validateSchemaOutputFields(outputBlock.SchemaFields, outputContext.symbols, outputContext.types); err != nil {
+		if err := validateSchemaOutputFields(outputBlock.SchemaFields, outputContext.symbols, outputContext.types, outputContext.schemas, outputContext.enums); err != nil {
 			return Result{}, err
 		}
 		schema, err := evaluateSchemaOutput(outputBlock)
@@ -632,7 +637,7 @@ func collectImportExports(output ast.OutputBlock, context processContext) (map[s
 	}
 
 	if output.Mode == ast.OutputModeSchema {
-		if err := validateSchemaOutputFields(output.SchemaFields, outputContext.symbols, outputContext.types); err != nil {
+		if err := validateSchemaOutputFields(output.SchemaFields, outputContext.symbols, outputContext.types, outputContext.schemas, outputContext.enums); err != nil {
 			return nil, err
 		}
 
@@ -760,16 +765,22 @@ func exportedOutputFieldType(field ast.OutputField, output ast.OutputBlock, cont
 }
 
 func sanitizeImportedValueType(input valueType, schemas *schemaRegistry) valueType {
-	if input.kind != ValueArray && input.kind != ValueRecord {
-		return input
-	}
-
 	sanitized := input
 	if sanitized.element != nil {
 		element := sanitizeImportedValueType(*sanitized.element, schemas)
 		sanitized.element = &element
 	}
+	if len(sanitized.members) > 0 {
+		members := make([]valueType, 0, len(sanitized.members))
+		for _, member := range sanitized.members {
+			members = append(members, sanitizeImportedValueType(member, schemas))
+		}
+		sanitized.members = members
+	}
 
+	if sanitized.kind != ValueRecord {
+		return sanitized
+	}
 	if sanitized.schemaName == "" {
 		return sanitized
 	}
@@ -924,7 +935,7 @@ func validateDeclarations(items []ast.Declaration, symbols *symbolTable, types *
 func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry, variables *variableRegistry, injections map[string]Value) error {
 	switch decl := declaration.(type) {
 	case ast.VariableDeclaration:
-		if err := validateTypeReference(decl.Type, symbols, types); err != nil {
+		if err := validateTypeReference(decl.Type, symbols, types, schemas, enums); err != nil {
 			return err
 		}
 		expectedType, err := resolveValueType(decl.Type, symbols, types, schemas, enums)
@@ -957,9 +968,9 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 		variables.Add(decl.Name, expectedType)
 		return nil
 	case ast.TypeDeclaration:
-		return validateTypeReference(decl.Type, symbols, types)
+		return validateTypeReference(decl.Type, symbols, types, schemas, enums)
 	case ast.SchemaDeclaration:
-		return validateRecordType(decl.Type, symbols, types)
+		return validateRecordType(decl.Type, symbols, types, schemas, enums)
 	case ast.EnumDeclaration:
 		_, err := enumDefinitionFromDeclaration(decl)
 		return err
@@ -994,14 +1005,25 @@ func validateInjections(items []ast.Declaration, injections map[string]Value) er
 	return nil
 }
 
-func validateTypeReference(typeRef ast.TypeReference, symbols *symbolTable, types *typeRegistry) error {
+func validateTypeReference(typeRef ast.TypeReference, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) error {
 	switch ref := typeRef.(type) {
 	case ast.PrimitiveType:
 		return nil
 	case ast.ArrayType:
-		return validateTypeReference(ref.Element, symbols, types)
+		return validateTypeReference(ref.Element, symbols, types, schemas, enums)
+	case ast.UnionType:
+		for _, member := range ref.Members {
+			if err := validateTypeReference(member, symbols, types, schemas, enums); err != nil {
+				return err
+			}
+		}
+		resolved, err := resolveValueType(ref, symbols, types, schemas, enums)
+		if err != nil {
+			return err
+		}
+		return validateUnionValueTypes(resolved.members)
 	case ast.RecordType:
-		return validateRecordType(ref, symbols, types)
+		return validateRecordType(ref, symbols, types, schemas, enums)
 	case ast.NamedType:
 		if symbols.IsType(ref.Name) {
 			_, _, err := types.Resolve(ref.Name)
@@ -1016,7 +1038,7 @@ func validateTypeReference(typeRef ast.TypeReference, symbols *symbolTable, type
 	}
 }
 
-func validateRecordType(record ast.RecordType, symbols *symbolTable, types *typeRegistry) error {
+func validateRecordType(record ast.RecordType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) error {
 	fieldNames := map[string]struct{}{}
 	for _, field := range record.Fields {
 		if _, exists := fieldNames[field.Name]; exists {
@@ -1024,7 +1046,7 @@ func validateRecordType(record ast.RecordType, symbols *symbolTable, types *type
 		}
 		fieldNames[field.Name] = struct{}{}
 
-		if err := validateTypeReference(field.Type, symbols, types); err != nil {
+		if err := validateTypeReference(field.Type, symbols, types, schemas, enums); err != nil {
 			return err
 		}
 	}
@@ -1083,7 +1105,7 @@ func validateOutputDirectiveReferences(output ast.OutputBlock, symbols *symbolTa
 	return nil
 }
 
-func validateSchemaOutputFields(fields []ast.OutputSchemaField, symbols *symbolTable, types *typeRegistry) error {
+func validateSchemaOutputFields(fields []ast.OutputSchemaField, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) error {
 	fieldNames := map[string]struct{}{}
 	for _, field := range fields {
 		if _, exists := fieldNames[field.Name]; exists {
@@ -1095,7 +1117,7 @@ func validateSchemaOutputFields(fields []ast.OutputSchemaField, symbols *symbolT
 			return err
 		}
 
-		if err := validateTypeReference(field.Type, symbols, types); err != nil {
+		if err := validateTypeReference(field.Type, symbols, types, schemas, enums); err != nil {
 			return err
 		}
 	}
@@ -2076,6 +2098,7 @@ type valueType struct {
 	element    *valueType
 	schemaName string
 	enumName   string
+	members    []valueType
 }
 
 func (t valueType) isNumeric() bool {
@@ -2109,6 +2132,12 @@ func (t valueType) name() string {
 		}
 		return "record"
 	default:
+		if len(t.members) > 0 {
+			parts := lo.Map(t.members, func(member valueType, _ int) string {
+				return member.name()
+			})
+			return fmt.Sprintf("union[%s]", strings.Join(parts, ", "))
+		}
 		return "unknown"
 	}
 }
@@ -2123,6 +2152,19 @@ func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *ty
 			return valueType{}, err
 		}
 		return valueType{kind: ValueArray, element: &element}, nil
+	case ast.UnionType:
+		members := make([]valueType, 0, len(ref.Members))
+		for _, member := range ref.Members {
+			resolved, err := resolveValueType(member, symbols, types, schemas, enums)
+			if err != nil {
+				return valueType{}, err
+			}
+			members = append(members, resolved)
+		}
+		if err := validateUnionValueTypes(members); err != nil {
+			return valueType{}, err
+		}
+		return valueType{members: members}, nil
 	case ast.RecordType:
 		return valueType{kind: ValueRecord}, nil
 	case ast.NamedType:
@@ -2143,6 +2185,40 @@ func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *ty
 	default:
 		return valueType{}, validationErrorf("unknown type reference")
 	}
+}
+
+func validateUnionValueTypes(members []valueType) error {
+	hasEnum := false
+	hasSchema := false
+	hasPrimitive := false
+	enumBacking := ValueUnknown
+
+	for _, member := range members {
+		if len(member.members) > 0 || member.kind == ValueArray {
+			return validationErrorf("union members must be primitives, schemas, or enums")
+		}
+		switch {
+		case member.enumName != "":
+			hasEnum = true
+			if enumBacking == ValueUnknown {
+				enumBacking = member.kind
+			} else if enumBacking != member.kind {
+				return validationErrorf("enum unions require the same backing type")
+			}
+		case member.kind == ValueRecord:
+			hasSchema = true
+		case member.kind == ValueString || member.kind == ValueInt || member.kind == ValueFloat || member.kind == ValueBoolean:
+			hasPrimitive = true
+		default:
+			return validationErrorf("union members must be primitives, schemas, or enums")
+		}
+	}
+
+	if hasEnum && (hasPrimitive || hasSchema) {
+		return validationErrorf("enum unions may only combine enums with the same backing type")
+	}
+
+	return nil
 }
 
 func primitiveValueType(name string) (valueType, error) {
@@ -2173,6 +2249,16 @@ func schemaTypeFromTypeReference(typeRef ast.TypeReference) (SchemaType, error) 
 		}
 
 		return SchemaType{Kind: SchemaTypeArray, Element: &element}, nil
+	case ast.UnionType:
+		members := make([]SchemaType, 0, len(ref.Members))
+		for _, member := range ref.Members {
+			resolved, err := schemaTypeFromTypeReference(member)
+			if err != nil {
+				return SchemaType{}, err
+			}
+			members = append(members, resolved)
+		}
+		return SchemaType{Kind: SchemaTypeUnion, Members: members}, nil
 	case ast.RecordType:
 		fields := make(map[SchemaField]SchemaType, len(ref.Fields))
 		for _, field := range ref.Fields {
@@ -2372,6 +2458,17 @@ func inferConditionalType(expr ast.ConditionalExpression, variables *variableReg
 }
 
 func typesEqual(leftType, rightType valueType) bool {
+	if len(leftType.members) > 0 || len(rightType.members) > 0 {
+		if len(leftType.members) != len(rightType.members) {
+			return false
+		}
+		for index := range leftType.members {
+			if !typesEqual(leftType.members[index], rightType.members[index]) {
+				return false
+			}
+		}
+		return true
+	}
 	if leftType.kind != rightType.kind {
 		return false
 	}
@@ -2397,6 +2494,17 @@ func typesEqual(leftType, rightType valueType) bool {
 }
 
 func ensureAssignable(expectedType, actualType valueType) error {
+	if len(expectedType.members) > 0 {
+		for _, member := range expectedType.members {
+			if err := ensureAssignable(member, actualType); err == nil {
+				return nil
+			}
+		}
+		return validationErrorf("type mismatch: expected %s, got %s", expectedType.name(), actualType.name())
+	}
+	if len(actualType.members) > 0 {
+		return validationErrorf("type mismatch: expected %s, got %s", expectedType.name(), actualType.name())
+	}
 	if expectedType.kind == ValueUnknown {
 		return nil
 	}

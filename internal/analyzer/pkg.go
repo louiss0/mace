@@ -268,6 +268,11 @@ func typeReferenceDetail(typeReference ast.TypeReference) string {
 		return value.Name
 	case ast.ArrayType:
 		return fmt.Sprintf("array<%s>", typeReferenceDetail(value.Element))
+	case ast.UnionType:
+		parts := lo.Map(value.Members, func(member ast.TypeReference, _ int) string {
+			return typeReferenceDetail(member)
+		})
+		return fmt.Sprintf("union[%s]", strings.Join(parts, ", "))
 	case ast.RecordType:
 		return recordTypeDetail(value)
 	default:

@@ -33,6 +33,7 @@ const (
 	SchemaTypeNamed
 	SchemaTypeArray
 	SchemaTypeRecord
+	SchemaTypeUnion
 )
 
 type SchemaType struct {
@@ -40,6 +41,7 @@ type SchemaType struct {
 	Name    string
 	Element *SchemaType
 	Fields  map[SchemaField]SchemaType
+	Members []SchemaType
 }
 
 func Parse(input string) (Result, error) {
@@ -316,6 +318,14 @@ func schemaTypeFromProcessor(schemaType processor.SchemaType) SchemaType {
 			fields[SchemaField{Name: field.Name, Optional: field.Optional}] = schemaTypeFromProcessor(fieldType)
 		}
 		result.Fields = fields
+	}
+
+	if len(schemaType.Members) > 0 {
+		members := make([]SchemaType, 0, len(schemaType.Members))
+		for _, member := range schemaType.Members {
+			members = append(members, schemaTypeFromProcessor(member))
+		}
+		result.Members = members
 	}
 
 	return result
