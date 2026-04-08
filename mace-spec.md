@@ -200,6 +200,20 @@ schema ValueBox: {
 };
 ```
 
+Mace unions use closed variant semantics.
+
+- A union value must match exactly one member.
+- Record members are closed: unknown fields are rejected.
+- Record values may not mix fields that belong to different union members.
+- If a value matches zero members or more than one member, validation fails.
+
+This means Mace does not preserve JSON Schema's distinction between `anyOf`
+and `oneOf`. Both concepts map into the same stricter Mace `union[...]`
+behavior when imported. Schemas that rely on overlapping alternatives,
+non-structural exclusivity rules, or external validation logic are not
+represented exactly in Mace. `allOf`-style schema composition is not currently
+part of the Mace type system.
+
 For JSON Schema interoperability, `null` should be treated as field
 optionality when converting schemas. For example, a JSON Schema property with
 `type: ["string", "null"]` maps to an optional Mace field of type `string`.

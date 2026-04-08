@@ -25,7 +25,7 @@ var keywordDocs = map[string]string{
 	"enum":       "Declares a named scalar enum type backed by `string` or `int`.",
 	"injectable": "Marks a script variable as overrideable through injections.",
 	"type":       "Declares a reusable type alias.",
-	"union":      "Declares a union type like `union[string, int]`.",
+	"union":      "Declares a closed variant union like `union[string, int]`.",
 }
 
 var directiveKeywordDocs = map[string]string{

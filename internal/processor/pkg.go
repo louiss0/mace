@@ -1266,7 +1266,17 @@ func validateOutputSchema(schemaName string, items []ast.OutputField, variables 
 }
 
 func validateExpressionAgainstType(expression ast.Expression, expectedType valueType, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) error {
+	if len(expectedType.members) > 0 {
+		return validateExpressionAgainstUnionMembers(expression, expectedType.members, variables, symbols, types, schemas, enums)
+	}
+
 	switch expectedType.kind {
+	case ValueString, ValueInt, ValueFloat, ValueBoolean:
+		actualType, err := inferExpressionType(expression, variables, symbols, types, enums)
+		if err != nil {
+			return err
+		}
+		return ensureAssignable(expectedType, actualType)
 	case ValueArray:
 		if expectedType.element == nil {
 			return nil
@@ -1303,6 +1313,32 @@ func validateExpressionAgainstType(expression ast.Expression, expectedType value
 		}
 	}
 	return nil
+}
+
+func validateExpressionAgainstUnionMembers(expression ast.Expression, members []valueType, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) error {
+	actualType, err := inferExpressionType(expression, variables, symbols, types, enums)
+	if err != nil {
+		return err
+	}
+
+	matchCount := 0
+	for _, member := range members {
+		if err := ensureAssignable(member, actualType); err != nil {
+			continue
+		}
+		if err := validateExpressionAgainstType(expression, member, variables, symbols, types, schemas, enums); err == nil {
+			matchCount++
+		}
+	}
+
+	if matchCount == 1 {
+		return nil
+	}
+	if matchCount == 0 {
+		return validationErrorf("type mismatch: expected %s, got %s", valueType{members: members}.name(), actualType.name())
+	}
+
+	return validationErrorf("type mismatch: expected exactly one union member for %s", valueType{members: members}.name())
 }
 
 func validateRecordLiteral(expr ast.RecordLiteral, schemaName string, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) error {
@@ -1391,6 +1427,9 @@ func validateEvaluatedOutputSchema(schemaName string, fields map[string]Value, s
 }
 
 func validateEvaluatedValueAgainstType(value Value, expectedType valueType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) error {
+	if len(expectedType.members) > 0 {
+		return validateEvaluatedValueAgainstUnionMembers(value, expectedType.members, symbols, types, schemas, enums)
+	}
 	if expectedType.enumName != "" {
 		enumDef, ok := enums.Get(expectedType.enumName)
 		if !ok {
@@ -1403,6 +1442,10 @@ func validateEvaluatedValueAgainstType(value Value, expectedType valueType, symb
 	}
 
 	switch expectedType.kind {
+	case ValueString, ValueInt, ValueFloat, ValueBoolean:
+		if value.Kind != expectedType.kind {
+			return validationErrorf("type mismatch: expected %s, got %s", expectedType.name(), value.kindName())
+		}
 	case ValueArray:
 		if value.Kind != ValueArray {
 			return validationErrorf("type mismatch: expected %s, got %s", expectedType.name(), value.kindName())
@@ -1454,6 +1497,24 @@ func validateEvaluatedValueAgainstType(value Value, expectedType valueType, symb
 	}
 
 	return nil
+}
+
+func validateEvaluatedValueAgainstUnionMembers(value Value, members []valueType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) error {
+	matchCount := 0
+	for _, member := range members {
+		if err := validateEvaluatedValueAgainstType(value, member, symbols, types, schemas, enums); err == nil {
+			matchCount++
+		}
+	}
+
+	if matchCount == 1 {
+		return nil
+	}
+	if matchCount == 0 {
+		return validationErrorf("type mismatch: expected %s, got %s", valueType{members: members}.name(), value.kindName())
+	}
+
+	return validationErrorf("type mismatch: expected exactly one union member for %s", valueType{members: members}.name())
 }
 
 func schemaFieldMap(schema ast.RecordType) map[string]ast.SchemaField {

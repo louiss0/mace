@@ -323,6 +323,32 @@ Scalar value = true;
 		tAssert.ErrorContains(err, "type mismatch")
 	})
 
+	It("rejects record literals that mix fields across union schemas", func() {
+		processor := New()
+		_, err := processor.Process(wrapScriptWithOutput(`|===|
+schema EmailLogin: { email: string; password: string; };
+schema ApiKeyLogin: { api_key: string; };
+type Login: union[EmailLogin, ApiKeyLogin];
+Login value = {
+  email: "ada@example.com";
+  password: "secret";
+  api_key: "token";
+};
+|===|`))
+		tAssert.ErrorContains(err, "type mismatch")
+	})
+
+	It("rejects record literals that match multiple union schemas", func() {
+		processor := New()
+		_, err := processor.Process(wrapScriptWithOutput(`|===|
+schema Named: { id: string; };
+schema OptionallyNamed: { id: string; nickname?: string; };
+type Identity: union[Named, OptionallyNamed];
+Identity value = { id: "u1"; };
+|===|`))
+		tAssert.ErrorContains(err, "exactly one union member")
+	})
+
 	It("rejects mixed-backing enum unions", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|

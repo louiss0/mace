@@ -76,6 +76,9 @@ Mace supports:
 
 Union types are first-class across the language, including named aliases,
 output schema validation, imports, formatter output, and editor tooling.
+Mace treats unions as closed variants: values must match exactly one member,
+record members reject unknown fields, and record values may not combine
+fields from different union branches.
 
 ```mace
 |===|
@@ -171,7 +174,11 @@ Converts JSON, YAML, and TOML files into `.mace` files.
 - JSON files with a `$schema` key are converted into Mace output schema blocks
 - other JSON, YAML, and TOML files are converted into Mace output data blocks
 - JSON Schema `null` maps to field optionality during schema conversion
-- JSON Schema unions can be emitted as Mace `union[...]` types during import
+- JSON Schema `anyOf` and `oneOf` alternatives can be emitted as Mace
+  `union[...]` types during import
+- imported `union[...]` types use Mace's closed variant semantics rather than
+  preserving a distinct `anyOf` versus `oneOf` behavior
+- `allOf`-style schema composition is not currently represented in Mace import
 - imported `union[...]` types remain regular Mace types that work in scripts,
   schema validation, formatting, and LSP tooling
 - when multiple files are imported, successful files are still written even if
