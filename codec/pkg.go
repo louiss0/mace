@@ -33,6 +33,7 @@ const (
 	SchemaTypeNamed
 	SchemaTypeArray
 	SchemaTypeRecord
+	SchemaTypeUnion
 	SchemaTypeVariant
 )
 
@@ -599,6 +600,7 @@ const (
 	inferredTypeArray
 	inferredTypeRecord
 	inferredTypeNamed
+	inferredTypeUnion
 	inferredTypeVariant
 )
 
@@ -674,6 +676,12 @@ func formatSchemaType(value inferredType, depth int) string {
 		return fmt.Sprintf("array<%s>", formatSchemaType(*value.element, depth))
 	case inferredTypeRecord:
 		return formatSchemaRecord(value.record.fields, depth)
+	case inferredTypeUnion:
+		parts := make([]string, 0, len(value.members))
+		for _, member := range value.members {
+			parts = append(parts, formatSchemaType(member, depth))
+		}
+		return fmt.Sprintf("union[%s]", strings.Join(parts, ", "))
 	case inferredTypeVariant:
 		parts := make([]string, 0, len(value.members))
 		for _, member := range value.members {
@@ -1028,8 +1036,9 @@ func (context *jsonSchemaContext) propertyType(record map[string]any, path []str
 		valueType, variantNullable, err := context.variantSchemaType(variants, path)
 		return valueType, variantNullable, err
 	}
-	if _, ok := record["allOf"].([]any); ok {
-		return inferredType{}, false, fmt.Errorf("allOf schema composition is not representable")
+	if variants, ok := record["allOf"].([]any); ok {
+		valueType, variantNullable, err := context.unionSchemaType(variants, path)
+		return valueType, variantNullable, err
 	}
 
 	typeArray, hasTypeArray := record["type"].([]any)
@@ -1090,6 +1099,34 @@ func (context *jsonSchemaContext) variantSchemaType(variants []any, path []strin
 
 	variantType, err := validateVariantMembers(members)
 	return variantType, nullable, err
+}
+
+func (context *jsonSchemaContext) unionSchemaType(variants []any, path []string) (inferredType, bool, error) {
+	nullable := false
+	members := make([]inferredType, 0, len(variants))
+	for index, variant := range variants {
+		record, ok := variant.(map[string]any)
+		if !ok {
+			return inferredType{}, false, fmt.Errorf("union members must be objects")
+		}
+
+		valueType, variantNullable, err := context.propertyType(record, append(append([]string{}, path...), fmt.Sprintf("member%d", index+1)))
+		if err != nil {
+			return inferredType{}, false, err
+		}
+		nullable = nullable || variantNullable
+		members = append(members, valueType)
+	}
+
+	if len(members) == 0 {
+		return inferredType{}, false, fmt.Errorf("empty unions are not representable")
+	}
+	if len(members) == 1 {
+		return members[0], nullable, nil
+	}
+
+	unionType, err := validateUnionMembers(members)
+	return unionType, nullable, err
 }
 
 func (context *jsonSchemaContext) schemaType(record map[string]any, path []string) (inferredType, error) {
@@ -1356,6 +1393,30 @@ func jsonSchemaEnumMemberValue(value any, index int) (jsonSchemaEnumMember, stri
 	default:
 		return jsonSchemaEnumMember{}, "", fmt.Errorf("unsupported enum value %v at index %d", value, index)
 	}
+}
+
+func validateUnionMembers(members []inferredType) (inferredType, error) {
+	hasSchema := false
+
+	for _, member := range members {
+		switch member.kind {
+		case inferredTypeRecord:
+			hasSchema = true
+		case inferredTypeNamed:
+			if member.namedCategory != "schema" {
+				return inferredType{}, fmt.Errorf("union members must be schemas")
+			}
+			hasSchema = true
+		default:
+			return inferredType{}, fmt.Errorf("union members must be schemas")
+		}
+	}
+
+	if !hasSchema {
+		return inferredType{}, fmt.Errorf("union members must be schemas")
+	}
+
+	return inferredType{kind: inferredTypeUnion, members: members}, nil
 }
 
 func validateVariantMembers(members []inferredType) (inferredType, error) {

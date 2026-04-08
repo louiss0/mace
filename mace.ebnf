@@ -162,6 +162,7 @@ schema_field
 type_reference
   = primitive_type
   | array_type
+  | union_type
   | variant_type
   | identifier ;
 
@@ -172,6 +173,11 @@ array_type
   = "array" , ws0 , "<" , ws0 ,
     type_reference ,
     ws0 , ">" ;
+
+union_type
+  = "union" , ws0 , "[" , ws0 ,
+    type_reference , { ws0 , "," , ws0 , type_reference } ,
+    ws0 , "]" ;
 
 variant_type
   = "variant" , ws0 , "[" , ws0 ,

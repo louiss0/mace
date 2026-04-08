@@ -44,6 +44,7 @@ var scriptKeywordCompletions = []completionDefinition{
 	{Label: "schema", Kind: protocol.CompletionItemKindKeyword, Detail: "schema declaration"},
 	{Label: "string", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
 	{Label: "type", Kind: protocol.CompletionItemKindKeyword, Detail: "type declaration"},
+	{Label: "union", Kind: protocol.CompletionItemKindKeyword, Detail: "schema composition"},
 	{Label: "variant", Kind: protocol.CompletionItemKindKeyword, Detail: "type constructor"},
 }
 
@@ -1322,6 +1323,12 @@ func resolveCompletionType(typeReference ast.TypeReference, model completionMode
 		return completionType{kind: completionTypePrimitive, primitive: typed.Name}
 	case ast.ArrayType:
 		return completionType{kind: completionTypeArray}
+	case ast.UnionType:
+		record, ok := completionUnionRecord(typed.Members, model, seen)
+		if !ok {
+			return completionType{}
+		}
+		return completionType{kind: completionTypeSchema, record: record}
 	case ast.VariantType:
 		return completionType{kind: completionTypeVariant, members: typed.Members}
 	case ast.RecordType:
@@ -1350,6 +1357,35 @@ func resolveCompletionType(typeReference ast.TypeReference, model completionMode
 	default:
 		return completionType{}
 	}
+}
+
+func completionUnionRecord(members []ast.TypeReference, model completionModel, seen map[string]struct{}) (ast.RecordType, bool) {
+	merged := ast.RecordType{}
+	fieldIndexes := map[string]int{}
+
+	for _, member := range members {
+		resolved := resolveCompletionType(member, model, seen)
+		if resolved.kind != completionTypeSchema {
+			return ast.RecordType{}, false
+		}
+
+		for _, field := range resolved.record.Fields {
+			index, exists := fieldIndexes[field.Name]
+			if !exists {
+				fieldIndexes[field.Name] = len(merged.Fields)
+				merged.Fields = append(merged.Fields, field)
+				continue
+			}
+
+			existing := merged.Fields[index]
+			if typeReferenceDetail(existing.Type) != typeReferenceDetail(field.Type) {
+				return ast.RecordType{}, false
+			}
+			merged.Fields[index].Optional = existing.Optional && field.Optional
+		}
+	}
+
+	return merged, true
 }
 
 func completionEnumFromDeclaration(declaration ast.EnumDeclaration) completionEnum {

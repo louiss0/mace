@@ -295,7 +295,7 @@ var _ = Describe("Lexer", func() {
 		}),
 	)
 
-	DescribeTable("lexes variant type references",
+	DescribeTable("lexes variant and union type references",
 		func(input string, expected []TokenType) {
 			tokens, err := collectTokens(input)
 			tAssert.NoError(err)
@@ -308,6 +308,10 @@ var _ = Describe("Lexer", func() {
 		Entry("variant with array and identifier", "type Value: variant[array<string>, User];", []TokenType{
 			TokenTypeKeyword, TokenIdentifier, TokenColon, TokenVariant, TokenLBracket,
 			TokenArray, TokenLess, TokenStringType, TokenGreater, TokenComma, TokenIdentifier, TokenRBracket, TokenSemicolon, TokenEOF,
+		}),
+		Entry("schema union", "type Value: union[Profile, Audit];", []TokenType{
+			TokenTypeKeyword, TokenIdentifier, TokenColon, TokenUnion, TokenLBracket,
+			TokenIdentifier, TokenComma, TokenIdentifier, TokenRBracket, TokenSemicolon, TokenEOF,
 		}),
 	)
 

@@ -159,4 +159,25 @@ type Value: variant[string, int];
   value: variant[string, int];
 }`, output)
 	})
+
+	It("formats union type references", func() {
+		file, err := parseMaceFile(`|===|
+type Value: union[Profile, Audit];
+|===|
+[output = schema]
+{
+  value: union[Profile, Audit];
+}`)
+		tAssert.NoError(err)
+
+		output, err := FormatFile(file)
+		tAssert.NoError(err)
+		tAssert.Equal(`|==================================|
+type Value: union[Profile, Audit];
+|==================================|
+[output = schema]
+{
+  value: union[Profile, Audit];
+}`, output)
+	})
 })

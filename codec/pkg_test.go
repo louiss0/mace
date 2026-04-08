@@ -616,7 +616,7 @@ enum State: string {
 }`, source)
 	})
 
-	It("maps anyOf alternatives into variant alternatives", func() {
+	It("maps anyOf alternatives into variants", func() {
 		source, err := ImportJSONSchema(`{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$defs": {
@@ -651,21 +651,49 @@ schema Profile: {
 }`, source)
 	})
 
-	It("rejects allOf composition", func() {
-		_, err := ImportJSONSchema(`{
+	It("maps allOf composition into unions", func() {
+		source, err := ImportJSONSchema(`{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Profile": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "Audit": {
+      "type": "object",
+      "properties": {
+        "created_at": { "type": "string" }
+      },
+      "required": ["created_at"]
+    }
+  },
   "type": "object",
   "properties": {
     "value": {
       "allOf": [
-        { "type": "string" },
-        { "type": "integer" }
+        { "$ref": "#/$defs/Profile" },
+        { "$ref": "#/$defs/Audit" }
       ]
     }
   },
   "required": ["value"]
 }`)
-		tAssert.ErrorContains(err, "allOf")
+		tAssert.NoError(err)
+		tAssert.Equal(`|===|
+schema Profile: {
+  name: string;
+};
+schema Audit: {
+  created_at: string;
+};
+|===|
+[output = schema]
+{
+  value: union[Profile, Audit];
+}`, source)
 	})
 
 	It("rejects enum variant alternatives with mixed backing types", func() {
