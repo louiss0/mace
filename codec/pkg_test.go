@@ -371,6 +371,135 @@ enum Role: string {
 }`, source)
 	})
 
+	It("maps primitive and array $defs into Mace type aliases", func() {
+		source, err := ImportJSONSchema(`{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Name": {
+      "type": "string"
+    },
+    "Count": {
+      "type": "integer"
+    },
+    "Ratio": {
+      "type": "number"
+    },
+    "Enabled": {
+      "type": "boolean"
+    },
+    "Tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "type": "object",
+  "properties": {
+    "name": {
+      "$ref": "#/$defs/Name"
+    },
+    "count": {
+      "$ref": "#/$defs/Count"
+    },
+    "ratio": {
+      "$ref": "#/$defs/Ratio"
+    },
+    "enabled": {
+      "$ref": "#/$defs/Enabled"
+    },
+    "tags": {
+      "$ref": "#/$defs/Tags"
+    }
+  },
+  "required": ["name", "count", "ratio", "enabled", "tags"]
+}`)
+		tAssert.NoError(err)
+		tAssert.Equal(`|===|
+type Count: int;
+type Enabled: boolean;
+type Name: string;
+type Ratio: float;
+type Tags: array<string>;
+|===|
+[output = schema]
+{
+  count: Count;
+  enabled: Enabled;
+  name: Name;
+  ratio: Ratio;
+  tags: Tags;
+}`, source)
+	})
+
+	It("maps object and array-of-object $defs into schemas and aliases", func() {
+		source, err := ImportJSONSchema(`{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "User": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "Users": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/User"
+      }
+    }
+  },
+  "type": "object",
+  "properties": {
+    "users": {
+      "$ref": "#/$defs/Users"
+    }
+  },
+  "required": ["users"]
+}`)
+		tAssert.NoError(err)
+		tAssert.Equal(`|===|
+schema User: {
+  name: string;
+};
+type Users: array<User>;
+|===|
+[output = schema]
+{
+  users: Users;
+}`, source)
+	})
+
+	It("maps integer $defs enums into Mace int enums", func() {
+		source, err := ImportJSONSchema(`{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Status": {
+      "enum": [0, 1]
+    }
+  },
+  "type": "object",
+  "properties": {
+    "status": {
+      "$ref": "#/$defs/Status"
+    }
+  },
+  "required": ["status"]
+}`)
+		tAssert.NoError(err)
+		tAssert.Equal(`|===|
+enum Status: int {
+  Value0 = 0,
+  Value1 = 1,
+};
+|===|
+[output = schema]
+{
+  status: Status;
+}`, source)
+	})
+
 	It("rejects unsupported additionalProperties schemas", func() {
 		_, err := ImportJSONSchema(`{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
