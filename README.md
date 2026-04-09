@@ -9,6 +9,7 @@ This repository contains:
 - a CLI for inspecting, formatting, and evaluating Mace documents
 - a language server for editor integrations
 - a public Go package for parsing, unmarshalling, and marshalling Mace data
+- official Node and Python binding packages under `bindings/`
 
 ## Status
 
@@ -26,6 +27,7 @@ is documented in [`mace-spec.md`](./mace-spec.md).
 - Canonical source formatting
 - Language Server Protocol support over stdio
 - Go bindings for parsing, unmarshalling, and marshalling
+- Node and Python bindings that wrap the official CLI
 
 ## Language overview
 

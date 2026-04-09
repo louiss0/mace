@@ -254,14 +254,16 @@ func importSourceFromPath(path string) (string, error) {
 		return "", err
 	}
 
+	if inputFormat == "json" {
+		return codec.ImportJSONFile(path)
+	}
+
 	contents, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("read import file: %w", err)
 	}
 
 	switch inputFormat {
-	case "json":
-		return codec.ImportJSON(string(contents))
 	case "yaml":
 		return codec.ImportYAML(string(contents))
 	case "toml":
