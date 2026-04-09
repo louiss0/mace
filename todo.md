@@ -5,15 +5,16 @@
 - `go test ./...` passes.
 
 ## What bugs are present
-- No confirmed open bugs are currently tracked after the union type work.
-- Watch for editor or tooling surfaces that may still assume only primitive,
-  array, named, and record type references.
+- No confirmed open bugs are currently tracked.
+- The recent split between `union[...]` and `variant[...]` changed core type
+  semantics, so editor-facing surfaces may still hide mismatches that are not
+  covered by current end-to-end tests.
 
 ## What to do next
-- Add end-to-end coverage for union types in user-facing tooling, especially any
-  analyzer, completion, or editor integration paths that present type details.
-- Review docs and examples to ensure they match the now-implemented runtime
-  `union[...]` support instead of describing it as importer-only behavior.
-- Add targeted regression tests for any remaining union edge cases not yet
-  covered, such as nested unions, union aliases reused across files, and output
-  schema paths that consume named union declarations.
+- Add end-to-end LSP coverage for `union[...]` and `variant[...]`, especially
+  completions, type details, and diagnostics in real editor-like request flows.
+- Audit public docs and examples for stale wording from the older union-only
+  model and keep only the current `union` versus `variant` semantics.
+- Add targeted regression tests around imports and schema conversion for
+  `allOf`, `anyOf`, and `oneOf` so the codec behavior stays aligned with the
+  new type split.
