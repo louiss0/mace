@@ -2,8 +2,12 @@ package codec
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -18,6 +22,23 @@ func codecPrimitive(name string) SchemaType {
 
 func codecRecord(fields map[SchemaField]SchemaType) SchemaType {
 	return SchemaType{Kind: SchemaTypeRecord, Fields: fields}
+}
+
+func codecUnion(members ...SchemaType) SchemaType {
+	return SchemaType{Kind: SchemaTypeUnion, Members: members}
+}
+
+func codecVariant(members ...SchemaType) SchemaType {
+	return SchemaType{Kind: SchemaTypeVariant, Members: members}
+}
+
+func writeCodecTempFile(root string, relativePath string, contents string) string {
+	path := filepath.Join(root, filepath.FromSlash(relativePath))
+	err := os.MkdirAll(filepath.Dir(path), 0o755)
+	tAssert.NoError(err)
+	err = os.WriteFile(path, []byte(contents), 0o600)
+	tAssert.NoError(err)
+	return path
 }
 
 func TestBinding(t *testing.T) {
@@ -101,6 +122,35 @@ var _ = Describe("Parse", func() {
 				{Name: "name"}:                codecPrimitive("string"),
 				{Name: "age", Optional: true}: codecPrimitive("int"),
 			}),
+		}, result.Schema)
+	})
+
+	It("returns structured variant schema outputs", func() {
+		result, err := Parse(`[output = schema]
+{
+  value: variant[string, int];
+}`)
+		tAssert.NoError(err)
+		tAssert.Equal(map[SchemaField]SchemaType{
+			{Name: "value"}: codecVariant(codecPrimitive("string"), codecPrimitive("int")),
+		}, result.Schema)
+	})
+
+	It("returns structured union schema outputs", func() {
+		result, err := Parse(`|===|
+schema Profile: { name: string; };
+schema Audit: { created_at: string; };
+|===|
+[output = schema]
+{
+  value: union[Profile, Audit];
+}`)
+		tAssert.NoError(err)
+		tAssert.Equal(map[SchemaField]SchemaType{
+			{Name: "value"}: codecUnion(
+				SchemaType{Kind: SchemaTypeNamed, Name: "Profile"},
+				SchemaType{Kind: SchemaTypeNamed, Name: "Audit"},
+			),
 		}, result.Schema)
 	})
 
@@ -276,13 +326,189 @@ level = 2
 		_, err := ImportJSON(`[1, 2, 3]`)
 		tAssert.ErrorContains(err, "record root")
 	})
+
+	It("imports a schema from an https $schema URL", func() {
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			_, err := writer.Write([]byte(`{
+  "$id": "mock-schema",
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" }
+  },
+  "required": ["name"]
+}`))
+			tAssert.NoError(err)
+		}))
+		defer server.Close()
+
+		workspace, err := os.MkdirTemp("", "mace-codec-schema-ref-*")
+		tAssert.NoError(err)
+		jsonPath := writeCodecTempFile(workspace, "requests/https-schema.json", fmt.Sprintf(`{
+  "$schema": %q,
+  "name": "Ada"
+}`, server.URL+"/draft-2020-12/schema.json"))
+
+		source, err := ImportJSONFile(jsonPath)
+		tAssert.NoError(err)
+		tAssert.Equal(`[output = schema]
+{
+  name: string;
+}`, source)
+	})
+
+	DescribeTable("imports a schema from local $schema file paths",
+		func(referenceKind string, documentPath string) {
+			workspace, err := os.MkdirTemp("", "mace-codec-schema-ref-*")
+			tAssert.NoError(err)
+
+			schemaPath := "schemas/draft-2020-12/schema.json"
+			switch referenceKind {
+			case "relative":
+				schemaPath = "requests/schemas/draft-2020-12/schema.json"
+			case "one-up", "two-up":
+				schemaPath = "requests/schemas/draft-2020-12/schema.json"
+			}
+
+			schemaFilePath := writeCodecTempFile(workspace, schemaPath, `{
+  "$id": "mock-schema",
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" }
+  },
+  "required": ["name"]
+}`)
+
+			var schemaRef string
+			switch referenceKind {
+			case "file-url":
+				urlValue := url.URL{Scheme: "file", Path: filepath.ToSlash(schemaFilePath)}
+				schemaRef = urlValue.String()
+			case "relative":
+				schemaRef = "./schemas/draft-2020-12/schema.json"
+			case "one-up":
+				schemaRef = "../schemas/draft-2020-12/schema.json"
+			case "two-up":
+				schemaRef = "../../schemas/draft-2020-12/schema.json"
+			case "absolute-unix":
+				schemaRef = filepath.ToSlash(schemaFilePath)
+			case "absolute-windows":
+				if runtime.GOOS != "windows" {
+					Skip("windows absolute path syntax requires Windows")
+				}
+				schemaRef = filepath.ToSlash(schemaFilePath)
+			default:
+				Fail("unknown schema reference kind")
+			}
+
+			jsonPath := writeCodecTempFile(workspace, documentPath, fmt.Sprintf(`{
+  "$schema": %q,
+  "name": "Ada"
+}`, schemaRef))
+
+			source, err := ImportJSONFile(jsonPath)
+			tAssert.NoError(err)
+			tAssert.Equal(`[output = schema]
+{
+  name: string;
+}`, source)
+		},
+		Entry("file URL", "file-url", "requests/file-url-schema.json"),
+		Entry("relative path", "relative", "requests/relative-schema.json"),
+		Entry("one folder up", "one-up", "requests/nested/one-up-schema.json"),
+		Entry("two folders up", "two-up", "requests/nested/deeper/two-up-schema.json"),
+		Entry("absolute unix path", "absolute-unix", "requests/absolute-unix-schema.json"),
+		Entry("absolute windows path", "absolute-windows", "requests/absolute-windows-schema.json"),
+	)
+
+	It("rejects invalid $schema URLs during JSON import", func() {
+		_, err := ImportJSON(`{
+  "$schema": "://",
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" }
+  }
+}`)
+		tAssert.ErrorContains(err, "invalid $schema URL")
+	})
+
+	DescribeTable("detects JSON Schema composition keywords during JSON import",
+		func(keyword string, expected string) {
+			source, err := ImportJSON(fmt.Sprintf(`{
+  "$schema": "./schemas/draft-2020-12/schema.json",
+  "$defs": {
+    "Profile": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "Audit": {
+      "type": "object",
+      "properties": {
+        "created_at": { "type": "string" }
+      },
+      "required": ["created_at"]
+    }
+  },
+  "type": "object",
+  "properties": {
+    "value": {
+      "%s": [
+        { "$ref": "#/$defs/Profile" },
+        { "$ref": "#/$defs/Audit" }
+      ]
+    }
+  },
+  "required": ["value"]
+}`, keyword))
+			tAssert.NoError(err)
+			tAssert.Equal(expected, source)
+		},
+		Entry("oneOf becomes a variant", "oneOf", `|===|
+schema Profile: {
+  name: string;
+};
+schema Audit: {
+  created_at: string;
+};
+|===|
+[output = schema]
+{
+  value: variant[Profile, Audit];
+}`),
+		Entry("anyOf becomes a variant", "anyOf", `|===|
+schema Profile: {
+  name: string;
+};
+schema Audit: {
+  created_at: string;
+};
+|===|
+[output = schema]
+{
+  value: variant[Profile, Audit];
+}`),
+		Entry("allOf becomes a union", "allOf", `|===|
+schema Profile: {
+  name: string;
+};
+schema Audit: {
+  created_at: string;
+};
+|===|
+[output = schema]
+{
+  value: union[Profile, Audit];
+}`),
+	)
 })
 
 var _ = Describe("ImportSchema", func() {
 	DescribeTable("maps primitive variant alternatives inline",
 		func(types string, expected string) {
 			source, err := ImportJSONSchema(fmt.Sprintf(`{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "./schemas/draft-2020-12/schema.json",
   "type": "object",
   "properties": {
     "value": {
@@ -322,7 +548,7 @@ var _ = Describe("ImportSchema", func() {
 
 	It("imports JSON schema documents into a Mace output schema block", func() {
 		source, err := ImportJSONSchema(`{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "./schemas/draft-2020-12/schema.json",
   "type": "object",
   "properties": {
     "name": { "type": "string" },
@@ -340,7 +566,7 @@ var _ = Describe("ImportSchema", func() {
 
 	It("maps nullable fields to optional schema fields", func() {
 		source, err := ImportJSONSchema(`{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "./schemas/draft-2020-12/schema.json",
   "type": "object",
   "properties": {
     "nickname": {
@@ -357,7 +583,7 @@ var _ = Describe("ImportSchema", func() {
 
 	It("maps multi-type variant alternatives inline", func() {
 		source, err := ImportJSONSchema(`{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "./schemas/draft-2020-12/schema.json",
   "type": "object",
   "properties": {
     "value": {
@@ -375,7 +601,7 @@ var _ = Describe("ImportSchema", func() {
 
 	It("imports nested objects and array items from JSON schema", func() {
 		source, err := ImportJSONSchema(`{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "./schemas/draft-2020-12/schema.json",
   "type": "object",
   "properties": {
     "users": {
@@ -402,7 +628,7 @@ var _ = Describe("ImportSchema", func() {
 
 	It("maps inline enums to Mace enums", func() {
 		source, err := ImportJSONSchema(`{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "./schemas/draft-2020-12/schema.json",
   "type": "object",
   "properties": {
     "status": {
@@ -426,7 +652,7 @@ enum Status: string {
 
 	It("maps $defs references into reusable Mace declarations", func() {
 		source, err := ImportJSONSchema(`{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "./schemas/draft-2020-12/schema.json",
   "$defs": {
     "Profile": {
       "type": "object",
@@ -469,7 +695,7 @@ enum Role: string {
 
 	It("maps const values to single-member enums", func() {
 		source, err := ImportJSONSchema(`{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "./schemas/draft-2020-12/schema.json",
   "type": "object",
   "properties": {
     "status": {
@@ -492,7 +718,7 @@ enum Status: string {
 
 	It("maps primitive and array $defs into Mace type aliases", func() {
 		source, err := ImportJSONSchema(`{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "./schemas/draft-2020-12/schema.json",
   "$defs": {
     "Name": {
       "type": "string"
@@ -553,7 +779,7 @@ type Tags: array<string>;
 
 	It("maps variant $defs into type aliases", func() {
 		source, err := ImportJSONSchema(`{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "./schemas/draft-2020-12/schema.json",
   "$defs": {
     "Value": {
       "type": ["string", "integer"]
@@ -579,7 +805,7 @@ type Value: variant[string, int];
 
 	It("maps same-backing enum variant alternatives", func() {
 		source, err := ImportJSONSchema(`{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "./schemas/draft-2020-12/schema.json",
   "$defs": {
     "Role": {
       "enum": ["admin", "member"]
@@ -618,7 +844,7 @@ enum State: string {
 
 	It("maps anyOf alternatives into variants", func() {
 		source, err := ImportJSONSchema(`{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "./schemas/draft-2020-12/schema.json",
   "$defs": {
     "Profile": {
       "type": "object",
@@ -653,7 +879,7 @@ schema Profile: {
 
 	It("maps allOf composition into unions", func() {
 		source, err := ImportJSONSchema(`{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "./schemas/draft-2020-12/schema.json",
   "$defs": {
     "Profile": {
       "type": "object",
@@ -698,7 +924,7 @@ schema Audit: {
 
 	It("rejects enum variant alternatives with mixed backing types", func() {
 		_, err := ImportJSONSchema(`{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "./schemas/draft-2020-12/schema.json",
   "$defs": {
     "Role": {
       "enum": ["admin", "member"]
@@ -723,7 +949,7 @@ schema Audit: {
 
 	It("maps schema and primitive variant alternatives", func() {
 		source, err := ImportJSONSchema(`{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "./schemas/draft-2020-12/schema.json",
   "$defs": {
     "Profile": {
       "type": "object",
@@ -758,7 +984,7 @@ schema Profile: {
 
 	It("rejects schema and enum variant alternatives", func() {
 		_, err := ImportJSONSchema(`{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "./schemas/draft-2020-12/schema.json",
   "$defs": {
     "Profile": {
       "type": "object",
@@ -787,7 +1013,7 @@ schema Profile: {
 
 	It("supports recursive $defs schema references", func() {
 		source, err := ImportJSONSchema(`{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "./schemas/draft-2020-12/schema.json",
   "$defs": {
     "Node": {
       "type": "object",
@@ -821,7 +1047,7 @@ schema Node: {
 
 	It("maps object and array-of-object $defs into schemas and aliases", func() {
 		source, err := ImportJSONSchema(`{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "./schemas/draft-2020-12/schema.json",
   "$defs": {
     "User": {
       "type": "object",
@@ -860,7 +1086,7 @@ type Users: array<User>;
 
 	It("maps integer $defs enums into Mace int enums", func() {
 		source, err := ImportJSONSchema(`{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "./schemas/draft-2020-12/schema.json",
   "$defs": {
     "Status": {
       "enum": [0, 1]
@@ -889,7 +1115,7 @@ enum Status: int {
 
 	It("rejects unsupported additionalProperties schemas", func() {
 		_, err := ImportJSONSchema(`{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "./schemas/draft-2020-12/schema.json",
   "type": "object",
   "additionalProperties": {
     "type": "string"
