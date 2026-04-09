@@ -1,11 +1,13 @@
 from "./profile.mace" import Profile, Age;
 
-|=================================================|
+|==================================================|
 type Name: string;
 
 injectable string name;
 
 enum Personality: string { friendly, nice, rude };
+
+type Thing: variant[string, int];
 
 enum Status: int { mad, happy, content };
 
@@ -19,7 +21,7 @@ Age default_age = 30;
 
 int num = Status.happy + 45;
 
-|=================================================|
+|==================================================|
 
 [output = data]
 {
