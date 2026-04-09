@@ -804,7 +804,9 @@ func loadJSONSchemaDocument(parsedReference *url.URL, rawReference string, sourc
 		if err != nil {
 			return nil, fmt.Errorf("import json schema: fetch $schema: %w", err)
 		}
-		defer response.Body.Close()
+		defer func() {
+			_ = response.Body.Close()
+		}()
 
 		if response.StatusCode < 200 || response.StatusCode >= 300 {
 			return nil, fmt.Errorf("import json schema: fetch $schema: unexpected status %s", response.Status)
