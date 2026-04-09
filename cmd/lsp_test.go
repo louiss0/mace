@@ -390,6 +390,47 @@ int count = "Ada";
 		}
 	})
 
+	It("publishes processor diagnostics for invalid variant assignments", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+schema EmailLogin: { email: string; };
+schema ApiKeyLogin: { api_key: string; };
+type Login: variant[EmailLogin, ApiKeyLogin];
+Login login = {
+  email: "ada@example.com";
+  api_key: "secret";
+};
+|===|
+[output = data]
+{
+  result: login;
+}`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			tAssert.Len(params.Diagnostics, 1)
+			tAssert.Contains(params.Diagnostics[0].Message, `processor: type mismatch: expected variant[EmailLogin, ApiKeyLogin], got record`)
+			tAssert.NotNil(params.Diagnostics[0].Code)
+		}
+	})
+
+	It("publishes processor diagnostics for invalid union declarations", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+type Broken: union[string, int];
+|===|
+[output = data] {}`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			tAssert.Len(params.Diagnostics, 1)
+			tAssert.Contains(params.Diagnostics[0].Message, `processor: union members must be schemas`)
+			tAssert.NotNil(params.Diagnostics[0].Code)
+		}
+	})
+
 	It("publishes variable mismatch diagnostics for the failing declaration", func() {
 		notifications := []capturedNotification{}
 
@@ -909,6 +950,27 @@ schema Response: { payload: Envelope; };
 		tAssert.Contains(labels, `{ name: ""; }`)
 	})
 
+	It("suggests composed schema literals for nested output union aliases", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+schema Profile: { name: string; };
+schema Audit: { created_at: string; };
+type User: union[Profile, Audit];
+schema Envelope: { value: User; };
+schema Response: { payload: Envelope; };
+|===|
+[output = data, schema = Response]
+{
+  payload: {
+    value: 
+  };
+}`, nil)
+
+		labels := completeLabels(server, uri, 10, uint32(len(`    value: `)))
+		tAssert.Contains(labels, "$self")
+		tAssert.Contains(labels, `{ name: ""; created_at: ""; }`)
+	})
+
 	It("keeps typed output completions alongside $self in output schema fields", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
@@ -1165,6 +1227,9 @@ Personality value = Personality.
 	It("returns hover documentation for language keywords", func() {
 		didOpen(server, uri, `|===|
 schema User: { name: string; };
+type Identity: variant[string, int];
+type UserRecord: union[User, Profile];
+schema Profile: { age: int; };
 |===|
 [output = data] { name: "Ada"; }`, nil)
 
@@ -1188,6 +1253,50 @@ schema User: { name: string; };
 		tAssert.True(ok)
 		if ok {
 			tAssert.Contains(content.Value, "record schema")
+		}
+
+		resultValue, validMethod, validParams, err = invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 2, Character: 17},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok = resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok = hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, "closed variant type")
+		}
+
+		resultValue, validMethod, validParams, err = invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 3, Character: 19},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok = resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok = hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, "schema composition")
 		}
 	})
 
@@ -1326,13 +1435,19 @@ Status current = Status.Running;
 	It("returns hover details for user declarations", func() {
 		didOpen(server, uri, `|===|
 string env = "dev";
+schema Profile: { name: string; };
+schema Audit: { created_at: string; };
+type Identity: variant[string, int];
+type User: union[Profile, Audit];
+Identity id = "Ada";
+User user = { name: "Ada"; created_at: "2026-04-09"; };
 |===|
-[output = data] { result: env; }`, nil)
+[output = data] { result: env; chosen: id; record: user; }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
-				Position:     protocol.Position{Line: 3, Character: 25},
+				Position:     protocol.Position{Line: 8, Character: 25},
 			},
 		}, nil)
 		tAssert.True(validMethod)
@@ -1349,6 +1464,50 @@ string env = "dev";
 		tAssert.True(ok)
 		if ok {
 			tAssert.Contains(content.Value, "string env")
+		}
+
+		resultValue, validMethod, validParams, err = invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 8, Character: 37},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok = resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok = hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, `variant[string, int] id = "Ada"`)
+		}
+
+		resultValue, validMethod, validParams, err = invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 8, Character: 49},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok = resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok = hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, `union[Profile, Audit] user = record literal`)
 		}
 	})
 
