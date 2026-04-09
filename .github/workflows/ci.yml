@@ -37,21 +37,25 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
           node-version: 22
-
-      - name: Set up jpd
-        run: npm install -g @jpd-tools/jpd
+          cache: pnpm
+          cache-dependency-path: bindings/node/pnpm-lock.yaml
 
       - name: Install Node binding dependencies
         working-directory: bindings/node
-        run: jpd install
+        run: pnpm install --frozen-lockfile
 
       - name: Build Node binding
         working-directory: bindings/node
-        run: jpd run build
+        run: pnpm run build
 
   python-build:
     name: python-build

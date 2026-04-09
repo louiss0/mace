@@ -46,18 +46,22 @@ jobs:
         with:
           export-env: true
         env:
-          NPM_TOKEN: op://Personal/For Astro NPM Token/credential
-          PY_TEST_TOKEN: op://Personal/PY_TEST_TOKEN/credential
-          PY_TOKEN: op://Personal/PY_TOKEN/credential
+          NPM_TOKEN: op://Development/For Astro NPM Token/credential
+          PY_TEST_TOKEN: op://Development/PY_TEST_TOKEN/credential
+          PY_TOKEN: op://Development/PY_TOKEN/credential
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
 
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
-
-      - name: Set up jpd
-        run: npm install -g @jpd-tools/jpd
+          cache: pnpm
+          cache-dependency-path: bindings/node/pnpm-lock.yaml
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -76,8 +80,8 @@ jobs:
       - name: Install and build Node binding
         working-directory: bindings/node
         run: |
-          jpd install
-          jpd run build
+          pnpm install --frozen-lockfile
+          pnpm run build
 
       - name: Publish Node binding
         working-directory: bindings/node
