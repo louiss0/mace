@@ -3,6 +3,11 @@ package codec
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strconv"
@@ -116,16 +121,16 @@ func MarshalOutput(value any) (string, error) {
 }
 
 func ImportJSON(input string) (string, error) {
-	value, err := parseImportedJSON(input)
+	return importJSON(input, "")
+}
+
+func ImportJSONFile(path string) (string, error) {
+	contents, err := os.ReadFile(path)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("import json file: %w", err)
 	}
 
-	if isJSONSchemaDocument(value) {
-		return importJSONSchemaDocument(value)
-	}
-
-	return importDocument(value)
+	return importJSON(string(contents), path)
 }
 
 func ImportYAML(input string) (string, error) {
@@ -153,6 +158,23 @@ func ImportJSONSchema(input string) (string, error) {
 	}
 
 	return importJSONSchemaDocument(value)
+}
+
+func importJSON(input string, sourcePath string) (string, error) {
+	value, err := parseImportedJSON(input)
+	if err != nil {
+		return "", err
+	}
+
+	schemaDocument, isSchema, err := resolveJSONSchemaDocument(value, sourcePath)
+	if err != nil {
+		return "", err
+	}
+	if isSchema {
+		return importJSONSchemaDocument(schemaDocument)
+	}
+
+	return importDocument(value)
 }
 
 func parseImportedJSON(input string) (any, error) {
@@ -693,14 +715,138 @@ func formatSchemaType(value inferredType, depth int) string {
 	}
 }
 
-func isJSONSchemaDocument(value any) bool {
+func resolveJSONSchemaDocument(value any, sourcePath string) (any, bool, error) {
 	record, ok := value.(map[string]any)
+	if !ok {
+		return nil, false, nil
+	}
+
+	schemaValue, hasSchema := record["$schema"]
+	if !hasSchema {
+		return nil, false, nil
+	}
+
+	schemaReference, ok := schemaValue.(string)
+	if !ok {
+		return nil, false, nil
+	}
+
+	parsedReference, err := url.Parse(schemaReference)
+	if err != nil {
+		return nil, false, fmt.Errorf("import json schema: invalid $schema URL: %w", err)
+	}
+
+	if looksLikeJSONSchemaDocument(record) {
+		return value, true, nil
+	}
+
+	resolvedDocument, err := loadJSONSchemaDocument(parsedReference, schemaReference, sourcePath)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return resolvedDocument, true, nil
+}
+
+func looksLikeJSONSchemaDocument(record map[string]any) bool {
+	if _, ok := record["properties"]; ok {
+		return true
+	}
+	if _, ok := record["$defs"]; ok {
+		return true
+	}
+	if _, ok := record["oneOf"]; ok {
+		return true
+	}
+	if _, ok := record["anyOf"]; ok {
+		return true
+	}
+	if _, ok := record["allOf"]; ok {
+		return true
+	}
+	if _, ok := record["enum"]; ok {
+		return true
+	}
+	if _, ok := record["const"]; ok {
+		return true
+	}
+
+	typeValue, ok := record["type"]
 	if !ok {
 		return false
 	}
 
-	_, hasSchema := record["$schema"]
-	return hasSchema
+	switch typed := typeValue.(type) {
+	case string:
+		return typed == "object" || typed == "array" || typed == "string" || typed == "integer" || typed == "number" || typed == "boolean" || typed == "null"
+	case []any:
+		return len(typed) > 0
+	default:
+		return false
+	}
+}
+
+func loadJSONSchemaDocument(parsedReference *url.URL, rawReference string, sourcePath string) (any, error) {
+	switch parsedReference.Scheme {
+	case "", ".":
+		return loadJSONSchemaFile(resolveJSONSchemaPath(rawReference, sourcePath))
+	case "file":
+		resolvedPath := parsedReference.Path
+		if resolvedPath == "" {
+			resolvedPath = parsedReference.Opaque
+		}
+		if resolvedPath == "" {
+			return nil, fmt.Errorf("import json schema: empty file path in $schema")
+		}
+		return loadJSONSchemaFile(filepath.FromSlash(resolvedPath))
+	case "http", "https":
+		response, err := http.Get(parsedReference.String())
+		if err != nil {
+			return nil, fmt.Errorf("import json schema: fetch $schema: %w", err)
+		}
+		defer response.Body.Close()
+
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			return nil, fmt.Errorf("import json schema: fetch $schema: unexpected status %s", response.Status)
+		}
+
+		contents, err := io.ReadAll(response.Body)
+		if err != nil {
+			return nil, fmt.Errorf("import json schema: read $schema response: %w", err)
+		}
+		value, err := parseImportedJSON(string(contents))
+		if err != nil {
+			return nil, err
+		}
+		return value, nil
+	default:
+		if len(parsedReference.Scheme) == 1 {
+			return loadJSONSchemaFile(rawReference)
+		}
+		return nil, fmt.Errorf("import json schema: unsupported $schema scheme %q", parsedReference.Scheme)
+	}
+}
+
+func resolveJSONSchemaPath(schemaReference string, sourcePath string) string {
+	if sourcePath == "" || filepath.IsAbs(schemaReference) {
+		return schemaReference
+	}
+
+	return filepath.Join(filepath.Dir(sourcePath), filepath.FromSlash(schemaReference))
+}
+
+func loadJSONSchemaFile(path string) (any, error) {
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("import json schema: read $schema file: %w", err)
+	}
+
+	value, err := parseImportedJSON(string(contents))
+	if err != nil {
+		return nil, err
+	}
+
+	return value, nil
 }
 
 type jsonSchemaContext struct {
