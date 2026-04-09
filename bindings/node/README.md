@@ -1,4 +1,4 @@
-# @louiss0/mace-node
+# @code-fixer-23/mace-node
 
 Official Node.js bindings for Mace.
 
@@ -22,7 +22,7 @@ jpd run build
 ## Usage
 
 ```ts
-import { json, importJson } from '@louiss0/mace-node'
+import { json, importJson } from '@code-fixer-23/mace-node'
 
 const output = await json('./config.mace')
 const source = await importJson('{"name":"Ada"}')
