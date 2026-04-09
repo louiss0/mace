@@ -46,7 +46,7 @@ jobs:
         with:
           export-env: true
         env:
-          NPM_TOKEN: op://Development/For Astro NPM Token/credential
+          NPM_TOKEN: op://Development/Code Fixer 23 NPM Token/credential
           PY_TEST_TOKEN: op://Development/PY_TEST_TOKEN/credential
           PY_TOKEN: op://Development/PY_TOKEN/credential
 
