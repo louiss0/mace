@@ -1,0 +1,17 @@
+[project]
+name = "mace-python"
+version = "0.1.0"
+description = "Official Python bindings for Mace"
+readme = "README.md"
+authors = [
+    { name = "the-code-fixer-23" }
+]
+maintainers = [
+    { name = "the-code-fixer-23" }
+]
+requires-python = ">=3.13"
+dependencies = []
+
+[build-system]
+requires = ["uv_build>=0.11.6,<0.12.0"]
+build-backend = "uv_build"
