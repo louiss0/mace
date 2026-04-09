@@ -25,6 +25,8 @@ type Result struct {
 	Schema map[SchemaField]SchemaType
 }
 
+var jsonSchemaHTTPClient = &http.Client{Timeout: 5 * time.Second}
+
 type SchemaField struct {
 	Name     string
 	Optional bool
@@ -789,7 +791,7 @@ func looksLikeJSONSchemaDocument(record map[string]any) bool {
 func loadJSONSchemaDocument(parsedReference *url.URL, rawReference string, sourcePath string) (any, error) {
 	switch parsedReference.Scheme {
 	case "", ".":
-		return loadJSONSchemaFile(resolveJSONSchemaPath(rawReference, sourcePath))
+		return loadJSONSchemaFile(resolveJSONSchemaPath(stripJSONSchemaFragment(parsedReference.Path), sourcePath))
 	case "file":
 		resolvedPath := parsedReference.Path
 		if resolvedPath == "" {
@@ -800,7 +802,7 @@ func loadJSONSchemaDocument(parsedReference *url.URL, rawReference string, sourc
 		}
 		return loadJSONSchemaFile(filepath.FromSlash(resolvedPath))
 	case "http", "https":
-		response, err := http.Get(parsedReference.String())
+		response, err := jsonSchemaHTTPClient.Get(parsedReference.String())
 		if err != nil {
 			return nil, fmt.Errorf("import json schema: fetch $schema: %w", err)
 		}
@@ -823,10 +825,15 @@ func loadJSONSchemaDocument(parsedReference *url.URL, rawReference string, sourc
 		return value, nil
 	default:
 		if len(parsedReference.Scheme) == 1 {
-			return loadJSONSchemaFile(rawReference)
+			return loadJSONSchemaFile(stripJSONSchemaFragment(rawReference))
 		}
 		return nil, fmt.Errorf("import json schema: unsupported $schema scheme %q", parsedReference.Scheme)
 	}
+}
+
+func stripJSONSchemaFragment(schemaReference string) string {
+	path, _, _ := strings.Cut(schemaReference, "#")
+	return path
 }
 
 func resolveJSONSchemaPath(schemaReference string, sourcePath string) string {

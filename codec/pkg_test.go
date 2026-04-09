@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/stretchr/testify/assert"
@@ -419,6 +420,63 @@ level = 2
 		Entry("absolute unix path", "absolute-unix", "requests/absolute-unix-schema.json"),
 		Entry("absolute windows path", "absolute-windows", "requests/absolute-windows-schema.json"),
 	)
+
+	It("strips URI fragments before resolving local $schema files", func() {
+		workspace, err := os.MkdirTemp("", "mace-codec-schema-fragment-*")
+		tAssert.NoError(err)
+
+		writeCodecTempFile(workspace, "requests/schemas/schema.json", `{
+  "$id": "mock-schema",
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" }
+  },
+  "required": ["name"]
+}`)
+		jsonPath := writeCodecTempFile(workspace, "requests/input.json", `{
+  "$schema": "./schemas/schema.json#/$defs/User",
+  "name": "Ada"
+}`)
+
+		source, err := ImportJSONFile(jsonPath)
+		tAssert.NoError(err)
+		tAssert.Equal(`[output = schema]
+{
+  name: string;
+}`, source)
+	})
+
+	It("times out slow remote $schema fetches", func() {
+		previousClient := jsonSchemaHTTPClient
+		jsonSchemaHTTPClient = &http.Client{Timeout: 20 * time.Millisecond}
+		defer func() {
+			jsonSchemaHTTPClient = previousClient
+		}()
+
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			time.Sleep(100 * time.Millisecond)
+			_, err := writer.Write([]byte(`{
+  "$id": "slow-schema",
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" }
+  },
+  "required": ["name"]
+}`))
+			tAssert.NoError(err)
+		}))
+		defer server.Close()
+
+		workspace, err := os.MkdirTemp("", "mace-codec-schema-timeout-*")
+		tAssert.NoError(err)
+		jsonPath := writeCodecTempFile(workspace, "requests/slow-schema.json", fmt.Sprintf(`{
+  "$schema": %q,
+  "name": "Ada"
+}`, server.URL+"/draft-2020-12/schema.json"))
+
+		_, err = ImportJSONFile(jsonPath)
+		tAssert.ErrorContains(err, "fetch $schema")
+	})
 
 	It("rejects invalid $schema URLs during JSON import", func() {
 		_, err := ImportJSON(`{
