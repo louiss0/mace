@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   publish-bindings:
@@ -47,6 +46,7 @@ jobs:
         with:
           export-env: true
         env:
+          NPM_TOKEN: op://Development/Code Fixer 23 NPM Token/credential
           PY_TEST_TOKEN: op://Development/PY_TEST_TOKEN/credential
           PY_TOKEN: op://Development/PY_TOKEN/credential
 
@@ -85,6 +85,8 @@ jobs:
 
       - name: Publish Node binding
         working-directory: bindings/node
+        env:
+          NODE_AUTH_TOKEN: ${{ env.NPM_TOKEN }}
         run: npm publish --access public
 
       - name: Apply release version to Python package
