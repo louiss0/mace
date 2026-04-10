@@ -11,6 +11,7 @@ const (
 	TokenImport
 	TokenTypeKeyword
 	TokenSchema
+	TokenDoc
 	TokenEnum
 	TokenArray
 	TokenUnion

@@ -250,13 +250,17 @@ func formatTypeReference(typeReference ast.TypeReference) (string, error) {
 }
 
 func formatRecordType(recordType ast.RecordType, depth int) (string, error) {
-	if len(recordType.Fields) == 0 {
+	if len(recordType.Fields) == 0 && recordType.Doc == nil {
 		return "{}", nil
 	}
 
 	lines := []string{"{"}
 	indent := strings.Repeat("  ", depth+1)
 	closingIndent := strings.Repeat("  ", depth)
+
+	if recordType.Doc != nil {
+		lines = append(lines, fmt.Sprintf("%sdoc %s", indent, recordType.Doc.Lexeme))
+	}
 
 	for _, field := range recordType.Fields {
 		typeReference, err := formatTypeReference(field.Type)
@@ -343,8 +347,12 @@ func formatExpressionNode(expression ast.Expression, depth int) (string, int, er
 	switch typedExpression := expression.(type) {
 	case ast.Identifier:
 		return typedExpression.Name, precedencePrimary, nil
-	case ast.EnumMemberAccess:
-		return typedExpression.EnumName + "." + typedExpression.MemberName, precedencePrimary, nil
+	case ast.MemberAccess:
+		target, err := formatExpressionWithPrecedence(typedExpression.Target, precedencePrimary, depth)
+		if err != nil {
+			return "", 0, err
+		}
+		return target + "." + typedExpression.Name, precedencePrimary, nil
 	case ast.StringLiteral:
 		return typedExpression.Lexeme, precedencePrimary, nil
 	case ast.IntLiteral:

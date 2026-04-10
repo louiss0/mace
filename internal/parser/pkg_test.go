@@ -62,14 +62,14 @@ func requireIdentifier(expression ast.Expression, name string) ast.Identifier {
 	return identifier
 }
 
-func requireEnumMemberAccess(expression ast.Expression, enumName string, memberName string) ast.EnumMemberAccess {
-	access, ok := expression.(ast.EnumMemberAccess)
+func requireMemberAccess(expression ast.Expression, targetName string, memberName string) ast.MemberAccess {
+	access, ok := expression.(ast.MemberAccess)
 	tAssert.True(ok)
 	if !ok {
-		return ast.EnumMemberAccess{}
+		return ast.MemberAccess{}
 	}
-	tAssert.Equal(enumName, access.EnumName)
-	tAssert.Equal(memberName, access.MemberName)
+	requireIdentifier(access.Target, targetName)
+	tAssert.Equal(memberName, access.Name)
 	return access
 }
 
@@ -176,8 +176,8 @@ var _ = Describe("Parser", func() {
 		Entry("identifier", "user_name", func(expression ast.Expression) {
 			requireIdentifier(expression, "user_name")
 		}),
-		Entry("enum member access", "Fruit.Apple", func(expression ast.Expression) {
-			requireEnumMemberAccess(expression, "Fruit", "Apple")
+		Entry("member access", "Fruit.Apple", func(expression ast.Expression) {
+			requireMemberAccess(expression, "Fruit", "Apple")
 		}),
 		Entry("int literal", "42", func(expression ast.Expression) {
 			requireIntLiteral(expression, "42")
@@ -201,6 +201,35 @@ var _ = Describe("Parser", func() {
 			tAssert.Equal("name", record.Fields[0].Name)
 			tAssert.True(record.Fields[0].Optional)
 			requireStringLiteral(record.Fields[0].Value, "\"Ada\"")
+		}),
+	)
+
+	DescribeTable("parses string and access expressions",
+		func(input string, assertExpression func(ast.Expression)) {
+			expression, err := parseExpressionInput(input)
+			tAssert.NoError(err)
+			assertExpression(expression)
+		},
+		Entry("single quoted string", "'Ada'", func(expression ast.Expression) {
+			requireStringLiteral(expression, "'Ada'")
+		}),
+		Entry("block string", "\"\"\"Ada\nLovelace\"\"\"", func(expression ast.Expression) {
+			requireStringLiteral(expression, "\"\"\"Ada\nLovelace\"\"\"")
+		}),
+		Entry("nested member access", "user.profile.name", func(expression ast.Expression) {
+			outer, ok := expression.(ast.MemberAccess)
+			tAssert.True(ok)
+			if !ok {
+				return
+			}
+			tAssert.Equal("name", outer.Name)
+			inner, ok := outer.Target.(ast.MemberAccess)
+			tAssert.True(ok)
+			if !ok {
+				return
+			}
+			tAssert.Equal("profile", inner.Name)
+			requireIdentifier(inner.Target, "user")
 		}),
 	)
 
@@ -531,6 +560,29 @@ enum Fruit: string {
 				tAssert.True(ok)
 				if ok {
 					tAssert.Equal("int", ageType.Name)
+				}
+			}
+		})
+
+		It("parses schema documentation blocks", func() {
+			input := `|===|
+schema User: {
+  doc """
+  Represents a user.
+  """
+  name: string;
+};
+|===|
+[output = schema]
+{ name: string; }`
+
+			file, err := parseFileInput(input)
+			tAssert.NoError(err)
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 1) {
+				schemaDecl, ok := file.Script.Items[0].(ast.SchemaDeclaration)
+				tAssert.True(ok)
+				if ok && tAssert.NotNil(schemaDecl.Type.Doc) {
+					tAssert.Equal("\"\"\"\n  Represents a user.\n  \"\"\"", schemaDecl.Type.Doc.Lexeme)
 				}
 			}
 		})

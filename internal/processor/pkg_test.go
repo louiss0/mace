@@ -218,6 +218,18 @@ int age = 30;
 float rate = 1.25;
 boolean active = true;
 |===|`)),
+		Entry("string interpolation expressions", wrapScriptWithOutput(`|===|
+int price = 3;
+int quantity = 4;
+schema User: { name: string; };
+User user = { name: "Ada"; };
+string total = "Total $(price * quantity) for $(user.name)";
+|===|`)),
+		Entry("single quoted and block strings", wrapScriptWithOutput(`|===|
+string first = 'Ada';
+string second = """Hello
+World""";
+|===|`)),
 		Entry("injectable without initializer when unused", wrapScriptWithOutput(`|===|
 injectable string env;
 |===|`)),
@@ -255,6 +267,16 @@ schema User: { name: string; };
 |===|`), "duplicate declaration"),
 		Entry("duplicate imports", `from "testdata/imports/base.mace" import User, User;
 [output = data] {}`, "duplicate import"),
+		Entry("interpolation rejects type references", wrapScriptWithOutput(`|===|
+type UserName: string;
+string value = "$(UserName)";
+|===|`), "type reference"),
+		Entry("schema doc rejects interpolation", wrapScriptWithOutput(`|===|
+schema User: {
+  doc """$(name)"""
+  name: string;
+};
+|===|`), "interpolation is not allowed"),
 	)
 
 	DescribeTable("accepts primitive variant alternatives",

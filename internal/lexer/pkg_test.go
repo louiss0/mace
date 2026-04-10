@@ -82,11 +82,12 @@ var _ = Describe("Lexer", func() {
 			tAssert.NoError(err)
 			assertTokenSequence(tokens, expected)
 		},
-		Entry("keywords and identifiers", "from import type schema enum array string int float boolean output schema_file data injectable user_1", []expectedToken{
+		Entry("keywords and identifiers", "from import type schema doc enum array string int float boolean output schema_file data injectable user_1", []expectedToken{
 			{tokenType: TokenFrom, lexeme: "from"},
 			{tokenType: TokenImport, lexeme: "import"},
 			{tokenType: TokenTypeKeyword, lexeme: "type"},
 			{tokenType: TokenSchema, lexeme: "schema"},
+			{tokenType: TokenDoc, lexeme: "doc"},
 			{tokenType: TokenEnum, lexeme: "enum"},
 			{tokenType: TokenArray, lexeme: "array"},
 			{tokenType: TokenStringType, lexeme: "string"},
@@ -108,8 +109,10 @@ var _ = Describe("Lexer", func() {
 			tAssert.NoError(err)
 			assertTokenSequence(tokens, expected)
 		},
-		Entry("string and numbers", "\"hello\" 0 42 3.14 10.0 true false", []expectedToken{
+		Entry("string and numbers", "\"hello\" 'world' \"\"\"block\"\"\" 0 42 3.14 10.0 true false", []expectedToken{
 			{tokenType: TokenString, lexeme: "\"hello\""},
+			{tokenType: TokenString, lexeme: "'world'"},
+			{tokenType: TokenString, lexeme: "\"\"\"block\"\"\""},
 			{tokenType: TokenInt, lexeme: "0"},
 			{tokenType: TokenInt, lexeme: "42"},
 			{tokenType: TokenFloat, lexeme: "3.14"},
@@ -240,6 +243,14 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenString, lexeme: "\"line 1\\nline 2\""},
 			{tokenType: TokenEOF, lexeme: ""},
 		}),
+		Entry("single quoted string", "'hello'", []expectedToken{
+			{tokenType: TokenString, lexeme: "'hello'"},
+			{tokenType: TokenEOF, lexeme: ""},
+		}),
+		Entry("block string", "\"\"\"hello\nworld\"\"\"", []expectedToken{
+			{tokenType: TokenString, lexeme: "\"\"\"hello\nworld\"\"\""},
+			{tokenType: TokenEOF, lexeme: ""},
+		}),
 	)
 
 	DescribeTable("rejects unterminated string literals",
@@ -248,6 +259,8 @@ var _ = Describe("Lexer", func() {
 			tAssert.Error(err)
 		},
 		Entry("unterminated string", "\"unterminated"),
+		Entry("unterminated single quoted string", "'unterminated"),
+		Entry("unterminated block string", "\"\"\"unterminated"),
 	)
 
 	DescribeTable("lexes $self as a dedicated token",

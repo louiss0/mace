@@ -509,7 +509,7 @@ Personality value = Personality.is_type;
 		if tAssert.Len(notifications, 2) {
 			params := requireDiagnostics(notifications[0])
 			tAssert.Len(params.Diagnostics, 1)
-			tAssert.Contains(params.Diagnostics[0].Message, `expected identifier after '.' in enum member access`)
+			tAssert.Contains(params.Diagnostics[0].Message, `expected identifier after '.' in member access`)
 
 			params = requireDiagnostics(notifications[1])
 			tAssert.Empty(params.Diagnostics)

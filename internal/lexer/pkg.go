@@ -41,8 +41,8 @@ func (l *Lexer) NextToken() (Token, error) {
 	current := l.advance()
 
 	switch current {
-	case '"':
-		return l.lexString(startPosition, startLine, startColumn)
+	case '\'', '"':
+		return l.lexString(current, startPosition, startLine, startColumn)
 	case '$':
 		if l.match('s') && l.match('e') && l.match('l') && l.match('f') {
 			return l.makeToken(TokenSelf, startPosition, startLine, startColumn), nil
@@ -182,11 +182,43 @@ func (l *Lexer) NextToken() (Token, error) {
 	return Token{}, fmt.Errorf("lexer: unexpected character %q at %d:%d", current, startLine, startColumn)
 }
 
-func (l *Lexer) lexString(startPosition, startLine, startColumn int) (Token, error) {
+func (l *Lexer) lexString(quote byte, startPosition, startLine, startColumn int) (Token, error) {
+	if quote == '"' && strings.HasPrefix(l.input[l.position:], `""`) {
+		l.advance()
+		l.advance()
+		for !l.isAtEnd() {
+			if strings.HasPrefix(l.input[l.position:], `"""`) {
+				l.advance()
+				l.advance()
+				l.advance()
+				return l.makeToken(TokenString, startPosition, startLine, startColumn), nil
+			}
+			if l.peek() == '\\' {
+				l.advance()
+				if l.isAtEnd() {
+					break
+				}
+			}
+			l.advance()
+		}
+		return Token{}, fmt.Errorf("lexer: unterminated string at %d:%d", startLine, startColumn)
+	}
+
 	for !l.isAtEnd() {
-		if l.peek() == '"' {
+		if l.peek() == '\\' {
+			l.advance()
+			if l.isAtEnd() {
+				break
+			}
+			l.advance()
+			continue
+		}
+		if l.peek() == quote {
 			l.advance()
 			return l.makeToken(TokenString, startPosition, startLine, startColumn), nil
+		}
+		if l.peek() == '\n' || l.peek() == '\r' {
+			break
 		}
 		l.advance()
 	}
@@ -383,6 +415,8 @@ func keywordToken(lexeme string) (TokenType, bool) {
 		return TokenTypeKeyword, true
 	case "schema":
 		return TokenSchema, true
+	case "doc":
+		return TokenDoc, true
 	case "enum":
 		return TokenEnum, true
 	case "array":

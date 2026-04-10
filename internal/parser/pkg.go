@@ -23,6 +23,7 @@ const (
 	precedenceMultiplicative
 	precedenceExponent
 	precedencePrefix
+	precedenceMember
 )
 
 type Parser struct {
@@ -417,6 +418,20 @@ func (p *Parser) parseRecordType() (ast.RecordType, error) {
 		return ast.RecordType{}, err
 	}
 
+	var doc *ast.StringLiteral
+	if p.current().Type == lexer.TokenDoc {
+		p.advance()
+		stringToken, err := p.consume(lexer.TokenString, "parser: expected block string after doc")
+		if err != nil {
+			return ast.RecordType{}, err
+		}
+		if !strings.HasPrefix(stringToken.Lexeme, `"""`) {
+			return ast.RecordType{}, fmt.Errorf("parser: expected block string after doc at %d:%d near %q", stringToken.Line, stringToken.Column, stringToken.Lexeme)
+		}
+		parsed := ast.StringLiteral{Lexeme: stringToken.Lexeme}
+		doc = &parsed
+	}
+
 	fields := []ast.SchemaField{}
 	for !p.isAtEnd() && p.current().Type != lexer.TokenRBrace {
 		field, err := p.parseSchemaField()
@@ -430,7 +445,7 @@ func (p *Parser) parseRecordType() (ast.RecordType, error) {
 		return ast.RecordType{}, err
 	}
 
-	return ast.RecordType{Fields: fields}, nil
+	return ast.RecordType{Doc: doc, Fields: fields}, nil
 }
 
 func (p *Parser) parseSchemaField() (ast.SchemaField, error) {
@@ -782,14 +797,6 @@ func (p *Parser) parsePrefix(token lexer.Token) (ast.Expression, error) {
 	switch token.Type {
 	case lexer.TokenIdentifier:
 		p.advance()
-		if p.current().Type == lexer.TokenDot {
-			p.advance()
-			memberToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier after '.' in enum member access")
-			if err != nil {
-				return nil, err
-			}
-			return ast.EnumMemberAccess{EnumName: token.Lexeme, MemberName: memberToken.Lexeme}, nil
-		}
 		return ast.Identifier{Name: token.Lexeme}, nil
 	case lexer.TokenString:
 		p.advance()
@@ -933,6 +940,14 @@ func (p *Parser) parseRecordField() (ast.RecordField, error) {
 }
 
 func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token) (ast.Expression, error) {
+	if operator.Type == lexer.TokenDot {
+		memberToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier after '.' in member access")
+		if err != nil {
+			return nil, err
+		}
+		return ast.MemberAccess{Target: left, Name: memberToken.Lexeme}, nil
+	}
+
 	precedence := p.precedenceFor(operator.Type)
 	rightPrecedence := precedence
 	if operator.Type == lexer.TokenDoubleStar {
@@ -1042,6 +1057,8 @@ func (p *Parser) precedenceFor(tokenType lexer.TokenType) int {
 		return precedenceMultiplicative
 	case lexer.TokenDoubleStar:
 		return precedenceExponent
+	case lexer.TokenDot:
+		return precedenceMember
 	default:
 		return precedenceLowest
 	}

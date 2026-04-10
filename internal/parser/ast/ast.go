@@ -12,12 +12,12 @@ type Identifier struct {
 
 func (Identifier) expressionNode() {}
 
-type EnumMemberAccess struct {
-	EnumName   string
-	MemberName string
+type MemberAccess struct {
+	Target Expression
+	Name   string
 }
 
-func (EnumMemberAccess) expressionNode() {}
+func (MemberAccess) expressionNode() {}
 
 type StringLiteral struct {
 	Lexeme string
@@ -187,6 +187,7 @@ type NamedType struct {
 func (NamedType) typeReferenceNode() {}
 
 type RecordType struct {
+	Doc    *StringLiteral
 	Fields []SchemaField
 }
 

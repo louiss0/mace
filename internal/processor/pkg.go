@@ -168,7 +168,7 @@ func ParseInjectionRecord(input string) (map[string]Value, error) {
 		return nil, err
 	}
 
-	value, err := evaluateExpression(expression, newValueEnvironment(), Value{}, newEnumRegistry())
+	value, err := evaluateExpression(expression, newValueEnvironment(), Value{}, newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), newEnumRegistry())
 	if err != nil {
 		return nil, err
 	}
@@ -276,7 +276,7 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 		}
 	}
 
-	output, err := evaluateOutputFields(outputBlock.DataFields, outputContext.environment, outputContext.enums)
+	output, err := evaluateOutputFields(outputBlock.DataFields, outputContext.environment, outputContext.symbols, outputContext.types, outputContext.schemas, outputContext.enums)
 	if err != nil {
 		return Result{}, err
 	}
@@ -460,7 +460,7 @@ func resolveImportsWithState(file ast.File, baseDir string, cache map[string]map
 }
 
 func parseImportPath(literal ast.StringLiteral) (string, error) {
-	value, err := parseString(literal.Lexeme)
+	value, err := parseStaticString(literal.Lexeme)
 	if err != nil {
 		return "", err
 	}
@@ -524,7 +524,7 @@ func resolveSchemaFileDeclarations(directives []ast.OutputDirective, baseDir str
 			return nil, validationErrorf("duplicate output directive %q", directiveKindName(directive.Kind))
 		}
 
-		parsedPath, err := parseString(directive.Value)
+		parsedPath, err := parseStaticString(directive.Value)
 		if err != nil {
 			return nil, err
 		}
@@ -662,7 +662,7 @@ func collectImportExports(output ast.OutputBlock, context processContext) (map[s
 		}
 	}
 
-	values, err := evaluateOutputFields(output.DataFields, outputContext.environment, outputContext.enums)
+	values, err := evaluateOutputFields(output.DataFields, outputContext.environment, outputContext.symbols, outputContext.types, outputContext.schemas, outputContext.enums)
 	if err != nil {
 		return nil, err
 	}
@@ -1068,6 +1068,12 @@ func validateTypeReference(typeRef ast.TypeReference, symbols *symbolTable, type
 }
 
 func validateRecordType(record ast.RecordType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) error {
+	if record.Doc != nil {
+		if _, err := parseDocString(record.Doc.Lexeme); err != nil {
+			return err
+		}
+	}
+
 	fieldNames := map[string]struct{}{}
 	for _, field := range record.Fields {
 		if _, exists := fieldNames[field.Name]; exists {
@@ -1691,7 +1697,7 @@ func evaluateScript(items []ast.Declaration, environment *valueEnvironment, inje
 			return validationErrorf("variable %q requires an initializer", variable.Name)
 		}
 
-		value, err := evaluateExpression(variable.Value, environment, Value{}, enums)
+		value, err := evaluateExpression(variable.Value, environment, Value{}, symbols, types, schemas, enums)
 		if err != nil {
 			return err
 		}
@@ -1710,11 +1716,11 @@ func evaluateScript(items []ast.Declaration, environment *valueEnvironment, inje
 	return nil
 }
 
-func evaluateOutputFields(items []ast.OutputField, environment *valueEnvironment, enums *enumRegistry) (map[string]Value, error) {
+func evaluateOutputFields(items []ast.OutputField, environment *valueEnvironment, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) (map[string]Value, error) {
 	fields := map[string]Value{}
 	self := Value{Kind: ValueRecord, Record: fields}
 	for _, item := range items {
-		value, err := evaluateExpression(item.Value, environment, self, enums)
+		value, err := evaluateExpression(item.Value, environment, self, symbols, types, schemas, enums)
 		if err != nil {
 			return nil, err
 		}
@@ -1724,7 +1730,7 @@ func evaluateOutputFields(items []ast.OutputField, environment *valueEnvironment
 	return fields, nil
 }
 
-func evaluateExpression(expression ast.Expression, environment *valueEnvironment, self Value, enums *enumRegistry) (Value, error) {
+func evaluateExpression(expression ast.Expression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) (Value, error) {
 	switch expr := expression.(type) {
 	case ast.Identifier:
 		value, ok := environment.Get(expr.Name)
@@ -1732,31 +1738,36 @@ func evaluateExpression(expression ast.Expression, environment *valueEnvironment
 			if environment.IsMissingInjectable(expr.Name) {
 				return Value{}, validationErrorf("injectable %q requires a runtime value", expr.Name)
 			}
+			if symbols != nil {
+				if kind, exists := symbols.Get(expr.Name); exists && kind != symbolKindVariable {
+					return Value{}, validationErrorf("type reference %q is not a valid value expression", expr.Name)
+				}
+			}
 			return Value{}, validationErrorf("unknown identifier %q", expr.Name)
 		}
 		return value, nil
-	case ast.EnumMemberAccess:
-		return evaluateEnumMemberAccess(expr, enums)
+	case ast.MemberAccess:
+		return evaluateMemberAccess(expr, environment, self, symbols, types, schemas, enums)
 	case ast.IntLiteral:
 		return parseInt(expr.Lexeme)
 	case ast.FloatLiteral:
 		return parseFloat(expr.Lexeme)
 	case ast.StringLiteral:
-		return parseString(expr.Lexeme)
+		return parseInterpolatedString(expr.Lexeme, environment, self, symbols, types, schemas, enums)
 	case ast.BooleanLiteral:
 		return Value{Kind: ValueBoolean, Boolean: expr.Value}, nil
 	case ast.ArrayLiteral:
-		return evaluateArrayLiteral(expr, environment, self, enums)
+		return evaluateArrayLiteral(expr, environment, self, symbols, types, schemas, enums)
 	case ast.RecordLiteral:
-		return evaluateRecordLiteral(expr, environment, self, enums)
+		return evaluateRecordLiteral(expr, environment, self, symbols, types, schemas, enums)
 	case ast.SelfReference:
 		return evaluateSelfReference(expr, self)
 	case ast.PrefixExpression:
-		return evaluatePrefix(expr, environment, self, enums)
+		return evaluatePrefix(expr, environment, self, symbols, types, schemas, enums)
 	case ast.InfixExpression:
-		return evaluateInfix(expr, environment, self, enums)
+		return evaluateInfix(expr, environment, self, symbols, types, schemas, enums)
 	case ast.ConditionalExpression:
-		return evaluateConditional(expr, environment, self, enums)
+		return evaluateConditional(expr, environment, self, symbols, types, schemas, enums)
 	default:
 		return Value{}, validationErrorf("unsupported expression")
 	}
@@ -1778,29 +1789,188 @@ func parseFloat(lexeme string) (Value, error) {
 	return Value{Kind: ValueFloat, Float: value}, nil
 }
 
-func parseString(lexeme string) (Value, error) {
-	if len(lexeme) < 2 || lexeme[0] != '"' || lexeme[len(lexeme)-1] != '"' {
-		return Value{}, validationErrorf("invalid string literal %q", lexeme)
+func parseStaticString(lexeme string) (Value, error) {
+	value, err := decodeStringLexeme(lexeme, false, nil)
+	if err != nil {
+		return Value{}, err
 	}
-	return Value{Kind: ValueString, String: lexeme[1 : len(lexeme)-1]}, nil
+	return Value{Kind: ValueString, String: value}, nil
 }
 
-func evaluateEnumMemberAccess(expr ast.EnumMemberAccess, enums *enumRegistry) (Value, error) {
-	enumDef, ok := enums.Get(expr.EnumName)
-	if !ok {
-		return Value{}, validationErrorf("unknown enum %q", expr.EnumName)
+func parseDocString(lexeme string) (Value, error) {
+	if !strings.HasPrefix(lexeme, `"""`) {
+		return Value{}, validationErrorf("schema doc must use a block string")
 	}
-
-	member, ok := enumDef.Member(expr.MemberName)
-	if !ok {
-		return Value{}, validationErrorf("unknown enum member %q in enum %q", expr.MemberName, expr.EnumName)
+	value, err := decodeStringLexeme(lexeme, false, nil)
+	if err != nil {
+		return Value{}, err
 	}
-
-	return member.Value, nil
+	return Value{Kind: ValueString, String: value}, nil
 }
 
-func evaluatePrefix(expr ast.PrefixExpression, environment *valueEnvironment, self Value, enums *enumRegistry) (Value, error) {
-	right, err := evaluateExpression(expr.Right, environment, self, enums)
+func parseInterpolatedString(lexeme string, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) (Value, error) {
+	value, err := decodeStringLexeme(lexeme, true, func(expressionText string) (string, error) {
+		tokens, err := lex(expressionText)
+		if err != nil {
+			return "", err
+		}
+
+		expression, err := parser.New(tokens).ParseExpression()
+		if err != nil {
+			return "", err
+		}
+
+		value, err := evaluateExpression(expression, environment, self, symbols, types, schemas, enums)
+		if err != nil {
+			return "", err
+		}
+		return stringifyValue(value)
+	})
+	if err != nil {
+		return Value{}, err
+	}
+	return Value{Kind: ValueString, String: value}, nil
+}
+
+func decodeStringLexeme(lexeme string, allowInterpolation bool, interpolate func(string) (string, error)) (string, error) {
+	content, quoteMode, err := stringContent(lexeme)
+	if err != nil {
+		return "", err
+	}
+
+	var builder strings.Builder
+	for index := 0; index < len(content); {
+		if content[index] == '\\' {
+			if index+1 >= len(content) {
+				return "", validationErrorf("invalid string literal %q", lexeme)
+			}
+			escaped, err := unescapeByte(content[index+1])
+			if err != nil {
+				return "", err
+			}
+			builder.WriteByte(escaped)
+			index += 2
+			continue
+		}
+		if quoteMode != stringQuoteSingle && strings.HasPrefix(content[index:], "$(") {
+			if !allowInterpolation {
+				return "", validationErrorf("interpolation is not allowed in this string")
+			}
+			end, expressionText, err := interpolationContent(content, index)
+			if err != nil {
+				return "", err
+			}
+			resolved, err := interpolate(expressionText)
+			if err != nil {
+				return "", err
+			}
+			builder.WriteString(resolved)
+			index = end
+			continue
+		}
+		builder.WriteByte(content[index])
+		index++
+	}
+
+	return builder.String(), nil
+}
+
+type stringQuoteMode int
+
+const (
+	stringQuoteSingle stringQuoteMode = iota
+	stringQuoteDouble
+	stringQuoteBlock
+)
+
+func stringContent(lexeme string) (string, stringQuoteMode, error) {
+	switch {
+	case strings.HasPrefix(lexeme, `"""`) && strings.HasSuffix(lexeme, `"""`) && len(lexeme) >= 6:
+		return lexeme[3 : len(lexeme)-3], stringQuoteBlock, nil
+	case strings.HasPrefix(lexeme, `"`) && strings.HasSuffix(lexeme, `"`) && len(lexeme) >= 2:
+		return lexeme[1 : len(lexeme)-1], stringQuoteDouble, nil
+	case strings.HasPrefix(lexeme, `'`) && strings.HasSuffix(lexeme, `'`) && len(lexeme) >= 2:
+		return lexeme[1 : len(lexeme)-1], stringQuoteSingle, nil
+	default:
+		return "", stringQuoteDouble, validationErrorf("invalid string literal %q", lexeme)
+	}
+}
+
+func unescapeByte(value byte) (byte, error) {
+	switch value {
+	case '\\', '\'', '"':
+		return value, nil
+	case 'n':
+		return '\n', nil
+	case 'r':
+		return '\r', nil
+	case 't':
+		return '\t', nil
+	default:
+		return 0, validationErrorf("invalid string escape \\%c", value)
+	}
+}
+
+func interpolationContent(content string, start int) (int, string, error) {
+	depth := 1
+	index := start + 2
+	for index < len(content) {
+		switch content[index] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return index + 1, content[start+2 : index], nil
+			}
+		}
+		index++
+	}
+	return 0, "", validationErrorf("unterminated interpolation")
+}
+
+func stringifyValue(value Value) (string, error) {
+	switch value.Kind {
+	case ValueString:
+		return value.String, nil
+	case ValueInt:
+		return strconv.FormatInt(value.Int, 10), nil
+	case ValueFloat:
+		return strconv.FormatFloat(value.Float, 'f', -1, 64), nil
+	case ValueBoolean:
+		return strconv.FormatBool(value.Boolean), nil
+	default:
+		return "", validationErrorf("interpolation requires a scalar value")
+	}
+}
+
+func evaluateMemberAccess(expr ast.MemberAccess, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) (Value, error) {
+	if identifier, ok := expr.Target.(ast.Identifier); ok {
+		if enumDef, exists := enums.Get(identifier.Name); exists {
+			member, exists := enumDef.Member(expr.Name)
+			if !exists {
+				return Value{}, validationErrorf("unknown enum member %q in enum %q", expr.Name, identifier.Name)
+			}
+			return member.Value, nil
+		}
+	}
+
+	target, err := evaluateExpression(expr.Target, environment, self, symbols, types, schemas, enums)
+	if err != nil {
+		return Value{}, err
+	}
+	if target.Kind != ValueRecord {
+		return Value{}, validationErrorf("member access requires a record value")
+	}
+	member, ok := target.Record[expr.Name]
+	if !ok {
+		return Value{}, validationErrorf("unknown member %q", expr.Name)
+	}
+	return member, nil
+}
+
+func evaluatePrefix(expr ast.PrefixExpression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) (Value, error) {
+	right, err := evaluateExpression(expr.Right, environment, self, symbols, types, schemas, enums)
 	if err != nil {
 		return Value{}, err
 	}
@@ -1835,19 +2005,19 @@ func evaluatePrefix(expr ast.PrefixExpression, environment *valueEnvironment, se
 	}
 }
 
-func evaluateInfix(expr ast.InfixExpression, environment *valueEnvironment, self Value, enums *enumRegistry) (Value, error) {
+func evaluateInfix(expr ast.InfixExpression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) (Value, error) {
 	if expr.Operator == lexer.TokenAndAnd {
-		return evaluateLogicalAnd(expr, environment, self, enums)
+		return evaluateLogicalAnd(expr, environment, self, symbols, types, schemas, enums)
 	}
 	if expr.Operator == lexer.TokenOrOr {
-		return evaluateLogicalOr(expr, environment, self, enums)
+		return evaluateLogicalOr(expr, environment, self, symbols, types, schemas, enums)
 	}
 
-	left, err := evaluateExpression(expr.Left, environment, self, enums)
+	left, err := evaluateExpression(expr.Left, environment, self, symbols, types, schemas, enums)
 	if err != nil {
 		return Value{}, err
 	}
-	right, err := evaluateExpression(expr.Right, environment, self, enums)
+	right, err := evaluateExpression(expr.Right, environment, self, symbols, types, schemas, enums)
 	if err != nil {
 		return Value{}, err
 	}
@@ -2050,8 +2220,8 @@ func compareNumbers(operator lexer.TokenType, left, right float64) (Value, error
 	}
 }
 
-func evaluateLogicalAnd(expr ast.InfixExpression, environment *valueEnvironment, self Value, enums *enumRegistry) (Value, error) {
-	left, err := evaluateExpression(expr.Left, environment, self, enums)
+func evaluateLogicalAnd(expr ast.InfixExpression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) (Value, error) {
+	left, err := evaluateExpression(expr.Left, environment, self, symbols, types, schemas, enums)
 	if err != nil {
 		return Value{}, err
 	}
@@ -2062,7 +2232,7 @@ func evaluateLogicalAnd(expr ast.InfixExpression, environment *valueEnvironment,
 		return Value{Kind: ValueBoolean, Boolean: false}, nil
 	}
 
-	right, err := evaluateExpression(expr.Right, environment, self, enums)
+	right, err := evaluateExpression(expr.Right, environment, self, symbols, types, schemas, enums)
 	if err != nil {
 		return Value{}, err
 	}
@@ -2072,8 +2242,8 @@ func evaluateLogicalAnd(expr ast.InfixExpression, environment *valueEnvironment,
 	return Value{Kind: ValueBoolean, Boolean: right.Boolean}, nil
 }
 
-func evaluateLogicalOr(expr ast.InfixExpression, environment *valueEnvironment, self Value, enums *enumRegistry) (Value, error) {
-	left, err := evaluateExpression(expr.Left, environment, self, enums)
+func evaluateLogicalOr(expr ast.InfixExpression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) (Value, error) {
+	left, err := evaluateExpression(expr.Left, environment, self, symbols, types, schemas, enums)
 	if err != nil {
 		return Value{}, err
 	}
@@ -2084,7 +2254,7 @@ func evaluateLogicalOr(expr ast.InfixExpression, environment *valueEnvironment, 
 		return Value{Kind: ValueBoolean, Boolean: true}, nil
 	}
 
-	right, err := evaluateExpression(expr.Right, environment, self, enums)
+	right, err := evaluateExpression(expr.Right, environment, self, symbols, types, schemas, enums)
 	if err != nil {
 		return Value{}, err
 	}
@@ -2094,8 +2264,8 @@ func evaluateLogicalOr(expr ast.InfixExpression, environment *valueEnvironment, 
 	return Value{Kind: ValueBoolean, Boolean: right.Boolean}, nil
 }
 
-func evaluateConditional(expr ast.ConditionalExpression, environment *valueEnvironment, self Value, enums *enumRegistry) (Value, error) {
-	condition, err := evaluateExpression(expr.Condition, environment, self, enums)
+func evaluateConditional(expr ast.ConditionalExpression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) (Value, error) {
+	condition, err := evaluateExpression(expr.Condition, environment, self, symbols, types, schemas, enums)
 	if err != nil {
 		return Value{}, err
 	}
@@ -2104,17 +2274,17 @@ func evaluateConditional(expr ast.ConditionalExpression, environment *valueEnvir
 	}
 
 	if condition.Boolean {
-		return evaluateExpression(expr.Then, environment, self, enums)
+		return evaluateExpression(expr.Then, environment, self, symbols, types, schemas, enums)
 	}
 
-	return evaluateExpression(expr.Else, environment, self, enums)
+	return evaluateExpression(expr.Else, environment, self, symbols, types, schemas, enums)
 }
 
-func evaluateArrayLiteral(expr ast.ArrayLiteral, environment *valueEnvironment, self Value, enums *enumRegistry) (Value, error) {
+func evaluateArrayLiteral(expr ast.ArrayLiteral, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) (Value, error) {
 	values := make([]Value, 0, len(expr.Elements))
 	var elementType *valueType
 	for _, element := range expr.Elements {
-		value, err := evaluateExpression(element, environment, self, enums)
+		value, err := evaluateExpression(element, environment, self, symbols, types, schemas, enums)
 		if err != nil {
 			return Value{}, err
 		}
@@ -2129,13 +2299,13 @@ func evaluateArrayLiteral(expr ast.ArrayLiteral, environment *valueEnvironment, 
 	return Value{Kind: ValueArray, Array: values}, nil
 }
 
-func evaluateRecordLiteral(expr ast.RecordLiteral, environment *valueEnvironment, self Value, enums *enumRegistry) (Value, error) {
+func evaluateRecordLiteral(expr ast.RecordLiteral, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) (Value, error) {
 	fields := map[string]Value{}
 	for _, field := range expr.Fields {
 		if _, exists := fields[field.Name]; exists {
 			return Value{}, validationErrorf("duplicate record field %q", field.Name)
 		}
-		value, err := evaluateExpression(field.Value, environment, self, enums)
+		value, err := evaluateExpression(field.Value, environment, self, symbols, types, schemas, enums)
 		if err != nil {
 			return Value{}, err
 		}
@@ -2503,16 +2673,34 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 		if variableType, ok := variables.Get(expr.Name); ok {
 			return variableType, nil
 		}
+		if symbols != nil {
+			if kind, ok := symbols.Get(expr.Name); ok && kind != symbolKindVariable {
+				return valueType{}, validationErrorf("type reference %q is not a valid value expression", expr.Name)
+			}
+		}
 		return valueType{kind: ValueUnknown}, nil
-	case ast.EnumMemberAccess:
-		enumDef, ok := enums.Get(expr.EnumName)
-		if !ok {
-			return valueType{}, validationErrorf("unknown enum %q", expr.EnumName)
+	case ast.MemberAccess:
+		if identifier, ok := expr.Target.(ast.Identifier); ok {
+			enumDef, exists := enums.Get(identifier.Name)
+			if exists {
+				if _, exists := enumDef.Member(expr.Name); !exists {
+					return valueType{}, validationErrorf("unknown enum member %q in enum %q", expr.Name, identifier.Name)
+				}
+				return valueType{kind: enumDef.BackingType.kind, enumName: identifier.Name}, nil
+			}
 		}
-		if _, ok := enumDef.Member(expr.MemberName); !ok {
-			return valueType{}, validationErrorf("unknown enum member %q in enum %q", expr.MemberName, expr.EnumName)
+
+		targetType, err := inferExpressionType(expr.Target, variables, symbols, types, enums)
+		if err != nil {
+			return valueType{}, err
 		}
-		return valueType{kind: enumDef.BackingType.kind, enumName: expr.EnumName}, nil
+		if targetType.kind == ValueUnknown {
+			return valueType{kind: ValueUnknown}, nil
+		}
+		if targetType.kind != ValueRecord {
+			return valueType{}, validationErrorf("member access requires a record value")
+		}
+		return valueType{kind: ValueUnknown}, nil
 	case ast.IntLiteral:
 		return valueType{kind: ValueInt}, nil
 	case ast.FloatLiteral:
@@ -2791,6 +2979,11 @@ func (s *symbolTable) Add(name string, kind symbolKind) {
 func (s *symbolTable) Has(name string) bool {
 	_, exists := s.symbols[name]
 	return exists
+}
+
+func (s *symbolTable) Get(name string) (symbolKind, bool) {
+	kind, exists := s.symbols[name]
+	return kind, exists
 }
 
 func (s *symbolTable) IsImport(name string) bool {

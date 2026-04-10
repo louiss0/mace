@@ -91,7 +91,7 @@ func enumMemberValue(declaration ast.EnumDeclaration, member ast.EnumMember, bac
 		if !ok {
 			return Value{}, validationErrorf("enum member %q in enum %q must use a string literal", member.Name, declaration.Name)
 		}
-		return parseString(literal.Lexeme)
+		return parseStaticString(literal.Lexeme)
 	case ValueInt:
 		literal, ok := member.Value.(ast.IntLiteral)
 		if !ok {

@@ -181,6 +181,22 @@ injectable string env = "dev";
 		tAssert.NoError(err)
 		tAssert.Equal(map[string]any{"env": "prod"}, result.Data)
 	})
+
+	It("evaluates interpolated strings through the public binding", func() {
+		result, err := Parse(`|===|
+int price = 3;
+int quantity = 4;
+schema User: { name: string; };
+User user = { name: "Ada"; };
+string summary = "$(user.name): $(price * quantity)";
+|===|
+[output = data]
+{
+  summary: summary;
+}`)
+		tAssert.NoError(err)
+		tAssert.Equal(map[string]any{"summary": "Ada: 12"}, result.Data)
+	})
 })
 
 var _ = Describe("Marshal", func() {
