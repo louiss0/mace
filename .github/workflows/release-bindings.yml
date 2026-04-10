@@ -11,9 +11,12 @@ permissions:
   contents: read
 
 jobs:
-  publish-bindings:
+  prepare-release:
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'release'
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release_ref: ${{ github.event.workflow_run.head_sha }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -36,19 +39,27 @@ jobs:
           echo "tag=$version_tag" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+  publish-node:
+    needs: prepare-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare-release.outputs.release_ref }}
+          fetch-depth: 0
+
       - name: Configure 1Password
         uses: 1password/load-secrets-action/configure@v2
         with:
           service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
-      - name: Load publish tokens
+      - name: Load npm token
         uses: 1password/load-secrets-action@v2
         with:
           export-env: true
         env:
           NPM_TOKEN: op://Development/Code Fixer 23 NPM Token/credential
-          PY_TEST_TOKEN: op://Development/PY_TEST_TOKEN/credential
-          PY_TOKEN: op://Development/PY_TOKEN/credential
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -63,19 +74,11 @@ jobs:
           cache: pnpm
           cache-dependency-path: bindings/node/pnpm-lock.yaml
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.13'
-
-      - name: Install uv
-        run: python -m pip install --user uv
-
       - name: Apply release version to Node package
         working-directory: bindings/node
         shell: bash
         run: |
-          node -e "const fs=require('fs'); const path='package.json'; const pkg=JSON.parse(fs.readFileSync(path,'utf8')); pkg.version='${{ steps.version.outputs.version }}'; fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');"
+          node -e "const fs=require('fs'); const path='package.json'; const pkg=JSON.parse(fs.readFileSync(path,'utf8')); pkg.version='${{ needs.prepare-release.outputs.version }}'; fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');"
 
       - name: Install and build Node binding
         working-directory: bindings/node
@@ -89,6 +92,37 @@ jobs:
           NODE_AUTH_TOKEN: ${{ env.NPM_TOKEN }}
         run: npm publish --access public
 
+  publish-python:
+    needs: prepare-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare-release.outputs.release_ref }}
+          fetch-depth: 0
+
+      - name: Configure 1Password
+        uses: 1password/load-secrets-action/configure@v2
+        with:
+          service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+      - name: Load PyPI tokens
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          PY_TEST_TOKEN: op://Development/PY_TEST_TOKEN/credential
+          PY_TOKEN: op://Development/PY_TOKEN/credential
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        run: python -m pip install --user uv
+
       - name: Apply release version to Python package
         working-directory: bindings/python
         shell: bash
@@ -98,7 +132,7 @@ jobs:
           path = Path('pyproject.toml')
           text = path.read_text()
           old = 'version = "0.1.0"'
-          new = 'version = "${{ steps.version.outputs.version }}"'
+          new = 'version = "${{ needs.prepare-release.outputs.version }}"'
           if old not in text:
               raise SystemExit('expected version entry not found in pyproject.toml')
           path.write_text(text.replace(old, new, 1))
