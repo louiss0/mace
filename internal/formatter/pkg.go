@@ -83,6 +83,9 @@ func (f *formatter) writeOutputBlock(output ast.OutputBlock) error {
 		}
 		f.writeLine(directive)
 	}
+	if output.Doc != nil {
+		f.writeLine(output.Doc.Lexeme)
+	}
 	if output.Mode == ast.OutputModeSchema {
 		return f.writeSchemaOutputBlock(output.SchemaFields)
 	}
@@ -172,6 +175,8 @@ func formatDeclaration(declaration ast.Declaration) (string, error) {
 		}
 
 		return fmt.Sprintf("schema %s: %s;", typedDeclaration.Name, recordType), nil
+	case ast.DocDeclaration:
+		return formatDocDeclaration(typedDeclaration)
 	case ast.EnumDeclaration:
 		return formatEnumDeclaration(typedDeclaration)
 	default:
@@ -250,17 +255,13 @@ func formatTypeReference(typeReference ast.TypeReference) (string, error) {
 }
 
 func formatRecordType(recordType ast.RecordType, depth int) (string, error) {
-	if len(recordType.Fields) == 0 && recordType.Doc == nil {
+	if len(recordType.Fields) == 0 {
 		return "{}", nil
 	}
 
 	lines := []string{"{"}
 	indent := strings.Repeat("  ", depth+1)
 	closingIndent := strings.Repeat("  ", depth)
-
-	if recordType.Doc != nil {
-		lines = append(lines, fmt.Sprintf("%sdoc %s", indent, recordType.Doc.Lexeme))
-	}
 
 	for _, field := range recordType.Fields {
 		typeReference, err := formatTypeReference(field.Type)
@@ -277,6 +278,18 @@ func formatRecordType(recordType ast.RecordType, depth int) (string, error) {
 	}
 
 	lines = append(lines, closingIndent+"}")
+	return strings.Join(lines, "\n"), nil
+}
+
+func formatDocDeclaration(declaration ast.DocDeclaration) (string, error) {
+	lines := []string{fmt.Sprintf("doc %s {", declaration.Target)}
+	if declaration.Documentation.Summary != nil {
+		lines = append(lines, fmt.Sprintf("  summary: %s;", declaration.Documentation.Summary.Lexeme))
+	}
+	if declaration.Documentation.Description != nil {
+		lines = append(lines, fmt.Sprintf("  description: %s;", declaration.Documentation.Description.Lexeme))
+	}
+	lines = append(lines, "}")
 	return strings.Join(lines, "\n"), nil
 }
 

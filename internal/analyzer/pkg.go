@@ -119,10 +119,15 @@ func Hover(text string, snapshot Snapshot, position protocol.Position) *protocol
 		return nil
 	}
 
+	value := "```mace\n" + symbol.Detail + "\n```"
+	if symbol.Documentation != "" {
+		value += "\n\n" + symbol.Documentation
+	}
+
 	return &protocol.Hover{
 		Contents: protocol.MarkupContent{
 			Kind:  protocol.MarkupKindMarkdown,
-			Value: "```mace\n" + symbol.Detail + "\n```",
+			Value: value,
 		},
 	}
 }

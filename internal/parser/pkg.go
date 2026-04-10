@@ -192,6 +192,8 @@ func (p *Parser) parseDeclaration() (ast.Declaration, error) {
 		return p.parseTypeDeclaration()
 	case lexer.TokenSchema:
 		return p.parseSchemaDeclaration()
+	case lexer.TokenDoc:
+		return p.parseDocDeclaration()
 	case lexer.TokenEnum:
 		return p.parseEnumDeclaration()
 	default:
@@ -302,6 +304,63 @@ func (p *Parser) parseSchemaDeclaration() (ast.Declaration, error) {
 		Name:      nameToken.Lexeme,
 		Type:      recordType,
 	}, nil
+}
+
+func (p *Parser) parseDocDeclaration() (ast.Declaration, error) {
+	if _, err := p.consume(lexer.TokenDoc, "parser: expected 'doc'"); err != nil {
+		return nil, err
+	}
+
+	targetToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier in doc declaration")
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := p.consume(lexer.TokenLBrace, "parser: expected '{' to start doc declaration"); err != nil {
+		return nil, err
+	}
+
+	documentation := ast.Documentation{}
+	seenEntries := map[string]struct{}{}
+	for !p.isAtEnd() && p.current().Type != lexer.TokenRBrace {
+		entryToken, err := p.consume(lexer.TokenIdentifier, "parser: expected doc entry")
+		if err != nil {
+			return nil, err
+		}
+		if _, exists := seenEntries[entryToken.Lexeme]; exists {
+			return nil, fmt.Errorf("parser: duplicate doc entry %q at %d:%d", entryToken.Lexeme, entryToken.Line, entryToken.Column)
+		}
+		seenEntries[entryToken.Lexeme] = struct{}{}
+
+		if _, err := p.consume(lexer.TokenColon, "parser: expected ':' after doc entry name"); err != nil {
+			return nil, err
+		}
+
+		valueToken, err := p.consume(lexer.TokenString, "parser: expected string literal in doc entry")
+		if err != nil {
+			return nil, err
+		}
+
+		if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after doc entry"); err != nil {
+			return nil, err
+		}
+
+		value := ast.StringLiteral{Lexeme: valueToken.Lexeme}
+		switch entryToken.Lexeme {
+		case "summary":
+			documentation.Summary = &value
+		case "description":
+			documentation.Description = &value
+		default:
+			return nil, fmt.Errorf("parser: unknown doc entry %q at %d:%d", entryToken.Lexeme, entryToken.Line, entryToken.Column)
+		}
+	}
+
+	if _, err := p.consume(lexer.TokenRBrace, "parser: expected '}' to close doc declaration"); err != nil {
+		return nil, err
+	}
+
+	return ast.DocDeclaration{TargetToken: targetToken, Target: targetToken.Lexeme, Documentation: documentation}, nil
 }
 
 func (p *Parser) parseEnumDeclaration() (ast.Declaration, error) {
@@ -418,20 +477,6 @@ func (p *Parser) parseRecordType() (ast.RecordType, error) {
 		return ast.RecordType{}, err
 	}
 
-	var doc *ast.StringLiteral
-	if p.current().Type == lexer.TokenDoc {
-		p.advance()
-		stringToken, err := p.consume(lexer.TokenString, "parser: expected block string after doc")
-		if err != nil {
-			return ast.RecordType{}, err
-		}
-		if !strings.HasPrefix(stringToken.Lexeme, `"""`) {
-			return ast.RecordType{}, fmt.Errorf("parser: expected block string after doc at %d:%d near %q", stringToken.Line, stringToken.Column, stringToken.Lexeme)
-		}
-		parsed := ast.StringLiteral{Lexeme: stringToken.Lexeme}
-		doc = &parsed
-	}
-
 	fields := []ast.SchemaField{}
 	for !p.isAtEnd() && p.current().Type != lexer.TokenRBrace {
 		field, err := p.parseSchemaField()
@@ -445,7 +490,7 @@ func (p *Parser) parseRecordType() (ast.RecordType, error) {
 		return ast.RecordType{}, err
 	}
 
-	return ast.RecordType{Doc: doc, Fields: fields}, nil
+	return ast.RecordType{Fields: fields}, nil
 }
 
 func (p *Parser) parseSchemaField() (ast.SchemaField, error) {
@@ -480,6 +525,16 @@ func (p *Parser) parseOutputBlock() (ast.OutputBlock, error) {
 		directives = parsedDirectives
 	}
 
+	var doc *ast.StringLiteral
+	if len(directives) > 0 && p.current().Type == lexer.TokenString {
+		if !strings.HasPrefix(p.current().Lexeme, `"""`) {
+			return ast.OutputBlock{}, p.unexpectedTokenError("parser: expected multiline string doc block")
+		}
+		parsed := ast.StringLiteral{Lexeme: p.current().Lexeme}
+		doc = &parsed
+		p.advance()
+	}
+
 	mode := outputModeFromDirectives(directives)
 
 	if _, err := p.consume(lexer.TokenLBrace, "parser: expected '{' to start output block"); err != nil {
@@ -511,6 +566,7 @@ func (p *Parser) parseOutputBlock() (ast.OutputBlock, error) {
 
 	return ast.OutputBlock{
 		Directives:   directives,
+		Doc:          doc,
 		Mode:         mode,
 		DataFields:   dataFields,
 		SchemaFields: schemaFields,

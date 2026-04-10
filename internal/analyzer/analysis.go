@@ -37,12 +37,13 @@ const (
 )
 
 type semanticSymbol struct {
-	Name       string
-	Kind       protocol.CompletionItemKind
-	Detail     string
-	Origin     symbolOrigin
-	Range      protocol.Range
-	Definition protocol.Location
+	Name          string
+	Kind          protocol.CompletionItemKind
+	Detail        string
+	Documentation string
+	Origin        symbolOrigin
+	Range         protocol.Range
+	Definition    protocol.Location
 }
 
 type analysisCodeActionCandidate struct {
@@ -985,13 +986,15 @@ func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *process
 		symbols = append(symbols, lo.FilterMap(file.Script.Items, func(item ast.Declaration, _ int) (semanticSymbol, bool) {
 			switch declaration := item.(type) {
 			case ast.TypeDeclaration:
-				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindClass, symbolOriginLocal, fmt.Sprintf("type %s: %s;", declaration.Name, typeReferenceDetail(declaration.Type))), true
+				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindClass, symbolOriginLocal, fmt.Sprintf("type %s: %s;", declaration.Name, typeReferenceDetail(declaration.Type)), declarationDocumentation(file, declaration.Name)), true
 			case ast.EnumDeclaration:
-				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindEnum, symbolOriginLocal, enumDeclarationDetail(declaration)), true
+				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindEnum, symbolOriginLocal, enumDeclarationDetail(declaration), ""), true
 			case ast.SchemaDeclaration:
-				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindStruct, symbolOriginLocal, fmt.Sprintf("schema %s: %s;", declaration.Name, recordTypeDetail(declaration.Type))), true
+				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindStruct, symbolOriginLocal, fmt.Sprintf("schema %s: %s;", declaration.Name, recordTypeDetail(declaration.Type)), declarationDocumentation(file, declaration.Name)), true
 			case ast.VariableDeclaration:
-				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindVariable, symbolOriginLocal, variableDeclarationDetail(declaration)), true
+				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindVariable, symbolOriginLocal, variableDeclarationDetail(declaration), ""), true
+			case ast.DocDeclaration:
+				return semanticSymbol{}, false
 			default:
 				return semanticSymbol{}, false
 			}
@@ -1015,15 +1018,16 @@ func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *process
 	return dedupeSymbols(symbols)
 }
 
-func newLocalSymbol(nameToken lexer.Token, uri protocol.DocumentUri, name string, kind protocol.CompletionItemKind, origin symbolOrigin, detail string) semanticSymbol {
+func newLocalSymbol(nameToken lexer.Token, uri protocol.DocumentUri, name string, kind protocol.CompletionItemKind, origin symbolOrigin, detail string, documentation string) semanticSymbol {
 	rangeValue := tokenProtocolRange(nameToken)
 
 	return semanticSymbol{
-		Name:   name,
-		Kind:   kind,
-		Detail: detail,
-		Origin: origin,
-		Range:  rangeValue,
+		Name:          name,
+		Kind:          kind,
+		Detail:        detail,
+		Documentation: documentation,
+		Origin:        origin,
+		Range:         rangeValue,
 		Definition: protocol.Location{
 			URI:   uri,
 			Range: rangeValue,
@@ -1044,6 +1048,48 @@ func newOutputSymbol(nameToken lexer.Token, uri protocol.DocumentUri, name strin
 			URI:   uri,
 			Range: rangeValue,
 		},
+	}
+}
+
+func declarationDocumentation(file ast.File, name string) string {
+	if file.Script == nil {
+		return ""
+	}
+
+	for _, item := range file.Script.Items {
+		declaration, ok := item.(ast.DocDeclaration)
+		if !ok || declaration.Target != name {
+			continue
+		}
+
+		parts := []string{}
+		if declaration.Documentation.Summary != nil {
+			parts = append(parts, stringLiteralMarkdown(*declaration.Documentation.Summary))
+		}
+		if declaration.Documentation.Description != nil {
+			parts = append(parts, stringLiteralMarkdown(*declaration.Documentation.Description))
+		}
+		return strings.TrimSpace(strings.Join(parts, "\n\n"))
+	}
+
+	return ""
+}
+
+func stringLiteralMarkdown(literal ast.StringLiteral) string {
+	lexeme := literal.Lexeme
+	switch {
+	case strings.HasPrefix(lexeme, `"""`) && strings.HasSuffix(lexeme, `"""`) && len(lexeme) >= 6:
+		return lexeme[3 : len(lexeme)-3]
+	case strings.HasPrefix(lexeme, `'`) && strings.HasSuffix(lexeme, `'`) && len(lexeme) >= 2:
+		return lexeme[1 : len(lexeme)-1]
+	case strings.HasPrefix(lexeme, `"`) && strings.HasSuffix(lexeme, `"`) && len(lexeme) >= 2:
+		unquoted, err := strconv.Unquote(lexeme)
+		if err == nil {
+			return unquoted
+		}
+		return lexeme[1 : len(lexeme)-1]
+	default:
+		return lexeme
 	}
 }
 
@@ -1092,11 +1138,12 @@ func importedSemanticSymbol(file ast.File, path string, name string) (semanticSy
 		}
 
 		return semanticSymbol{
-			Name:   field.Name,
-			Kind:   kind,
-			Detail: detail,
-			Origin: symbolOriginImport,
-			Range:  rangeValue,
+			Name:          field.Name,
+			Kind:          kind,
+			Detail:        detail,
+			Documentation: declarationDocumentation(file, field.Name),
+			Origin:        symbolOriginImport,
+			Range:         rangeValue,
 			Definition: protocol.Location{
 				URI:   pathURI(path),
 				Range: rangeValue,

@@ -940,6 +940,8 @@ func collectDeclarations(items []ast.Declaration, symbols *symbolTable, types *t
 			}
 			symbols.Add(decl.Name, symbolKindEnum)
 			enums.Add(decl.Name, enumDef)
+		case ast.DocDeclaration:
+			continue
 		default:
 			return validationErrorf("unknown declaration")
 		}
@@ -949,8 +951,9 @@ func collectDeclarations(items []ast.Declaration, symbols *symbolTable, types *t
 }
 
 func validateDeclarations(items []ast.Declaration, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry, variables *variableRegistry, injections map[string]Value) error {
+	seenDocs := map[string]struct{}{}
 	for _, declaration := range items {
-		if err := validateDeclaration(declaration, symbols, types, schemas, enums, variables, injections); err != nil {
+		if err := validateDeclaration(declaration, symbols, types, schemas, enums, variables, injections, seenDocs); err != nil {
 			return err
 		}
 	}
@@ -958,7 +961,7 @@ func validateDeclarations(items []ast.Declaration, symbols *symbolTable, types *
 	return nil
 }
 
-func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry, variables *variableRegistry, injections map[string]Value) error {
+func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry, variables *variableRegistry, injections map[string]Value, seenDocs map[string]struct{}) error {
 	switch decl := declaration.(type) {
 	case ast.VariableDeclaration:
 		if err := validateTypeReference(decl.Type, symbols, types, schemas, enums); err != nil {
@@ -1000,6 +1003,8 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 	case ast.EnumDeclaration:
 		_, err := enumDefinitionFromDeclaration(decl)
 		return err
+	case ast.DocDeclaration:
+		return validateDocDeclaration(decl, symbols, seenDocs)
 	default:
 		return validationErrorf("unknown declaration")
 	}
@@ -1068,12 +1073,6 @@ func validateTypeReference(typeRef ast.TypeReference, symbols *symbolTable, type
 }
 
 func validateRecordType(record ast.RecordType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) error {
-	if record.Doc != nil {
-		if _, err := parseDocString(record.Doc.Lexeme); err != nil {
-			return err
-		}
-	}
-
 	fieldNames := map[string]struct{}{}
 	for _, field := range record.Fields {
 		if _, exists := fieldNames[field.Name]; exists {
@@ -1089,7 +1088,40 @@ func validateRecordType(record ast.RecordType, symbols *symbolTable, types *type
 	return nil
 }
 
+func validateDocDeclaration(declaration ast.DocDeclaration, symbols *symbolTable, seenDocs map[string]struct{}) error {
+	kind, ok := symbols.Get(declaration.Target)
+	if !ok || (kind != symbolKindType && kind != symbolKindSchema) {
+		return validationErrorf("doc target %q must reference a type or schema", declaration.Target)
+	}
+	if _, exists := seenDocs[declaration.Target]; exists {
+		return validationErrorf("duplicate doc declaration for %q", declaration.Target)
+	}
+	seenDocs[declaration.Target] = struct{}{}
+
+	if declaration.Documentation.Summary != nil {
+		if _, err := parseStaticString(declaration.Documentation.Summary.Lexeme); err != nil {
+			return err
+		}
+	}
+	if declaration.Documentation.Description != nil {
+		if _, err := parseDocString(declaration.Documentation.Description.Lexeme); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func validateOutputDirectiveStructure(output ast.OutputBlock) error {
+	if output.Doc != nil {
+		if len(output.Directives) == 0 {
+			return validationErrorf("inline doc blocks require a directive list")
+		}
+		if _, err := parseDocString(output.Doc.Lexeme); err != nil {
+			return err
+		}
+	}
+
 	if len(output.Directives) == 0 {
 		return nil
 	}
@@ -1799,7 +1831,7 @@ func parseStaticString(lexeme string) (Value, error) {
 
 func parseDocString(lexeme string) (Value, error) {
 	if !strings.HasPrefix(lexeme, `"""`) {
-		return Value{}, validationErrorf("schema doc must use a block string")
+		return Value{}, validationErrorf("doc blocks must use a block string")
 	}
 	value, err := decodeStringLexeme(lexeme, false, nil)
 	if err != nil {

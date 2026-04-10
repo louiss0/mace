@@ -18,12 +18,20 @@ digit              = "0"…"9" ;
 
 identifier         = letter , { letter | digit | "_" } ;
 
-string_literal     = '"' , { character - '"' } , '"' ;
+string_literal     = single_string | double_string | block_string ;
+single_string      = "'" , { single_character } , "'" ;
+double_string      = '"' , { double_part } , '"' ;
+block_string       = '"""' , { block_part } , '"""' ;
 int_literal        = digit , { digit } ;
 float_literal      = digit , { digit } , "." , digit , { digit } ;
 boolean_literal    = "true" | "false" ;
 
 character          = ? any Unicode scalar value ? ;
+single_character   = ? any character except ' or newline or backslash ? | escape_sequence ;
+double_part        = ? any character except " or newline or backslash or start of "$ (" ? | escape_sequence | interpolation ;
+block_part         = ? any character sequence not containing '"""' or start of "$ (" ? | escape_sequence | interpolation ;
+escape_sequence    = "\\" , ( "\\" | "'" | '"' | "n" | "r" | "t" ) ;
+interpolation      = "$" , "(" , expression , ")" ;
 
 (* ===================================================== *)
 (* 2. TOP-LEVEL STRUCTURE                                *)
@@ -68,7 +76,8 @@ declaration
   = variable_declaration
   | type_declaration
   | enum_declaration
-  | schema_declaration ;
+  | schema_declaration
+  | doc_declaration ;
 
 (* ===================================================== *)
 (* 5. VARIABLE DECLARATIONS                             *)
@@ -102,6 +111,17 @@ type_declaration
     ":" , ws0 ,
     type_reference ,
     ws0 , ";" ;
+
+doc_declaration
+  = "doc" , ws1 ,
+    identifier , ws0 ,
+    "{" , ws0 ,
+    { doc_entry , ws0 } ,
+    "}" ;
+
+doc_entry
+  = "summary" , ws0 , ":" , ws0 , string_literal , ws0 , ";"
+  | "description" , ws0 , ":" , ws0 , block_string , ws0 , ";" ;
 
 (* ===================================================== *)
 (* 7. ENUM DECLARATIONS                                 *)
@@ -189,12 +209,14 @@ variant_type
 (* ===================================================== *)
 
 output_block
-  = [ output_directive ,
-      ws0 ] ,
+  = [ output_directive , ws0 , [ inline_doc_block , ws0 ] ] ,
     ws0 ,
     "{" , ws0 ,
     { output_item , ws0 } ,
     "}" ;
+
+inline_doc_block
+  = block_string ;
 
 output_directive
   = "[" , ws0 ,
@@ -229,7 +251,7 @@ expression
 
 primary_expression
   = identifier
-  | enum_member_access
+  | member_access
   | int_literal
   | float_literal
   | string_literal
@@ -239,8 +261,14 @@ primary_expression
   | self_reference
   | "(" , expression , ")" ;
 
-enum_member_access
-  = identifier , "." , identifier ;
+member_access
+  = primary_target , "." , identifier ;
+
+primary_target
+  = identifier
+  | self_reference
+  | "(" , expression , ")"
+  | member_access ;
 
 self_reference
   = "$self" , "." , identifier , { "." , identifier } ;

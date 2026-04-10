@@ -171,6 +171,9 @@ string name = "Ada";
 	It("processes output blocks independently", func() {
 		processor := New()
 		result, err := processor.ProcessOutputBlock(`[output = schema]
+"""
+# Output Schema
+"""
 {
   name: string;
   age?: int;
@@ -243,6 +246,16 @@ Name user = "Ada";
 type Scalar: variant[string, int];
 Scalar value = "Ada";
 |===|`)),
+		Entry("doc declarations", wrapScriptWithOutput(`|===|
+doc User {
+  summary: "Represents a user.";
+  description: """
+# User
+""";
+}
+
+schema User: { name: string; };
+|===|`)),
 	)
 
 	DescribeTable("rejects invalid script blocks",
@@ -271,12 +284,35 @@ schema User: { name: string; };
 type UserName: string;
 string value = "$(UserName)";
 |===|`), "type reference"),
-		Entry("schema doc rejects interpolation", wrapScriptWithOutput(`|===|
-schema User: {
-  doc """$(name)"""
-  name: string;
+		Entry("doc declaration rejects duplicate keys", wrapScriptWithOutput(`|===|
+doc User {
+  summary: "One";
+  summary: "Two";
+}
+
+schema User: { name: string; };
+|===|`), "duplicate doc entry"),
+		Entry("doc declaration rejects enum targets", wrapScriptWithOutput(`|===|
+enum Status: string {
+  Pending,
 };
-|===|`), "interpolation is not allowed"),
+
+doc Status {
+  summary: "Invalid target.";
+}
+|===|`), "doc target"),
+		Entry("output inline doc requires a directive list", `"""
+Invalid: no directive list
+"""
+{
+}
+`, "expected output directive"),
+		Entry("output inline doc rejects interpolation", `[output = schema]
+"""$(name)"""
+{
+  name: string;
+}
+`, "interpolation is not allowed"),
 	)
 
 	DescribeTable("accepts primitive variant alternatives",

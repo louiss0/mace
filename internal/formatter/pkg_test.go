@@ -73,6 +73,45 @@ injectable string user = "Ada";
 }`, output)
 	})
 
+	It("formats doc declarations and inline output docs", func() {
+		file, err := parseMaceFile(`|===|
+doc User {
+  summary: "Represents a user.";
+  description: """
+# User
+""";
+}
+schema User: { name: string; };
+|===|
+[output = schema]
+"""
+# Public User Output
+"""
+{ user: User; }`)
+		tAssert.NoError(err)
+
+		output, err := FormatFile(file)
+		tAssert.NoError(err)
+		tAssert.Equal(`|================================|
+doc User {
+  summary: "Represents a user.";
+  description: """
+# User
+""";
+}
+schema User: {
+  name: string;
+};
+|================================|
+[output = schema]
+"""
+# Public User Output
+"""
+{
+  user: User;
+}`, output)
+	})
+
 	It("preserves expression semantics with parentheses", func() {
 		file, err := parseMaceFile(`[output = data] { result: (1 + 2) * (3 - 4 ? 5 : 6); }`)
 		tAssert.NoError(err)

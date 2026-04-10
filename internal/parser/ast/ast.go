@@ -105,6 +105,11 @@ type ScriptBlock struct {
 	Items []Declaration
 }
 
+type Documentation struct {
+	Summary     *StringLiteral
+	Description *StringLiteral
+}
+
 type Declaration interface {
 	declarationNode()
 }
@@ -133,6 +138,14 @@ type SchemaDeclaration struct {
 	Name      string
 	Type      RecordType
 }
+
+type DocDeclaration struct {
+	TargetToken   lexer.Token
+	Target        string
+	Documentation Documentation
+}
+
+func (DocDeclaration) declarationNode() {}
 
 func (SchemaDeclaration) declarationNode() {}
 
@@ -187,7 +200,6 @@ type NamedType struct {
 func (NamedType) typeReferenceNode() {}
 
 type RecordType struct {
-	Doc    *StringLiteral
 	Fields []SchemaField
 }
 
@@ -201,6 +213,7 @@ type SchemaField struct {
 
 type OutputBlock struct {
 	Directives   []OutputDirective
+	Doc          *StringLiteral
 	Mode         OutputMode
 	DataFields   []OutputField
 	SchemaFields []OutputSchemaField

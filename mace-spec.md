@@ -67,6 +67,7 @@ The script block can contain:
 - `type` declarations
 - `enum` declarations
 - `schema` declarations
+- `doc` declarations
 - typed variable declarations
 
 ### Variable Declarations
@@ -123,6 +124,37 @@ schema User: {
 ```
 
 Field names must be unique within a schema.
+
+### Doc Declarations
+
+Doc declarations attach structured metadata to a named `type` or `schema`.
+They are separate declarations in the script block.
+
+```mace
+doc User {
+  summary: "Represents a user.";
+  description: """
+# User
+
+A reusable schema that models application users.
+""";
+}
+
+schema User: {
+  name: string;
+  age?: int;
+};
+```
+
+Current doc declaration rules:
+
+- The target after `doc` must resolve to a named `type` or `schema`.
+- A target may have at most one doc declaration.
+- Supported entries are `summary` and `description`.
+- Duplicate or unknown doc entries are invalid.
+- `summary` must be a static string literal.
+- `description` must be a static block string.
+- Doc declarations are metadata only and do not affect evaluation.
 
 ### Enum Declarations
 
@@ -225,13 +257,51 @@ For JSON Schema interoperability, `null` should be treated as field
 optionality when converting schemas. For example, a JSON Schema property with
 `type: ["string", "null"]` maps to an optional Mace field of type `string`.
 
+## Strings
+
+Mace supports three string literal forms:
+
+- single-quoted strings: `'...'`
+- double-quoted strings: `"..."`
+- triple-double-quoted block strings: `"""..."""`
+
+Single-quoted strings do not support interpolation.
+Double-quoted strings and block strings support interpolation with `$(...)`.
+The expression inside `$(...)` is parsed as a normal Mace expression and must
+resolve to a runtime value. Type references are not valid interpolation
+expressions.
+
+Examples:
+
+```mace
+'hello'
+"Hello $(name)"
+"$(price * quantity)"
+"$(user.name)"
+"$(Status.Done)"
+"$($self.name)"
+"""
+Name: $(user_name)
+"""
+```
+
+Current string rules:
+
+- Inline strings must not span multiple lines.
+- Block strings may span multiple lines.
+- Supported escapes are `\\`, `\'`, `\"`, `\n`, `\r`, and `\t`.
+- Inline and block strings used as documentation must be static.
+
 ## Output Block
 
 The output block is a record of output fields. It may be preceded by a
-directive list.
+directive list and an optional inline doc block.
 
 ```mace
 [output = data, schema = User]
+"""
+# Public User Output
+"""
 {
   name: user_name;
   age: 27;
@@ -246,6 +316,14 @@ If no output directive is present, the output mode defaults to `data`.
   age: 27;
 }
 ```
+
+Inline doc block rules:
+
+- An inline doc block is allowed only when a directive list is present.
+- It must appear immediately after the directive list and before `{`.
+- It must use a static block string.
+- At most one inline doc block is allowed per block.
+- It is metadata only and does not affect evaluation.
 
 ### Supported Directives
 
@@ -309,7 +387,7 @@ directive list is invalid.
 Expressions are pure and deterministic. The implementation supports:
 
 - identifiers
-- enum member access with `EnumName.MemberName`
+- member access with `value.member`
 - string, int, float, and boolean literals
 - array literals
 - record literals
@@ -325,6 +403,10 @@ Expressions are pure and deterministic. The implementation supports:
 
 Operator precedence is implemented in the parser and matches the repository
 tests.
+
+Member access may refer to record fields or enum members. Enum members are
+still resolved semantically against named enums, while other dotted expressions
+are resolved as value member access.
 
 ## `$self`
 

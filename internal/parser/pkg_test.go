@@ -564,25 +564,51 @@ enum Fruit: string {
 			}
 		})
 
-		It("parses schema documentation blocks", func() {
+		It("parses output inline doc blocks", func() {
+			input := `[output = schema]
+"""
+# Public User Output
+"""
+{
+  name: string;
+}`
+
+			file, err := parseFileInput(input)
+			tAssert.NoError(err)
+			if tAssert.NotNil(file.Output.Doc) {
+				tAssert.Equal("\"\"\"\n# Public User Output\n\"\"\"", file.Output.Doc.Lexeme)
+			}
+		})
+
+		It("parses doc declarations", func() {
 			input := `|===|
+doc User {
+  summary: "Represents a user.";
+  description: """
+# User
+""";
+}
+
 schema User: {
-  doc """
-  Represents a user.
-  """
   name: string;
 };
 |===|
 [output = schema]
-{ name: string; }`
+{ user: User; }`
 
 			file, err := parseFileInput(input)
 			tAssert.NoError(err)
-			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 1) {
-				schemaDecl, ok := file.Script.Items[0].(ast.SchemaDeclaration)
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 2) {
+				docDecl, ok := file.Script.Items[0].(ast.DocDeclaration)
 				tAssert.True(ok)
-				if ok && tAssert.NotNil(schemaDecl.Type.Doc) {
-					tAssert.Equal("\"\"\"\n  Represents a user.\n  \"\"\"", schemaDecl.Type.Doc.Lexeme)
+				if ok {
+					tAssert.Equal("User", docDecl.Target)
+					if tAssert.NotNil(docDecl.Documentation.Summary) {
+						tAssert.Equal("\"Represents a user.\"", docDecl.Documentation.Summary.Lexeme)
+					}
+					if tAssert.NotNil(docDecl.Documentation.Description) {
+						tAssert.Equal("\"\"\"\n# User\n\"\"\"", docDecl.Documentation.Description.Lexeme)
+					}
 				}
 			}
 		})

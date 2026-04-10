@@ -1511,6 +1511,46 @@ User user = { name: "Ada"; created_at: "2026-04-09"; };
 		}
 	})
 
+	It("includes doc declaration metadata in hover details", func() {
+		didOpen(server, uri, `|===|
+doc User {
+  summary: "Represents a user.";
+  description: """
+# User
+Reusable schema.
+""";
+}
+
+schema User: { name: string; };
+|===|
+[output = schema]
+{ user: User; }`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 8, Character: 8},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, `schema User: { name: string };`)
+			tAssert.Contains(content.Value, `Represents a user.`)
+			tAssert.Contains(content.Value, `# User`)
+		}
+	})
+
 	It("prefers output field hover details over same-named schema declarations", func() {
 		didOpen(server, uri, `|===|
 schema User: { name: string; };
