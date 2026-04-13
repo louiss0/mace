@@ -1,6 +1,8 @@
 package parser
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -50,6 +52,15 @@ func parseFileInput(input string) (ast.File, error) {
 	}
 
 	return New(tokens).ParseFile()
+}
+
+func parseFixtureFile(path string) (ast.File, error) {
+	contents, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		return ast.File{}, err
+	}
+
+	return parseFileInput(string(contents))
 }
 
 func requireIdentifier(expression ast.Expression, name string) ast.Identifier {
@@ -610,6 +621,39 @@ schema User: {
 						tAssert.Equal("\"\"\"\n# User\n\"\"\"", docDecl.Documentation.Description.Lexeme)
 					}
 				}
+			}
+		})
+
+		It("parses documentation fixtures with props and inline descriptions", func() {
+			file, err := parseFixtureFile(filepath.Join("..", "analyzer", "testdata", "docs", "hover.mace"))
+			tAssert.NoError(err)
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 2) {
+				docDecl, ok := file.Script.Items[0].(ast.DocDeclaration)
+				tAssert.True(ok)
+				if ok {
+					if tAssert.NotNil(docDecl.Documentation.Summary) {
+						tAssert.Equal("\"Represents a user\"", docDecl.Documentation.Summary.Lexeme)
+					}
+					if tAssert.NotNil(docDecl.Documentation.Description) {
+						tAssert.Contains(docDecl.Documentation.Description.Lexeme, "Hover should surface this documentation")
+					}
+					if tAssert.Contains(docDecl.Documentation.Props, "name") {
+						tAssert.Equal("\"The user's display name\"", docDecl.Documentation.Props["name"].Lexeme)
+					}
+				}
+
+				schemaDecl, ok := file.Script.Items[1].(ast.SchemaDeclaration)
+				tAssert.True(ok)
+				if ok && tAssert.Len(schemaDecl.Type.Fields, 1) {
+					tAssert.Empty(schemaDecl.Type.Fields[0].Description)
+				}
+			}
+
+			if tAssert.NotNil(file.Output.Doc) {
+				tAssert.Contains(file.Output.Doc.Lexeme, "# User Output")
+			}
+			if tAssert.Len(file.Output.SchemaFields, 1) {
+				tAssert.Equal("Public user schema", file.Output.SchemaFields[0].Description)
 			}
 		})
 	})

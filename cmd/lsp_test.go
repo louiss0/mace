@@ -178,6 +178,12 @@ func writeWorkspaceFile(root string, relativePath string, contents string) strin
 	return testFileURI(path)
 }
 
+func readFixtureFile(path string) string {
+	contents, err := os.ReadFile(filepath.Clean(path))
+	tAssert.NoError(err)
+	return string(contents)
+}
+
 func testFileURI(path string) string {
 	return fileURI(path)
 }
@@ -1548,6 +1554,35 @@ schema User: { name: string; };
 			tAssert.Contains(content.Value, `schema User: { name: string };`)
 			tAssert.Contains(content.Value, `Represents a user.`)
 			tAssert.Contains(content.Value, `# User`)
+		}
+	})
+
+	It("loads hover documentation from the docs fixture", func() {
+		fixture := readFixtureFile(filepath.Join("..", "internal", "analyzer", "testdata", "docs", "hover.mace"))
+		didOpen(server, uri, fixture, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 22, Character: 9},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, `schema User: { name: string; };`)
+			tAssert.Contains(content.Value, `Represents a user`)
+			tAssert.Contains(content.Value, `Hover should surface this documentation.`)
 		}
 	})
 

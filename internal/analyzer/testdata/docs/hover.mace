@@ -1,0 +1,24 @@
+|===|
+doc User {
+  summary: "Represents a user";
+  description: """
+# User
+
+Hover should surface this documentation.
+""";
+  props: {
+    name: "The user's display name";
+  };
+}
+
+schema User: {
+  name: string;
+};
+|===|
+[output = schema]
+"""
+# User Output
+"""
+{
+  user: User /# Public user schema;
+}

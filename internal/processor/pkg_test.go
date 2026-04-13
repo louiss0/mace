@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -208,6 +209,11 @@ var _ = Describe("Script block", func() {
 	DescribeTable("processes valid script blocks",
 		func(input string) {
 			processor := New()
+			if filepath.Ext(input) == ".mace" && !strings.Contains(input, "\n") {
+				_, err := processor.ProcessFile(filepath.Clean(input))
+				tAssert.NoError(err)
+				return
+			}
 			_, err := processor.Process(input)
 			tAssert.NoError(err)
 		},
@@ -256,6 +262,7 @@ doc User {
 
 schema User: { name: string; };
 |===|`)),
+		Entry("doc fixtures", "testdata/docs/public_contract.mace"),
 	)
 
 	DescribeTable("rejects invalid script blocks",
@@ -313,6 +320,44 @@ Invalid: no directive list
   name: string;
 }
 `, "interpolation is not allowed"),
+		Entry("type inline description conflicts with doc declaration", wrapScriptWithOutput(`|===|
+doc Name {
+  summary: "Public name type";
+}
+
+type Name: string /# Duplicate inline docs;
+|===|`), "already documented"),
+		Entry("schema field inline description conflicts with doc props", wrapScriptWithOutput(`|===|
+doc User {
+  props: {
+    name: "The user's display name";
+  };
+}
+
+schema User: {
+  name: string /# Duplicate inline docs;
+};
+|===|`), "already documented"),
+		Entry("doc props reject unknown schema fields", wrapScriptWithOutput(`|===|
+doc User {
+  props: {
+    age: "Unknown field";
+  };
+}
+
+schema User: {
+  name: string;
+};
+|===|`), "does not exist"),
+		Entry("doc props reject type targets", wrapScriptWithOutput(`|===|
+type Name: string;
+
+doc Name {
+  props: {
+    value: "Nope";
+  };
+}
+|===|`), "require a schema target"),
 	)
 
 	DescribeTable("accepts primitive variant alternatives",

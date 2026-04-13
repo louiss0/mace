@@ -952,8 +952,17 @@ func collectDeclarations(items []ast.Declaration, symbols *symbolTable, types *t
 
 func validateDeclarations(items []ast.Declaration, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry, variables *variableRegistry, injections map[string]Value) error {
 	seenDocs := map[string]struct{}{}
+	docsByTarget := map[string]ast.DocDeclaration{}
 	for _, declaration := range items {
-		if err := validateDeclaration(declaration, symbols, types, schemas, enums, variables, injections, seenDocs); err != nil {
+		docDeclaration, ok := declaration.(ast.DocDeclaration)
+		if !ok {
+			continue
+		}
+		docsByTarget[docDeclaration.Target] = docDeclaration
+	}
+
+	for _, declaration := range items {
+		if err := validateDeclaration(declaration, symbols, types, schemas, enums, variables, injections, seenDocs, docsByTarget); err != nil {
 			return err
 		}
 	}
@@ -961,7 +970,7 @@ func validateDeclarations(items []ast.Declaration, symbols *symbolTable, types *
 	return nil
 }
 
-func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry, variables *variableRegistry, injections map[string]Value, seenDocs map[string]struct{}) error {
+func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry, variables *variableRegistry, injections map[string]Value, seenDocs map[string]struct{}, docsByTarget map[string]ast.DocDeclaration) error {
 	switch decl := declaration.(type) {
 	case ast.VariableDeclaration:
 		if err := validateTypeReference(decl.Type, symbols, types, schemas, enums); err != nil {
@@ -997,14 +1006,35 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 		variables.Add(decl.Name, expectedType)
 		return nil
 	case ast.TypeDeclaration:
-		return validateTypeReference(decl.Type, symbols, types, schemas, enums)
+		if err := validateTypeReference(decl.Type, symbols, types, schemas, enums); err != nil {
+			return err
+		}
+		if decl.Description != "" {
+			if _, ok := docsByTarget[decl.Name]; ok {
+				return validationErrorf("type %q is already documented by a doc declaration", decl.Name)
+			}
+		}
+		return nil
 	case ast.SchemaDeclaration:
-		return validateRecordType(decl.Type, symbols, types, schemas, enums)
+		if err := validateRecordType(decl.Type, symbols, types, schemas, enums); err != nil {
+			return err
+		}
+		if docDeclaration, ok := docsByTarget[decl.Name]; ok {
+			for _, field := range decl.Type.Fields {
+				if field.Description == "" {
+					continue
+				}
+				if _, documented := docDeclaration.Documentation.Props[field.Name]; documented {
+					return validationErrorf("schema field %q in %q is already documented by doc props", field.Name, decl.Name)
+				}
+			}
+		}
+		return nil
 	case ast.EnumDeclaration:
 		_, err := enumDefinitionFromDeclaration(decl)
 		return err
 	case ast.DocDeclaration:
-		return validateDocDeclaration(decl, symbols, seenDocs)
+		return validateDocDeclaration(decl, symbols, schemas, seenDocs)
 	default:
 		return validationErrorf("unknown declaration")
 	}
@@ -1088,7 +1118,7 @@ func validateRecordType(record ast.RecordType, symbols *symbolTable, types *type
 	return nil
 }
 
-func validateDocDeclaration(declaration ast.DocDeclaration, symbols *symbolTable, seenDocs map[string]struct{}) error {
+func validateDocDeclaration(declaration ast.DocDeclaration, symbols *symbolTable, schemas *schemaRegistry, seenDocs map[string]struct{}) error {
 	kind, ok := symbols.Get(declaration.Target)
 	if !ok || (kind != symbolKindType && kind != symbolKindSchema) {
 		return validationErrorf("doc target %q must reference a type or schema", declaration.Target)
@@ -1106,6 +1136,31 @@ func validateDocDeclaration(declaration ast.DocDeclaration, symbols *symbolTable
 	if declaration.Documentation.Description != nil {
 		if _, err := parseDocString(declaration.Documentation.Description.Lexeme); err != nil {
 			return err
+		}
+	}
+
+	if len(declaration.Documentation.Props) > 0 {
+		if kind != symbolKindSchema {
+			return validationErrorf("doc props for %q require a schema target", declaration.Target)
+		}
+
+		record, ok := schemas.Get(declaration.Target)
+		if !ok {
+			return validationErrorf("unknown schema %q for doc props", declaration.Target)
+		}
+
+		fieldNames := map[string]struct{}{}
+		for _, field := range record.Fields {
+			fieldNames[field.Name] = struct{}{}
+		}
+
+		for name, value := range declaration.Documentation.Props {
+			if _, exists := fieldNames[name]; !exists {
+				return validationErrorf("doc props field %q does not exist on schema %q", name, declaration.Target)
+			}
+			if _, err := parseStaticString(value.Lexeme); err != nil {
+				return err
+			}
 		}
 	}
 

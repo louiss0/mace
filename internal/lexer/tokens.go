@@ -73,6 +73,7 @@ const (
 	TokenRBracket
 
 	TokenScriptDelimiter
+	TokenInlineDescription
 )
 
 type Token struct {

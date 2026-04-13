@@ -108,6 +108,7 @@ type ScriptBlock struct {
 type Documentation struct {
 	Summary     *StringLiteral
 	Description *StringLiteral
+	Props       map[string]StringLiteral
 }
 
 type Declaration interface {
@@ -126,9 +127,10 @@ type VariableDeclaration struct {
 func (VariableDeclaration) declarationNode() {}
 
 type TypeDeclaration struct {
-	NameToken lexer.Token
-	Name      string
-	Type      TypeReference
+	NameToken   lexer.Token
+	Name        string
+	Type        TypeReference
+	Description string
 }
 
 func (TypeDeclaration) declarationNode() {}
@@ -206,9 +208,10 @@ type RecordType struct {
 func (RecordType) typeReferenceNode() {}
 
 type SchemaField struct {
-	Name     string
-	Optional bool
-	Type     TypeReference
+	Name        string
+	Optional    bool
+	Type        TypeReference
+	Description string
 }
 
 type OutputBlock struct {
@@ -240,15 +243,17 @@ type OutputDirective struct {
 }
 
 type OutputField struct {
-	NameToken lexer.Token
-	Name      string
-	Optional  bool
-	Value     Expression
+	NameToken   lexer.Token
+	Name        string
+	Optional    bool
+	Value       Expression
+	Description string
 }
 
 type OutputSchemaField struct {
-	NameToken lexer.Token
-	Name      string
-	Optional  bool
-	Type      TypeReference
+	NameToken   lexer.Token
+	Name        string
+	Optional    bool
+	Type        TypeReference
+	Description string
 }

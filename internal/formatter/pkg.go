@@ -2,7 +2,10 @@ package formatter
 
 import (
 	"fmt"
+	"slices"
 	"strings"
+
+	"github.com/samber/lo"
 
 	"github.com/louiss0/mace/internal/lexer"
 	"github.com/louiss0/mace/internal/parser/ast"
@@ -167,7 +170,8 @@ func formatDeclaration(declaration ast.Declaration) (string, error) {
 			return "", err
 		}
 
-		return fmt.Sprintf("type %s: %s;", typedDeclaration.Name, typeReference), nil
+		description := formatInlineDescription(typedDeclaration.Description)
+		return fmt.Sprintf("type %s: %s%s;", typedDeclaration.Name, typeReference, description), nil
 	case ast.SchemaDeclaration:
 		recordType, err := formatRecordType(typedDeclaration.Type, 0)
 		if err != nil {
@@ -274,7 +278,8 @@ func formatRecordType(recordType ast.RecordType, depth int) (string, error) {
 			optional = "?"
 		}
 
-		lines = append(lines, fmt.Sprintf("%s%s%s: %s;", indent, field.Name, optional, typeReference))
+		description := formatInlineDescription(field.Description)
+		lines = append(lines, fmt.Sprintf("%s%s%s: %s%s;", indent, field.Name, optional, typeReference, description))
 	}
 
 	lines = append(lines, closingIndent+"}")
@@ -288,6 +293,15 @@ func formatDocDeclaration(declaration ast.DocDeclaration) (string, error) {
 	}
 	if declaration.Documentation.Description != nil {
 		lines = append(lines, fmt.Sprintf("  description: %s;", declaration.Documentation.Description.Lexeme))
+	}
+	if len(declaration.Documentation.Props) > 0 {
+		lines = append(lines, "  props: {")
+		keys := lo.Keys(declaration.Documentation.Props)
+		slices.Sort(keys)
+		for _, key := range keys {
+			lines = append(lines, fmt.Sprintf("    %s: %s;", key, declaration.Documentation.Props[key].Lexeme))
+		}
+		lines = append(lines, "  };")
 	}
 	lines = append(lines, "}")
 	return strings.Join(lines, "\n"), nil
@@ -322,7 +336,8 @@ func formatOutputField(field ast.OutputField) (string, error) {
 		optional = "?"
 	}
 
-	return fmt.Sprintf("%s%s: %s;", field.Name, optional, value), nil
+	description := formatInlineDescription(field.Description)
+	return fmt.Sprintf("%s%s: %s%s;", field.Name, optional, value, description), nil
 }
 
 func formatOutputSchemaField(field ast.OutputSchemaField) (string, error) {
@@ -336,7 +351,16 @@ func formatOutputSchemaField(field ast.OutputSchemaField) (string, error) {
 		optional = "?"
 	}
 
-	return fmt.Sprintf("%s%s: %s;", field.Name, optional, typeReference), nil
+	description := formatInlineDescription(field.Description)
+	return fmt.Sprintf("%s%s: %s%s;", field.Name, optional, typeReference, description), nil
+}
+
+func formatInlineDescription(description string) string {
+	if description == "" {
+		return ""
+	}
+
+	return " /# " + description
 }
 
 func formatExpressionWithDepth(expression ast.Expression, depth int) (string, error) {

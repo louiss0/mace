@@ -9,6 +9,8 @@ comment            = "/=" , comment_body ;
 comment_body       = block_comment_body | line_comment_body ;
 block_comment_body = ? a comment body whose nearest terminator is "=/" before newline ? ;
 line_comment_body  = ? a comment body that ends at the next newline when no "=/" appears first ? ;
+inline_description = "/#" , ws0 , description_text ;
+description_text   = ? any character sequence up to but not including ';' or newline ? ;
 
 ws0                = { whitespace | comment } ;
 ws1                = ( whitespace | comment ) , ws0 ;
@@ -110,6 +112,7 @@ type_declaration
     identifier , ws0 ,
     ":" , ws0 ,
     type_reference ,
+    [ ws0 , inline_description ] ,
     ws0 , ";" ;
 
 doc_declaration
@@ -121,7 +124,11 @@ doc_declaration
 
 doc_entry
   = "summary" , ws0 , ":" , ws0 , string_literal , ws0 , ";"
-  | "description" , ws0 , ":" , ws0 , block_string , ws0 , ";" ;
+  | "description" , ws0 , ":" , ws0 , block_string , ws0 , ";"
+  | "props" , ws0 , ":" , ws0 , "{" , ws0 , { prop_entry , ws0 } , "}" , ws0 , ";" ;
+
+prop_entry
+  = identifier , ws0 , ":" , ws0 , string_literal , ws0 , ";" ;
 
 (* ===================================================== *)
 (* 7. ENUM DECLARATIONS                                 *)
@@ -173,6 +180,7 @@ schema_field
   = identifier , [ "?" ] , ws0 ,
     ":" , ws0 ,
     type_reference ,
+    [ ws0 , inline_description ] ,
     ws0 , ";" ;
 
 (* ===================================================== *)
@@ -240,6 +248,14 @@ output_field
   = identifier , [ "?" ] , ws0 ,
     ":" , ws0 ,
     expression ,
+    [ ws0 , inline_description ] ,
+    ws0 , ";" ;
+
+output_schema_field
+  = identifier , [ "?" ] , ws0 ,
+    ":" , ws0 ,
+    type_reference ,
+    [ ws0 , inline_description ] ,
     ws0 , ";" ;
 
 (* ===================================================== *)

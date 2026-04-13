@@ -265,14 +265,17 @@ func (p *Parser) parseTypeDeclaration() (ast.Declaration, error) {
 		return nil, err
 	}
 
+	description := p.parseOptionalInlineDescription()
+
 	if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after type declaration"); err != nil {
 		return nil, err
 	}
 
 	return ast.TypeDeclaration{
-		NameToken: nameToken,
-		Name:      nameToken.Lexeme,
-		Type:      typeRef,
+		NameToken:   nameToken,
+		Name:        nameToken.Lexeme,
+		Type:        typeRef,
+		Description: description,
 	}, nil
 }
 
@@ -320,7 +323,7 @@ func (p *Parser) parseDocDeclaration() (ast.Declaration, error) {
 		return nil, err
 	}
 
-	documentation := ast.Documentation{}
+	documentation := ast.Documentation{Props: map[string]ast.StringLiteral{}}
 	seenEntries := map[string]struct{}{}
 	for !p.isAtEnd() && p.current().Type != lexer.TokenRBrace {
 		entryToken, err := p.consume(lexer.TokenIdentifier, "parser: expected doc entry")
@@ -336,21 +339,55 @@ func (p *Parser) parseDocDeclaration() (ast.Declaration, error) {
 			return nil, err
 		}
 
-		valueToken, err := p.consume(lexer.TokenString, "parser: expected string literal in doc entry")
-		if err != nil {
-			return nil, err
-		}
-
-		if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after doc entry"); err != nil {
-			return nil, err
-		}
-
-		value := ast.StringLiteral{Lexeme: valueToken.Lexeme}
 		switch entryToken.Lexeme {
-		case "summary":
-			documentation.Summary = &value
-		case "description":
-			documentation.Description = &value
+		case "summary", "description":
+			valueToken, err := p.consume(lexer.TokenString, "parser: expected string literal in doc entry")
+			if err != nil {
+				return nil, err
+			}
+
+			if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after doc entry"); err != nil {
+				return nil, err
+			}
+
+			value := ast.StringLiteral{Lexeme: valueToken.Lexeme}
+			if entryToken.Lexeme == "summary" {
+				documentation.Summary = &value
+			} else {
+				documentation.Description = &value
+			}
+		case "props":
+			if _, err := p.consume(lexer.TokenLBrace, "parser: expected '{' to start props entry"); err != nil {
+				return nil, err
+			}
+
+			for !p.isAtEnd() && p.current().Type != lexer.TokenRBrace {
+				nameToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier in props entry")
+				if err != nil {
+					return nil, err
+				}
+				if _, exists := documentation.Props[nameToken.Lexeme]; exists {
+					return nil, fmt.Errorf("parser: duplicate props entry %q at %d:%d", nameToken.Lexeme, nameToken.Line, nameToken.Column)
+				}
+				if _, err := p.consume(lexer.TokenColon, "parser: expected ':' after props entry name"); err != nil {
+					return nil, err
+				}
+				valueToken, err := p.consume(lexer.TokenString, "parser: expected string literal in props entry")
+				if err != nil {
+					return nil, err
+				}
+				if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after props entry"); err != nil {
+					return nil, err
+				}
+				documentation.Props[nameToken.Lexeme] = ast.StringLiteral{Lexeme: valueToken.Lexeme}
+			}
+
+			if _, err := p.consume(lexer.TokenRBrace, "parser: expected '}' to close props entry"); err != nil {
+				return nil, err
+			}
+			if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after props entry"); err != nil {
+				return nil, err
+			}
 		default:
 			return nil, fmt.Errorf("parser: unknown doc entry %q at %d:%d", entryToken.Lexeme, entryToken.Line, entryToken.Column)
 		}
@@ -504,14 +541,17 @@ func (p *Parser) parseSchemaField() (ast.SchemaField, error) {
 		return ast.SchemaField{}, err
 	}
 
+	description := p.parseOptionalInlineDescription()
+
 	if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after schema field"); err != nil {
 		return ast.SchemaField{}, err
 	}
 
 	return ast.SchemaField{
-		Name:     name,
-		Optional: optional,
-		Type:     typeRef,
+		Name:        name,
+		Optional:    optional,
+		Type:        typeRef,
+		Description: description,
 	}, nil
 }
 
@@ -674,15 +714,18 @@ func (p *Parser) parseOutputField() (ast.OutputField, error) {
 		return ast.OutputField{}, err
 	}
 
+	description := p.parseOptionalInlineDescription()
+
 	if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after output field"); err != nil {
 		return ast.OutputField{}, err
 	}
 
 	return ast.OutputField{
-		NameToken: nameToken,
-		Name:      name,
-		Optional:  optional,
-		Value:     value,
+		NameToken:   nameToken,
+		Name:        name,
+		Optional:    optional,
+		Value:       value,
+		Description: description,
 	}, nil
 }
 
@@ -697,16 +740,29 @@ func (p *Parser) parseOutputSchemaField() (ast.OutputSchemaField, error) {
 		return ast.OutputSchemaField{}, err
 	}
 
+	description := p.parseOptionalInlineDescription()
+
 	if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after output schema field"); err != nil {
 		return ast.OutputSchemaField{}, err
 	}
 
 	return ast.OutputSchemaField{
-		NameToken: nameToken,
-		Name:      name,
-		Optional:  optional,
-		Type:      typeRef,
+		NameToken:   nameToken,
+		Name:        name,
+		Optional:    optional,
+		Type:        typeRef,
+		Description: description,
 	}, nil
+}
+
+func (p *Parser) parseOptionalInlineDescription() string {
+	if p.current().Type != lexer.TokenInlineDescription {
+		return ""
+	}
+
+	description := p.current().Lexeme
+	p.advance()
+	return description
 }
 
 func (p *Parser) parseFieldHeader(context string) (lexer.Token, string, bool, error) {

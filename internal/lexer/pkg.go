@@ -76,6 +76,23 @@ func (l *Lexer) NextToken() (Token, error) {
 		}
 		return l.makeToken(TokenStar, startPosition, startLine, startColumn), nil
 	case '/':
+		if l.match('#') {
+			for l.peek() == ' ' || l.peek() == '\t' {
+				l.advance()
+			}
+			for !l.isAtEnd() {
+				if l.peek() == ';' || l.peek() == '\n' || l.peek() == '\r' {
+					break
+				}
+				l.advance()
+			}
+			return Token{
+				Type:   TokenInlineDescription,
+				Lexeme: strings.TrimSpace(l.input[startPosition+2:l.position]),
+				Line:   startLine,
+				Column: startColumn,
+			}, nil
+		}
 		return l.makeToken(TokenSlash, startPosition, startLine, startColumn), nil
 	case '%':
 		return l.makeToken(TokenPercent, startPosition, startLine, startColumn), nil

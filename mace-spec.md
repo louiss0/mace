@@ -125,6 +125,42 @@ schema User: {
 
 Field names must be unique within a schema.
 
+## Documentation
+
+Mace supports three documentation forms:
+
+- inline doc blocks on directive-based blocks
+- doc declarations attached to named `type` and `schema` declarations
+- inline declaration descriptions written with `/#`
+
+Documentation is metadata only and does not affect evaluation.
+
+### Inline Doc Blocks
+
+Inline doc blocks are static block strings placed immediately after an output
+block directive list and before the opening `{`.
+
+```mace
+[output = data]
+"""
+# User Payload
+
+This block emits user data.
+"""
+{
+  name: "Ada";
+}
+```
+
+Current inline doc block rules:
+
+- Inline doc blocks are allowed only on output blocks.
+- They are allowed only when a directive list is present.
+- They must appear immediately after the directive list and before `{`.
+- They must use a static block string.
+- At most one inline doc block is allowed per block.
+- They are metadata only and do not affect evaluation.
+
 ### Doc Declarations
 
 Doc declarations attach structured metadata to a named `type` or `schema`.
@@ -138,6 +174,10 @@ doc User {
 
 A reusable schema that models application users.
 """;
+  props: {
+    name: "The user's display name";
+    age: "Optional age";
+  };
 }
 
 schema User: {
@@ -150,11 +190,53 @@ Current doc declaration rules:
 
 - The target after `doc` must resolve to a named `type` or `schema`.
 - A target may have at most one doc declaration.
-- Supported entries are `summary` and `description`.
+- Supported entries are `summary`, `description`, and `props`.
 - Duplicate or unknown doc entries are invalid.
 - `summary` must be a static string literal.
 - `description` must be a static block string.
+- `props` is allowed only for schema targets.
+- `props` keys must match fields on the target schema.
 - Doc declarations are metadata only and do not affect evaluation.
+
+### Inline Declaration Descriptions
+
+Inline declaration descriptions are written with `/#` before the terminating
+`;` of a declaration or field.
+
+```mace
+type Name: string /# A user display name;
+
+schema User: {
+  name: string /# The user's display name;
+};
+
+[output = data]
+{
+  name: "Ada" /# The emitted user name;
+}
+```
+
+Current inline declaration description rules:
+
+- They are allowed on `type` declarations, schema fields, output fields, and
+  output schema fields.
+- They attach to the declaration immediately before the terminating `;`.
+- They are raw text metadata, not string literals.
+- At most one inline description is allowed per declaration or field.
+- They are metadata only and do not affect evaluation.
+
+### Documentation Conflict Rules
+
+The same declaration should not be documented twice.
+
+Current conflict rules:
+
+- A `type` with a `doc` declaration must not also use an inline `/#`
+  description.
+- A schema field documented through `doc <Schema> { props: { ... } }` must not
+  also use an inline `/#` description.
+- When documentation already exists in a structured doc declaration, users
+  should extend that documentation instead of adding duplicate inline docs.
 
 ### Enum Declarations
 
@@ -436,6 +518,7 @@ The processor validates:
 - duplicate schema fields
 - duplicate output directives
 - duplicate output fields
+- duplicate or conflicting documentation on the same declaration or field
 - import resolution failures
 - circular imports
 - invalid enum backing types
