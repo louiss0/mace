@@ -192,8 +192,10 @@ func (p *Parser) parseDeclaration() (ast.Declaration, error) {
 		return p.parseTypeDeclaration()
 	case lexer.TokenSchema:
 		return p.parseSchemaDeclaration()
-	case lexer.TokenDoc:
-		return p.parseDocDeclaration()
+	case lexer.TokenGenDoc:
+		return p.parseDocDeclaration(ast.DocumentationKindGeneral, lexer.TokenGenDoc, "gen_doc")
+	case lexer.TokenSchemaDoc:
+		return p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 	case lexer.TokenEnum:
 		return p.parseEnumDeclaration()
 	default:
@@ -232,6 +234,9 @@ func (p *Parser) parseVariableDeclaration() (ast.Declaration, error) {
 		return nil, p.unexpectedTokenError("parser: expected '=' in variable declaration")
 	}
 
+	if p.current().Type == lexer.TokenInlineDescription {
+		return nil, fmt.Errorf("parser: inline descriptions are not allowed on variable declarations at %d:%d", p.current().Line, p.current().Column)
+	}
 	if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after variable declaration"); err != nil {
 		return nil, err
 	}
@@ -309,44 +314,45 @@ func (p *Parser) parseSchemaDeclaration() (ast.Declaration, error) {
 	}, nil
 }
 
-func (p *Parser) parseDocDeclaration() (ast.Declaration, error) {
-	if _, err := p.consume(lexer.TokenDoc, "parser: expected 'doc'"); err != nil {
-		return nil, err
-	}
-
-	targetToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier in doc declaration")
+func (p *Parser) parseDocDeclaration(kind ast.DocumentationKind, keywordType lexer.TokenType, keyword string) (ast.Declaration, error) {
+	keywordToken, err := p.consume(keywordType, fmt.Sprintf("parser: expected '%s'", keyword))
 	if err != nil {
 		return nil, err
 	}
 
-	if _, err := p.consume(lexer.TokenLBrace, "parser: expected '{' to start doc declaration"); err != nil {
+	targetToken, err := p.consume(lexer.TokenIdentifier, fmt.Sprintf("parser: expected identifier in %s declaration", keyword))
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := p.consume(lexer.TokenLBrace, fmt.Sprintf("parser: expected '{' to start %s declaration", keyword)); err != nil {
 		return nil, err
 	}
 
 	documentation := ast.Documentation{Props: map[string]ast.StringLiteral{}}
 	seenEntries := map[string]struct{}{}
 	for !p.isAtEnd() && p.current().Type != lexer.TokenRBrace {
-		entryToken, err := p.consume(lexer.TokenIdentifier, "parser: expected doc entry")
+		entryToken, err := p.consume(lexer.TokenIdentifier, fmt.Sprintf("parser: expected %s entry", keyword))
 		if err != nil {
 			return nil, err
 		}
 		if _, exists := seenEntries[entryToken.Lexeme]; exists {
-			return nil, fmt.Errorf("parser: duplicate doc entry %q at %d:%d", entryToken.Lexeme, entryToken.Line, entryToken.Column)
+			return nil, fmt.Errorf("parser: duplicate %s entry %q at %d:%d", keyword, entryToken.Lexeme, entryToken.Line, entryToken.Column)
 		}
 		seenEntries[entryToken.Lexeme] = struct{}{}
 
-		if _, err := p.consume(lexer.TokenColon, "parser: expected ':' after doc entry name"); err != nil {
+		if _, err := p.consume(lexer.TokenColon, fmt.Sprintf("parser: expected ':' after %s entry name", keyword)); err != nil {
 			return nil, err
 		}
 
 		switch entryToken.Lexeme {
 		case "summary", "description":
-			valueToken, err := p.consume(lexer.TokenString, "parser: expected string literal in doc entry")
+			valueToken, err := p.consume(lexer.TokenString, fmt.Sprintf("parser: expected string literal in %s entry", keyword))
 			if err != nil {
 				return nil, err
 			}
 
-			if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after doc entry"); err != nil {
+			if _, err := p.consume(lexer.TokenSemicolon, fmt.Sprintf("parser: expected ';' after %s entry", keyword)); err != nil {
 				return nil, err
 			}
 
@@ -389,15 +395,15 @@ func (p *Parser) parseDocDeclaration() (ast.Declaration, error) {
 				return nil, err
 			}
 		default:
-			return nil, fmt.Errorf("parser: unknown doc entry %q at %d:%d", entryToken.Lexeme, entryToken.Line, entryToken.Column)
+			return nil, fmt.Errorf("parser: unknown %s entry %q at %d:%d", keyword, entryToken.Lexeme, entryToken.Line, entryToken.Column)
 		}
 	}
 
-	if _, err := p.consume(lexer.TokenRBrace, "parser: expected '}' to close doc declaration"); err != nil {
+	if _, err := p.consume(lexer.TokenRBrace, fmt.Sprintf("parser: expected '}' to close %s declaration", keyword)); err != nil {
 		return nil, err
 	}
 
-	return ast.DocDeclaration{TargetToken: targetToken, Target: targetToken.Lexeme, Documentation: documentation}, nil
+	return ast.DocDeclaration{Kind: kind, KeywordToken: keywordToken, TargetToken: targetToken, Target: targetToken.Lexeme, Documentation: documentation}, nil
 }
 
 func (p *Parser) parseEnumDeclaration() (ast.Declaration, error) {

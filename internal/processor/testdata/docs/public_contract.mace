@@ -1,5 +1,13 @@
-|===|
-doc User {
+|================================================|
+type UserID: string /# A stable user identifier;
+
+schema User: {
+  id: UserID;
+  name: string;
+  age?: int;
+};
+
+schema_doc User {
   summary: "Represents a user";
   description: """
 # User
@@ -12,15 +20,7 @@ A reusable schema exposed to imports.
     age: "Optional age in years";
   };
 }
-
-type UserID: string /# A stable user identifier;
-
-schema User: {
-  id: UserID;
-  name: string;
-  age?: int;
-};
-|===|
+|================================================|
 [output = schema]
 """
 # Public User Contract

@@ -1517,17 +1517,17 @@ User user = { name: "Ada"; created_at: "2026-04-09"; };
 		}
 	})
 
-	It("includes doc declaration metadata in hover details", func() {
+	It("includes documentation declaration metadata in hover details", func() {
 		didOpen(server, uri, `|===|
-doc User {
+schema User: { name: string; };
+
+schema_doc User {
   summary: "Represents a user.";
   description: """
 # User
 Reusable schema.
 """;
 }
-
-schema User: { name: string; };
 |===|
 [output = schema]
 { user: User; }`, nil)
@@ -1535,7 +1535,7 @@ schema User: { name: string; };
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
-				Position:     protocol.Position{Line: 8, Character: 8},
+				Position:     protocol.Position{Line: 12, Character: 8},
 			},
 		}, nil)
 		tAssert.True(validMethod)
@@ -1551,7 +1551,7 @@ schema User: { name: string; };
 		content, ok := hover.Contents.(protocol.MarkupContent)
 		tAssert.True(ok)
 		if ok {
-			tAssert.Contains(content.Value, `schema User: { name: string };`)
+			tAssert.Contains(content.Value, `schema User: { name: string; };`)
 			tAssert.Contains(content.Value, `Represents a user.`)
 			tAssert.Contains(content.Value, `# User`)
 		}

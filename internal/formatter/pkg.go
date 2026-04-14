@@ -287,7 +287,12 @@ func formatRecordType(recordType ast.RecordType, depth int) (string, error) {
 }
 
 func formatDocDeclaration(declaration ast.DocDeclaration) (string, error) {
-	lines := []string{fmt.Sprintf("doc %s {", declaration.Target)}
+	keyword := "gen_doc"
+	if declaration.Kind == ast.DocumentationKindSchema {
+		keyword = "schema_doc"
+	}
+
+	lines := []string{fmt.Sprintf("%s %s {", keyword, declaration.Target)}
 	if declaration.Documentation.Summary != nil {
 		lines = append(lines, fmt.Sprintf("  summary: %s;", declaration.Documentation.Summary.Lexeme))
 	}

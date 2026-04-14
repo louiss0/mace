@@ -398,6 +398,15 @@ string user = "Ada";
 			tAssert.Empty(file.Output.SchemaFields)
 		})
 
+		It("rejects inline descriptions on variable declarations", func() {
+			_, err := parseFileInput(`|===|
+string greeting = "Hello $(name)" /# Rendered greeting;
+|===|
+[output = data] {}`)
+			tAssert.Error(err)
+			tAssert.ErrorContains(err, "inline descriptions are not allowed on variable declarations")
+		})
+
 		It("parses injectable declarations without an initializer", func() {
 			input := `|===|
 injectable string env;
@@ -591,18 +600,18 @@ enum Fruit: string {
 			}
 		})
 
-		It("parses doc declarations", func() {
+		It("parses documentation declarations", func() {
 			input := `|===|
-doc User {
+schema User: {
+  name: string;
+};
+
+schema_doc User {
   summary: "Represents a user.";
   description: """
 # User
 """;
 }
-
-schema User: {
-  name: string;
-};
 |===|
 [output = schema]
 { user: User; }`
@@ -610,9 +619,10 @@ schema User: {
 			file, err := parseFileInput(input)
 			tAssert.NoError(err)
 			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 2) {
-				docDecl, ok := file.Script.Items[0].(ast.DocDeclaration)
+				docDecl, ok := file.Script.Items[1].(ast.DocDeclaration)
 				tAssert.True(ok)
 				if ok {
+					tAssert.Equal(ast.DocumentationKindSchema, docDecl.Kind)
 					tAssert.Equal("User", docDecl.Target)
 					if tAssert.NotNil(docDecl.Documentation.Summary) {
 						tAssert.Equal("\"Represents a user.\"", docDecl.Documentation.Summary.Lexeme)
@@ -628,9 +638,10 @@ schema User: {
 			file, err := parseFixtureFile(filepath.Join("..", "analyzer", "testdata", "docs", "hover.mace"))
 			tAssert.NoError(err)
 			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 2) {
-				docDecl, ok := file.Script.Items[0].(ast.DocDeclaration)
+				docDecl, ok := file.Script.Items[1].(ast.DocDeclaration)
 				tAssert.True(ok)
 				if ok {
+					tAssert.Equal(ast.DocumentationKindSchema, docDecl.Kind)
 					if tAssert.NotNil(docDecl.Documentation.Summary) {
 						tAssert.Equal("\"Represents a user\"", docDecl.Documentation.Summary.Lexeme)
 					}
@@ -642,7 +653,7 @@ schema User: {
 					}
 				}
 
-				schemaDecl, ok := file.Script.Items[1].(ast.SchemaDeclaration)
+				schemaDecl, ok := file.Script.Items[0].(ast.SchemaDeclaration)
 				tAssert.True(ok)
 				if ok && tAssert.Len(schemaDecl.Type.Fields, 1) {
 					tAssert.Empty(schemaDecl.Type.Fields[0].Description)

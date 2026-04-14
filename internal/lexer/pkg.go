@@ -88,7 +88,7 @@ func (l *Lexer) NextToken() (Token, error) {
 			}
 			return Token{
 				Type:   TokenInlineDescription,
-				Lexeme: strings.TrimSpace(l.input[startPosition+2:l.position]),
+				Lexeme: strings.TrimSpace(l.input[startPosition+2 : l.position]),
 				Line:   startLine,
 				Column: startColumn,
 			}, nil
@@ -432,8 +432,10 @@ func keywordToken(lexeme string) (TokenType, bool) {
 		return TokenTypeKeyword, true
 	case "schema":
 		return TokenSchema, true
-	case "doc":
-		return TokenDoc, true
+	case "gen_doc":
+		return TokenGenDoc, true
+	case "schema_doc":
+		return TokenSchemaDoc, true
 	case "enum":
 		return TokenEnum, true
 	case "array":

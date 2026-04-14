@@ -1,5 +1,9 @@
 |===|
-doc User {
+schema User: {
+  name: string;
+};
+
+schema_doc User {
   summary: "Represents a user";
   description: """
 # User
@@ -10,10 +14,6 @@ Hover should surface this documentation.
     name: "The user's display name";
   };
 }
-
-schema User: {
-  name: string;
-};
 |===|
 [output = schema]
 """

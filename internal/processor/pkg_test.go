@@ -252,15 +252,15 @@ Name user = "Ada";
 type Scalar: variant[string, int];
 Scalar value = "Ada";
 |===|`)),
-		Entry("doc declarations", wrapScriptWithOutput(`|===|
-doc User {
+		Entry("documentation declarations", wrapScriptWithOutput(`|===|
+schema User: { name: string; };
+
+schema_doc User {
   summary: "Represents a user.";
   description: """
 # User
 """;
 }
-
-schema User: { name: string; };
 |===|`)),
 		Entry("doc fixtures", "testdata/docs/public_contract.mace"),
 	)
@@ -291,23 +291,23 @@ schema User: { name: string; };
 type UserName: string;
 string value = "$(UserName)";
 |===|`), "type reference"),
-		Entry("doc declaration rejects duplicate keys", wrapScriptWithOutput(`|===|
-doc User {
+		Entry("schema_doc rejects duplicate keys", wrapScriptWithOutput(`|===|
+schema User: { name: string; };
+
+schema_doc User {
   summary: "One";
   summary: "Two";
 }
-
-schema User: { name: string; };
-|===|`), "duplicate doc entry"),
-		Entry("doc declaration rejects enum targets", wrapScriptWithOutput(`|===|
+|===|`), "duplicate schema_doc entry"),
+		Entry("gen_doc rejects enum targets", wrapScriptWithOutput(`|===|
 enum Status: string {
   Pending,
 };
 
-doc Status {
+gen_doc Status {
   summary: "Invalid target.";
 }
-|===|`), "doc target"),
+|===|`), "gen_doc target"),
 		Entry("output inline doc requires a directive list", `"""
 Invalid: no directive list
 """
@@ -320,44 +320,60 @@ Invalid: no directive list
   name: string;
 }
 `, "interpolation is not allowed"),
-		Entry("type inline description conflicts with doc declaration", wrapScriptWithOutput(`|===|
-doc Name {
+		Entry("type inline description conflicts with gen_doc", wrapScriptWithOutput(`|===|
+type Name: string /# Duplicate inline docs;
+
+gen_doc Name {
   summary: "Public name type";
 }
-
-type Name: string /# Duplicate inline docs;
 |===|`), "already documented"),
-		Entry("schema field inline description conflicts with doc props", wrapScriptWithOutput(`|===|
-doc User {
+		Entry("schema field inline description conflicts with schema_doc props", wrapScriptWithOutput(`|===|
+schema User: {
+  name: string /# Duplicate inline docs;
+};
+
+schema_doc User {
   props: {
     name: "The user's display name";
   };
 }
-
-schema User: {
-  name: string /# Duplicate inline docs;
-};
 |===|`), "already documented"),
-		Entry("doc props reject unknown schema fields", wrapScriptWithOutput(`|===|
-doc User {
+		Entry("schema_doc props reject unknown schema fields", wrapScriptWithOutput(`|===|
+schema User: {
+  name: string;
+};
+
+schema_doc User {
   props: {
     age: "Unknown field";
   };
 }
-
-schema User: {
-  name: string;
-};
 |===|`), "does not exist"),
-		Entry("doc props reject type targets", wrapScriptWithOutput(`|===|
+		Entry("gen_doc props reject type targets", wrapScriptWithOutput(`|===|
 type Name: string;
 
-doc Name {
+gen_doc Name {
   props: {
     value: "Nope";
   };
 }
 |===|`), "require a schema target"),
+		Entry("schema_doc must appear after its schema declaration", wrapScriptWithOutput(`|===|
+schema_doc User {
+  summary: "Late-bound docs";
+}
+
+schema User: {
+  name: string;
+};
+|===|`), "must appear after its schema declaration"),
+		Entry("gen_doc must appear after its type declaration", wrapScriptWithOutput(`|===|
+gen_doc Name {
+  summary: "Late-bound docs";
+}
+
+type Name: string;
+|===|`), "must appear after its type declaration"),
 	)
 
 	DescribeTable("accepts primitive variant alternatives",

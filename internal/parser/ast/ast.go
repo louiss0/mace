@@ -111,6 +111,13 @@ type Documentation struct {
 	Props       map[string]StringLiteral
 }
 
+type DocumentationKind int
+
+const (
+	DocumentationKindGeneral DocumentationKind = iota
+	DocumentationKindSchema
+)
+
 type Declaration interface {
 	declarationNode()
 }
@@ -142,6 +149,8 @@ type SchemaDeclaration struct {
 }
 
 type DocDeclaration struct {
+	Kind          DocumentationKind
+	KeywordToken  lexer.Token
 	TargetToken   lexer.Token
 	Target        string
 	Documentation Documentation

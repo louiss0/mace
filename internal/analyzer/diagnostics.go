@@ -114,6 +114,8 @@ func classifyProcessorDiagnostic(message string) diagnosticCode {
 	switch {
 	case strings.Contains(message, "duplicate output directive"):
 		return diagnosticDirectiveDuplicateKey
+	case strings.Contains(message, "duplicate documentation declaration"):
+		return diagnosticSyntaxUnexpectedToken
 	case strings.Contains(message, "unknown output directive"):
 		return diagnosticDirectiveUnknownKey
 	case strings.Contains(message, "schema directive is invalid when output mode is schema") || strings.Contains(message, "schema_file directive is invalid when output mode is schema"):
@@ -130,6 +132,8 @@ func classifyProcessorDiagnostic(message string) diagnosticCode {
 		return diagnosticImportDuplicateName
 	case strings.Contains(message, "imported identifier"):
 		return diagnosticImportNameNotExposed
+	case strings.Contains(message, "schema_doc target") || strings.Contains(message, "gen_doc target") || strings.Contains(message, "documentation target"):
+		return diagnosticSyntaxUnexpectedToken
 	case strings.Contains(message, "invalid enum backing type"):
 		return diagnosticDeclarationInvalidEnumBackingType
 	case strings.Contains(message, "duplicate enum declaration"):
@@ -150,6 +154,8 @@ func classifyProcessorDiagnostic(message string) diagnosticCode {
 		return diagnosticDeclarationVariableMissingInitializer
 	case strings.Contains(message, "duplicate declaration"):
 		return diagnosticDeclarationDuplicateVariable
+	case strings.Contains(message, "already documented by a documentation declaration"):
+		return diagnosticSyntaxUnexpectedToken
 	case strings.Contains(message, "duplicate field"):
 		return diagnosticDeclarationDuplicateSchemaField
 	case strings.Contains(message, "duplicate output field"):

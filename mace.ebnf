@@ -79,7 +79,8 @@ declaration
   | type_declaration
   | enum_declaration
   | schema_declaration
-  | doc_declaration ;
+  | gen_doc_declaration
+  | schema_doc_declaration ;
 
 (* ===================================================== *)
 (* 5. VARIABLE DECLARATIONS                             *)
@@ -115,17 +116,30 @@ type_declaration
     [ ws0 , inline_description ] ,
     ws0 , ";" ;
 
-doc_declaration
-  = "doc" , ws1 ,
+gen_doc_declaration
+  = "gen_doc" , ws1 ,
     identifier , ws0 ,
     "{" , ws0 ,
-    { doc_entry , ws0 } ,
+    { gen_doc_entry , ws0 } ,
     "}" ;
 
-doc_entry
+schema_doc_declaration
+  = "schema_doc" , ws1 ,
+    identifier , ws0 ,
+    "{" , ws0 ,
+    { schema_doc_entry , ws0 } ,
+    "}" ;
+
+(* `gen_doc` must appear after the target `type` declaration.
+   `schema_doc` must appear after the target `schema` declaration. *)
+
+gen_doc_entry
   = "summary" , ws0 , ":" , ws0 , string_literal , ws0 , ";"
   | "description" , ws0 , ":" , ws0 , block_string , ws0 , ";"
   | "props" , ws0 , ":" , ws0 , "{" , ws0 , { prop_entry , ws0 } , "}" , ws0 , ";" ;
+
+schema_doc_entry
+  = gen_doc_entry ;
 
 prop_entry
   = identifier , ws0 , ":" , ws0 , string_literal , ws0 , ";" ;

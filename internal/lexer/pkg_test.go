@@ -82,12 +82,13 @@ var _ = Describe("Lexer", func() {
 			tAssert.NoError(err)
 			assertTokenSequence(tokens, expected)
 		},
-		Entry("keywords and identifiers", "from import type schema doc enum array string int float boolean output schema_file data injectable user_1", []expectedToken{
+		Entry("keywords and identifiers", "from import type schema gen_doc schema_doc enum array string int float boolean output schema_file data injectable user_1", []expectedToken{
 			{tokenType: TokenFrom, lexeme: "from"},
 			{tokenType: TokenImport, lexeme: "import"},
 			{tokenType: TokenTypeKeyword, lexeme: "type"},
 			{tokenType: TokenSchema, lexeme: "schema"},
-			{tokenType: TokenDoc, lexeme: "doc"},
+			{tokenType: TokenGenDoc, lexeme: "gen_doc"},
+			{tokenType: TokenSchemaDoc, lexeme: "schema_doc"},
 			{tokenType: TokenEnum, lexeme: "enum"},
 			{tokenType: TokenArray, lexeme: "array"},
 			{tokenType: TokenStringType, lexeme: "string"},

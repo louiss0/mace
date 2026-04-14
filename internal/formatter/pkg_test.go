@@ -73,15 +73,15 @@ injectable string user = "Ada";
 }`, output)
 	})
 
-	It("formats doc declarations and inline output docs", func() {
+	It("formats documentation declarations and inline output docs", func() {
 		file, err := parseMaceFile(`|===|
-doc User {
+schema User: { name: string; };
+schema_doc User {
   summary: "Represents a user.";
   description: """
 # User
 """;
 }
-schema User: { name: string; };
 |===|
 [output = schema]
 """
@@ -93,15 +93,15 @@ schema User: { name: string; };
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
 		tAssert.Equal(`|================================|
-doc User {
+schema User: {
+  name: string;
+};
+schema_doc User {
   summary: "Represents a user.";
   description: """
 # User
 """;
 }
-schema User: {
-  name: string;
-};
 |================================|
 [output = schema]
 """
