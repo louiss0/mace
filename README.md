@@ -148,13 +148,13 @@ The root command is `mace`.
 mace json <path>
 mace import <path>
 mace nodes <path>
-mace source <path>
+mace output <path>
 mace lsp
 ```
 
 ### `mace json <path>`
 
-Evaluates a Mace file and prints the output block as JSON.
+Evaluates a Mace file and prints the computed output block as JSON.
 
 ```bash
 mace json ./config.mace
@@ -233,12 +233,14 @@ working on the language itself.
 mace nodes ./config.mace
 ```
 
-### `mace source <path>`
+### `mace output <path>`
 
 Parses a file and prints canonical Mace source.
 
+This command does not evaluate the file into runtime JSON output.
+
 ```bash
-mace source ./config.mace
+mace output ./config.mace
 ```
 
 This is useful for inspecting how the formatter normalizes script delimiters,

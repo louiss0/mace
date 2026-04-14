@@ -36,8 +36,8 @@ export async function jsonText(path: string, options: JsonOptions = {}): Promise
   return runMace(buildJsonArgs(path, options), options)
 }
 
-export async function source(path: string, options: RunOptions = {}): Promise<string> {
-  return runMace(['source', path], options)
+export async function output(path: string, options: RunOptions = {}): Promise<string> {
+  return runMace(['output', path], options)
 }
 
 export async function nodes(path: string, options: RunOptions = {}): Promise<string> {

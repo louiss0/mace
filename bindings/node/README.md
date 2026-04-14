@@ -22,17 +22,17 @@ jpd run build
 ## Usage
 
 ```ts
-import { json, importJson } from '@code-fixer-23/mace-node'
+import { json, output } from '@code-fixer-23/mace-node'
 
-const output = await json('./config.mace')
-const source = await importJson('{"name":"Ada"}')
+const value = await json('./config.mace')
+const formatted = await output('./config.mace')
 ```
 
 ## API
 
 - `json(path, options?)`
 - `jsonText(path, options?)`
-- `source(path, options?)`
+- `output(path, options?)`
 - `nodes(path, options?)`
 - `importJson(input, options?)`
 - `importYaml(input, options?)`

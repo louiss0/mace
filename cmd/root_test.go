@@ -317,7 +317,7 @@ Unknown value = 1;
 		})
 	})
 
-	Describe("source", func() {
+	Describe("output", func() {
 		It("prints canonical Mace source from the parsed file", func() {
 			path := writeMaceFile(`from "./base.mace" import User;
 |===|
@@ -330,7 +330,7 @@ schema User: { name: string; age?: int; };
 			var stderr bytes.Buffer
 
 			command := newRootCommand(&stdout, &stderr)
-			command.SetArgs([]string{"source", path})
+			command.SetArgs([]string{"output", path})
 
 			err := command.Execute()
 			tAssert.NoError(err)

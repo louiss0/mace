@@ -22,8 +22,8 @@ def json_text(path: str, inject: str | None = None, mace_path: str = "mace", cwd
     return _run_mace(_json_args(path, inject), mace_path=mace_path, cwd=cwd)
 
 
-def source(path: str, mace_path: str = "mace", cwd: str | None = None) -> str:
-    return _run_mace(["source", path], mace_path=mace_path, cwd=cwd)
+def output(path: str, mace_path: str = "mace", cwd: str | None = None) -> str:
+    return _run_mace(["output", path], mace_path=mace_path, cwd=cwd)
 
 
 def nodes(path: str, mace_path: str = "mace", cwd: str | None = None) -> str:

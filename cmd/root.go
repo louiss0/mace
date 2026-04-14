@@ -41,7 +41,7 @@ func newRootCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
 
 	command.SetOut(stdout)
 	command.SetErr(stderr)
-	command.AddCommand(newJSONCommand(), newImportCommand(), newNodesCommand(), newSourceCommand(), newLSPCommand())
+	command.AddCommand(newJSONCommand(), newImportCommand(), newNodesCommand(), newOutputCommand(), newLSPCommand())
 
 	return command
 }
@@ -168,9 +168,9 @@ func newNodesCommand() *cobra.Command {
 	return command
 }
 
-func newSourceCommand() *cobra.Command {
+func newOutputCommand() *cobra.Command {
 	command := &cobra.Command{
-		Use:   "source <path>",
+		Use:   "output <path>",
 		Short: "Parse a Mace file and print canonical Mace source",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {

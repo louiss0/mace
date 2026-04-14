@@ -20,17 +20,17 @@ python -m uv build
 ## Usage
 
 ```python
-from mace_python import json, import_json
+from mace_python import json, output
 
-output = json("./config.mace")
-source = import_json('{"name": "Ada"}')
+value = json("./config.mace")
+formatted = output("./config.mace")
 ```
 
 ## API
 
 - `json(path, inject=None, mace_path="mace", cwd=None)`
 - `json_text(path, inject=None, mace_path="mace", cwd=None)`
-- `source(path, mace_path="mace", cwd=None)`
+- `output(path, mace_path="mace", cwd=None)`
 - `nodes(path, mace_path="mace", cwd=None)`
 - `import_json(input_text, mace_path="mace", cwd=None)`
 - `import_yaml(input_text, mace_path="mace", cwd=None)`
