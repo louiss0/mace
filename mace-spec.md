@@ -67,7 +67,8 @@ The script block can contain:
 - `type` declarations
 - `enum` declarations
 - `schema` declarations
-- `doc` declarations
+- `gen_doc` declarations
+- `schema_doc` declarations
 - typed variable declarations
 
 ### Variable Declarations
@@ -127,10 +128,11 @@ Field names must be unique within a schema.
 
 ## Documentation
 
-Mace supports three documentation forms:
+Mace supports four documentation forms:
 
 - inline doc blocks on directive-based blocks
-- doc declarations attached to named `type` and `schema` declarations
+- `gen_doc` declarations attached to named `type` declarations and variables
+- `schema_doc` declarations attached to named `schema` declarations and enums
 - inline declaration descriptions written with `/#`
 
 Documentation is metadata only and does not affect evaluation.
@@ -161,13 +163,40 @@ Current inline doc block rules:
 - At most one inline doc block is allowed per block.
 - They are metadata only and do not affect evaluation.
 
-### Doc Declarations
+### Documentation Declarations
 
-Doc declarations attach structured metadata to a named `type` or `schema`.
-They are separate declarations in the script block.
+Documentation declarations attach structured metadata to named declarations in
+the script block.
+
+Use `gen_doc` for `type` declarations and variables:
 
 ```mace
-doc User {
+type Name: string;
+string greeting = "Hello";
+
+gen_doc Name {
+  summary: "A user display name.";
+}
+
+gen_doc greeting {
+  summary: "Rendered greeting.";
+}
+```
+
+Use `schema_doc` for `schema` declarations and enums:
+
+```mace
+schema User: {
+  name: string;
+  age?: int;
+};
+
+enum Status: string {
+  Pending,
+  Running,
+};
+
+schema_doc User {
   summary: "Represents a user.";
   description: """
 # User
@@ -180,23 +209,23 @@ A reusable schema that models application users.
   };
 }
 
-schema User: {
-  name: string;
-  age?: int;
-};
+schema_doc Status {
+  summary: "Processing status.";
+}
 ```
 
-Current doc declaration rules:
+Current documentation declaration rules:
 
-- The target after `doc` must resolve to a named `type` or `schema`.
-- A target may have at most one doc declaration.
+- `gen_doc` must appear after the target `type` or variable declaration.
+- `schema_doc` must appear after the target `schema` or `enum` declaration.
+- A target may have at most one documentation declaration.
 - Supported entries are `summary`, `description`, and `props`.
-- Duplicate or unknown doc entries are invalid.
+- Duplicate or unknown documentation entries are invalid.
 - `summary` must be a static string literal.
 - `description` must be a static block string.
-- `props` is allowed only for schema targets.
+- `props` is allowed only for `schema_doc` declarations targeting schemas.
 - `props` keys must match fields on the target schema.
-- Doc declarations are metadata only and do not affect evaluation.
+- Documentation declarations are metadata only and do not affect evaluation.
 
 ### Inline Declaration Descriptions
 
@@ -220,6 +249,7 @@ Current inline declaration description rules:
 
 - They are allowed on `type` declarations, schema fields, output fields, and
   output schema fields.
+- They are not allowed on variable declarations.
 - They attach to the declaration immediately before the terminating `;`.
 - They are raw text metadata, not string literals.
 - At most one inline description is allowed per declaration or field.
@@ -231,12 +261,12 @@ The same declaration should not be documented twice.
 
 Current conflict rules:
 
-- A `type` with a `doc` declaration must not also use an inline `/#`
+- A `type` with a `gen_doc` declaration must not also use an inline `/#`
   description.
-- A schema field documented through `doc <Schema> { props: { ... } }` must not
-  also use an inline `/#` description.
-- When documentation already exists in a structured doc declaration, users
-  should extend that documentation instead of adding duplicate inline docs.
+- A schema field documented through `schema_doc <Schema> { props: { ... } }`
+  must not also use an inline `/#` description.
+- When documentation already exists in a structured documentation declaration,
+  users should extend that declaration instead of adding duplicate inline docs.
 
 ### Enum Declarations
 

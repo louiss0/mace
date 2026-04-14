@@ -3,6 +3,12 @@ schema User: {
   name: string;
 };
 
+string greeting = "Hello";
+
+gen_doc greeting {
+  summary: "Rendered greeting";
+}
+
 schema_doc User {
   summary: "Represents a user";
   description: """

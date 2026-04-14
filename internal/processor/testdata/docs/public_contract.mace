@@ -1,5 +1,9 @@
 |================================================|
-type UserID: string /# A stable user identifier;
+type UserID: string;
+
+gen_doc UserID {
+  summary: "A stable user identifier.";
+}
 
 schema User: {
   id: UserID;

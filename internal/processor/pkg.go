@@ -1139,25 +1139,23 @@ func validateDocDeclaration(declaration ast.DocDeclaration, symbols *symbolTable
 		return validationErrorf("duplicate documentation declaration for %q", declaration.Target)
 	}
 
-	expectedKind := symbolKindType
 	keyword := "gen_doc"
-	if declaration.Kind == ast.DocumentationKindSchema {
-		expectedKind = symbolKindSchema
-		keyword = "schema_doc"
-	}
-
 	declaredKind, declared := declaredKinds[declaration.Target]
-	if !declared || declaredKind != expectedKind {
-		if declaration.Kind == ast.DocumentationKindSchema {
-			return validationErrorf("schema_doc target %q must appear after its schema declaration", declaration.Target)
+	if declaration.Kind == ast.DocumentationKindSchema {
+		keyword = "schema_doc"
+		if !declared || (declaredKind != symbolKindSchema && declaredKind != symbolKindEnum) {
+			return validationErrorf("schema_doc target %q must appear after its schema or enum declaration", declaration.Target)
 		}
-		return validationErrorf("gen_doc target %q must appear after its type declaration", declaration.Target)
-	}
-	if targetKind != expectedKind {
-		if declaration.Kind == ast.DocumentationKindSchema {
-			return validationErrorf("schema_doc target %q must reference a schema", declaration.Target)
+		if targetKind != symbolKindSchema && targetKind != symbolKindEnum {
+			return validationErrorf("schema_doc target %q must reference a schema or enum", declaration.Target)
 		}
-		return validationErrorf("gen_doc target %q must reference a type", declaration.Target)
+	} else {
+		if !declared || (declaredKind != symbolKindType && declaredKind != symbolKindVariable) {
+			return validationErrorf("gen_doc target %q must appear after its type or variable declaration", declaration.Target)
+		}
+		if targetKind != symbolKindType && targetKind != symbolKindVariable {
+			return validationErrorf("gen_doc target %q must reference a type or variable", declaration.Target)
+		}
 	}
 	seenDocs[declaration.Target] = struct{}{}
 

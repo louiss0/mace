@@ -1564,7 +1564,7 @@ Reusable schema.
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
-				Position:     protocol.Position{Line: 22, Character: 9},
+				Position:     protocol.Position{Line: 28, Character: 9},
 			},
 		}, nil)
 		tAssert.True(validMethod)

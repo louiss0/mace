@@ -637,8 +637,8 @@ schema_doc User {
 		It("parses documentation fixtures with props and inline descriptions", func() {
 			file, err := parseFixtureFile(filepath.Join("..", "analyzer", "testdata", "docs", "hover.mace"))
 			tAssert.NoError(err)
-			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 2) {
-				docDecl, ok := file.Script.Items[1].(ast.DocDeclaration)
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 4) {
+				docDecl, ok := file.Script.Items[3].(ast.DocDeclaration)
 				tAssert.True(ok)
 				if ok {
 					tAssert.Equal(ast.DocumentationKindSchema, docDecl.Kind)

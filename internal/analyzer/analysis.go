@@ -988,11 +988,11 @@ func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *process
 			case ast.TypeDeclaration:
 				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindClass, symbolOriginLocal, fmt.Sprintf("type %s: %s;", declaration.Name, typeReferenceDetail(declaration.Type)), declarationDocumentation(file, declaration.Name)), true
 			case ast.EnumDeclaration:
-				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindEnum, symbolOriginLocal, enumDeclarationDetail(declaration), ""), true
+				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindEnum, symbolOriginLocal, enumDeclarationDetail(declaration), declarationDocumentation(file, declaration.Name)), true
 			case ast.SchemaDeclaration:
 				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindStruct, symbolOriginLocal, fmt.Sprintf("schema %s: %s;", declaration.Name, recordTypeDetail(declaration.Type)), declarationDocumentation(file, declaration.Name)), true
 			case ast.VariableDeclaration:
-				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindVariable, symbolOriginLocal, variableDeclarationDetail(declaration), ""), true
+				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindVariable, symbolOriginLocal, variableDeclarationDetail(declaration), declarationDocumentation(file, declaration.Name)), true
 			case ast.DocDeclaration:
 				return semanticSymbol{}, false
 			default:

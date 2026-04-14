@@ -255,11 +255,30 @@ Scalar value = "Ada";
 		Entry("documentation declarations", wrapScriptWithOutput(`|===|
 schema User: { name: string; };
 
+enum Status: string {
+  Pending,
+};
+
+type Name: string;
+string greeting = "Hello";
+
 schema_doc User {
   summary: "Represents a user.";
   description: """
 # User
 """;
+}
+
+schema_doc Status {
+  summary: "Represents a status.";
+}
+
+gen_doc Name {
+  summary: "Represents a name.";
+}
+
+gen_doc greeting {
+  summary: "Rendered greeting.";
 }
 |===|`)),
 		Entry("doc fixtures", "testdata/docs/public_contract.mace"),
@@ -299,15 +318,13 @@ schema_doc User {
   summary: "Two";
 }
 |===|`), "duplicate schema_doc entry"),
-		Entry("gen_doc rejects enum targets", wrapScriptWithOutput(`|===|
-enum Status: string {
-  Pending,
-};
+		Entry("schema_doc rejects type targets", wrapScriptWithOutput(`|===|
+type Status: string;
 
-gen_doc Status {
+schema_doc Status {
   summary: "Invalid target.";
 }
-|===|`), "gen_doc target"),
+|===|`), "schema_doc target"),
 		Entry("output inline doc requires a directive list", `"""
 Invalid: no directive list
 """
@@ -366,14 +383,30 @@ schema_doc User {
 schema User: {
   name: string;
 };
-|===|`), "must appear after its schema declaration"),
+|===|`), "must appear after its schema or enum declaration"),
+		Entry("schema_doc must appear after its enum declaration", wrapScriptWithOutput(`|===|
+schema_doc Status {
+  summary: "Late-bound docs";
+}
+
+enum Status: string {
+  Pending,
+};
+|===|`), "must appear after its schema or enum declaration"),
 		Entry("gen_doc must appear after its type declaration", wrapScriptWithOutput(`|===|
 gen_doc Name {
   summary: "Late-bound docs";
 }
 
 type Name: string;
-|===|`), "must appear after its type declaration"),
+|===|`), "must appear after its type or variable declaration"),
+		Entry("gen_doc must appear after its variable declaration", wrapScriptWithOutput(`|===|
+gen_doc name {
+  summary: "Late-bound docs";
+}
+
+string name = "Ada";
+|===|`), "must appear after its type or variable declaration"),
 	)
 
 	DescribeTable("accepts primitive variant alternatives",
