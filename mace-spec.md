@@ -54,7 +54,7 @@ The script block is delimited by matching pipe delimiters:
 ```mace
 |===|
 type Name: string;
-schema User: { name: Name; age?: int; };
+schema User: { name: Name, age?: int };
 string user_name = "Ada";
 |===|
 ```
@@ -119,12 +119,14 @@ Schemas define record types with required and optional fields.
 
 ```mace
 schema User: {
-  name: string;
-  age?: int;
-};
+  name: string,
+  age?: int
+}
 ```
 
 Field names must be unique within a schema.
+Non-final schema fields must be separated with `,`.
+A trailing comma on the final schema field is optional.
 
 ## Documentation
 
@@ -187,14 +189,14 @@ Use `schema_doc` for `schema` declarations and enums:
 
 ```mace
 schema User: {
-  name: string;
-  age?: int;
-};
+  name: string,
+  age?: int
+}
 
 enum Status: string {
   Pending,
-  Running,
-};
+  Running
+}
 
 schema_doc User {
   summary: "Represents a user.";
@@ -277,16 +279,16 @@ of unique member values.
 enum Fruit: string {
   Apple,
   Strawberry,
-  Pecan,
-};
+  Pecan
+}
 ```
 
 ```mace
 enum Status: int {
   Pending,
   Running,
-  Done,
-};
+  Done
+}
 ```
 
 Current enum rules:
@@ -294,6 +296,8 @@ Current enum rules:
 - Supported backing types are `string` and `int`.
 - Enum member names must be unique within the enum.
 - Enum values must be unique within the enum.
+- Non-final enum members must be separated with `,`.
+- A trailing comma on the final enum member is optional.
 - `string` and `int` enums may use all-implicit members or all-explicit members.
 - An implicit `string` member uses its member name exactly as written.
 - An implicit `int` member uses its zero-based declaration index.
@@ -311,8 +315,8 @@ When an enum value is required, raw backing values are not assignable.
 ```mace
 enum Fruit: string {
   Apple,
-  Strawberry,
-};
+  Strawberry
+}
 
 Fruit favorite = Fruit.Apple;
 ```
@@ -408,6 +412,8 @@ Current string rules:
 
 The output block is a record of output fields. It may be preceded by a
 directive list and an optional inline doc block.
+Non-final output fields must be separated with `,`.
+A trailing comma on the final output field is optional.
 
 ```mace
 [output = data, schema = User]
@@ -415,8 +421,8 @@ directive list and an optional inline doc block.
 # Public User Output
 """
 {
-  name: user_name;
-  age: 27;
+  name: user_name,
+  age: 27
 }
 ```
 
@@ -424,8 +430,8 @@ If no output directive is present, the output mode defaults to `data`.
 
 ```mace
 {
-  name: user_name;
-  age: 27;
+  name: user_name,
+  age: 27
 }
 ```
 
@@ -444,8 +450,8 @@ The explicit data form is:
 ```mace
 [output = data]
 {
-  name: user_name;
-  age: 27;
+  name: user_name,
+  age: 27
 }
 ```
 
@@ -454,8 +460,8 @@ The current implementation also supports schema validation with:
 ```mace
 [output = data, schema = User]
 {
-  name: user_name;
-  age: 27;
+  name: user_name,
+  age: 27
 }
 ```
 
@@ -467,8 +473,8 @@ Schema output is also supported with an anonymous schema block:
 ```mace
 [output = schema]
 {
-  name: string;
-  age?: int;
+  name: string,
+  age?: int
 }
 ```
 
@@ -481,7 +487,7 @@ External schema declarations can also be loaded for data validation:
 ```mace
 [output = data, schema_file = "./schemas.mace"]
 {
-  name: user_name;
+  name: user_name
 }
 ```
 
@@ -502,7 +508,7 @@ Expressions are pure and deterministic. The implementation supports:
 - member access with `value.member`
 - string, int, float, and boolean literals
 - array literals
-- record literals
+- record literals using comma-separated fields
 - `$self` references
 - unary operators: `!`, `~`, unary `+`, unary `-`
 - arithmetic operators: `+`, `-`, `*`, `/`, `%`, `**`
@@ -529,8 +535,8 @@ Example:
 ```mace
 [output = data]
 {
-  base: 4;
-  doubled: $self.base * 2;
+  base: 4,
+  doubled: $self.base * 2
 }
 ```
 
@@ -579,12 +585,12 @@ from "./base.mace" import Name, User;
 
 |===|
 Name name = "Ada";
-User result = { name: name; age: 27; };
+User result = { name: name, age: 27 };
 |===|
 
 [output = data]
 {
-  result: result;
+  result: result
 }
 ```
 

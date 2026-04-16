@@ -57,19 +57,19 @@ injectable string user = "Ada";
 |===============================|
 type Name: string;
 schema User: {
-  name: string;
-  age?: int;
-};
+  name: string,
+  age?: int
+}
 enum Fruit: string {
   Apple,
-  Strawberry = "strawberry",
-};
+  Strawberry = "strawberry"
+}
 injectable string user = "Ada";
 |===============================|
 [output = data, schema = User]
 {
-  name: user;
-  age: 1 + 2 * 3;
+  name: user,
+  age: 1 + 2 * 3
 }`, output)
 	})
 
@@ -94,8 +94,8 @@ schema_doc User {
 		tAssert.NoError(err)
 		tAssert.Equal(`|================================|
 schema User: {
-  name: string;
-};
+  name: string
+}
 schema_doc User {
   summary: "Represents a user.";
   description: """
@@ -108,7 +108,7 @@ schema_doc User {
 # Public User Output
 """
 {
-  user: User;
+  user: User
 }`, output)
 	})
 
@@ -120,7 +120,7 @@ schema_doc User {
 		tAssert.NoError(err)
 		tAssert.Equal(`[output = data]
 {
-  result: (1 + 2) * (3 - 4 ? 5 : 6);
+  result: (1 + 2) * (3 - 4 ? 5 : 6)
 }`, output)
 	})
 
@@ -131,7 +131,7 @@ schema_doc User {
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
 		tAssert.Equal(`{
-  result: 1 + 2;
+  result: 1 + 2
 }`, output)
 	})
 
@@ -149,15 +149,15 @@ schema_doc User {
   result: [
     {
       profile: {
-        name: "Ada";
-      };
+        name: "Ada"
+      }
     },
     {
       profile: {
-        name: "Bob";
-      };
+        name: "Bob"
+      }
     }
-  ];
+  ]
 }`, output)
 	})
 
@@ -173,8 +173,8 @@ schema_doc User {
 		tAssert.NoError(err)
 		tAssert.Equal(`[output = schema]
 {
-  name: string;
-  tags?: array<string>;
+  name: string,
+  tags?: array<string>
 }`, output)
 	})
 
@@ -195,7 +195,7 @@ type Value: variant[string, int];
 |=================================|
 [output = schema]
 {
-  value: variant[string, int];
+  value: variant[string, int]
 }`, output)
 	})
 
@@ -216,7 +216,7 @@ type Value: union[Profile, Audit];
 |==================================|
 [output = schema]
 {
-  value: union[Profile, Audit];
+  value: union[Profile, Audit]
 }`, output)
 	})
 })

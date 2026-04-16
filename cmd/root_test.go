@@ -130,11 +130,11 @@ injectable string env;
 			tAssert.NoError(err)
 			tAssert.Equal(`[output = data]
 {
-  enabled: true;
-  name: "Ada";
+  enabled: true,
+  name: "Ada",
   profile: {
-    level: 2;
-  };
+    level: 2
+  }
 }`, string(contents))
 		})
 
@@ -165,8 +165,8 @@ injectable string env;
 			tAssert.NoError(err)
 			tAssert.Equal(`[output = schema]
 {
-  age?: int;
-  name: string;
+  age?: int,
+  name: string
 }`, string(contents))
 		})
 
@@ -211,7 +211,7 @@ injectable string env;
 			tAssert.NoError(err)
 			tAssert.Equal(`[output = data]
 {
-  name: "Ada";
+  name: "Ada"
 }`, string(contents))
 		})
 
@@ -237,7 +237,7 @@ injectable string env;
 			tAssert.NoError(err)
 			tAssert.Equal(`[output = data]
 {
-  name: "Ada";
+  name: "Ada"
 }`, string(contents))
 		})
 
@@ -339,14 +339,14 @@ schema User: { name: string; age?: int; };
 
 |===============|
 schema User: {
-  name: string;
-  age?: int;
-};
+  name: string,
+  age?: int
+}
 |===============|
 [output = data, schema = User]
 {
-  name: "Ada";
-  age: 1 + 2 * 3;
+  name: "Ada",
+  age: 1 + 2 * 3
 }
 `, stdout.String())
 		})

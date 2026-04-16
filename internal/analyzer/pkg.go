@@ -305,7 +305,7 @@ func recordTypeDetail(record ast.RecordType) string {
 		return fmt.Sprintf("%s: %s", name, typeReferenceDetail(field.Type))
 	})
 
-	return "{ " + strings.Join(fields, "; ") + "; }"
+	return "{ " + strings.Join(fields, ", ") + " }"
 }
 
 func newSymbol(text string, name string, detail string, kind protocol.SymbolKind, children []protocol.DocumentSymbol) protocol.DocumentSymbol {

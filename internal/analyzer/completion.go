@@ -1423,10 +1423,10 @@ func schemaLiteral(record ast.RecordType, model completionModel, seen map[string
 		if field.Optional {
 			name += "?"
 		}
-		return fmt.Sprintf("%s: %s;", name, defaultLiteralForType(field.Type, model, seen))
+		return fmt.Sprintf("%s: %s", name, defaultLiteralForType(field.Type, model, seen))
 	})
 
-	return "{ " + strings.Join(fields, " ") + " }"
+	return "{ " + strings.Join(fields, ", ") + " }"
 }
 
 func defaultLiteralForType(typeReference ast.TypeReference, model completionModel, seen map[string]struct{}) string {

@@ -929,7 +929,7 @@ Basket basket = {
 [output = data] {}`, nil)
 
 		labels := completeLabels(server, uri, 4, uint32(len(`  owner: `)))
-		tAssert.Equal([]string{`{ name: ""; age?: 0; }`}, labels)
+		tAssert.Equal([]string{`{ name: "", age?: 0 }`}, labels)
 	})
 
 	It("suggests variant members for nested output schema aliases", func() {
@@ -953,7 +953,7 @@ schema Response: { payload: Envelope; };
 		labels := completeLabels(server, uri, 12, uint32(len(`    value: `)))
 		tAssert.Contains(labels, "$self")
 		tAssert.Contains(labels, "Role.Admin")
-		tAssert.Contains(labels, `{ name: ""; }`)
+		tAssert.Contains(labels, `{ name: "" }`)
 	})
 
 	It("suggests composed schema literals for nested output union aliases", func() {
@@ -974,7 +974,7 @@ schema Response: { payload: Envelope; };
 
 		labels := completeLabels(server, uri, 10, uint32(len(`    value: `)))
 		tAssert.Contains(labels, "$self")
-		tAssert.Contains(labels, `{ name: ""; created_at: ""; }`)
+		tAssert.Contains(labels, `{ name: "", created_at: "" }`)
 	})
 
 	It("keeps typed output completions alongside $self in output schema fields", func() {
@@ -1551,7 +1551,7 @@ Reusable schema.
 		content, ok := hover.Contents.(protocol.MarkupContent)
 		tAssert.True(ok)
 		if ok {
-			tAssert.Contains(content.Value, `schema User: { name: string; };`)
+			tAssert.Contains(content.Value, `schema User: { name: string };`)
 			tAssert.Contains(content.Value, `Represents a user.`)
 			tAssert.Contains(content.Value, `# User`)
 		}
@@ -1580,7 +1580,7 @@ Reusable schema.
 		content, ok := hover.Contents.(protocol.MarkupContent)
 		tAssert.True(ok)
 		if ok {
-			tAssert.Contains(content.Value, `schema User: { name: string; };`)
+			tAssert.Contains(content.Value, `schema User: { name: string };`)
 			tAssert.Contains(content.Value, `Represents a user`)
 			tAssert.Contains(content.Value, `Hover should surface this documentation.`)
 		}

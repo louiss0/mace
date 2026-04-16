@@ -1,9 +1,9 @@
-|===|
+|=============================================|
 type Greeting: string /# A rendered greeting;
 
 schema User: {
-  name: string /# The user's display name;
-  age?: int /# Optional age in years;
+  name: string, /# The user's display name
+  age?: int /# Optional age in years
 };
 
 User user = {
@@ -12,7 +12,8 @@ User user = {
 };
 
 Greeting message = "Hello $(user.name)";
-|===|
+
+|=============================================|
 [output = data, schema = User]
 """
 # User Payload
@@ -22,5 +23,4 @@ This block emits user data and a rendered greeting.
 {
   name: user.name /# The emitted user name;
   age?: user.age /# The emitted optional age;
-  greeting: message /# A rendered greeting for the user;
 }

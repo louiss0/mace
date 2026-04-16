@@ -103,8 +103,8 @@ func (f *formatter) writeDataOutputBlock(fields []ast.OutputField) error {
 	}
 
 	f.writeLine("{")
-	for _, item := range fields {
-		line, err := formatOutputField(item)
+	for index, item := range fields {
+		line, err := formatOutputField(item, index < len(fields)-1)
 		if err != nil {
 			return err
 		}
@@ -121,8 +121,8 @@ func (f *formatter) writeSchemaOutputBlock(fields []ast.OutputSchemaField) error
 	}
 
 	f.writeLine("{")
-	for _, field := range fields {
-		line, err := formatOutputSchemaField(field)
+	for index, field := range fields {
+		line, err := formatOutputSchemaField(field, index < len(fields)-1)
 		if err != nil {
 			return err
 		}
@@ -178,7 +178,7 @@ func formatDeclaration(declaration ast.Declaration) (string, error) {
 			return "", err
 		}
 
-		return fmt.Sprintf("schema %s: %s;", typedDeclaration.Name, recordType), nil
+		return fmt.Sprintf("schema %s: %s", typedDeclaration.Name, recordType), nil
 	case ast.DocDeclaration:
 		return formatDocDeclaration(typedDeclaration)
 	case ast.EnumDeclaration:
@@ -190,24 +190,24 @@ func formatDeclaration(declaration ast.Declaration) (string, error) {
 
 func formatEnumDeclaration(declaration ast.EnumDeclaration) (string, error) {
 	if len(declaration.Members) == 0 {
-		return fmt.Sprintf("enum %s: %s {};", declaration.Name, declaration.BackingType.Name), nil
+		return fmt.Sprintf("enum %s: %s {}", declaration.Name, declaration.BackingType.Name), nil
 	}
 
 	lines := []string{fmt.Sprintf("enum %s: %s {", declaration.Name, declaration.BackingType.Name)}
-	for _, member := range declaration.Members {
-		value, err := formatEnumMember(member)
+	for index, member := range declaration.Members {
+		value, err := formatEnumMember(member, index < len(declaration.Members)-1)
 		if err != nil {
 			return "", err
 		}
 		lines = append(lines, "  "+value)
 	}
-	lines = append(lines, "};")
+	lines = append(lines, "}")
 	return strings.Join(lines, "\n"), nil
 }
 
-func formatEnumMember(member ast.EnumMember) (string, error) {
+func formatEnumMember(member ast.EnumMember, trailingComma bool) (string, error) {
 	if !member.HasValue {
-		return member.Name + ",", nil
+		return formatTrailingComma(member.Name, trailingComma), nil
 	}
 
 	value, err := formatExpressionWithDepth(member.Value, 0)
@@ -215,7 +215,7 @@ func formatEnumMember(member ast.EnumMember) (string, error) {
 		return "", err
 	}
 
-	return fmt.Sprintf("%s = %s,", member.Name, value), nil
+	return formatTrailingComma(fmt.Sprintf("%s = %s", member.Name, value), trailingComma), nil
 }
 
 func formatTypeReference(typeReference ast.TypeReference) (string, error) {
@@ -267,7 +267,7 @@ func formatRecordType(recordType ast.RecordType, depth int) (string, error) {
 	indent := strings.Repeat("  ", depth+1)
 	closingIndent := strings.Repeat("  ", depth)
 
-	for _, field := range recordType.Fields {
+	for index, field := range recordType.Fields {
 		typeReference, err := formatTypeReference(field.Type)
 		if err != nil {
 			return "", err
@@ -279,7 +279,8 @@ func formatRecordType(recordType ast.RecordType, depth int) (string, error) {
 		}
 
 		description := formatInlineDescription(field.Description)
-		lines = append(lines, fmt.Sprintf("%s%s%s: %s%s;", indent, field.Name, optional, typeReference, description))
+		line := fmt.Sprintf("%s%s%s: %s%s", indent, field.Name, optional, typeReference, description)
+		lines = append(lines, formatTrailingComma(line, index < len(recordType.Fields)-1))
 	}
 
 	lines = append(lines, closingIndent+"}")
@@ -330,7 +331,7 @@ func formatOutputDirectives(directives []ast.OutputDirective) (string, error) {
 	return "[" + strings.Join(parts, ", ") + "]", nil
 }
 
-func formatOutputField(field ast.OutputField) (string, error) {
+func formatOutputField(field ast.OutputField, trailingComma bool) (string, error) {
 	value, err := formatExpressionWithDepth(field.Value, 1)
 	if err != nil {
 		return "", err
@@ -342,10 +343,10 @@ func formatOutputField(field ast.OutputField) (string, error) {
 	}
 
 	description := formatInlineDescription(field.Description)
-	return fmt.Sprintf("%s%s: %s%s;", field.Name, optional, value, description), nil
+	return formatTrailingComma(fmt.Sprintf("%s%s: %s%s", field.Name, optional, value, description), trailingComma), nil
 }
 
-func formatOutputSchemaField(field ast.OutputSchemaField) (string, error) {
+func formatOutputSchemaField(field ast.OutputSchemaField, trailingComma bool) (string, error) {
 	typeReference, err := formatTypeReference(field.Type)
 	if err != nil {
 		return "", err
@@ -357,7 +358,7 @@ func formatOutputSchemaField(field ast.OutputSchemaField) (string, error) {
 	}
 
 	description := formatInlineDescription(field.Description)
-	return fmt.Sprintf("%s%s: %s%s;", field.Name, optional, typeReference, description), nil
+	return formatTrailingComma(fmt.Sprintf("%s%s: %s%s", field.Name, optional, typeReference, description), trailingComma), nil
 }
 
 func formatInlineDescription(description string) string {
@@ -491,7 +492,7 @@ func formatRecordLiteral(record ast.RecordLiteral, depth int) (string, error) {
 	lines := []string{"{"}
 	indent := strings.Repeat("  ", depth+1)
 	closingIndent := strings.Repeat("  ", depth)
-	for _, field := range record.Fields {
+	for index, field := range record.Fields {
 		value, err := formatExpressionWithDepth(field.Value, depth+1)
 		if err != nil {
 			return "", err
@@ -502,7 +503,7 @@ func formatRecordLiteral(record ast.RecordLiteral, depth int) (string, error) {
 			optional = "?"
 		}
 
-		lines = append(lines, formatMultilineRecordField(field.Name, optional, value, indent))
+		lines = append(lines, formatMultilineRecordField(field.Name, optional, value, indent, index < len(record.Fields)-1))
 	}
 
 	lines = append(lines, closingIndent+"}")
@@ -557,11 +558,19 @@ func formatMultilineArrayItem(value string, indent string, trailingComma bool) s
 	return strings.Join(lines, "\n")
 }
 
-func formatMultilineRecordField(name string, optional string, value string, indent string) string {
+func formatMultilineRecordField(name string, optional string, value string, indent string, trailingComma bool) string {
 	lines := strings.Split(value, "\n")
 	lines[0] = indent + fmt.Sprintf("%s%s: %s", name, optional, lines[0])
-	lines[len(lines)-1] += ";"
+	lines[len(lines)-1] = formatTrailingComma(lines[len(lines)-1], trailingComma)
 	return strings.Join(lines, "\n")
+}
+
+func formatTrailingComma(value string, trailingComma bool) string {
+	if !trailingComma {
+		return value
+	}
+
+	return value + ","
 }
 
 func tokenLexeme(tokenType lexer.TokenType) string {

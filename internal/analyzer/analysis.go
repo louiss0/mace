@@ -1131,10 +1131,10 @@ func importedSemanticSymbol(file ast.File, path string, name string) (semanticSy
 		detail := fmt.Sprintf("type %s: %s;", field.Name, fieldTypeDetail(field.Type))
 		if isSchemaTypeReference(field.Type, file) {
 			kind = protocol.CompletionItemKindStruct
-			detail = fmt.Sprintf("schema %s: %s;", field.Name, fieldTypeDetail(field.Type))
+			detail = fmt.Sprintf("schema %s: %s", field.Name, fieldTypeDetail(field.Type))
 		} else if isEnumTypeReference(field.Type, file) {
 			kind = protocol.CompletionItemKindEnum
-			detail = fmt.Sprintf("enum %s: %s;", field.Name, fieldTypeDetail(field.Type))
+			detail = fmt.Sprintf("enum %s: %s", field.Name, fieldTypeDetail(field.Type))
 		}
 
 		return semanticSymbol{
@@ -1250,7 +1250,7 @@ func summarizeValue(value processor.Value) string {
 		fields := lo.Map(names, func(name string, _ int) string {
 			return fmt.Sprintf("%s: %s", name, summarizeValue(value.Record[name]))
 		})
-		return "{ " + strings.Join(fields, "; ") + " }"
+		return "{ " + strings.Join(fields, ", ") + " }"
 	default:
 		return "unknown"
 	}
@@ -1277,7 +1277,7 @@ func valueTypeSummary(value processor.Value) string {
 		fields := lo.Map(names, func(name string, _ int) string {
 			return fmt.Sprintf("%s: %s", name, valueTypeSummary(value.Record[name]))
 		})
-		return "{ " + strings.Join(fields, "; ") + " }"
+		return "{ " + strings.Join(fields, ", ") + " }"
 	default:
 		return "unknown"
 	}

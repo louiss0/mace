@@ -303,9 +303,7 @@ func (p *Parser) parseSchemaDeclaration() (ast.Declaration, error) {
 		return nil, err
 	}
 
-	if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after schema declaration"); err != nil {
-		return nil, err
-	}
+	p.consumeOptionalToken(lexer.TokenSemicolon)
 
 	return ast.SchemaDeclaration{
 		NameToken: nameToken,
@@ -440,8 +438,8 @@ func (p *Parser) parseEnumDeclaration() (ast.Declaration, error) {
 		}
 		members = append(members, member)
 
-		if p.current().Type == lexer.TokenComma {
-			p.advance()
+		if err := p.consumeRecordSeparator("enum member"); err != nil {
+			return nil, err
 		}
 	}
 
@@ -449,9 +447,7 @@ func (p *Parser) parseEnumDeclaration() (ast.Declaration, error) {
 		return nil, err
 	}
 
-	if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after enum declaration"); err != nil {
-		return nil, err
-	}
+	p.consumeOptionalToken(lexer.TokenSemicolon)
 
 	return ast.EnumDeclaration{
 		NameToken:   nameToken,
@@ -552,7 +548,7 @@ func (p *Parser) parseSchemaField() (ast.SchemaField, error) {
 
 	description := p.parseOptionalInlineDescription()
 
-	if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after schema field"); err != nil {
+	if err := p.consumeRecordSeparator("schema field"); err != nil {
 		return ast.SchemaField{}, err
 	}
 
@@ -725,7 +721,7 @@ func (p *Parser) parseOutputField() (ast.OutputField, error) {
 
 	description := p.parseOptionalInlineDescription()
 
-	if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after output field"); err != nil {
+	if err := p.consumeRecordSeparator("output field"); err != nil {
 		return ast.OutputField{}, err
 	}
 
@@ -751,7 +747,7 @@ func (p *Parser) parseOutputSchemaField() (ast.OutputSchemaField, error) {
 
 	description := p.parseOptionalInlineDescription()
 
-	if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after output schema field"); err != nil {
+	if err := p.consumeRecordSeparator("output schema field"); err != nil {
 		return ast.OutputSchemaField{}, err
 	}
 
@@ -1049,7 +1045,7 @@ func (p *Parser) parseRecordField() (ast.RecordField, error) {
 		return ast.RecordField{}, err
 	}
 
-	if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after record field"); err != nil {
+	if err := p.consumeRecordSeparator("record field"); err != nil {
 		return ast.RecordField{}, err
 	}
 
@@ -1058,6 +1054,27 @@ func (p *Parser) parseRecordField() (ast.RecordField, error) {
 		Optional: optional,
 		Value:    value,
 	}, nil
+}
+
+func (p *Parser) consumeOptionalToken(tokenType lexer.TokenType) bool {
+	if p.current().Type != tokenType {
+		return false
+	}
+
+	p.advance()
+	return true
+}
+
+func (p *Parser) consumeRecordSeparator(context string) error {
+	switch p.current().Type {
+	case lexer.TokenComma, lexer.TokenSemicolon:
+		p.advance()
+		return nil
+	case lexer.TokenRBrace:
+		return nil
+	default:
+		return p.unexpectedTokenError(fmt.Sprintf("parser: expected ',' after %s", context))
+	}
 }
 
 func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token) (ast.Expression, error) {

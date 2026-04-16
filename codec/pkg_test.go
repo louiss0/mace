@@ -129,7 +129,7 @@ var _ = Describe("Parse", func() {
 	It("returns structured variant schema outputs", func() {
 		result, err := Parse(`[output = schema]
 {
-  value: variant[string, int];
+  value: variant[string, int]
 }`)
 		tAssert.NoError(err)
 		tAssert.Equal(map[SchemaField]SchemaType{
@@ -211,12 +211,12 @@ var _ = Describe("Marshal", func() {
 		})
 		tAssert.NoError(err)
 		tAssert.Equal(`{
-  active: true;
-  name: "Ada";
+  active: true,
+  name: "Ada",
   profile: {
-    level: 2;
-  };
-  scores: [1, 2, 3];
+    level: 2
+  },
+  scores: [1, 2, 3]
 }`, source)
 	})
 
@@ -228,11 +228,11 @@ var _ = Describe("Marshal", func() {
 		})
 		tAssert.NoError(err)
 		tAssert.Equal(`{
-  name: "Ada";
-  enabled: true;
+  name: "Ada",
+  enabled: true,
   profile: {
-    level: 3;
-  };
+    level: 3
+  }
 }`, source)
 	})
 
@@ -250,8 +250,8 @@ var _ = Describe("MarshalOutput", func() {
 		})
 		tAssert.NoError(err)
 		tAssert.Equal(`{
-  age: 27;
-  name: "Ada";
+  age: 27,
+  name: "Ada"
 }`, source)
 	})
 
@@ -274,12 +274,12 @@ var _ = Describe("Import", func() {
 		tAssert.NoError(err)
 		tAssert.Equal(`[output = data]
 {
-  enabled: true;
-  name: "Ada";
+  enabled: true,
+  name: "Ada",
   profile: {
-    level: 2;
-  };
-  scores: [1, 2, 3];
+    level: 2
+  },
+  scores: [1, 2, 3]
 }`, source)
 	})
 
@@ -292,11 +292,11 @@ profile:
 		tAssert.NoError(err)
 		tAssert.Equal(`[output = data]
 {
-  enabled: true;
-  name: "Ada";
+  enabled: true,
+  name: "Ada",
   profile: {
-    level: 2;
-  };
+    level: 2
+  }
 }`, source)
 	})
 
@@ -311,12 +311,12 @@ level = 2
 		tAssert.NoError(err)
 		tAssert.Equal(`[output = data]
 {
-  enabled: true;
-  name: "Ada";
+  enabled: true,
+  name: "Ada",
   profile: {
-    level: 2;
-  };
-  scores: [1, 2, 3];
+    level: 2
+  },
+  scores: [1, 2, 3]
 }`, source)
 	})
 
@@ -328,7 +328,7 @@ level = 2
 		tAssert.NoError(err)
 		tAssert.Equal(`[output = data]
 {
-  name: "Ada";
+  name: "Ada"
 }`, source)
 	})
 
@@ -369,7 +369,7 @@ level = 2
 		tAssert.NoError(err)
 		tAssert.Equal(`[output = schema]
 {
-  name: string;
+  name: string
 }`, source)
 	})
 
@@ -426,7 +426,7 @@ level = 2
 			tAssert.NoError(err)
 			tAssert.Equal(`[output = schema]
 {
-  name: string;
+  name: string
 }`, source)
 		},
 		Entry("file URL", "file-url", "requests/file-url-schema.json"),
@@ -458,7 +458,7 @@ level = 2
 		tAssert.NoError(err)
 		tAssert.Equal(`[output = schema]
 {
-  name: string;
+  name: string
 }`, source)
 	})
 
@@ -541,39 +541,39 @@ level = 2
 		},
 		Entry("oneOf becomes a variant", "oneOf", `|===|
 schema Profile: {
-  name: string;
-};
+  name: string
+}
 schema Audit: {
-  created_at: string;
-};
+  created_at: string
+}
 |===|
 [output = schema]
 {
-  value: variant[Profile, Audit];
+  value: variant[Profile, Audit]
 }`),
 		Entry("anyOf becomes a variant", "anyOf", `|===|
 schema Profile: {
-  name: string;
-};
+  name: string
+}
 schema Audit: {
-  created_at: string;
-};
+  created_at: string
+}
 |===|
 [output = schema]
 {
-  value: variant[Profile, Audit];
+  value: variant[Profile, Audit]
 }`),
 		Entry("allOf becomes a union", "allOf", `|===|
 schema Profile: {
-  name: string;
-};
+  name: string
+}
 schema Audit: {
-  created_at: string;
-};
+  created_at: string
+}
 |===|
 [output = schema]
 {
-  value: union[Profile, Audit];
+  value: union[Profile, Audit]
 }`),
 	)
 })
@@ -596,27 +596,27 @@ var _ = Describe("ImportSchema", func() {
 		},
 		Entry("string-int", `["string", "integer"]`, `[output = schema]
 {
-  value: variant[string, int];
+  value: variant[string, int]
 }`),
 		Entry("string-float", `["string", "number"]`, `[output = schema]
 {
-  value: variant[string, float];
+  value: variant[string, float]
 }`),
 		Entry("string-boolean", `["string", "boolean"]`, `[output = schema]
 {
-  value: variant[string, boolean];
+  value: variant[string, boolean]
 }`),
 		Entry("int-float", `["integer", "number"]`, `[output = schema]
 {
-  value: variant[int, float];
+  value: variant[int, float]
 }`),
 		Entry("int-boolean", `["integer", "boolean"]`, `[output = schema]
 {
-  value: variant[int, boolean];
+  value: variant[int, boolean]
 }`),
 		Entry("float-boolean", `["number", "boolean"]`, `[output = schema]
 {
-  value: variant[float, boolean];
+  value: variant[float, boolean]
 }`),
 	)
 
@@ -633,8 +633,8 @@ var _ = Describe("ImportSchema", func() {
 		tAssert.NoError(err)
 		tAssert.Equal(`[output = schema]
 {
-  age?: int;
-  name: string;
+  age?: int,
+  name: string
 }`, source)
 	})
 
@@ -651,7 +651,7 @@ var _ = Describe("ImportSchema", func() {
 		tAssert.NoError(err)
 		tAssert.Equal(`[output = schema]
 {
-  nickname?: string;
+  nickname?: string
 }`, source)
 	})
 
@@ -669,7 +669,7 @@ var _ = Describe("ImportSchema", func() {
 		tAssert.NoError(err)
 		tAssert.Equal(`[output = schema]
 {
-  value: variant[string, int];
+  value: variant[string, int]
 }`, source)
 	})
 
@@ -695,8 +695,8 @@ var _ = Describe("ImportSchema", func() {
 		tAssert.Equal(`[output = schema]
 {
   users: array<{
-    name: string;
-  }>;
+    name: string
+  }>
 }`, source)
 	})
 
@@ -715,12 +715,12 @@ var _ = Describe("ImportSchema", func() {
 		tAssert.Equal(`|===|
 enum Status: string {
   Draft = "draft",
-  Published = "published",
-};
+  Published = "published"
+}
 |===|
 [output = schema]
 {
-  status: Status;
+  status: Status
 }`, source)
 	})
 
@@ -753,17 +753,17 @@ enum Status: string {
 		tAssert.NoError(err)
 		tAssert.Equal(`|===|
 schema Profile: {
-  name: string;
-};
+  name: string
+}
 enum Role: string {
   Admin = "admin",
-  Member = "member",
-};
+  Member = "member"
+}
 |===|
 [output = schema]
 {
-  profile: Profile;
-  role: Role;
+  profile: Profile,
+  role: Role
 }`, source)
 	})
 
@@ -781,12 +781,12 @@ enum Role: string {
 		tAssert.NoError(err)
 		tAssert.Equal(`|===|
 enum Status: string {
-  Draft = "draft",
-};
+  Draft = "draft"
+}
 |===|
 [output = schema]
 {
-  status: Status;
+  status: Status
 }`, source)
 	})
 
@@ -843,11 +843,11 @@ type Tags: array<string>;
 |===|
 [output = schema]
 {
-  count: Count;
-  enabled: Enabled;
-  name: Name;
-  ratio: Ratio;
-  tags: Tags;
+  count: Count,
+  enabled: Enabled,
+  name: Name,
+  ratio: Ratio,
+  tags: Tags
 }`, source)
 	})
 
@@ -873,7 +873,7 @@ type Value: variant[string, int];
 |===|
 [output = schema]
 {
-  value: Value;
+  value: Value
 }`, source)
 	})
 
@@ -903,16 +903,16 @@ type Value: variant[string, int];
 		tAssert.Equal(`|===|
 enum Role: string {
   Admin = "admin",
-  Member = "member",
-};
+  Member = "member"
+}
 enum State: string {
   Active = "active",
-  Paused = "paused",
-};
+  Paused = "paused"
+}
 |===|
 [output = schema]
 {
-  value: variant[Role, State];
+  value: variant[Role, State]
 }`, source)
 	})
 
@@ -942,12 +942,12 @@ enum State: string {
 		tAssert.NoError(err)
 		tAssert.Equal(`|===|
 schema Profile: {
-  name: string;
-};
+  name: string
+}
 |===|
 [output = schema]
 {
-  value: variant[Profile, string];
+  value: variant[Profile, string]
 }`, source)
 	})
 
@@ -984,15 +984,15 @@ schema Profile: {
 		tAssert.NoError(err)
 		tAssert.Equal(`|===|
 schema Profile: {
-  name: string;
-};
+  name: string
+}
 schema Audit: {
-  created_at: string;
-};
+  created_at: string
+}
 |===|
 [output = schema]
 {
-  value: union[Profile, Audit];
+  value: union[Profile, Audit]
 }`, source)
 	})
 
@@ -1047,12 +1047,12 @@ schema Audit: {
 		tAssert.NoError(err)
 		tAssert.Equal(`|===|
 schema Profile: {
-  name: string;
-};
+  name: string
+}
 |===|
 [output = schema]
 {
-  value: variant[Profile, string];
+  value: variant[Profile, string]
 }`, source)
 	})
 
@@ -1109,13 +1109,13 @@ schema Profile: {
 		tAssert.NoError(err)
 		tAssert.Equal(`|===|
 schema Node: {
-  child?: Node;
-  name: string;
-};
+  child?: Node,
+  name: string
+}
 |===|
 [output = schema]
 {
-  root: Node;
+  root: Node
 }`, source)
 	})
 
@@ -1148,13 +1148,13 @@ schema Node: {
 		tAssert.NoError(err)
 		tAssert.Equal(`|===|
 schema User: {
-  name: string;
-};
+  name: string
+}
 type Users: array<User>;
 |===|
 [output = schema]
 {
-  users: Users;
+  users: Users
 }`, source)
 	})
 
@@ -1178,12 +1178,12 @@ type Users: array<User>;
 		tAssert.Equal(`|===|
 enum Status: int {
   Value0 = 0,
-  Value1 = 1,
-};
+  Value1 = 1
+}
 |===|
 [output = schema]
 {
-  status: Status;
+  status: Status
 }`, source)
 	})
 
@@ -1203,7 +1203,7 @@ enum Status: int {
 		tAssert.NoError(err)
 		tAssert.Equal(`[output = data]
 {
-  created_at: "1979-05-27T07:32:00Z";
+  created_at: "1979-05-27T07:32:00Z"
 }`, source)
 	})
 })
@@ -1237,8 +1237,8 @@ var _ = Describe("Unmarshal", func() {
 	It("unmarshals output records into maps", func() {
 		input := `[output = data]
 {
-  age: 27;
-  name: "Ada";
+  age: 27,
+  name: "Ada"
 }`
 
 		target := map[string]any{}

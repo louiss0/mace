@@ -202,7 +202,7 @@ schema Response: { payload: Envelope; };
 
 		tAssert.Contains(labels, "$self")
 		tAssert.Contains(labels, "Role.Admin")
-		tAssert.Contains(labels, `{ name: ""; }`)
+		tAssert.Contains(labels, `{ name: "" }`)
 	})
 
 	It("suggests enum values for incomplete enum variable initializers", func() {

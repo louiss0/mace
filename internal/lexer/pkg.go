@@ -81,7 +81,7 @@ func (l *Lexer) NextToken() (Token, error) {
 				l.advance()
 			}
 			for !l.isAtEnd() {
-				if l.peek() == ';' || l.peek() == '\n' || l.peek() == '\r' {
+				if l.peek() == ',' || l.peek() == ';' || l.peek() == '\n' || l.peek() == '\r' {
 					break
 				}
 				l.advance()

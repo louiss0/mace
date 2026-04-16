@@ -45,20 +45,20 @@ from "./shared.mace" import User;
 |===|
 enum Environment: string {
   Dev,
-  Prod,
-};
+  Prod
+}
 
 Environment env = Environment.Prod;
 User current = {
-  name: "Ada";
-  age: 27;
+  name: "Ada",
+  age: 27
 };
 |===|
 
 [output = data]
 {
-  env: env;
-  current: current;
+  env: env,
+  current: current
 }
 ```
 
@@ -93,8 +93,8 @@ Identity fallback = 42;
 |===|
 [output = data]
 {
-  primary: primary;
-  fallback: fallback;
+  primary: primary,
+  fallback: fallback
 }
 ```
 
@@ -103,17 +103,17 @@ one closed record shape.
 
 ```mace
 |===|
-schema Profile: { name: string; };
-schema Audit: { created_at: string; };
+schema Profile: { name: string };
+schema Audit: { created_at: string };
 type User: union[Profile, Audit];
 User value = {
-  name: "Ada";
-  created_at: "2026-04-08";
+  name: "Ada",
+  created_at: "2026-04-08"
 };
 |===|
 [output = data]
 {
-  value: value;
+  value: value
 }
 ```
 
@@ -163,7 +163,7 @@ mace json ./config.mace
 You can provide injectable values with `--inject` using a Mace record literal:
 
 ```bash
-mace json ./config.mace --inject '{ env: "prod"; token: "abc"; }'
+mace json ./config.mace --inject '{ env: "prod", token: "abc" }'
 ```
 
 Example input:
@@ -175,8 +175,8 @@ int base = 2 + 2;
 |===|
 [output = data]
 {
-  env: env;
-  base: base;
+  env: env,
+  base: base
 }
 ```
 
@@ -282,8 +282,8 @@ import (
 func main() {
 	result, err := codec.Parse(`[output = data]
 {
-  name: "Ada";
-  enabled: true;
+  name: "Ada",
+  enabled: true
 }`)
 	if err != nil {
 		panic(err)
@@ -301,7 +301,7 @@ injectable string env;
 |===|
 [output = data]
 {
-  env: env;
+  env: env
 }`, map[string]any{
 	"env": "prod",
 })

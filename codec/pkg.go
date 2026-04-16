@@ -658,8 +658,9 @@ func formatRecord(fields []recordField, depth int) string {
 	closingIndent := strings.Repeat("  ", depth)
 	lines := []string{"{"}
 
-	for _, field := range fields {
-		lines = append(lines, fmt.Sprintf("%s%s: %s;", indent, field.name, field.value))
+	for index, field := range fields {
+		line := fmt.Sprintf("%s%s: %s", indent, field.name, field.value)
+		lines = append(lines, appendTrailingComma(line, index < len(fields)-1))
 	}
 
 	lines = append(lines, closingIndent+"}")
@@ -675,16 +676,25 @@ func formatSchemaRecord(fields []schemaField, depth int) string {
 	closingIndent := strings.Repeat("  ", depth)
 	lines := []string{"{"}
 
-	for _, field := range fields {
+	for index, field := range fields {
 		optionalMarker := ""
 		if field.optional {
 			optionalMarker = "?"
 		}
-		lines = append(lines, fmt.Sprintf("%s%s%s: %s;", indent, field.name, optionalMarker, formatSchemaType(field.value, depth+1)))
+		line := fmt.Sprintf("%s%s%s: %s", indent, field.name, optionalMarker, formatSchemaType(field.value, depth+1))
+		lines = append(lines, appendTrailingComma(line, index < len(fields)-1))
 	}
 
 	lines = append(lines, closingIndent+"}")
 	return strings.Join(lines, "\n")
+}
+
+func appendTrailingComma(value string, trailingComma bool) string {
+	if !trailingComma {
+		return value
+	}
+
+	return value + ","
 }
 
 func formatSchemaType(value inferredType, depth int) string {
@@ -1230,7 +1240,7 @@ func (context *jsonSchemaContext) declarationForSchema(name string, record map[s
 
 	switch valueType.kind {
 	case inferredTypeRecord:
-		return inferredType{kind: inferredTypeNamed, name: name, namedCategory: "schema"}, fmt.Sprintf("schema %s: %s;", name, formatSchemaRecord(valueType.record.fields, 0)), nil
+		return inferredType{kind: inferredTypeNamed, name: name, namedCategory: "schema"}, fmt.Sprintf("schema %s: %s", name, formatSchemaRecord(valueType.record.fields, 0)), nil
 	default:
 		return inferredType{kind: inferredTypeNamed, name: name, namedCategory: "alias"}, fmt.Sprintf("type %s: %s;", name, formatSchemaType(valueType, 0)), nil
 	}
@@ -1316,10 +1326,11 @@ func jsonSchemaEnumDeclaration(name string, values []any) (string, inferredType,
 	}
 
 	lines := []string{fmt.Sprintf("enum %s: %s {", name, backingType)}
-	for _, member := range members {
-		lines = append(lines, fmt.Sprintf("  %s = %s,", member.name, member.value))
+	for index, member := range members {
+		line := fmt.Sprintf("  %s = %s", member.name, member.value)
+		lines = append(lines, appendTrailingComma(line, index < len(members)-1))
 	}
-	lines = append(lines, "};")
+	lines = append(lines, "}")
 
 	return strings.Join(lines, "\n"), inferredType{kind: inferredTypeNamed, name: name, namedCategory: "enum", backingType: backingType}, nil
 }
