@@ -267,19 +267,19 @@ schema_doc User {
   description: """
 # User
 """;
-}
+};
 
 schema_doc Status {
   summary: "Represents a status.";
-}
+};
 
 gen_doc Name {
   summary: "Represents a name.";
-}
+};
 
 gen_doc greeting {
   summary: "Rendered greeting.";
-}
+};
 |===|`)),
 		Entry("doc fixtures", "testdata/docs/public_contract.mace"),
 	)
@@ -316,14 +316,14 @@ schema User: { name: string; };
 schema_doc User {
   summary: "One";
   summary: "Two";
-}
+};
 |===|`), "duplicate schema_doc entry"),
 		Entry("schema_doc rejects type targets", wrapScriptWithOutput(`|===|
 type Status: string;
 
 schema_doc Status {
   summary: "Invalid target.";
-}
+};
 |===|`), "schema_doc target"),
 		Entry("output inline doc requires a directive list", `"""
 Invalid: no directive list
@@ -342,7 +342,7 @@ type Name: string /# Duplicate inline docs;
 
 gen_doc Name {
   summary: "Public name type";
-}
+};
 |===|`), "already documented"),
 		Entry("schema field inline description conflicts with schema_doc props", wrapScriptWithOutput(`|===|
 schema User: {
@@ -353,7 +353,7 @@ schema_doc User {
   props: {
     name: "The user's display name";
   };
-}
+};
 |===|`), "already documented"),
 		Entry("schema_doc props reject unknown schema fields", wrapScriptWithOutput(`|===|
 schema User: {
@@ -364,7 +364,7 @@ schema_doc User {
   props: {
     age: "Unknown field";
   };
-}
+};
 |===|`), "does not exist"),
 		Entry("gen_doc props reject type targets", wrapScriptWithOutput(`|===|
 type Name: string;
@@ -373,12 +373,12 @@ gen_doc Name {
   props: {
     value: "Nope";
   };
-}
+};
 |===|`), "require a schema target"),
 		Entry("schema_doc must appear after its schema declaration", wrapScriptWithOutput(`|===|
 schema_doc User {
   summary: "Late-bound docs";
-}
+};
 
 schema User: {
   name: string;
@@ -387,7 +387,7 @@ schema User: {
 		Entry("schema_doc must appear after its enum declaration", wrapScriptWithOutput(`|===|
 schema_doc Status {
   summary: "Late-bound docs";
-}
+};
 
 enum Status: string {
   Pending,
@@ -396,14 +396,14 @@ enum Status: string {
 		Entry("gen_doc must appear after its type declaration", wrapScriptWithOutput(`|===|
 gen_doc Name {
   summary: "Late-bound docs";
-}
+};
 
 type Name: string;
 |===|`), "must appear after its type or variable declaration"),
 		Entry("gen_doc must appear after its variable declaration", wrapScriptWithOutput(`|===|
 gen_doc name {
   summary: "Late-bound docs";
-}
+};
 
 string name = "Ada";
 |===|`), "must appear after its type or variable declaration"),
@@ -610,6 +610,27 @@ array<Point> points = [
 ];
 |===|`), "missing required field"),
 	)
+
+	It("accepts schema member access in schema-validated output", func() {
+		processor := New()
+		_, err := processor.Process(`|===|
+schema User: {
+  id: string;
+  name: string;
+};
+
+User user = {
+  id: "user_1";
+  name: "Ada";
+};
+|===|
+[output = data, schema = User]
+{
+  id: user.id;
+  name: user.name;
+}`)
+		tAssert.NoError(err)
+	})
 
 	It("uses injected values for injectable variables", func() {
 		processor := NewWithInjections(map[string]Value{

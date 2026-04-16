@@ -23,7 +23,7 @@ A reusable schema exposed to imports.
     name: "The user's display name";
     age: "Optional age in years";
   };
-}
+};
 |=======================================|
 [output = schema]
 """

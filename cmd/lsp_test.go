@@ -1527,7 +1527,7 @@ schema_doc User {
 # User
 Reusable schema.
 """;
-}
+};
 |===|
 [output = schema]
 { user: User; }`, nil)

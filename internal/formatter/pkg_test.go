@@ -81,7 +81,7 @@ schema_doc User {
   description: """
 # User
 """;
-}
+};
 |===|
 [output = schema]
 """
@@ -101,7 +101,7 @@ schema_doc User {
   description: """
 # User
 """;
-}
+};
 |================================|
 [output = schema]
 """

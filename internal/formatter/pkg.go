@@ -308,7 +308,7 @@ func formatDocDeclaration(declaration ast.DocDeclaration) (string, error) {
 		}
 		lines = append(lines, "  };")
 	}
-	lines = append(lines, "}")
+	lines = append(lines, "};")
 	return strings.Join(lines, "\n"), nil
 }
 

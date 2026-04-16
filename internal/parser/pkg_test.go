@@ -611,7 +611,7 @@ schema_doc User {
   description: """
 # User
 """;
-}
+};
 |===|
 [output = schema]
 { user: User; }`

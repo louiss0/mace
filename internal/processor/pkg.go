@@ -758,7 +758,7 @@ func exportedOutputFieldType(field ast.OutputField, output ast.OutputBlock, cont
 		}
 	}
 
-	inferredType, err := inferExpressionType(field.Value, context.variables, context.symbols, context.types, context.enums)
+	inferredType, err := inferExpressionType(field.Value, context.variables, context.symbols, context.types, context.schemas, context.enums)
 	if err != nil {
 		return valueType{}, err
 	}
@@ -994,7 +994,7 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 		}
 
 		if decl.HasValue {
-			actualType, err := inferExpressionType(decl.Value, variables, symbols, types, enums)
+			actualType, err := inferExpressionType(decl.Value, variables, symbols, types, schemas, enums)
 			if err != nil {
 				return err
 			}
@@ -1385,7 +1385,7 @@ func validateOutputSchema(schemaName string, items []ast.OutputField, variables 
 		if err != nil {
 			return err
 		}
-		actualType, err := inferExpressionType(item.Value, variables, symbols, types, enums)
+		actualType, err := inferExpressionType(item.Value, variables, symbols, types, schemas, enums)
 		if err != nil {
 			return err
 		}
@@ -1413,7 +1413,7 @@ func validateExpressionAgainstType(expression ast.Expression, expectedType value
 
 	switch expectedType.kind {
 	case ValueString, ValueInt, ValueFloat, ValueBoolean:
-		actualType, err := inferExpressionType(expression, variables, symbols, types, enums)
+		actualType, err := inferExpressionType(expression, variables, symbols, types, schemas, enums)
 		if err != nil {
 			return err
 		}
@@ -1463,7 +1463,7 @@ func validateExpressionAgainstType(expression ast.Expression, expectedType value
 }
 
 func validateExpressionAgainstVariantMembers(expression ast.Expression, members []valueType, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) error {
-	actualType, err := inferExpressionType(expression, variables, symbols, types, enums)
+	actualType, err := inferExpressionType(expression, variables, symbols, types, schemas, enums)
 	if err != nil {
 		return err
 	}
@@ -1528,7 +1528,7 @@ func validateRecordLiteralAgainstRecordType(expr ast.RecordLiteral, recordType a
 		if err != nil {
 			return err
 		}
-		actualType, err := inferExpressionType(recordField.Value, variables, symbols, types, enums)
+		actualType, err := inferExpressionType(recordField.Value, variables, symbols, types, schemas, enums)
 		if err != nil {
 			return err
 		}
@@ -2785,7 +2785,7 @@ func schemaTypeFromTypeReference(typeRef ast.TypeReference) (SchemaType, error) 
 	}
 }
 
-func inferExpressionType(expression ast.Expression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, enums *enumRegistry) (valueType, error) {
+func inferExpressionType(expression ast.Expression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) (valueType, error) {
 	switch expr := expression.(type) {
 	case ast.Identifier:
 		if variableType, ok := variables.Get(expr.Name); ok {
@@ -2808,7 +2808,7 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 			}
 		}
 
-		targetType, err := inferExpressionType(expr.Target, variables, symbols, types, enums)
+		targetType, err := inferExpressionType(expr.Target, variables, symbols, types, schemas, enums)
 		if err != nil {
 			return valueType{}, err
 		}
@@ -2818,7 +2818,23 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 		if targetType.kind != ValueRecord {
 			return valueType{}, validationErrorf("member access requires a record value")
 		}
-		return valueType{kind: ValueUnknown}, nil
+		if targetType.record == nil {
+			if targetType.schemaName == "" {
+				return valueType{kind: ValueUnknown}, nil
+			}
+			record, ok := schemas.Get(targetType.schemaName)
+			if !ok {
+				return valueType{kind: ValueUnknown}, nil
+			}
+			targetType.record = &record
+		}
+		for _, field := range targetType.record.Fields {
+			if field.Name != expr.Name {
+				continue
+			}
+			return resolveValueType(field.Type, symbols, types, schemas, enums)
+		}
+		return valueType{}, validationErrorf("unknown field %q", expr.Name)
 	case ast.IntLiteral:
 		return valueType{kind: ValueInt}, nil
 	case ast.FloatLiteral:
@@ -2828,34 +2844,34 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 	case ast.BooleanLiteral:
 		return valueType{kind: ValueBoolean}, nil
 	case ast.ArrayLiteral:
-		return inferArrayLiteralType(expr, variables, symbols, types, enums)
+		return inferArrayLiteralType(expr, variables, symbols, types, schemas, enums)
 	case ast.RecordLiteral:
 		return valueType{kind: ValueRecord}, nil
 	case ast.SelfReference:
 		return valueType{kind: ValueUnknown}, nil
 	case ast.PrefixExpression:
-		return inferPrefixType(expr, variables, symbols, types, enums)
+		return inferPrefixType(expr, variables, symbols, types, schemas, enums)
 	case ast.InfixExpression:
-		return inferInfixType(expr, variables, symbols, types, enums)
+		return inferInfixType(expr, variables, symbols, types, schemas, enums)
 	case ast.ConditionalExpression:
-		return inferConditionalType(expr, variables, symbols, types, enums)
+		return inferConditionalType(expr, variables, symbols, types, schemas, enums)
 	default:
 		return valueType{}, validationErrorf("unknown expression")
 	}
 }
 
-func inferArrayLiteralType(expr ast.ArrayLiteral, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, enums *enumRegistry) (valueType, error) {
+func inferArrayLiteralType(expr ast.ArrayLiteral, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) (valueType, error) {
 	if len(expr.Elements) == 0 {
 		return valueType{kind: ValueArray, element: &valueType{kind: ValueUnknown}}, nil
 	}
 
-	firstType, err := inferExpressionType(expr.Elements[0], variables, symbols, types, enums)
+	firstType, err := inferExpressionType(expr.Elements[0], variables, symbols, types, schemas, enums)
 	if err != nil {
 		return valueType{}, err
 	}
 
 	for _, element := range expr.Elements[1:] {
-		elementType, err := inferExpressionType(element, variables, symbols, types, enums)
+		elementType, err := inferExpressionType(element, variables, symbols, types, schemas, enums)
 		if err != nil {
 			return valueType{}, err
 		}
@@ -2867,8 +2883,8 @@ func inferArrayLiteralType(expr ast.ArrayLiteral, variables *variableRegistry, s
 	return valueType{kind: ValueArray, element: &firstType}, nil
 }
 
-func inferPrefixType(expr ast.PrefixExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, enums *enumRegistry) (valueType, error) {
-	rightType, err := inferExpressionType(expr.Right, variables, symbols, types, enums)
+func inferPrefixType(expr ast.PrefixExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) (valueType, error) {
+	rightType, err := inferExpressionType(expr.Right, variables, symbols, types, schemas, enums)
 	if err != nil {
 		return valueType{}, err
 	}
@@ -2894,12 +2910,12 @@ func inferPrefixType(expr ast.PrefixExpression, variables *variableRegistry, sym
 	}
 }
 
-func inferInfixType(expr ast.InfixExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, enums *enumRegistry) (valueType, error) {
-	leftType, err := inferExpressionType(expr.Left, variables, symbols, types, enums)
+func inferInfixType(expr ast.InfixExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) (valueType, error) {
+	leftType, err := inferExpressionType(expr.Left, variables, symbols, types, schemas, enums)
 	if err != nil {
 		return valueType{}, err
 	}
-	rightType, err := inferExpressionType(expr.Right, variables, symbols, types, enums)
+	rightType, err := inferExpressionType(expr.Right, variables, symbols, types, schemas, enums)
 	if err != nil {
 		return valueType{}, err
 	}
@@ -2955,8 +2971,8 @@ func inferNumericBinary(operator lexer.TokenType, leftType, rightType valueType)
 	return valueType{kind: leftType.kind}, nil
 }
 
-func inferConditionalType(expr ast.ConditionalExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, enums *enumRegistry) (valueType, error) {
-	conditionType, err := inferExpressionType(expr.Condition, variables, symbols, types, enums)
+func inferConditionalType(expr ast.ConditionalExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) (valueType, error) {
+	conditionType, err := inferExpressionType(expr.Condition, variables, symbols, types, schemas, enums)
 	if err != nil {
 		return valueType{}, err
 	}
@@ -2964,11 +2980,11 @@ func inferConditionalType(expr ast.ConditionalExpression, variables *variableReg
 		return valueType{}, validationErrorf("type mismatch: expected boolean condition")
 	}
 
-	thenType, err := inferExpressionType(expr.Then, variables, symbols, types, enums)
+	thenType, err := inferExpressionType(expr.Then, variables, symbols, types, schemas, enums)
 	if err != nil {
 		return valueType{}, err
 	}
-	elseType, err := inferExpressionType(expr.Else, variables, symbols, types, enums)
+	elseType, err := inferExpressionType(expr.Else, variables, symbols, types, schemas, enums)
 	if err != nil {
 		return valueType{}, err
 	}

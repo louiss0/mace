@@ -402,6 +402,9 @@ func (p *Parser) parseDocDeclaration(kind ast.DocumentationKind, keywordType lex
 	if _, err := p.consume(lexer.TokenRBrace, fmt.Sprintf("parser: expected '}' to close %s declaration", keyword)); err != nil {
 		return nil, err
 	}
+	if _, err := p.consume(lexer.TokenSemicolon, fmt.Sprintf("parser: expected ';' after %s declaration", keyword)); err != nil {
+		return nil, err
+	}
 
 	return ast.DocDeclaration{Kind: kind, KeywordToken: keywordToken, TargetToken: targetToken, Target: targetToken.Lexeme, Documentation: documentation}, nil
 }
