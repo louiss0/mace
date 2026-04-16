@@ -1,4 +1,4 @@
-|===|
+|==========================================|
 schema User: {
   id: string /# Stable user identifier;
   name: string /# The user's display name;
@@ -9,8 +9,8 @@ User user = {
   name: "Ada";
 };
 
-string greeting = "Hello $(user.name)" /# Rendered greeting;
-|===|
+string greeting = "Hello $(user.name)";
+|==========================================|
 [output = data, schema = User]
 """
 # User Payload

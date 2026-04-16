@@ -1,9 +1,9 @@
-|================================================|
+|=======================================|
 type UserID: string;
 
 gen_doc UserID {
   summary: "A stable user identifier.";
-}
+};
 
 schema User: {
   id: UserID;
@@ -24,7 +24,7 @@ A reusable schema exposed to imports.
     age: "Optional age in years";
   };
 }
-|================================================|
+|=======================================|
 [output = schema]
 """
 # Public User Contract
