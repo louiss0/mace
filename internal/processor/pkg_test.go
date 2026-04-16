@@ -281,6 +281,26 @@ gen_doc greeting {
   summary: "Rendered greeting.";
 };
 |===|`)),
+		Entry("inline descriptions before and after separators", `|===|
+schema User: {
+  name: string /# Name before separator,
+  age?: int, /# Age after separator
+};
+User user = {
+  name: "Ada" /# Record name before separator,
+  age?: 27, /# Record age after separator
+};
+|===|
+[output = data]
+{
+  user_name: user.name, /# Output value after separator
+  user_age?: user.age /# Output value before separator
+}`),
+		Entry("schema output fields with inline descriptions before and after separators", `[output = schema]
+{
+  name: string /# Name before separator,
+  age?: int, /# Age after separator
+}`),
 		Entry("doc fixtures", "testdata/docs/public_contract.mace"),
 	)
 

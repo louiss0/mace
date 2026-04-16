@@ -10,7 +10,11 @@ comment_body       = block_comment_body | line_comment_body ;
 block_comment_body = ? a comment body whose nearest terminator is "=/" before newline ? ;
 line_comment_body  = ? a comment body that ends at the next newline when no "=/" appears first ? ;
 inline_description = "/#" , ws0 , description_text ;
-description_text   = ? any character sequence up to but not including ';' or newline ? ;
+description_text   = ? any character sequence up to but not including ',' ';' or newline ? ;
+
+(* `;` terminates completed declaration entities in Mace. Record-style fields
+   may use `,` or `;` separators, and inline descriptions may appear
+   immediately before or after that separator. *)
 
 ws0                = { whitespace | comment } ;
 ws1                = ( whitespace | comment ) , ws0 ;
@@ -194,8 +198,11 @@ schema_field
   = identifier , [ "?" ] , ws0 ,
     ":" , ws0 ,
     type_reference ,
-    [ ws0 , inline_description ] ,
-    ws0 , ";" ;
+    field_terminator ;
+
+field_terminator
+  = ws0 , ( "," | ";" ) , [ ws0 , inline_description ]
+  | [ ws0 , inline_description ] , [ ws0 , ( "," | ";" ) ] ;
 
 (* ===================================================== *)
 (* 9. TYPE REFERENCES                                   *)
@@ -262,15 +269,13 @@ output_field
   = identifier , [ "?" ] , ws0 ,
     ":" , ws0 ,
     expression ,
-    [ ws0 , inline_description ] ,
-    ws0 , ";" ;
+    field_terminator ;
 
 output_schema_field
   = identifier , [ "?" ] , ws0 ,
     ":" , ws0 ,
     type_reference ,
-    [ ws0 , inline_description ] ,
-    ws0 , ";" ;
+    field_terminator ;
 
 (* ===================================================== *)
 (* 11. EXPRESSIONS (JS-LIKE, PURE, WITH PRECEDENCE)      *)
@@ -389,4 +394,4 @@ record_field
   = identifier , [ "?" ] , ws0 ,
     ":" , ws0 ,
     expression ,
-    ws0 , ";" ;
+    field_terminator ;

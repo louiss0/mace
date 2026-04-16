@@ -1527,6 +1527,9 @@ schema_doc User {
 # User
 Reusable schema.
 """;
+  props: {
+    name: "The user's display name";
+  };
 };
 |===|
 [output = schema]
@@ -1535,7 +1538,7 @@ Reusable schema.
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
-				Position:     protocol.Position{Line: 12, Character: 8},
+				Position:     protocol.Position{Line: 15, Character: 8},
 			},
 		}, nil)
 		tAssert.True(validMethod)
@@ -1554,6 +1557,8 @@ Reusable schema.
 			tAssert.Contains(content.Value, `schema User: { name: string };`)
 			tAssert.Contains(content.Value, `Represents a user.`)
 			tAssert.Contains(content.Value, `# User`)
+			tAssert.Contains(content.Value, `Props:`)
+			tAssert.Contains(content.Value, "`name`: The user's display name")
 		}
 	})
 
@@ -1583,6 +1588,8 @@ Reusable schema.
 			tAssert.Contains(content.Value, `schema User: { name: string };`)
 			tAssert.Contains(content.Value, `Represents a user`)
 			tAssert.Contains(content.Value, `Hover should surface this documentation.`)
+			tAssert.Contains(content.Value, `Props:`)
+			tAssert.Contains(content.Value, "`name`: The user's display name")
 		}
 	})
 

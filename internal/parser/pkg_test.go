@@ -584,6 +584,68 @@ enum Fruit: string {
 			}
 		})
 
+		It("parses inline descriptions before and after separators across schema, output, and record fields", func() {
+			input := `|===|
+schema User: {
+  name: string /# Name before separator,
+  age?: int, /# Age after separator
+};
+|===|
+[output = data]
+{
+  user: {
+    name: "Ada" /# Record name before separator,
+    age?: 27, /# Record age after separator
+  }, /# User record after separator
+  greeting: "Hello" /# Greeting before separator
+}`
+
+			file, err := parseFileInput(input)
+			tAssert.NoError(err)
+
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 1) {
+				schemaDecl, ok := file.Script.Items[0].(ast.SchemaDeclaration)
+				tAssert.True(ok)
+				if ok && tAssert.Len(schemaDecl.Type.Fields, 2) {
+					tAssert.Equal("Name before separator", schemaDecl.Type.Fields[0].Description)
+					tAssert.Equal("Age after separator", schemaDecl.Type.Fields[1].Description)
+				}
+			}
+
+			if tAssert.Len(file.Output.DataFields, 2) {
+				tAssert.Equal("User record after separator", file.Output.DataFields[0].Description)
+				tAssert.Equal("Greeting before separator", file.Output.DataFields[1].Description)
+
+				record := requireRecordLiteral(file.Output.DataFields[0].Value, 2)
+				tAssert.Equal("name", record.Fields[0].Name)
+				tAssert.Equal("age", record.Fields[1].Name)
+				tAssert.True(record.Fields[1].Optional)
+			}
+		})
+
+		It("parses output schema field descriptions before and after separators", func() {
+			file, err := parseFileInput(`[output = schema]
+{
+  name: string /# Name before separator,
+  age?: int, /# Age after separator
+}`)
+			tAssert.NoError(err)
+
+			if tAssert.Len(file.Output.SchemaFields, 2) {
+				tAssert.Equal("Name before separator", file.Output.SchemaFields[0].Description)
+				tAssert.Equal("Age after separator", file.Output.SchemaFields[1].Description)
+			}
+		})
+
+		It("rejects duplicate inline descriptions on the same field", func() {
+			_, err := parseFileInput(`[output = schema]
+{
+  name: string /# First description, /# Second description
+}`)
+			tAssert.Error(err)
+			tAssert.ErrorContains(err, "duplicate inline description on output schema field")
+		})
+
 		It("parses output inline doc blocks", func() {
 			input := `[output = schema]
 """

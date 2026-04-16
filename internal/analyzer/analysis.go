@@ -1069,6 +1069,14 @@ func declarationDocumentation(file ast.File, name string) string {
 		if declaration.Documentation.Description != nil {
 			parts = append(parts, stringLiteralMarkdown(*declaration.Documentation.Description))
 		}
+		if len(declaration.Documentation.Props) > 0 {
+			keys := lo.Keys(declaration.Documentation.Props)
+			slices.Sort(keys)
+			props := lo.Map(keys, func(key string, _ int) string {
+				return fmt.Sprintf("- `%s`: %s", key, stringLiteralMarkdown(declaration.Documentation.Props[key]))
+			})
+			parts = append(parts, "Props:\n"+strings.Join(props, "\n"))
+		}
 		return strings.TrimSpace(strings.Join(parts, "\n\n"))
 	}
 

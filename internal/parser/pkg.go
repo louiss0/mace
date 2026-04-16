@@ -548,7 +548,13 @@ func (p *Parser) parseSchemaField() (ast.SchemaField, error) {
 
 	description := p.parseOptionalInlineDescription()
 
-	if err := p.consumeRecordSeparator("schema field"); err != nil {
+	trailingDescription, trailingToken, err := p.consumeRecordSeparatorWithInlineDescription("schema field")
+	if err != nil {
+		return ast.SchemaField{}, err
+	}
+
+	description, err = p.mergeInlineDescriptions("schema field", description, trailingDescription, trailingToken)
+	if err != nil {
 		return ast.SchemaField{}, err
 	}
 
@@ -721,7 +727,13 @@ func (p *Parser) parseOutputField() (ast.OutputField, error) {
 
 	description := p.parseOptionalInlineDescription()
 
-	if err := p.consumeRecordSeparator("output field"); err != nil {
+	trailingDescription, trailingToken, err := p.consumeRecordSeparatorWithInlineDescription("output field")
+	if err != nil {
+		return ast.OutputField{}, err
+	}
+
+	description, err = p.mergeInlineDescriptions("output field", description, trailingDescription, trailingToken)
+	if err != nil {
 		return ast.OutputField{}, err
 	}
 
@@ -747,7 +759,13 @@ func (p *Parser) parseOutputSchemaField() (ast.OutputSchemaField, error) {
 
 	description := p.parseOptionalInlineDescription()
 
-	if err := p.consumeRecordSeparator("output schema field"); err != nil {
+	trailingDescription, trailingToken, err := p.consumeRecordSeparatorWithInlineDescription("output schema field")
+	if err != nil {
+		return ast.OutputSchemaField{}, err
+	}
+
+	description, err = p.mergeInlineDescriptions("output schema field", description, trailingDescription, trailingToken)
+	if err != nil {
 		return ast.OutputSchemaField{}, err
 	}
 
@@ -1044,8 +1062,14 @@ func (p *Parser) parseRecordField() (ast.RecordField, error) {
 	if err != nil {
 		return ast.RecordField{}, err
 	}
+	description := p.parseOptionalInlineDescription()
 
-	if err := p.consumeRecordSeparator("record field"); err != nil {
+	trailingDescription, trailingToken, err := p.consumeRecordSeparatorWithInlineDescription("record field")
+	if err != nil {
+		return ast.RecordField{}, err
+	}
+
+	if _, err := p.mergeInlineDescriptions("record field", description, trailingDescription, trailingToken); err != nil {
 		return ast.RecordField{}, err
 	}
 
@@ -1075,6 +1099,32 @@ func (p *Parser) consumeRecordSeparator(context string) error {
 	default:
 		return p.unexpectedTokenError(fmt.Sprintf("parser: expected ',' after %s", context))
 	}
+}
+
+func (p *Parser) consumeRecordSeparatorWithInlineDescription(context string) (string, lexer.Token, error) {
+	if err := p.consumeRecordSeparator(context); err != nil {
+		return "", lexer.Token{}, err
+	}
+
+	if p.current().Type != lexer.TokenInlineDescription {
+		return "", lexer.Token{}, nil
+	}
+
+	descriptionToken := p.current()
+	p.advance()
+	return descriptionToken.Lexeme, descriptionToken, nil
+}
+
+func (p *Parser) mergeInlineDescriptions(context string, leading string, trailing string, trailingToken lexer.Token) (string, error) {
+	if leading != "" && trailing != "" {
+		return "", fmt.Errorf("parser: duplicate inline description on %s at %d:%d", context, trailingToken.Line, trailingToken.Column)
+	}
+
+	if trailing != "" {
+		return trailing, nil
+	}
+
+	return leading, nil
 }
 
 func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token) (ast.Expression, error) {

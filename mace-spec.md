@@ -231,19 +231,22 @@ Current documentation declaration rules:
 
 ### Inline Declaration Descriptions
 
-Inline declaration descriptions are written with `/#` before the terminating
-`;` of a declaration or field.
+Inline declaration descriptions are written with `/#` on the declaration or
+field entity being created. In Mace, `;` terminates completed declaration
+entities, while record-style field entities can be separated with `,` or `;`.
 
 ```mace
 type Name: string /# A user display name;
 
 schema User: {
-  name: string /# The user's display name;
+  name: string /# The user's display name,
+  age?: int, /# Optional age in years
 };
 
 [output = data]
 {
-  name: "Ada" /# The emitted user name;
+  name: "Ada", /# The emitted user name
+  age?: 27 /# Optional emitted age
 }
 ```
 
@@ -252,7 +255,9 @@ Current inline declaration description rules:
 - They are allowed on `type` declarations, schema fields, output fields, and
   output schema fields.
 - They are not allowed on variable declarations.
-- They attach to the declaration immediately before the terminating `;`.
+- They attach to the declaration or field entity they describe.
+- On record-style fields, they may appear immediately before the separator
+  (`value /# desc,`) or immediately after it (`value, /# desc`).
 - They are raw text metadata, not string literals.
 - At most one inline description is allowed per declaration or field.
 - They are metadata only and do not affect evaluation.
