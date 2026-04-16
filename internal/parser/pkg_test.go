@@ -398,6 +398,234 @@ string user = "Ada";
 			tAssert.Empty(file.Output.SchemaFields)
 		})
 
+		It("ignores line and block comment content while parsing", func() {
+			input := `from "base.mace" import User; /= trailing import comment
+|===|
+/= line comment before declarations
+schema Profile: {
+  /= line comment before field
+  name: string; /= trailing line comment
+  /= block comment before optional field =/
+  age?: int; /= trailing line comment
+};
+
+/= block comment between declarations =/
+Profile current = {
+  name: "Ada"; /= trailing field comment
+  /= comment before optional field =/
+  age?: 30; /= trailing field comment
+};
+|===|
+[output = data]
+{
+  /= line comment before output field
+  result: current.name; /= trailing output comment
+  profile: {
+    /= line comment inside nested record
+    age?: current.age; /= trailing nested comment
+  }; /= trailing record comment
+}`
+
+			file, err := parseFileInput(input)
+			tAssert.NoError(err)
+
+			if tAssert.Len(file.Imports, 1) {
+				tAssert.Equal("base.mace", file.Imports[0].Path.Lexeme[1:len(file.Imports[0].Path.Lexeme)-1])
+				tAssert.Equal([]string{"User"}, file.Imports[0].Identifiers)
+			}
+
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 2) {
+				schemaDecl, ok := file.Script.Items[0].(ast.SchemaDeclaration)
+				tAssert.True(ok)
+				if ok && tAssert.Len(schemaDecl.Type.Fields, 2) {
+					tAssert.Equal("name", schemaDecl.Type.Fields[0].Name)
+					tAssert.Equal("age", schemaDecl.Type.Fields[1].Name)
+					tAssert.True(schemaDecl.Type.Fields[1].Optional)
+				}
+
+				varDecl, ok := file.Script.Items[1].(ast.VariableDeclaration)
+				tAssert.True(ok)
+				if ok {
+					tAssert.Equal("current", varDecl.Name)
+				}
+			}
+
+			if tAssert.Len(file.Output.DataFields, 2) {
+				tAssert.Equal("result", file.Output.DataFields[0].Name)
+				tAssert.Equal("profile", file.Output.DataFields[1].Name)
+			}
+		})
+
+		It("ignores vertical block comments that wrap script and output blocks", func() {
+			input := `/=
+|===|
+type Hidden: string;
+|===|
+[output = data]
+{
+  hidden: "ignore me";
+}
+=/
+|===|
+string visible = "ok";
+|===|
+[output = data]
+{
+  result: visible;
+}`
+
+			file, err := parseFileInput(input)
+			tAssert.NoError(err)
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 1) {
+				variable, ok := file.Script.Items[0].(ast.VariableDeclaration)
+				tAssert.True(ok)
+				if ok {
+					tAssert.Equal("visible", variable.Name)
+				}
+			}
+			if tAssert.Len(file.Output.DataFields, 1) {
+				tAssert.Equal("result", file.Output.DataFields[0].Name)
+			}
+		})
+
+		It("ignores vertical block comments that wrap imports", func() {
+			input := `/=
+from "./ignored.mace" import Ignored;
+=/
+from "./base.mace" import User;
+/=
+from "./also_ignored.mace" import AlsoIgnored;
+=/
+[output = data]
+{
+  result: 1;
+}`
+
+			file, err := parseFileInput(input)
+			tAssert.NoError(err)
+			if tAssert.Len(file.Imports, 1) {
+				tAssert.Equal("\"./base.mace\"", file.Imports[0].Path.Lexeme)
+				tAssert.Equal([]string{"User"}, file.Imports[0].Identifiers)
+			}
+		})
+
+		It("ignores vertical block comments around type and schema declarations", func() {
+			input := `|===|
+/=
+type Hidden: string;
+schema HiddenUser: {
+  name: string;
+};
+=/
+type Name: string;
+schema User: {
+  name: Name;
+};
+|===|
+[output = data]
+{
+  result: "ok";
+}`
+
+			file, err := parseFileInput(input)
+			tAssert.NoError(err)
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 2) {
+				typeDecl, ok := file.Script.Items[0].(ast.TypeDeclaration)
+				tAssert.True(ok)
+				if ok {
+					tAssert.Equal("Name", typeDecl.Name)
+				}
+
+				schemaDecl, ok := file.Script.Items[1].(ast.SchemaDeclaration)
+				tAssert.True(ok)
+				if ok {
+					tAssert.Equal("User", schemaDecl.Name)
+				}
+			}
+		})
+
+		It("ignores vertical block comments around enum declarations", func() {
+			input := `|===|
+/=
+enum HiddenStatus: string {
+  Hidden,
+};
+=/
+enum Status: string {
+  Ready,
+};
+Status status = Status.Ready;
+|===|
+[output = data]
+{
+  result: status;
+}`
+
+			file, err := parseFileInput(input)
+			tAssert.NoError(err)
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 2) {
+				enumDecl, ok := file.Script.Items[0].(ast.EnumDeclaration)
+				tAssert.True(ok)
+				if ok {
+					tAssert.Equal("Status", enumDecl.Name)
+				}
+
+				varDecl, ok := file.Script.Items[1].(ast.VariableDeclaration)
+				tAssert.True(ok)
+				if ok {
+					tAssert.Equal("status", varDecl.Name)
+				}
+			}
+		})
+
+		It("ignores vertical block comments around documentation declarations", func() {
+			input := `|===|
+schema User: {
+  name: string;
+};
+/=
+schema_doc User {
+  summary: "Ignore this doc";
+};
+=/
+schema_doc User {
+  summary: "Visible doc";
+};
+|===|
+[output = schema]
+{
+  user: User;
+}`
+
+			file, err := parseFileInput(input)
+			tAssert.NoError(err)
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 2) {
+				docDecl, ok := file.Script.Items[1].(ast.DocDeclaration)
+				tAssert.True(ok)
+				if ok && tAssert.NotNil(docDecl.Documentation.Summary) {
+					tAssert.Equal("\"Visible doc\"", docDecl.Documentation.Summary.Lexeme)
+				}
+			}
+		})
+
+		It("ignores vertical block comments inside output fields", func() {
+			input := `[output = data]
+{
+  subtotal: 129.99 * 3;
+/=
+  total: $self.subtotal * 1.08875;
+=/
+  result: $self.subtotal;
+}`
+
+			file, err := parseFileInput(input)
+			tAssert.NoError(err)
+			if tAssert.Len(file.Output.DataFields, 2) {
+				tAssert.Equal("subtotal", file.Output.DataFields[0].Name)
+				tAssert.Equal("result", file.Output.DataFields[1].Name)
+			}
+		})
+
 		It("rejects inline descriptions on variable declarations", func() {
 			_, err := parseFileInput(`|===|
 string greeting = "Hello $(name)" /# Rendered greeting;

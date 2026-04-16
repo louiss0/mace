@@ -576,12 +576,34 @@ Comments use the `/=` prefix.
 
 - Line comments continue to the end of the line.
 - Block comments begin with `/=` and end with `=/`.
+- Vertical block comments are supported when `/=` starts a line and `=/` ends
+  the block on a later line.
 
 Disambiguation rule:
 
-- If a `=/` terminator appears before the next newline, the comment is a
-  block comment.
+- If a `=/` terminator appears before the next newline, the comment is a block
+  comment.
+- If `/=` is followed only by spaces/tabs before the next newline, it starts a
+  vertical block comment that runs until a later `=/`.
 - Otherwise the comment is a line comment and ends at the newline.
+
+Example (vertical block comment):
+
+```mace
+/=
+
+[output = data]
+{
+  product: "Mechanical Keyboard";
+  unit_price: 129.99;
+  quantity: 3;
+  subtotal: $self.unit_price * $self.quantity;
+  tax_rate: 0.08875;
+  tax_amount: $self.subtotal * $self.tax_rate;
+  total: $self.subtotal + $self.tax_amount;
+}
+=/
+```
 
 ## Example
 

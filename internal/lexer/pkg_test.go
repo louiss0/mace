@@ -423,5 +423,9 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenIdentifier, lexeme: "value"},
 			{tokenType: TokenEOF, lexeme: ""},
 		}),
+		Entry("vertical block comment delimiters on standalone lines", "/=\nname: should_be_ignored;\n=/ value", []expectedToken{
+			{tokenType: TokenIdentifier, lexeme: "value"},
+			{tokenType: TokenEOF, lexeme: ""},
+		}),
 	)
 })

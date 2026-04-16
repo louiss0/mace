@@ -297,6 +297,9 @@ func (l *Lexer) skipComment() error {
 
 func (l *Lexer) shouldUseBlockComment() bool {
 	rest := l.input[l.position:]
+	if startsWithVerticalBlockDelimiter(rest) {
+		return strings.Contains(rest, "=/")
+	}
 	blockEnd := strings.Index(rest, "=/")
 	if blockEnd == -1 {
 		return false
@@ -308,6 +311,23 @@ func (l *Lexer) shouldUseBlockComment() bool {
 	}
 
 	return blockEnd < lineEnd
+}
+
+func startsWithVerticalBlockDelimiter(rest string) bool {
+	index := 0
+	for index < len(rest) {
+		current, size := utf8.DecodeRuneInString(rest[index:])
+		if current == utf8.RuneError && size == 1 {
+			return false
+		}
+		if current == ' ' || current == '\t' {
+			index += size
+			continue
+		}
+		return current == '\r' || current == '\n'
+	}
+
+	return false
 }
 
 func (l *Lexer) isScriptDelimiterStart(startPosition int) bool {
