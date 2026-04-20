@@ -1002,7 +1002,7 @@ func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *process
 	}
 
 	symbols = append(symbols, lo.Map(file.Output.SchemaFields, func(field ast.OutputSchemaField, _ int) semanticSymbol {
-		return newOutputSymbol(field.NameToken, documentURI, field.Name, fmt.Sprintf("output %s: %s", field.Name, fieldTypeDetail(field.Type)))
+		return newOutputSymbol(field.NameToken, documentURI, field.Name, fmt.Sprintf("output %s: %s", field.Name, fieldTypeDetail(field.Type)), inlineDescriptionDocumentation(field.Description))
 	})...)
 
 	symbols = append(symbols, lo.Map(file.Output.DataFields, func(field ast.OutputField, _ int) semanticSymbol {
@@ -1012,7 +1012,7 @@ func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *process
 				detail = fmt.Sprintf("output %s: %s = %s", field.Name, valueTypeSummary(value), summarizeValue(value))
 			}
 		}
-		return newOutputSymbol(field.NameToken, documentURI, field.Name, detail)
+		return newOutputSymbol(field.NameToken, documentURI, field.Name, detail, inlineDescriptionDocumentation(field.Description))
 	})...)
 
 	return dedupeSymbols(symbols)
@@ -1035,15 +1035,16 @@ func newLocalSymbol(nameToken lexer.Token, uri protocol.DocumentUri, name string
 	}
 }
 
-func newOutputSymbol(nameToken lexer.Token, uri protocol.DocumentUri, name string, detail string) semanticSymbol {
+func newOutputSymbol(nameToken lexer.Token, uri protocol.DocumentUri, name string, detail string, documentation string) semanticSymbol {
 	rangeValue := tokenProtocolRange(nameToken)
 
 	return semanticSymbol{
-		Name:   name,
-		Kind:   protocol.CompletionItemKindProperty,
-		Detail: detail,
-		Origin: symbolOriginOutput,
-		Range:  rangeValue,
+		Name:          name,
+		Kind:          protocol.CompletionItemKindProperty,
+		Detail:        detail,
+		Documentation: documentation,
+		Origin:        symbolOriginOutput,
+		Range:         rangeValue,
 		Definition: protocol.Location{
 			URI:   uri,
 			Range: rangeValue,
@@ -1052,35 +1053,54 @@ func newOutputSymbol(nameToken lexer.Token, uri protocol.DocumentUri, name strin
 }
 
 func declarationDocumentation(file ast.File, name string) string {
-	if file.Script == nil {
-		return ""
+	parts := []string{}
+
+	if file.Script != nil {
+		for _, item := range file.Script.Items {
+			switch declaration := item.(type) {
+			case ast.TypeDeclaration:
+				if declaration.Name == name && declaration.Description != "" {
+					parts = append(parts, inlineDescriptionDocumentation(declaration.Description))
+				}
+			case ast.DocDeclaration:
+				if declaration.Target != name {
+					continue
+				}
+				if declaration.Documentation.Summary != nil {
+					parts = append(parts, stringLiteralMarkdown(*declaration.Documentation.Summary))
+				}
+				if declaration.Documentation.Description != nil {
+					parts = append(parts, stringLiteralMarkdown(*declaration.Documentation.Description))
+				}
+				if len(declaration.Documentation.Props) > 0 {
+					keys := lo.Keys(declaration.Documentation.Props)
+					slices.Sort(keys)
+					props := lo.Map(keys, func(key string, _ int) string {
+						return fmt.Sprintf("- `%s`: %s", key, stringLiteralMarkdown(declaration.Documentation.Props[key]))
+					})
+					parts = append(parts, "Props:\n"+strings.Join(props, "\n"))
+				}
+			}
+		}
 	}
 
-	for _, item := range file.Script.Items {
-		declaration, ok := item.(ast.DocDeclaration)
-		if !ok || declaration.Target != name {
-			continue
-		}
+	parts = lo.Filter(parts, func(part string, _ int) bool {
+		return strings.TrimSpace(part) != ""
+	})
 
-		parts := []string{}
-		if declaration.Documentation.Summary != nil {
-			parts = append(parts, stringLiteralMarkdown(*declaration.Documentation.Summary))
-		}
-		if declaration.Documentation.Description != nil {
-			parts = append(parts, stringLiteralMarkdown(*declaration.Documentation.Description))
-		}
-		if len(declaration.Documentation.Props) > 0 {
-			keys := lo.Keys(declaration.Documentation.Props)
-			slices.Sort(keys)
-			props := lo.Map(keys, func(key string, _ int) string {
-				return fmt.Sprintf("- `%s`: %s", key, stringLiteralMarkdown(declaration.Documentation.Props[key]))
-			})
-			parts = append(parts, "Props:\n"+strings.Join(props, "\n"))
-		}
-		return strings.TrimSpace(strings.Join(parts, "\n\n"))
-	}
+	return strings.TrimSpace(strings.Join(parts, "\n\n"))
+}
 
-	return ""
+func inlineDescriptionDocumentation(description string) string {
+	return strings.TrimSpace(description)
+}
+
+func joinDocumentation(parts ...string) string {
+	filtered := lo.Filter(parts, func(part string, _ int) bool {
+		return strings.TrimSpace(part) != ""
+	})
+
+	return strings.TrimSpace(strings.Join(filtered, "\n\n"))
 }
 
 func stringLiteralMarkdown(literal ast.StringLiteral) string {
@@ -1149,7 +1169,7 @@ func importedSemanticSymbol(file ast.File, path string, name string) (semanticSy
 			Name:          field.Name,
 			Kind:          kind,
 			Detail:        detail,
-			Documentation: declarationDocumentation(file, field.Name),
+			Documentation: joinDocumentation(inlineDescriptionDocumentation(field.Description), declarationDocumentation(file, field.Name)),
 			Origin:        symbolOriginImport,
 			Range:         rangeValue,
 			Definition: protocol.Location{

@@ -1517,6 +1517,81 @@ User user = { name: "Ada"; created_at: "2026-04-09"; };
 		}
 	})
 
+	It("includes inline type descriptions in hover details when the type is used", func() {
+		didOpen(server, uri, `|===|
+type UserID: string /# A stable user identifier;
+UserID current = "user_1";
+|===|
+[output = data] { result: current; }`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 2, Character: 1},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, `type UserID: string;`)
+			tAssert.Contains(content.Value, `A stable user identifier`)
+		}
+	})
+
+	It("includes exported inline descriptions in imported hover details", func() {
+		workspace, err := os.MkdirTemp("", "mace-lsp-hover-import-inline-doc-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
+{
+  User: { name: string; } /# Public user schema;
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `from "./shared.mace" import User;
+|===|
+User current = { name: "Ada"; };
+|===|
+[output = data] { result: current; }`))
+
+		didOpen(server, uri, `from "./shared.mace" import User;
+|===|
+User current = { name: "Ada"; };
+|===|
+[output = data] { result: current; }`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 2, Character: 1},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, `schema User: { name: string }`)
+			tAssert.Contains(content.Value, `Public user schema`)
+		}
+	})
+
 	It("includes documentation declaration metadata in hover details", func() {
 		didOpen(server, uri, `|===|
 schema User: { name: string; };
