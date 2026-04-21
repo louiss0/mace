@@ -337,9 +337,6 @@ Unknown value = 1;
 		Entry("int type mismatch", wrapScriptWithOutput(`|===|
 int total = 1.5;
 |===|`), "type mismatch"),
-		Entry("mixed numeric expression", wrapScriptWithOutput(`|===|
-float total = 1 + 2.0;
-|===|`), "type mismatch"),
 		Entry("duplicate declaration name", wrapScriptWithOutput(`|===|
 type User: string;
 schema User: { name: string; };
@@ -1187,6 +1184,7 @@ string value = "Ada";
 		Entry("multiplication", `[output = data] { result: 2 * 3; }`, expectedValue{kind: ValueInt, int64: 6}),
 		Entry("division", `[output = data] { result: 8 / 2; }`, expectedValue{kind: ValueInt, int64: 4}),
 		Entry("modulo", `[output = data] { result: 9 % 4; }`, expectedValue{kind: ValueInt, int64: 1}),
+		Entry("mixed modulo", `[output = data] { result: 9 % 2.5; }`, expectedValue{kind: ValueFloat, float: 1.5}),
 		Entry("exponentiation", `[output = data] { result: 2 ** 3; }`, expectedValue{kind: ValueInt, int64: 8}),
 		Entry("shift left", `[output = data] { result: 1 << 3; }`, expectedValue{kind: ValueInt, int64: 8}),
 		Entry("shift right", `[output = data] { result: 8 >> 1; }`, expectedValue{kind: ValueInt, int64: 4}),
@@ -1251,6 +1249,15 @@ float result = 1.5 + 2.5;
 		Entry("float division", wrapScriptWithOutputFields(`|===|
 float result = 7.5 / 2.5;
 |===|`, "result: result;"), expectedValue{kind: ValueFloat, float: 3.0}),
+		Entry("mixed numeric addition", wrapScriptWithOutputFields(`|===|
+float result = 1 + 2.5;
+|===|`, "result: result;"), expectedValue{kind: ValueFloat, float: 3.5}),
+		Entry("mixed numeric exponentiation", wrapScriptWithOutputFields(`|===|
+float result = 2 ** 3.0;
+|===|`, "result: result;"), expectedValue{kind: ValueFloat, float: 8.0}),
+		Entry("mixed numeric modulo", wrapScriptWithOutputFields(`|===|
+float result = 5 % 2.5;
+|===|`, "result: result;"), expectedValue{kind: ValueFloat, float: 0.0}),
 	)
 
 	DescribeTable("returns operator precedence results",
@@ -1291,22 +1298,6 @@ int result = false || true ? 5 : 2;
 |===|`, "result: result;"), expectedValue{kind: ValueInt, int64: 5}),
 	)
 
-	DescribeTable("rejects invalid math operators",
-		func(file string) {
-			processor := New()
-			_, err := processor.Process(file)
-			tAssert.Error(err)
-		},
-		Entry("mixed numeric addition", wrapScriptWithOutputFields(`|===|
-int total = 1 + 2.0;
-|===|`, "total: total;")),
-		Entry("mixed numeric exponentiation", wrapScriptWithOutputFields(`|===|
-float total = 2 ** 3.0;
-|===|`, "total: total;")),
-		Entry("modulo with float", wrapScriptWithOutputFields(`|===|
-int total = 5 % 2.5;
-|===|`, "total: total;")),
-	)
 
 	DescribeTable("accepts non-math operators in script variables",
 		func(file string, expected map[string]expectedValue) {

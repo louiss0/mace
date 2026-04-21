@@ -524,6 +524,17 @@ Expressions are pure and deterministic. The implementation supports:
 - logical operators: `&&`, `||`
 - ternary conditional: `? :`
 
+Numeric operator semantics:
+
+- `+`, `-`, `*`, `/`, `%`, and `**` accept `int` and `float` operands.
+- When both operands are `int`, the result is `int`.
+- When either operand is `float`, the result is `float`.
+- `<`, `<=`, `>`, and `>=` accept mixed `int` and `float` operands and return
+  `boolean`.
+- `%` uses integer remainder for `int`/`int` and floating-point remainder when
+  either operand is `float`.
+- `&`, `|`, `^`, `~`, `<<`, `>>`, and `>>>` require `int` operands.
+
 Operator precedence is implemented in the parser and matches the repository
 tests.
 

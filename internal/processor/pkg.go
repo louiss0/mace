@@ -2159,18 +2159,13 @@ func evaluateInfix(expr ast.InfixExpression, environment *valueEnvironment, self
 }
 
 func evaluateNumeric(operator lexer.TokenType, left, right Value) (Value, error) {
-	if left.Kind != right.Kind {
-		return Value{}, validationErrorf("type mismatch: expected %s operands", left.kindName())
-	}
-
-	switch left.Kind {
-	case ValueInt:
-		return evaluateIntNumeric(operator, left.Int, right.Int)
-	case ValueFloat:
-		return evaluateFloatNumeric(operator, left.Float, right.Float)
-	default:
+	if !isNumericValue(left) || !isNumericValue(right) {
 		return Value{}, validationErrorf("type mismatch: expected numeric operands for operator")
 	}
+	if left.Kind == ValueInt && right.Kind == ValueInt {
+		return evaluateIntNumeric(operator, left.Int, right.Int)
+	}
+	return evaluateFloatNumeric(operator, numericValue(left), numericValue(right))
 }
 
 func evaluateIntNumeric(operator lexer.TokenType, left, right int64) (Value, error) {
@@ -2229,13 +2224,22 @@ func evaluateIntPower(base int64, exponent int64) (Value, error) {
 }
 
 func evaluateModulo(left, right Value) (Value, error) {
-	if left.Kind != ValueInt || right.Kind != ValueInt {
-		return Value{}, validationErrorf("type mismatch: expected int operands for '%%'")
+	if !isNumericValue(left) || !isNumericValue(right) {
+		return Value{}, validationErrorf("type mismatch: expected numeric operands for '%%'")
 	}
-	if right.Int == 0 {
+	if left.Kind == ValueInt && right.Kind == ValueInt {
+		if right.Int == 0 {
+			return Value{}, validationErrorf("division by zero")
+		}
+		return Value{Kind: ValueInt, Int: left.Int % right.Int}, nil
+	}
+
+	leftNumber := numericValue(left)
+	rightNumber := numericValue(right)
+	if rightNumber == 0 {
 		return Value{}, validationErrorf("division by zero")
 	}
-	return Value{Kind: ValueInt, Int: left.Int % right.Int}, nil
+	return Value{Kind: ValueFloat, Float: math.Mod(leftNumber, rightNumber)}, nil
 }
 
 func evaluateShift(operator lexer.TokenType, left, right Value) (Value, error) {
@@ -2309,18 +2313,21 @@ func valuesEqual(left, right Value) (bool, error) {
 }
 
 func evaluateComparison(operator lexer.TokenType, left, right Value) (Value, error) {
-	if left.Kind != right.Kind {
-		return Value{}, validationErrorf("type mismatch: expected %s operands", left.kindName())
-	}
-
-	switch left.Kind {
-	case ValueInt:
-		return compareNumbers(operator, float64(left.Int), float64(right.Int))
-	case ValueFloat:
-		return compareNumbers(operator, left.Float, right.Float)
-	default:
+	if !isNumericValue(left) || !isNumericValue(right) {
 		return Value{}, validationErrorf("type mismatch: expected numeric operands for comparison")
 	}
+	return compareNumbers(operator, numericValue(left), numericValue(right))
+}
+
+func isNumericValue(value Value) bool {
+	return value.Kind == ValueInt || value.Kind == ValueFloat
+}
+
+func numericValue(value Value) float64 {
+	if value.Kind == ValueFloat {
+		return value.Float
+	}
+	return float64(value.Int)
 }
 
 func compareNumbers(operator lexer.TokenType, left, right float64) (Value, error) {
@@ -2924,10 +2931,13 @@ func inferInfixType(expr ast.InfixExpression, variables *variableRegistry, symbo
 	case lexer.TokenPlus, lexer.TokenMinus, lexer.TokenStar, lexer.TokenSlash, lexer.TokenDoubleStar:
 		return inferNumericBinary(expr.Operator, leftType, rightType)
 	case lexer.TokenPercent:
-		if leftType.kind != ValueInt || rightType.kind != ValueInt {
-			return valueType{}, validationErrorf("type mismatch: expected int operands for '%%'")
+		if !leftType.isNumeric() || !rightType.isNumeric() {
+			return valueType{}, validationErrorf("type mismatch: expected numeric operands for '%%'")
 		}
-		return valueType{kind: ValueInt}, nil
+		if leftType.kind == ValueInt && rightType.kind == ValueInt {
+			return valueType{kind: ValueInt}, nil
+		}
+		return valueType{kind: ValueFloat}, nil
 	case lexer.TokenShiftLeft, lexer.TokenShiftRight, lexer.TokenShiftRightUnsigned:
 		if leftType.kind != ValueInt || rightType.kind != ValueInt {
 			return valueType{}, validationErrorf("type mismatch: expected int operands for shift")
@@ -2947,9 +2957,6 @@ func inferInfixType(expr ast.InfixExpression, variables *variableRegistry, symbo
 		if !leftType.isNumeric() || !rightType.isNumeric() {
 			return valueType{}, validationErrorf("type mismatch: expected numeric operands for comparison")
 		}
-		if !typesEqual(leftType, rightType) {
-			return valueType{}, validationErrorf("type mismatch: expected %s operands", leftType.name())
-		}
 		return valueType{kind: ValueBoolean}, nil
 	case lexer.TokenAndAnd, lexer.TokenOrOr:
 		if leftType.kind != ValueBoolean || rightType.kind != ValueBoolean {
@@ -2965,10 +2972,10 @@ func inferNumericBinary(operator lexer.TokenType, leftType, rightType valueType)
 	if !leftType.isNumeric() || !rightType.isNumeric() {
 		return valueType{}, validationErrorf("type mismatch: expected numeric operands for operator")
 	}
-	if leftType.kind != rightType.kind {
-		return valueType{}, validationErrorf("type mismatch: expected %s operands", leftType.name())
+	if leftType.kind == ValueInt && rightType.kind == ValueInt {
+		return valueType{kind: ValueInt}, nil
 	}
-	return valueType{kind: leftType.kind}, nil
+	return valueType{kind: ValueFloat}, nil
 }
 
 func inferConditionalType(expr ast.ConditionalExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) (valueType, error) {
