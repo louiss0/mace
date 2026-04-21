@@ -72,7 +72,7 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 	}
 
 	if scope == completionScopeOutput {
-		bareSelfItems := bareSelfCompletionItems(linePrefix)
+		bareSelfItems := bareSelfCompletionItems(linePrefix, position)
 
 		if items, handled := directiveCompletionItems(document, uri, linePrefix); handled {
 			return items
@@ -82,7 +82,7 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 			return mergeCompletionItems(items, bareSelfItems)
 		}
 
-		if items, handled := selfKeywordCompletionItems(linePrefix); handled {
+		if items, handled := selfKeywordCompletionItems(linePrefix, position); handled {
 			return items
 		}
 
@@ -105,7 +105,7 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 		items = append(items, itemsFromDeclarations(declarations, prefix)...)
 	case completionScopeOutput:
 		items = itemsFromDeclarations(declarations, prefix)
-		items = mergeCompletionItems(items, bareSelfCompletionItems(linePrefix))
+		items = mergeCompletionItems(items, bareSelfCompletionItems(linePrefix, position))
 	}
 
 	return sortCompletionItems(items)
@@ -161,7 +161,7 @@ func outputInitializerCompletionItems(document document, uri protocol.DocumentUr
 	return sortCompletionItems(completionItemsForType(expectedType, model, len(path) > 1)), true
 }
 
-func bareSelfCompletionItems(linePrefix string) []protocol.CompletionItem {
+func bareSelfCompletionItems(linePrefix string, position protocol.Position) []protocol.CompletionItem {
 	trimmedPrefix := strings.TrimRight(linePrefix, " \t")
 	if trimmedPrefix == "" {
 		return nil
@@ -172,10 +172,10 @@ func bareSelfCompletionItems(linePrefix string) []protocol.CompletionItem {
 		return nil
 	}
 
-	return selfReferenceCompletionItems("")
+	return selfReferenceCompletionItems("", position)
 }
 
-func selfKeywordCompletionItems(linePrefix string) ([]protocol.CompletionItem, bool) {
+func selfKeywordCompletionItems(linePrefix string, position protocol.Position) ([]protocol.CompletionItem, bool) {
 	trimmedPrefix := strings.TrimRight(linePrefix, " \t")
 	if trimmedPrefix == "" {
 		return nil, false
@@ -203,7 +203,7 @@ func selfKeywordCompletionItems(linePrefix string) ([]protocol.CompletionItem, b
 		return []protocol.CompletionItem{}, true
 	}
 
-	return selfReferenceCompletionItems(segment), true
+	return selfReferenceCompletionItems(segment, position), true
 }
 
 func selfCompletionItems(document document, uri protocol.DocumentUri, position protocol.Position) ([]protocol.CompletionItem, bool) {
@@ -1568,12 +1568,27 @@ func itemsFromDefinitions(definitions []completionDefinition, prefix string) []p
 	return sortCompletionItems(items)
 }
 
-func selfReferenceCompletionItems(prefix string) []protocol.CompletionItem {
-	return itemsFromDefinitions([]completionDefinition{{
+func selfReferenceCompletionItems(prefix string, position protocol.Position) []protocol.CompletionItem {
+	items := itemsFromDefinitions([]completionDefinition{{
 		Label:  "$self",
 		Kind:   protocol.CompletionItemKindKeyword,
 		Detail: "output self reference",
 	}}, prefix)
+
+	if prefix == "" {
+		return items
+	}
+
+	replaceStart := position
+	replaceStart.Character -= uint32(len(prefix))
+	replaceRange := protocol.Range{Start: replaceStart, End: position}
+	for index := range items {
+		items[index].TextEdit = protocol.TextEdit{
+			Range:   replaceRange,
+			NewText: items[index].Label,
+		}
+	}
+	return items
 }
 
 func itemsFromDeclarations(declarations []declarationDefinition, prefix string) []protocol.CompletionItem {
