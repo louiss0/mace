@@ -191,29 +191,29 @@ Use `schema_doc` for `schema` declarations and enums:
 schema User: {
   name: string,
   age?: int
-}
+};
 
 enum Status: string {
-  Pending,
-  Running
-}
+  Pending /# Work has not started,
+  Running /# Work is in progress
+};
 
 schema_doc User {
-  summary: "Represents a user.";
+  summary: "Represents a user.",
   description: """
 # User
 
 A reusable schema that models application users.
-""";
+""",
   props: {
-    name: "The user's display name";
-    age: "Optional age";
-  };
-}
+    name: "The user's display name",
+    age: "Optional age",
+  },
+};
 
 schema_doc Status {
-  summary: "Processing status.";
-}
+  summary: "Processing status.",
+};
 ```
 
 Current documentation declaration rules:
@@ -232,11 +232,17 @@ Current documentation declaration rules:
 ### Inline Declaration Descriptions
 
 Inline declaration descriptions are written with `/#` on the declaration or
-field entity being created. In Mace, `;` terminates completed declaration
-entities, while record-style field entities can be separated with `,` or `;`.
+field entity being created. In Mace, `;` terminates completed declarations,
+while pair-style entries inside delimited structures use separators such as `,`
+(and the parser still accepts `;` for most field-like entries).
 
 ```mace
 type Name: string /# A user display name;
+
+enum Status: string {
+  Pending /# Work has not started,
+  Running /# Work is in progress
+};
 
 schema User: {
   name: string /# The user's display name,
@@ -272,6 +278,7 @@ Current conflict rules:
   description.
 - A schema field documented through `schema_doc <Schema> { props: { ... } }`
   must not also use an inline `/#` description.
+- Enum members may use inline `/#` descriptions.
 - When documentation already exists in a structured documentation declaration,
   users should extend that declaration instead of adding duplicate inline docs.
 
@@ -301,6 +308,7 @@ Current enum rules:
 - Supported backing types are `string` and `int`.
 - Enum member names must be unique within the enum.
 - Enum values must be unique within the enum.
+- Enum members may include inline `/#` descriptions.
 - Non-final enum members must be separated with `,`.
 - A trailing comma on the final enum member is optional.
 - `string` and `int` enums may use all-implicit members or all-explicit members.
