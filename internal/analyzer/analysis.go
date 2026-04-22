@@ -365,11 +365,12 @@ func localEnumMemberSymbol(file ast.File, uri protocol.DocumentUri, enumName str
 
 			rangeValue := tokenProtocolRange(member.NameToken)
 			return semanticSymbol{
-				Name:   enumName + "." + memberName,
-				Kind:   protocol.CompletionItemKindEnumMember,
-				Detail: enumMemberDetail(declaration, member),
-				Origin: symbolOriginLocal,
-				Range:  rangeValue,
+				Name:          enumName + "." + memberName,
+				Kind:          protocol.CompletionItemKindEnumMember,
+				Detail:        enumMemberDetail(declaration, member),
+				Documentation: inlineDescriptionDocumentation(member.Description),
+				Origin:        symbolOriginLocal,
+				Range:         rangeValue,
 				Definition: protocol.Location{
 					URI:   uri,
 					Range: rangeValue,

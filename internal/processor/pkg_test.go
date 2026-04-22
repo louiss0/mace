@@ -253,32 +253,32 @@ type Scalar: variant[string, int];
 Scalar value = "Ada";
 |===|`)),
 		Entry("documentation declarations", wrapScriptWithOutput(`|===|
-schema User: { name: string; };
+schema User: { name: string, };
 
 enum Status: string {
-  Pending,
+  Pending /# Current state,
 };
 
 type Name: string;
 string greeting = "Hello";
 
 schema_doc User {
-  summary: "Represents a user.";
+  summary: "Represents a user.",
   description: """
 # User
-""";
+""",
 };
 
 schema_doc Status {
-  summary: "Represents a status.";
+  summary: "Represents a status.",
 };
 
 gen_doc Name {
-  summary: "Represents a name.";
+  summary: "Represents a name.",
 };
 
 gen_doc greeting {
-  summary: "Rendered greeting.";
+  summary: "Rendered greeting.",
 };
 |===|`)),
 		Entry("line and block comments are ignored", `from "testdata/imports/base.mace" import Name; /= trailing import comment

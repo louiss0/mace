@@ -43,7 +43,10 @@ var _ = Describe("FormatFile", func() {
 |===|
 type Name: string;
 schema User: { name: string; age?: int; };
-enum Fruit: string { Apple, Strawberry = "strawberry" };
+enum Fruit: string {
+  Apple /# Default apple,
+  Strawberry = "strawberry" /# Explicit strawberry
+};
 injectable string user = "Ada";
 |===|
 [output = data, schema = User]
@@ -54,18 +57,18 @@ injectable string user = "Ada";
 		tAssert.NoError(err)
 		tAssert.Equal(`from "./base.mace" import User, Config;
 
-|===============================|
+|==================================================|
 type Name: string;
 schema User: {
   name: string,
   age?: int
 }
 enum Fruit: string {
-  Apple,
-  Strawberry = "strawberry"
+  Apple /# Default apple,
+  Strawberry = "strawberry" /# Explicit strawberry
 }
 injectable string user = "Ada";
-|===============================|
+|==================================================|
 [output = data, schema = User]
 {
   name: user,
@@ -77,10 +80,10 @@ injectable string user = "Ada";
 		file, err := parseMaceFile(`|===|
 schema User: { name: string; };
 schema_doc User {
-  summary: "Represents a user.";
+  summary: "Represents a user.",
   description: """
 # User
-""";
+""",
 };
 |===|
 [output = schema]
@@ -97,10 +100,10 @@ schema User: {
   name: string
 }
 schema_doc User {
-  summary: "Represents a user.";
+  summary: "Represents a user.",
   description: """
 # User
-""";
+""",
 };
 |================================|
 [output = schema]

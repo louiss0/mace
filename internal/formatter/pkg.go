@@ -206,8 +206,9 @@ func formatEnumDeclaration(declaration ast.EnumDeclaration) (string, error) {
 }
 
 func formatEnumMember(member ast.EnumMember, trailingComma bool) (string, error) {
+	description := formatInlineDescription(member.Description)
 	if !member.HasValue {
-		return formatTrailingComma(member.Name, trailingComma), nil
+		return formatTrailingComma(member.Name+description, trailingComma), nil
 	}
 
 	value, err := formatExpressionWithDepth(member.Value, 0)
@@ -215,7 +216,7 @@ func formatEnumMember(member ast.EnumMember, trailingComma bool) (string, error)
 		return "", err
 	}
 
-	return formatTrailingComma(fmt.Sprintf("%s = %s", member.Name, value), trailingComma), nil
+	return formatTrailingComma(fmt.Sprintf("%s = %s%s", member.Name, value, description), trailingComma), nil
 }
 
 func formatTypeReference(typeReference ast.TypeReference) (string, error) {
@@ -295,17 +296,17 @@ func formatDocDeclaration(declaration ast.DocDeclaration) (string, error) {
 
 	lines := []string{fmt.Sprintf("%s %s {", keyword, declaration.Target)}
 	if declaration.Documentation.Summary != nil {
-		lines = append(lines, fmt.Sprintf("  summary: %s;", declaration.Documentation.Summary.Lexeme))
+		lines = append(lines, fmt.Sprintf("  summary: %s,", declaration.Documentation.Summary.Lexeme))
 	}
 	if declaration.Documentation.Description != nil {
-		lines = append(lines, fmt.Sprintf("  description: %s;", declaration.Documentation.Description.Lexeme))
+		lines = append(lines, fmt.Sprintf("  description: %s,", declaration.Documentation.Description.Lexeme))
 	}
 	if len(declaration.Documentation.Props) > 0 {
 		lines = append(lines, "  props: {")
 		keys := lo.Keys(declaration.Documentation.Props)
 		slices.Sort(keys)
 		for _, key := range keys {
-			lines = append(lines, fmt.Sprintf("    %s: %s;", key, declaration.Documentation.Props[key].Lexeme))
+			lines = append(lines, fmt.Sprintf("    %s: %s,", key, declaration.Documentation.Props[key].Lexeme))
 		}
 		lines = append(lines, "  };")
 	}

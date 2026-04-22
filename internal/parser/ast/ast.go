@@ -170,10 +170,11 @@ type EnumDeclaration struct {
 func (EnumDeclaration) declarationNode() {}
 
 type EnumMember struct {
-	NameToken lexer.Token
-	Name      string
-	HasValue  bool
-	Value     Expression
+	NameToken   lexer.Token
+	Name        string
+	HasValue    bool
+	Value       Expression
+	Description string
 }
 
 type TypeReference interface {

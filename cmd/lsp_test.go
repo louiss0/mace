@@ -1340,7 +1340,7 @@ enum Fruit: string {
 	It("returns hover details for enum member access", func() {
 		didOpen(server, uri, `|===|
 enum Fruit: string {
-  Apple,
+  Apple /# Default apple label,
   Strawberry = "strawberry",
 };
 Fruit selected = Fruit.Apple;
@@ -1370,6 +1370,7 @@ Fruit selected = Fruit.Apple;
 		tAssert.True(ok)
 		if ok {
 			tAssert.Contains(content.Value, `enum member Fruit.Apple = "Apple"`)
+			tAssert.Contains(content.Value, `Default apple label`)
 		}
 	})
 

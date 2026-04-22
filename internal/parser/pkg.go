@@ -350,7 +350,7 @@ func (p *Parser) parseDocDeclaration(kind ast.DocumentationKind, keywordType lex
 				return nil, err
 			}
 
-			if _, err := p.consume(lexer.TokenSemicolon, fmt.Sprintf("parser: expected ';' after %s entry", keyword)); err != nil {
+			if err := p.consumePairSeparator(fmt.Sprintf("%s entry", keyword)); err != nil {
 				return nil, err
 			}
 
@@ -380,7 +380,7 @@ func (p *Parser) parseDocDeclaration(kind ast.DocumentationKind, keywordType lex
 				if err != nil {
 					return nil, err
 				}
-				if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after props entry"); err != nil {
+				if err := p.consumePairSeparator("props entry"); err != nil {
 					return nil, err
 				}
 				documentation.Props[nameToken.Lexeme] = ast.StringLiteral{Lexeme: valueToken.Lexeme}
@@ -389,7 +389,7 @@ func (p *Parser) parseDocDeclaration(kind ast.DocumentationKind, keywordType lex
 			if _, err := p.consume(lexer.TokenRBrace, "parser: expected '}' to close props entry"); err != nil {
 				return nil, err
 			}
-			if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after props entry"); err != nil {
+			if err := p.consumePairSeparator("props entry"); err != nil {
 				return nil, err
 			}
 		default:
@@ -479,19 +479,19 @@ func (p *Parser) parseEnumMember() (ast.EnumMember, error) {
 		Name:      nameToken.Lexeme,
 	}
 
-	if p.current().Type != lexer.TokenAssign {
-		return member, nil
+	if p.current().Type == lexer.TokenAssign {
+		p.advance()
+
+		value, err := p.parseEnumMemberValue()
+		if err != nil {
+			return ast.EnumMember{}, err
+		}
+
+		member.HasValue = true
+		member.Value = value
 	}
 
-	p.advance()
-
-	value, err := p.parseEnumMemberValue()
-	if err != nil {
-		return ast.EnumMember{}, err
-	}
-
-	member.HasValue = true
-	member.Value = value
+	member.Description = p.parseOptionalInlineDescription()
 	return member, nil
 }
 
@@ -1087,6 +1087,16 @@ func (p *Parser) consumeOptionalToken(tokenType lexer.TokenType) bool {
 
 	p.advance()
 	return true
+}
+
+func (p *Parser) consumePairSeparator(context string) error {
+	switch p.current().Type {
+	case lexer.TokenComma, lexer.TokenSemicolon:
+		p.advance()
+		return nil
+	default:
+		return p.unexpectedTokenError(fmt.Sprintf("parser: expected ',' after %s", context))
+	}
 }
 
 func (p *Parser) consumeRecordSeparator(context string) error {

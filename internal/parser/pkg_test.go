@@ -739,8 +739,8 @@ type Matrix: array<array<int>>;
 		It("parses enum declarations with implicit and explicit members", func() {
 			input := `|===|
 enum Fruit: string {
-  Apple,
-  Strawberry = "strawberry",
+  Apple /# Default apple,
+  Strawberry = "strawberry" /# Explicit strawberry
 };
 |===|
 [output = data] {}`
@@ -757,8 +757,10 @@ enum Fruit: string {
 					if tAssert.Len(enumDecl.Members, 2) {
 						tAssert.Equal("Apple", enumDecl.Members[0].Name)
 						tAssert.False(enumDecl.Members[0].HasValue)
+						tAssert.Equal("Default apple", enumDecl.Members[0].Description)
 						tAssert.Equal("Strawberry", enumDecl.Members[1].Name)
 						tAssert.True(enumDecl.Members[1].HasValue)
+						tAssert.Equal("Explicit strawberry", enumDecl.Members[1].Description)
 						requireEnumMemberValue(enumDecl.Members[1], "\"strawberry\"")
 					}
 				}
@@ -874,6 +876,27 @@ schema User: {
 			tAssert.ErrorContains(err, "duplicate inline description on output schema field")
 		})
 
+		It("parses comma separators across declarations", func() {
+			file, err := parseFileInput(`from "./shared.mace" import Name, User;
+|===|
+type Alias: string;
+injectable string env;
+schema User: {
+  name: string,
+};
+gen_doc Alias {
+  summary: "Alias docs.",
+};
+|===|
+[output = data] {
+  result: env,
+}`)
+			tAssert.NoError(err)
+			if tAssert.NotNil(file.Script) {
+				tAssert.Len(file.Script.Items, 4)
+			}
+		})
+
 		It("parses output inline doc blocks", func() {
 			input := `[output = schema]
 """
@@ -893,23 +916,31 @@ schema User: {
 		It("parses documentation declarations", func() {
 			input := `|===|
 schema User: {
-  name: string;
+  name: string,
+};
+
+enum Status: string {
+  Active,
 };
 
 schema_doc User {
-  summary: "Represents a user.";
+  summary: "Represents a user.",
   description: """
 # User
-""";
+""",
+};
+
+schema_doc Status {
+  summary: "Represents a status enum.",
 };
 |===|
 [output = schema]
-{ user: User; }`
+{ user: User, status: Status }`
 
 			file, err := parseFileInput(input)
 			tAssert.NoError(err)
-			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 2) {
-				docDecl, ok := file.Script.Items[1].(ast.DocDeclaration)
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 4) {
+				docDecl, ok := file.Script.Items[2].(ast.DocDeclaration)
 				tAssert.True(ok)
 				if ok {
 					tAssert.Equal(ast.DocumentationKindSchema, docDecl.Kind)
@@ -920,6 +951,13 @@ schema_doc User {
 					if tAssert.NotNil(docDecl.Documentation.Description) {
 						tAssert.Equal("\"\"\"\n# User\n\"\"\"", docDecl.Documentation.Description.Lexeme)
 					}
+				}
+
+				enumDoc, ok := file.Script.Items[3].(ast.DocDeclaration)
+				tAssert.True(ok)
+				if ok && tAssert.NotNil(enumDoc.Documentation.Summary) {
+					tAssert.Equal("Status", enumDoc.Target)
+					tAssert.Equal("\"Represents a status enum.\"", enumDoc.Documentation.Summary.Lexeme)
 				}
 			}
 		})
