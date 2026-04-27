@@ -1146,6 +1146,17 @@ func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token)
 		return ast.MemberAccess{Target: left, Name: memberToken.Lexeme}, nil
 	}
 
+	if operator.Type == lexer.TokenLBracket {
+		indexToken, err := p.consume(lexer.TokenInt, "parser: expected integer index in array access")
+		if err != nil {
+			return nil, err
+		}
+		if _, err := p.consume(lexer.TokenRBracket, "parser: expected ']' after array access index"); err != nil {
+			return nil, err
+		}
+		return ast.ArrayAccess{Target: left, Index: ast.IntLiteral{Lexeme: indexToken.Lexeme}}, nil
+	}
+
 	precedence := p.precedenceFor(operator.Type)
 	rightPrecedence := precedence
 	if operator.Type == lexer.TokenDoubleStar {
@@ -1255,7 +1266,7 @@ func (p *Parser) precedenceFor(tokenType lexer.TokenType) int {
 		return precedenceMultiplicative
 	case lexer.TokenDoubleStar:
 		return precedenceExponent
-	case lexer.TokenDot:
+	case lexer.TokenDot, lexer.TokenLBracket:
 		return precedenceMember
 	default:
 		return precedenceLowest

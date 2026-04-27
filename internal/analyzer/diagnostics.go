@@ -19,6 +19,7 @@ const (
 	diagnosticSyntaxMalformedSchema                 diagnosticCode = "mace.syntax.malformed-schema"
 	diagnosticSyntaxMalformedVariableDeclaration    diagnosticCode = "mace.syntax.malformed-variable-declaration"
 	diagnosticSyntaxMalformedOutputField            diagnosticCode = "mace.syntax.malformed-output-field"
+	diagnosticSyntaxInvalidArrayAccessIndex         diagnosticCode = "mace.syntax.invalid-array-access-index"
 	diagnosticSyntaxUnexpectedToken                 diagnosticCode = "mace.syntax.unexpected-token"
 	diagnosticFileImportAfterScript                 diagnosticCode = "mace.file-structure.import-after-script-block"
 	diagnosticFileImportAfterOutput                 diagnosticCode = "mace.file-structure.import-after-output-block"
@@ -101,6 +102,8 @@ func classifyParseDiagnostic(message string) diagnosticCode {
 		return diagnosticSyntaxMalformedEnum
 	case strings.Contains(message, "schema declaration") || strings.Contains(message, "record type") || strings.Contains(message, "schema field"):
 		return diagnosticSyntaxMalformedSchema
+	case strings.Contains(message, "integer index in array access") || strings.Contains(message, "after array access index"):
+		return diagnosticSyntaxInvalidArrayAccessIndex
 	case strings.Contains(message, "variable declaration"):
 		return diagnosticSyntaxMalformedVariableDeclaration
 	case strings.Contains(message, "output field"):

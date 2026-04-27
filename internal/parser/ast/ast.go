@@ -19,6 +19,13 @@ type MemberAccess struct {
 
 func (MemberAccess) expressionNode() {}
 
+type ArrayAccess struct {
+	Target Expression
+	Index  IntLiteral
+}
+
+func (ArrayAccess) expressionNode() {}
+
 type StringLiteral struct {
 	Lexeme string
 }

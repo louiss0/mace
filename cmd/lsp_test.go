@@ -522,6 +522,24 @@ Personality value = Personality.is_type;
 		}
 	})
 
+	It("publishes parse diagnostics when an array index is not an int literal", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `[output = data]
+{
+  values: [1, 2, 3],
+  result: values[name]
+}`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, `expected integer index in array access`)
+				tAssert.Equal(`mace.syntax.invalid-array-access-index`, params.Diagnostics[0].Code.Value)
+			}
+		}
+	})
+
 	It("refreshes diagnostics when a document is saved", func() {
 		notifications := []capturedNotification{}
 
@@ -902,6 +920,18 @@ Basket basket = {
 		tAssert.Equal([]string{"Fruit.Apple", "Fruit.Strawberry"}, labels)
 	})
 
+	It("suggests array indexes for script variables", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+array<string> names = ["Ada", "Linus", "Grace"];
+string selected = names[
+|===|
+[output = data] {}`, nil)
+
+		labels := completeLabels(server, uri, 2, uint32(len(`string selected = names[`)))
+		tAssert.Equal([]string{"0", "1", "2"}, labels)
+	})
+
 	It("suggests enum members after a dot for local enums", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
@@ -1145,6 +1175,7 @@ Personality value = Personality.
 		labels := completeLabels(server, uri, 4, uint32(len(`  result: $self.`)))
 		tAssert.Equal([]string{"base", "profile"}, labels)
 	})
+
 
 	It("suggests nested keys from previously evaluated self fields", func() {
 		openEmptyDocument(server, uri, nil)

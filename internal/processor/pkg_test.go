@@ -1447,6 +1447,18 @@ array<Point> result = [
 				"y": {kind: ValueInt, int64: 5},
 			}},
 		}}),
+		Entry("primitive array access", wrapScriptWithOutputFields(`|===|
+array<int> numbers = [5, 6, 7];
+int result = numbers[1];
+|===|`, "result: result;"), expectedValue{kind: ValueInt, int64: 6}),
+		Entry("record array access with member access", wrapScriptWithOutputFields(`|===|
+schema User: { name: string; age: int; };
+array<User> users = [
+  { name: "Ada"; age: 30; },
+  { name: "Linus"; age: 55; }
+];
+string result = users[0].name;
+|===|`, "result: result;"), expectedValue{kind: ValueString, string: "Ada"}),
 		Entry("self reference", wrapScriptWithOutputFields(`|===|
 int base = 3 * 4;
 |===|`, "base: base;\nresult: $self.base + base;"), expectedValue{kind: ValueInt, int64: 24}),
@@ -1484,6 +1496,8 @@ int base = 3 * 4;
 				{kind: ValueInt, int64: 4},
 			}},
 		}}),
+		Entry("inline primitive array access", `[output = data] { result: [1, 2, 3][0]; }`, expectedValue{kind: ValueInt, int64: 1}),
+		Entry("inline record array access", `[output = data] { result: [{ name: "Ada"; }, { name: "Linus"; }][1].name; }`, expectedValue{kind: ValueString, string: "Linus"}),
 		Entry("inline optional output field", `[output = data] { result?: 1 + 1; }`, expectedValue{kind: ValueInt, int64: 2}),
 	)
 
@@ -1510,6 +1524,17 @@ int base = 3 * 4;
 		Entry("level 3", `[output = data] { profile: { details: { age: 30; }; }; result: $self.profile.details.age; }`, expectedValue{kind: ValueInt, int64: 30}),
 		Entry("level 4", `[output = data] { tree: { branch: { leaf: { value: 9; }; }; }; result: $self.tree.branch.leaf.value; }`, expectedValue{kind: ValueInt, int64: 9}),
 		Entry("level 5", `[output = data] { a: { b: { c: { d: { e: true; }; }; }; }; result: $self.a.b.c.d.e; }`, expectedValue{kind: ValueBoolean, bool: true}),
+	)
+
+	DescribeTable("returns nested array access results by depth",
+		func(input string, expected expectedValue) {
+			assertProcessedResult(input, expected)
+		},
+		Entry("level 1", `[output = data] { result: [10][0]; }`, expectedValue{kind: ValueInt, int64: 10}),
+		Entry("level 2", `[output = data] { result: [[10]][0][0]; }`, expectedValue{kind: ValueInt, int64: 10}),
+		Entry("level 3", `[output = data] { result: [[[10]]][0][0][0]; }`, expectedValue{kind: ValueInt, int64: 10}),
+		Entry("level 4", `[output = data] { result: [[[[10]]]][0][0][0][0]; }`, expectedValue{kind: ValueInt, int64: 10}),
+		Entry("level 5", `[output = data] { result: [[[[[10]]]]][0][0][0][0][0]; }`, expectedValue{kind: ValueInt, int64: 10}),
 	)
 
 	DescribeTable("returns mixed self reference results",
@@ -1539,6 +1564,18 @@ int base = 3 * 4;
 		},
 		Entry("future field reference", `[output = data] { result: $self.base; base: 4; }`, "unknown self reference"),
 		Entry("nested path through non record", `[output = data] { base: 4; result: $self.base.value; }`, "non-record"),
+	)
+
+	DescribeTable("rejects invalid array access",
+		func(input, message string) {
+			processor := New()
+			_, err := processor.Process(input)
+			tAssert.Error(err)
+			tAssert.ErrorContains(err, message)
+		},
+		Entry("non array target", `[output = data] { result: 1[0]; }`, "array access requires an array value at level 1"),
+		Entry("out of range index", `[output = data] { result: [1, 2][3]; }`, "out of range at level 1"),
+		Entry("wrong nested level", `[output = data] { result: [[1]][0][0][0]; }`, "array access requires an array value at level 3"),
 	)
 
 	DescribeTable("rejects inline arrays with mixed types",

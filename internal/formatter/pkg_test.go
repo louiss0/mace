@@ -127,6 +127,18 @@ schema_doc User {
 }`, output)
 	})
 
+	It("formats array access expressions", func() {
+		file, err := parseMaceFile(`[output = data] { result: users [ 0 ] . name; }`)
+		tAssert.NoError(err)
+
+		output, err := FormatFile(file)
+		tAssert.NoError(err)
+		tAssert.Equal(`[output = data]
+{
+  result: users[0].name
+}`, output)
+	})
+
 	It("formats bare output blocks without injecting a directive", func() {
 		file, err := parseMaceFile(`{ result: 1 + 2; }`)
 		tAssert.NoError(err)

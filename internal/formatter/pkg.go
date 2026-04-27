@@ -397,6 +397,12 @@ func formatExpressionNode(expression ast.Expression, depth int) (string, int, er
 			return "", 0, err
 		}
 		return target + "." + typedExpression.Name, precedencePrimary, nil
+	case ast.ArrayAccess:
+		target, err := formatExpressionWithPrecedence(typedExpression.Target, precedencePrimary, depth)
+		if err != nil {
+			return "", 0, err
+		}
+		return target + "[" + typedExpression.Index.Lexeme + "]", precedencePrimary, nil
 	case ast.StringLiteral:
 		return typedExpression.Lexeme, precedencePrimary, nil
 	case ast.IntLiteral:

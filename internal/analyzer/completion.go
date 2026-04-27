@@ -62,6 +62,10 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 	}
 
 	if scope == completionScopeScript {
+		if items, handled := arrayIndexCompletionItems(document, uri, position, linePrefix, scope); handled {
+			return items
+		}
+
 		if items, handled := enumMemberCompletionItems(document, uri, position, linePrefix); handled {
 			return items
 		}
@@ -87,6 +91,10 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 		}
 
 		if items, handled := selfCompletionItems(document, uri, position); handled {
+			return items
+		}
+
+		if items, handled := arrayIndexCompletionItems(document, uri, position, linePrefix, scope); handled {
 			return items
 		}
 
@@ -283,6 +291,188 @@ func selfCompletionContext(linePrefix string) ([]string, string, bool) {
 	}
 
 	return segments[:len(segments)-1], segments[len(segments)-1], true
+}
+
+func arrayIndexCompletionItems(document document, uri protocol.DocumentUri, position protocol.Position, linePrefix string, scope completionScope) ([]protocol.CompletionItem, bool) {
+	targetText, prefix, ok := arrayIndexCompletionContext(linePrefix)
+	if !ok {
+		return nil, false
+	}
+
+	arrayValue, ok := resolveArrayCompletionTarget(document, uri, position, targetText, scope)
+	if !ok || arrayValue.Kind != processor.ValueArray {
+		return []protocol.CompletionItem{}, true
+	}
+
+	items := make([]protocol.CompletionItem, 0, len(arrayValue.Array))
+	for index := range arrayValue.Array {
+		label := strconv.Itoa(index)
+		if !strings.HasPrefix(label, prefix) {
+			continue
+		}
+		items = append(items, protocol.CompletionItem{
+			Label:  label,
+			Kind:   Ptr(protocol.CompletionItemKindValue),
+			Detail: Ptr("array index"),
+		})
+	}
+
+	return sortCompletionItems(items), true
+}
+
+func arrayIndexCompletionContext(linePrefix string) (string, string, bool) {
+	trimmedPrefix := strings.TrimRight(linePrefix, " \t")
+	index := strings.LastIndex(trimmedPrefix, "[")
+	if index < 0 {
+		return "", "", false
+	}
+
+	prefix := trimmedPrefix[index+1:]
+	if prefix != "" && !isDigits(prefix) {
+		return "", "", false
+	}
+
+	target := strings.TrimSpace(trimmedPrefix[:index])
+	for start := len(target) - 1; start >= 0; start-- {
+		if !strings.ContainsRune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.$[]()", rune(target[start])) {
+			target = strings.TrimSpace(target[start+1:])
+			break
+		}
+	}
+	if target == "" {
+		return "", "", false
+	}
+
+	return target, prefix, true
+}
+
+func resolveArrayCompletionTarget(document document, uri protocol.DocumentUri, position protocol.Position, targetText string, scope completionScope) (processor.Value, bool) {
+	expression, err := parseExpression(targetText)
+	if err != nil {
+		return processor.Value{}, false
+	}
+
+	variables := partialScriptVariables(document.text, position)
+	self := processor.Value{Kind: processor.ValueRecord, Record: map[string]processor.Value{}}
+	if scope == completionScopeOutput {
+		result, ok := partialOutputResult(document, uri, position)
+		if ok {
+			self = processor.Value{Kind: processor.ValueRecord, Record: result.Output}
+		}
+	}
+
+	return resolveCompletionValue(expression, variables, self)
+}
+
+func partialScriptVariables(text string, position protocol.Position) map[string]processor.Value {
+	index := positionIndex(text, position)
+	if index < 0 {
+		return nil
+	}
+
+	prefix := text[:index]
+	start := strings.Index(prefix, "|")
+	end := strings.LastIndex(prefix, "\n")
+	if start < 0 || end < start {
+		return nil
+	}
+
+	scriptText := prefix[start:end] + "\n|===|"
+
+	result, err := processor.New().ProcessScriptBlock(scriptText)
+	if err != nil {
+		return nil
+	}
+	return result.Variables
+}
+
+func resolveCompletionValue(expression ast.Expression, variables map[string]processor.Value, self processor.Value) (processor.Value, bool) {
+	switch typed := expression.(type) {
+	case ast.Identifier:
+		value, ok := variables[typed.Name]
+		return value, ok
+	case ast.SelfReference:
+		return outputValueAtSegments(self, typed.Path)
+	case ast.MemberAccess:
+		target, ok := resolveCompletionValue(typed.Target, variables, self)
+		if !ok || target.Kind != processor.ValueRecord {
+			return processor.Value{}, false
+		}
+		value, ok := target.Record[typed.Name]
+		return value, ok
+	case ast.ArrayAccess:
+		target, ok := resolveCompletionValue(typed.Target, variables, self)
+		if !ok || target.Kind != processor.ValueArray {
+			return processor.Value{}, false
+		}
+		index, err := strconv.Atoi(typed.Index.Lexeme)
+		if err != nil || index < 0 || index >= len(target.Array) {
+			return processor.Value{}, false
+		}
+		return target.Array[index], true
+	case ast.ArrayLiteral:
+		values := make([]processor.Value, 0, len(typed.Elements))
+		for _, element := range typed.Elements {
+			value, ok := resolveCompletionValue(element, variables, self)
+			if !ok {
+				return processor.Value{}, false
+			}
+			values = append(values, value)
+		}
+		return processor.Value{Kind: processor.ValueArray, Array: values}, true
+	case ast.RecordLiteral:
+		fields := map[string]processor.Value{}
+		for _, field := range typed.Fields {
+			value, ok := resolveCompletionValue(field.Value, variables, self)
+			if !ok {
+				return processor.Value{}, false
+			}
+			fields[field.Name] = value
+		}
+		return processor.Value{Kind: processor.ValueRecord, Record: fields}, true
+	case ast.StringLiteral:
+		return processor.Value{Kind: processor.ValueString, String: strings.Trim(typed.Lexeme, "\"'")}, true
+	case ast.IntLiteral:
+		value, err := strconv.ParseInt(typed.Lexeme, 10, 64)
+		if err != nil {
+			return processor.Value{}, false
+		}
+		return processor.Value{Kind: processor.ValueInt, Int: value}, true
+	case ast.FloatLiteral:
+		value, err := strconv.ParseFloat(typed.Lexeme, 64)
+		if err != nil {
+			return processor.Value{}, false
+		}
+		return processor.Value{Kind: processor.ValueFloat, Float: value}, true
+	case ast.BooleanLiteral:
+		return processor.Value{Kind: processor.ValueBoolean, Boolean: typed.Value}, true
+	default:
+		return processor.Value{}, false
+	}
+}
+
+func outputValueAtSegments(value processor.Value, path []string) (processor.Value, bool) {
+	current := value
+	for _, segment := range path {
+		if current.Kind != processor.ValueRecord {
+			return processor.Value{}, false
+		}
+		child, ok := current.Record[segment]
+		if !ok {
+			return processor.Value{}, false
+		}
+		current = child
+	}
+	return current, true
+}
+
+func isDigits(value string) bool {
+	for _, character := range value {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func enumMemberCompletionItems(document document, uri protocol.DocumentUri, position protocol.Position, linePrefix string) ([]protocol.CompletionItem, bool) {
