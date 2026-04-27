@@ -291,25 +291,31 @@ expression
   = conditional_expression ;
 
 primary_expression
-  = identifier
-  | member_access
+  = postfix_expression
   | int_literal
   | float_literal
   | string_literal
   | boolean_literal
   | array_literal
-  | record_literal
+  | record_literal ;
+
+postfix_expression
+  = postfix_target , { postfix_suffix } ;
+
+postfix_target
+  = identifier
   | self_reference
   | "(" , expression , ")" ;
 
-member_access
-  = primary_target , "." , identifier ;
+postfix_suffix
+  = member_access_suffix
+  | array_access_suffix ;
 
-primary_target
-  = identifier
-  | self_reference
-  | "(" , expression , ")"
-  | member_access ;
+member_access_suffix
+  = "." , identifier ;
+
+array_access_suffix
+  = "[" , ws0 , int_literal , ws0 , "]" ;
 
 self_reference
   = "$self" , "." , identifier , { "." , identifier } ;

@@ -519,6 +519,7 @@ Expressions are pure and deterministic. The implementation supports:
 
 - identifiers
 - member access with `value.member`
+- array access with `value[0]`
 - string, int, float, and boolean literals
 - array literals
 - record literals using comma-separated fields
@@ -546,9 +547,29 @@ Numeric operator semantics:
 Operator precedence is implemented in the parser and matches the repository
 tests.
 
+Array access uses zero-based indexing and requires an integer literal index.
+Index access applies only to array values. Accessing a non-array value or using
+an out-of-range index is invalid.
+
 Member access may refer to record fields or enum members. Enum members are
 still resolved semantically against named enums, while other dotted expressions
 are resolved as value member access.
+
+Array access may be chained with member access when the indexed element is a
+record value.
+
+```mace
+[output = data]
+{
+  names: ["Ada", "Linus", "Grace"],
+  first_name: $self.names[0],
+  users: [
+    { name: "Ada" },
+    { name: "Linus" }
+  ],
+  first_user_name: $self.users[0].name
+}
+```
 
 ## `$self`
 
@@ -588,6 +609,7 @@ The processor validates:
 - enum-constrained values in variables and schema-validated output
 - schema conformance for record literals and output blocks
 - mixed-type array literals
+- invalid array access targets and out-of-range indexes
 
 ## Comments
 
