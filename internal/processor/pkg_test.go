@@ -940,6 +940,19 @@ Identity second = 42;
 		}}),
 	)
 
+	It("processes nested variable array access fixtures", func() {
+		processor := New()
+		result, err := processor.ProcessFile("testdata/array_access/nested_variable_access.mace")
+		tAssert.NoError(err)
+		assertExpectedOutput(result, map[string]expectedValue{
+			"level1": {kind: ValueInt, int64: 1},
+			"level2": {kind: ValueInt, int64: 2},
+			"level3": {kind: ValueInt, int64: 3},
+			"level4": {kind: ValueInt, int64: 4},
+			"level5": {kind: ValueInt, int64: 5},
+		})
+	})
+
 	DescribeTable("rejects circular imports",
 		func(path string) {
 			processor := New()

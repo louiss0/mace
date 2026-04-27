@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -1039,6 +1040,26 @@ schema_doc Status {
 			}
 			if tAssert.Len(file.Output.SchemaFields, 1) {
 				tAssert.Equal("Public user schema", file.Output.SchemaFields[0].Description)
+			}
+		})
+
+		It("parses nested variable array access fixtures", func() {
+			file, err := parseFixtureFile(filepath.Join("testdata", "array_access", "nested_variable_access.mace"))
+			tAssert.NoError(err)
+			if !tAssert.NotNil(file.Script) {
+				return
+			}
+			if !tAssert.Len(file.Output.DataFields, 5) {
+				return
+			}
+
+			for depth, field := range file.Output.DataFields {
+				current := field.Value
+				for level := depth + 1; level >= 1; level-- {
+					access := requireArrayAccess(current, "0")
+					current = access.Target
+				}
+				requireIdentifier(current, fmt.Sprintf("level%d", depth+1))
 			}
 		})
 	})
