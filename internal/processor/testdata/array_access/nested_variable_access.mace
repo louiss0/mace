@@ -4,10 +4,11 @@ array<array<int>> level2 = [[2]];
 array<array<array<int>>> level3 = [[[3]]];
 array<array<array<array<int>>>> level4 = [[[[4]]]];
 array<array<array<array<array<int>>>>> level5 = [[[[[5]]]]];
+
 |============================================================|
 [output = data]
 {
-  level1: level1[0],
+  level1: level1[],
   level2: level2[0][0],
   level3: level3[0][0][0],
   level4: level4[0][0][0][0],
