@@ -809,11 +809,13 @@ func mixedArrayLiteralDiagnostic(file ast.File, tokens []lexer.Token, message st
 }
 
 func arrayAccessDiagnostic(tokens []lexer.Token, message string) (protocol.Diagnostic, bool) {
-	if !(strings.Contains(message, "array access requires an array value") || strings.Contains(message, "array index ") && strings.Contains(message, "out of range")) {
+	hasArrayAccessError := strings.Contains(message, "array access requires an array value")
+	hasOutOfRangeError := strings.Contains(message, "array index ") && strings.Contains(message, "out of range")
+	if !hasArrayAccessError && !hasOutOfRangeError {
 		return protocol.Diagnostic{}, false
 	}
 
-	if strings.Contains(message, "array index ") && strings.Contains(message, "out of range") {
+	if hasOutOfRangeError {
 		if token, ok := arrayAccessIndexToken(tokens, message); ok {
 			return diagnosticWithCode(tokenProtocolRange(token), protocol.DiagnosticSeverityError, diagnosticTypeInvalidArrayAccess, message), true
 		}
