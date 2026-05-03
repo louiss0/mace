@@ -75,6 +75,29 @@ injectable string user = "Ada";
 }`, output)
 	})
 
+	It("keeps legacy top-level imports when script imports also exist", func() {
+		file, err := parseMaceFile(`from "./legacy.mace" import Config;
+|===|
+from "./shared.mace" import User;
+string name = "Ada";
+|===|
+[output = data]
+{ result: name; }`)
+		tAssert.NoError(err)
+
+		output, err := FormatFile(file)
+		tAssert.NoError(err)
+		tAssert.Equal(`|===================================|
+from "./legacy.mace" import Config;
+from "./shared.mace" import User;
+string name = "Ada";
+|===================================|
+[output = data]
+{
+  result: name
+}`, output)
+	})
+
 	It("formats documentation declarations and inline output docs", func() {
 		file, err := parseMaceFile(`|===|
 schema User: { name: string; };

@@ -54,10 +54,29 @@ func normalizedScriptBlock(file ast.File) (ast.ScriptBlock, bool) {
 	if file.Script != nil {
 		script = *file.Script
 	}
-	if len(script.Imports) == 0 {
-		script.Imports = append([]ast.ImportDeclaration{}, file.Imports...)
-	}
+
+	legacyImports := topLevelImports(file.Imports, script.Imports)
+	script.Imports = append(append([]ast.ImportDeclaration{}, legacyImports...), script.Imports...)
 	return script, true
+}
+
+func topLevelImports(fileImports []ast.ImportDeclaration, scriptImports []ast.ImportDeclaration) []ast.ImportDeclaration {
+	if len(scriptImports) == 0 || len(fileImports) < len(scriptImports) {
+		return append([]ast.ImportDeclaration{}, fileImports...)
+	}
+
+	offset := len(fileImports) - len(scriptImports)
+	for index, importDeclaration := range scriptImports {
+		if !sameImportDeclaration(fileImports[offset+index], importDeclaration) {
+			return append([]ast.ImportDeclaration{}, fileImports...)
+		}
+	}
+
+	return append([]ast.ImportDeclaration{}, fileImports[:offset]...)
+}
+
+func sameImportDeclaration(left ast.ImportDeclaration, right ast.ImportDeclaration) bool {
+	return left.Path.Lexeme == right.Path.Lexeme && slices.Equal(left.Identifiers, right.Identifiers)
 }
 
 func (f *formatter) writeScriptBlock(script ast.ScriptBlock) error {
