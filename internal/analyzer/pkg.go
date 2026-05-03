@@ -191,6 +191,72 @@ func CodeActions(snapshot Snapshot, uri protocol.DocumentUri, targetRange protoc
 	return snapshot.codeActions(uri, targetRange)
 }
 
+func PrepareRename(snapshot Snapshot, position protocol.Position) (protocol.Range, bool) {
+	symbol, ok := snapshot.symbolAt(position)
+	if !ok {
+		return protocol.Range{}, false
+	}
+	return symbol.Range, true
+}
+
+func Rename(text string, snapshot Snapshot, uri protocol.DocumentUri, position protocol.Position, newName string) (*protocol.WorkspaceEdit, bool) {
+	symbol, ok := snapshot.symbolAt(position)
+	if !ok || newName == "" {
+		return nil, false
+	}
+
+	edits := map[protocol.DocumentUri][]protocol.TextEdit{}
+	currentURI := uri
+	if snapshot.documentURI != "" {
+		currentURI = snapshot.documentURI
+	}
+
+	for index, token := range snapshot.tokens {
+		if token.Type != lexer.TokenIdentifier || token.Lexeme != symbol.Name {
+			continue
+		}
+		rangeValue := tokenProtocolRange(token)
+		if !renameTokenMatchesSymbol(snapshot.tokens, index, rangeValue, symbol) {
+			continue
+		}
+		edits[currentURI] = append(edits[currentURI], protocol.TextEdit{Range: rangeValue, NewText: newName})
+	}
+
+	if symbol.Origin == symbolOriginImport {
+		definitionURI := symbol.Definition.URI
+		if definitionURI != "" && definitionURI != currentURI {
+			edits[definitionURI] = append(edits[definitionURI], protocol.TextEdit{Range: symbol.Definition.Range, NewText: newName})
+		}
+	}
+
+	if len(edits) == 0 {
+		return nil, false
+	}
+	return &protocol.WorkspaceEdit{Changes: edits}, true
+}
+
+func renameTokenMatchesSymbol(tokens []lexer.Token, index int, rangeValue protocol.Range, symbol semanticSymbol) bool {
+	if rangesEqual(rangeValue, symbol.Range) || rangesEqual(rangeValue, symbol.Definition.Range) {
+		return true
+	}
+
+	if index+1 < len(tokens) {
+		switch tokens[index+1].Type {
+		case lexer.TokenColon, lexer.TokenQuestion:
+			return false
+		}
+	}
+
+	return true
+}
+
+func rangesEqual(left protocol.Range, right protocol.Range) bool {
+	return left.Start.Line == right.Start.Line &&
+		left.Start.Character == right.Start.Character &&
+		left.End.Line == right.End.Line &&
+		left.End.Character == right.End.Character
+}
+
 func FormatDocumentText(text string) string {
 	return formatDocumentText(text)
 }

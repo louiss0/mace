@@ -1,6 +1,6 @@
-from "./profile.mace" import Age;
 
-|===================|
+|=================================|
+from "./profile.mace" import Age;
 type Name: string;
 
 schema User: {
@@ -13,7 +13,7 @@ schema Secret: {
 };
 
 int local = 1;
-|===================|
+|=================================|
 
 [output = schema]
 {

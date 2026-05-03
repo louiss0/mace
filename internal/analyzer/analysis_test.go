@@ -251,6 +251,155 @@ injectable string env;
 		tAssert.Empty(snapshot.diagnostics)
 	})
 
+	It("offers documentation generation actions for declarations", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := analyzeDocumentAt(`|===|
+schema User: { name: string; };
+|===|
+[output = schema]
+{
+  User: User;
+}`, documentPath)
+
+		rangeValue := protocol.Range{
+			Start: protocol.Position{Line: 1, Character: 7},
+			End:   protocol.Position{Line: 1, Character: 11},
+		}
+		action := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), rangeValue, "Generate schema_doc")
+		edits := action.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
+		if tAssert.Len(edits, 1) {
+			tAssert.Contains(edits[0].NewText, `schema_doc User`)
+		}
+	})
+
+	It("offers inline description actions for type declarations", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := analyzeDocumentAt(`|===|
+type Name: string;
+|===|
+[output = schema]
+{
+  Name: Name;
+}`, documentPath)
+
+		rangeValue := protocol.Range{
+			Start: protocol.Position{Line: 1, Character: 5},
+			End:   protocol.Position{Line: 1, Character: 9},
+		}
+		action := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), rangeValue, "Add inline /# description")
+		edits := action.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
+		if tAssert.Len(edits, 1) {
+			tAssert.Equal(` /# description`, edits[0].NewText)
+		}
+	})
+
+	It("treats schema directives as import usages", func() {
+		workspace, err := os.MkdirTemp("", "mace-analysis-schema-directive-import-*")
+		tAssert.NoError(err)
+
+		writeAnalysisFile(workspace, "shared.mace", `[output = schema]
+{
+  User: { name: string; };
+}`)
+		documentPath := filepath.Join(workspace, "consumer.mace")
+		snapshot := analyzeDocumentAt(`|===|
+from "./shared.mace" import User;
+|===|
+[output = data, schema = User]
+{
+  name: "Ada";
+}`, documentPath)
+
+		tAssert.Empty(snapshot.diagnostics)
+	})
+
+	It("inserts inline descriptions after complex type declarations", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := analyzeDocumentAt(`|===|
+type User: { name: string; };
+|===|
+[output = schema]
+{
+  User: User;
+}`, documentPath)
+
+		rangeValue := protocol.Range{
+			Start: protocol.Position{Line: 1, Character: 5},
+			End:   protocol.Position{Line: 1, Character: 9},
+		}
+		action := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), rangeValue, "Add inline /# description")
+		edits := action.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
+		if tAssert.Len(edits, 1) {
+			tAssert.Equal(protocol.UInteger(1), edits[0].Range.Start.Line)
+			tAssert.Equal(protocol.UInteger(28), edits[0].Range.Start.Character)
+		}
+	})
+
+	It("warns about unused imports and offers removal", func() {
+		workspace, err := os.MkdirTemp("", "mace-analysis-unused-import-*")
+		tAssert.NoError(err)
+
+		writeAnalysisFile(workspace, "shared.mace", `[output = schema]
+{
+  User: { name: string; };
+  Config: { enabled: boolean; };
+}`)
+		documentPath := filepath.Join(workspace, "consumer.mace")
+		snapshot := analyzeDocumentAt(`|===|
+from "./shared.mace" import User, Config;
+User user = { name: "Ada"; };
+|===|
+[output = data]
+{
+  user: user;
+}`, documentPath)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			diagnostic := snapshot.diagnostics[0]
+			tAssert.Contains(diagnostic.Message, `import "Config" is never used`)
+			tAssert.Equal(protocol.DiagnosticSeverityWarning, *diagnostic.Severity)
+			tAssert.Equal(string(diagnosticImportUnused), requireDiagnosticCode(diagnostic))
+
+			action := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), diagnostic.Range, "Remove unused import")
+			edits := action.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
+			if tAssert.Len(edits, 1) {
+				tAssert.Equal(``, edits[0].NewText)
+				tAssert.Equal(protocol.UInteger(1), edits[0].Range.Start.Line)
+				tAssert.Equal(protocol.UInteger(32), edits[0].Range.Start.Character)
+				tAssert.Equal(protocol.UInteger(40), edits[0].Range.End.Character)
+			}
+		}
+	})
+
+	It("warns about unused script variables and offers removal", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := analyzeDocumentAt(`|===|
+string unused = "Ada";
+string name = "Grace";
+|===|
+[output = data]
+{
+  result: name;
+}`, documentPath)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			diagnostic := snapshot.diagnostics[0]
+			tAssert.Contains(diagnostic.Message, `script variable "unused" is never used`)
+			tAssert.Equal(protocol.DiagnosticSeverityWarning, *diagnostic.Severity)
+			tAssert.Equal(string(diagnosticDeclarationUnusedVariable), requireDiagnosticCode(diagnostic))
+
+			action := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), diagnostic.Range, "Remove unused variable")
+			edits := action.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
+			if tAssert.Len(edits, 1) {
+				tAssert.Equal(``, edits[0].NewText)
+				tAssert.Equal(protocol.UInteger(1), edits[0].Range.Start.Line)
+				tAssert.Equal(protocol.UInteger(0), edits[0].Range.Start.Character)
+				tAssert.Equal(protocol.UInteger(2), edits[0].Range.End.Line)
+				tAssert.Equal(protocol.UInteger(0), edits[0].Range.End.Character)
+			}
+		}
+	})
+
 	It("translates mixed array literal errors in script declarations into token-scoped diagnostics", func() {
 		snapshot := analyzeDocument(`|===|
 array<int> foo = ["4", 6];
