@@ -211,11 +211,15 @@ func Rename(text string, snapshot Snapshot, uri protocol.DocumentUri, position p
 		currentURI = snapshot.documentURI
 	}
 
-	for _, token := range snapshot.tokens {
+	for index, token := range snapshot.tokens {
 		if token.Type != lexer.TokenIdentifier || token.Lexeme != symbol.Name {
 			continue
 		}
-		edits[currentURI] = append(edits[currentURI], protocol.TextEdit{Range: tokenProtocolRange(token), NewText: newName})
+		rangeValue := tokenProtocolRange(token)
+		if !renameTokenMatchesSymbol(snapshot.tokens, index, rangeValue, symbol) {
+			continue
+		}
+		edits[currentURI] = append(edits[currentURI], protocol.TextEdit{Range: rangeValue, NewText: newName})
 	}
 
 	if symbol.Origin == symbolOriginImport {
@@ -229,6 +233,28 @@ func Rename(text string, snapshot Snapshot, uri protocol.DocumentUri, position p
 		return nil, false
 	}
 	return &protocol.WorkspaceEdit{Changes: edits}, true
+}
+
+func renameTokenMatchesSymbol(tokens []lexer.Token, index int, rangeValue protocol.Range, symbol semanticSymbol) bool {
+	if rangesEqual(rangeValue, symbol.Range) || rangesEqual(rangeValue, symbol.Definition.Range) {
+		return true
+	}
+
+	if index+1 < len(tokens) {
+		switch tokens[index+1].Type {
+		case lexer.TokenColon, lexer.TokenQuestion:
+			return false
+		}
+	}
+
+	return true
+}
+
+func rangesEqual(left protocol.Range, right protocol.Range) bool {
+	return left.Start.Line == right.Start.Line &&
+		left.Start.Character == right.Start.Character &&
+		left.End.Line == right.End.Line &&
+		left.End.Character == right.End.Character
 }
 
 func FormatDocumentText(text string) string {

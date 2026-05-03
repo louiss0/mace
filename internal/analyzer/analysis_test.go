@@ -293,6 +293,48 @@ type Name: string;
 		}
 	})
 
+	It("treats schema directives as import usages", func() {
+		workspace, err := os.MkdirTemp("", "mace-analysis-schema-directive-import-*")
+		tAssert.NoError(err)
+
+		writeAnalysisFile(workspace, "shared.mace", `[output = schema]
+{
+  User: { name: string; };
+}`)
+		documentPath := filepath.Join(workspace, "consumer.mace")
+		snapshot := analyzeDocumentAt(`|===|
+from "./shared.mace" import User;
+|===|
+[output = data, schema = User]
+{
+  name: "Ada";
+}`, documentPath)
+
+		tAssert.Empty(snapshot.diagnostics)
+	})
+
+	It("inserts inline descriptions after complex type declarations", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := analyzeDocumentAt(`|===|
+type User: { name: string; };
+|===|
+[output = schema]
+{
+  User: User;
+}`, documentPath)
+
+		rangeValue := protocol.Range{
+			Start: protocol.Position{Line: 1, Character: 5},
+			End:   protocol.Position{Line: 1, Character: 9},
+		}
+		action := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), rangeValue, "Add inline /# description")
+		edits := action.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
+		if tAssert.Len(edits, 1) {
+			tAssert.Equal(protocol.UInteger(1), edits[0].Range.Start.Line)
+			tAssert.Equal(protocol.UInteger(28), edits[0].Range.Start.Character)
+		}
+	})
+
 	It("warns about unused imports and offers removal", func() {
 		workspace, err := os.MkdirTemp("", "mace-analysis-unused-import-*")
 		tAssert.NoError(err)

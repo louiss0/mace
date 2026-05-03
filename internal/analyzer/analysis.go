@@ -723,12 +723,21 @@ func declarationSemicolonInsertRange(text string, tokens []lexer.Token, nameToke
 		return protocol.Range{}, false
 	}
 
+	depth := 0
 	for index := nameIndex; index < len(tokens); index++ {
-		if tokens[index].Type != lexer.TokenSemicolon {
-			continue
+		switch tokens[index].Type {
+		case lexer.TokenLBrace, lexer.TokenLBracket, lexer.TokenLParen:
+			depth++
+		case lexer.TokenRBrace, lexer.TokenRBracket, lexer.TokenRParen:
+			if depth > 0 {
+				depth--
+			}
+		case lexer.TokenSemicolon:
+			if depth == 0 {
+				position := positionFromIndex(text, tokenStartIndex(text, tokens[index]))
+				return protocol.Range{Start: position, End: position}, true
+			}
 		}
-		position := positionFromIndex(text, tokenStartIndex(text, tokens[index]))
-		return protocol.Range{Start: position, End: position}, true
 	}
 
 	return protocol.Range{}, false
@@ -1187,6 +1196,11 @@ func referencedNames(file ast.File) map[string]struct{} {
 	}
 	for _, field := range file.Output.SchemaFields {
 		visitType(field.Type)
+	}
+	for _, directive := range file.Output.Directives {
+		if directive.Kind == ast.OutputDirectiveSchema {
+			names[directive.Value] = struct{}{}
+		}
 	}
 
 	return names

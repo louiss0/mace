@@ -1350,7 +1350,6 @@ Personality value = Personality.
 		tAssert.Equal([]string{"base", "profile"}, labels)
 	})
 
-
 	It("suggests nested keys from previously evaluated self fields", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = data]
@@ -1362,7 +1361,6 @@ Personality value = Personality.
 		labels := completeLabels(server, uri, 3, uint32(len(`  result: $self.profile.`)))
 		tAssert.Equal([]string{"details", "name"}, labels)
 	})
-
 
 	It("suggests nested keys from uppercase self paths", func() {
 		openEmptyDocument(server, uri, nil)
@@ -2304,6 +2302,40 @@ schema User: { name: string; };
 
 		tAssert.Equal("Remove schema_file directive", actions[0].Title)
 		tAssert.Equal("Remove imports and script block", actions[1].Title)
+	})
+
+	It("does not rename unrelated field keys", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+string name = "Ada";
+|===|
+[output = data]
+{
+  name: { name: name; };
+}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentRename, protocol.RenameParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 5, Character: 16},
+			},
+			NewName: "username",
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		edit, ok := resultValue.(*protocol.WorkspaceEdit)
+		tAssert.True(ok)
+		if !ok || !tAssert.NotNil(edit) {
+			return
+		}
+		edits := edit.Changes[uri]
+		tAssert.Len(edits, 2)
+		for _, edit := range edits {
+			tAssert.NotEqual(protocol.UInteger(2), edit.Range.Start.Character)
+			tAssert.NotEqual(protocol.UInteger(10), edit.Range.Start.Character)
+		}
 	})
 
 	It("renames local variables from a usage", func() {
