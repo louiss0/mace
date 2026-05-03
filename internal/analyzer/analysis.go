@@ -461,6 +461,10 @@ func analyzeDocumentAt(text string, documentPath string) analysisSnapshot {
 	snapshot.declarations = declarationsFromSymbols(snapshot.symbols)
 	snapshot.diagnostics = append(snapshot.diagnostics, fileDiagnostics...)
 
+	unusedDiagnostics, unusedActions := unusedVariableAnalysis(text, file, tokens, documentPath)
+	snapshot.diagnostics = append(snapshot.diagnostics, unusedDiagnostics...)
+	snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, unusedActions...)
+
 	return snapshot
 }
 
@@ -581,6 +585,136 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 	diagnostics = append(diagnostics, schemaOutputVariableDiagnostics(file, tokens)...)
 
 	return diagnostics, actions
+}
+
+func unusedVariableAnalysis(text string, file ast.File, tokens []lexer.Token, documentPath string) ([]protocol.Diagnostic, []analysisCodeActionCandidate) {
+	if file.Script == nil || file.Output.Mode == ast.OutputModeSchema {
+		return nil, nil
+	}
+
+	usedNames := usedVariableNames(file)
+	diagnostics := []protocol.Diagnostic{}
+	actions := []analysisCodeActionCandidate{}
+	for _, item := range file.Script.Items {
+		declaration, ok := item.(ast.VariableDeclaration)
+		if !ok {
+			continue
+		}
+		if declaration.Injectable && !declaration.HasValue {
+			continue
+		}
+		if _, used := usedNames[declaration.Name]; used {
+			continue
+		}
+
+		rangeValue := tokenProtocolRange(declaration.NameToken)
+		message := fmt.Sprintf("script variable %q is never used", declaration.Name)
+		diagnostics = append(diagnostics, diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityWarning, diagnosticDeclarationUnusedVariable, message))
+
+		if documentPath == "" {
+			continue
+		}
+		editRange, ok := declarationEditRange(text, tokens, declaration.NameToken)
+		if !ok {
+			continue
+		}
+		actions = append(actions, analysisCodeActionCandidate{
+			Range: rangeValue,
+			Action: protocol.CodeAction{
+				Title: "Remove unused variable",
+				Kind:  Ptr(protocol.CodeActionKindQuickFix),
+				Edit: &protocol.WorkspaceEdit{
+					Changes: map[protocol.DocumentUri][]protocol.TextEdit{
+						pathURI(documentPath): {{Range: editRange, NewText: ""}},
+					},
+				},
+			},
+		})
+	}
+
+	return diagnostics, actions
+}
+
+func usedVariableNames(file ast.File) map[string]struct{} {
+	usedNames := map[string]struct{}{}
+	visit := func(expression ast.Expression) {}
+	visit = func(expression ast.Expression) {
+		switch typed := expression.(type) {
+		case ast.Identifier:
+			usedNames[typed.Name] = struct{}{}
+		case ast.MemberAccess:
+			visit(typed.Target)
+		case ast.ArrayAccess:
+			visit(typed.Target)
+		case ast.ArrayLiteral:
+			for _, element := range typed.Elements {
+				visit(element)
+			}
+		case ast.RecordLiteral:
+			for _, field := range typed.Fields {
+				visit(field.Value)
+			}
+		case ast.PrefixExpression:
+			visit(typed.Right)
+		case ast.InfixExpression:
+			visit(typed.Left)
+			visit(typed.Right)
+		case ast.ConditionalExpression:
+			visit(typed.Condition)
+			visit(typed.Then)
+			visit(typed.Else)
+		}
+	}
+
+	if file.Script != nil {
+		for _, item := range file.Script.Items {
+			declaration, ok := item.(ast.VariableDeclaration)
+			if ok && declaration.HasValue {
+				visit(declaration.Value)
+			}
+		}
+	}
+	for _, field := range file.Output.DataFields {
+		visit(field.Value)
+	}
+
+	return usedNames
+}
+
+func declarationEditRange(text string, tokens []lexer.Token, nameToken lexer.Token) (protocol.Range, bool) {
+	nameIndex := -1
+	for index, token := range tokens {
+		if token.Line == nameToken.Line && token.Column == nameToken.Column && token.Lexeme == nameToken.Lexeme {
+			nameIndex = index
+			break
+		}
+	}
+	if nameIndex < 0 {
+		return protocol.Range{}, false
+	}
+
+	startIndex := nameIndex
+	for startIndex > 0 && tokens[startIndex-1].Type != lexer.TokenSemicolon && tokens[startIndex-1].Type != lexer.TokenScriptDelimiter {
+		startIndex--
+	}
+	endIndex := nameIndex
+	for endIndex < len(tokens) && tokens[endIndex].Type != lexer.TokenSemicolon {
+		endIndex++
+	}
+	if endIndex >= len(tokens) {
+		return protocol.Range{}, false
+	}
+
+	start := tokenStartIndex(text, tokens[startIndex])
+	end := tokenStartIndex(text, tokens[endIndex]) + len(tokens[endIndex].Lexeme)
+	if end < len(text) && text[end] == '\r' {
+		end++
+	}
+	if end < len(text) && text[end] == '\n' {
+		end++
+	}
+
+	return protocol.Range{Start: positionFromIndex(text, start), End: positionFromIndex(text, end)}, true
 }
 
 func schemaOutputVariableDiagnostics(file ast.File, tokens []lexer.Token) []protocol.Diagnostic {

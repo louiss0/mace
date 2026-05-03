@@ -52,6 +52,7 @@ const (
 	diagnosticDeclarationEnumRequiresExplicitValues diagnosticCode = "mace.declaration.enum-requires-explicit-values"
 	diagnosticDeclarationVariableMissingType        diagnosticCode = "mace.declaration.variable-missing-type"
 	diagnosticDeclarationVariableMissingInitializer diagnosticCode = "mace.declaration.variable-missing-initializer"
+	diagnosticDeclarationUnusedVariable             diagnosticCode = "mace.declaration.unused-variable"
 	diagnosticTypeInitializerMismatch               diagnosticCode = "mace.type.initializer-type-mismatch"
 	diagnosticTypeInvalidUnaryOperator              diagnosticCode = "mace.type.invalid-unary-operator"
 	diagnosticTypeInvalidBinaryOperator             diagnosticCode = "mace.type.invalid-binary-operator"

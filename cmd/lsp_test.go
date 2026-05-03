@@ -518,7 +518,9 @@ Personality value = Personality.is_type;
 			tAssert.Contains(params.Diagnostics[0].Message, `expected identifier after '.' in member access`)
 
 			params = requireDiagnostics(notifications[1])
-			tAssert.Empty(params.Diagnostics)
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, `script variable "value" is never used`)
+			}
 		}
 	})
 

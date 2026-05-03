@@ -251,6 +251,35 @@ injectable string env;
 		tAssert.Empty(snapshot.diagnostics)
 	})
 
+	It("warns about unused script variables and offers removal", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := analyzeDocumentAt(`|===|
+string unused = "Ada";
+string name = "Grace";
+|===|
+[output = data]
+{
+  result: name;
+}`, documentPath)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			diagnostic := snapshot.diagnostics[0]
+			tAssert.Contains(diagnostic.Message, `script variable "unused" is never used`)
+			tAssert.Equal(protocol.DiagnosticSeverityWarning, *diagnostic.Severity)
+			tAssert.Equal(string(diagnosticDeclarationUnusedVariable), requireDiagnosticCode(diagnostic))
+
+			action := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), diagnostic.Range, "Remove unused variable")
+			edits := action.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
+			if tAssert.Len(edits, 1) {
+				tAssert.Equal(``, edits[0].NewText)
+				tAssert.Equal(protocol.UInteger(1), edits[0].Range.Start.Line)
+				tAssert.Equal(protocol.UInteger(0), edits[0].Range.Start.Character)
+				tAssert.Equal(protocol.UInteger(2), edits[0].Range.End.Line)
+				tAssert.Equal(protocol.UInteger(0), edits[0].Range.End.Character)
+			}
+		}
+	})
+
 	It("translates mixed array literal errors in script declarations into token-scoped diagnostics", func() {
 		snapshot := analyzeDocument(`|===|
 array<int> foo = ["4", 6];
