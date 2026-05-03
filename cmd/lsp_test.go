@@ -2338,6 +2338,78 @@ string name = "Ada";
 		}
 	})
 
+	It("prepares rename on the local imported symbol usage range", func() {
+		workspace, err := os.MkdirTemp("", "mace-lsp-prepare-import-*")
+		tAssert.NoError(err)
+		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
+{
+  User: { name: string; };
+}`)
+		consumerURI := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+		openEmptyDocument(server, consumerURI, nil)
+		didChange(server, consumerURI, 2, `|===|
+from "./shared.mace" import User;
+|===|
+[output = data, schema = User]
+{
+  result: { name: "Ada"; };
+}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentPrepareRename, protocol.PrepareRenameParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: consumerURI},
+				Position:     protocol.Position{Line: 3, Character: 25},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		expectedRange := protocol.Range{Start: protocol.Position{Line: 3, Character: 25}, End: protocol.Position{Line: 3, Character: 29}}
+		switch rangeValue := resultValue.(type) {
+		case protocol.Range:
+			tAssert.Equal(expectedRange, rangeValue)
+		case *protocol.Range:
+			tAssert.Equal(expectedRange, *rangeValue)
+		default:
+			tAssert.Failf("unexpected prepare rename result", "%T", resultValue)
+		}
+	})
+
+	It("does not rename enum members sharing a variable name", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+string name = "Ada";
+enum Field: string { name, title };
+|===|
+[output = data]
+{
+  result: name;
+}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentRename, protocol.RenameParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 6, Character: 11},
+			},
+			NewName: "username",
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		edit, ok := resultValue.(*protocol.WorkspaceEdit)
+		tAssert.True(ok)
+		if !ok || !tAssert.NotNil(edit) {
+			return
+		}
+		edits := edit.Changes[uri]
+		tAssert.Len(edits, 2)
+		for _, edit := range edits {
+			tAssert.NotEqual(protocol.Position{Line: 2, Character: 21}, edit.Range.Start)
+		}
+	})
+
 	It("renames local variables from a usage", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|

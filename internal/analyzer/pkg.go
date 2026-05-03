@@ -192,11 +192,11 @@ func CodeActions(snapshot Snapshot, uri protocol.DocumentUri, targetRange protoc
 }
 
 func PrepareRename(snapshot Snapshot, position protocol.Position) (protocol.Range, bool) {
-	symbol, ok := snapshot.symbolAt(position)
-	if !ok {
+	if _, ok := snapshot.symbolAt(position); !ok {
 		return protocol.Range{}, false
 	}
-	return symbol.Range, true
+
+	return identifierRangeAt(snapshot.text, position)
 }
 
 func Rename(text string, snapshot Snapshot, uri protocol.DocumentUri, position protocol.Position, newName string) (*protocol.WorkspaceEdit, bool) {
@@ -216,7 +216,7 @@ func Rename(text string, snapshot Snapshot, uri protocol.DocumentUri, position p
 			continue
 		}
 		rangeValue := tokenProtocolRange(token)
-		if !renameTokenMatchesSymbol(snapshot.tokens, index, rangeValue, symbol) {
+		if !renameTokenMatchesSymbol(snapshot, index, rangeValue, symbol) {
 			continue
 		}
 		edits[currentURI] = append(edits[currentURI], protocol.TextEdit{Range: rangeValue, NewText: newName})
@@ -235,19 +235,56 @@ func Rename(text string, snapshot Snapshot, uri protocol.DocumentUri, position p
 	return &protocol.WorkspaceEdit{Changes: edits}, true
 }
 
-func renameTokenMatchesSymbol(tokens []lexer.Token, index int, rangeValue protocol.Range, symbol semanticSymbol) bool {
-	if rangesEqual(rangeValue, symbol.Range) || rangesEqual(rangeValue, symbol.Definition.Range) {
+func renameTokenMatchesSymbol(snapshot Snapshot, index int, rangeValue protocol.Range, symbol semanticSymbol) bool {
+	if rangesEqual(rangeValue, symbol.Range) || sameLocation(protocol.Location{URI: snapshot.documentURI, Range: rangeValue}, symbol.Definition) {
 		return true
 	}
 
-	if index+1 < len(tokens) {
-		switch tokens[index+1].Type {
+	if index+1 < len(snapshot.tokens) {
+		switch snapshot.tokens[index+1].Type {
 		case lexer.TokenColon, lexer.TokenQuestion:
 			return false
 		}
 	}
 
-	return true
+	if tokenInEnumDeclaration(snapshot.tokens, index) {
+		return false
+	}
+
+	location, ok := snapshot.definitionAt(rangeValue.Start)
+	if ok && sameLocation(location, symbol.Definition) {
+		return true
+	}
+
+	return symbol.Kind == protocol.CompletionItemKindVariable && !tokenInEnumDeclaration(snapshot.tokens, index)
+}
+
+func tokenInEnumDeclaration(tokens []lexer.Token, index int) bool {
+	depth := 0
+	for cursor := index; cursor >= 0; cursor-- {
+		switch tokens[cursor].Type {
+		case lexer.TokenRBrace:
+			depth++
+		case lexer.TokenLBrace:
+			if depth == 0 {
+				for check := cursor - 1; check >= 0; check-- {
+					switch tokens[check].Type {
+					case lexer.TokenEnum:
+						return true
+					case lexer.TokenSemicolon, lexer.TokenScriptDelimiter:
+						return false
+					}
+				}
+				return false
+			}
+			depth--
+		}
+	}
+	return false
+}
+
+func sameLocation(left protocol.Location, right protocol.Location) bool {
+	return left.URI == right.URI && rangesEqual(left.Range, right.Range)
 }
 
 func rangesEqual(left protocol.Range, right protocol.Range) bool {
@@ -454,9 +491,24 @@ func identifierPrefixAt(text string, position protocol.Position) string {
 }
 
 func identifierAt(text string, position protocol.Position) (string, bool) {
+	rangeValue, ok := identifierRangeAt(text, position)
+	if !ok {
+		return "", false
+	}
+
+	start := positionIndex(text, rangeValue.Start)
+	end := positionIndex(text, rangeValue.End)
+	if start < 0 || end < start || end > len(text) {
+		return "", false
+	}
+
+	return text[start:end], true
+}
+
+func identifierRangeAt(text string, position protocol.Position) (protocol.Range, bool) {
 	index := positionIndex(text, position)
 	if index < 0 || index > len(text) {
-		return "", false
+		return protocol.Range{}, false
 	}
 
 	start := index
@@ -470,10 +522,10 @@ func identifierAt(text string, position protocol.Position) (string, bool) {
 	}
 
 	if start == end {
-		return "", false
+		return protocol.Range{}, false
 	}
 
-	return text[start:end], true
+	return protocol.Range{Start: positionFromIndex(text, start), End: positionFromIndex(text, end)}, true
 }
 
 func isDirectivePosition(text string, position protocol.Position) bool {
