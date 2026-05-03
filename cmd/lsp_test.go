@@ -990,6 +990,19 @@ string selected = names[
 		tAssert.Equal([]string{"0", "1", "2"}, labels)
 	})
 
+	It("suggests array indexes for local arrays despite unrelated script errors", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+array<string> names = ["Ada", "Linus", "Grace"];
+string broken = missing;
+string selected = names[
+|===|
+[output = data] {}`, nil)
+
+		labels := completeLabels(server, uri, 3, uint32(len(`string selected = names[`)))
+		tAssert.Equal([]string{"0", "1", "2"}, labels)
+	})
+
 	It("suggests enum members after a dot for local enums", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|

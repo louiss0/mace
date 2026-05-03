@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
 	"path"
@@ -361,7 +362,87 @@ func resolveArrayCompletionTarget(document document, uri protocol.DocumentUri, p
 		}
 	}
 
-	return resolveCompletionValue(expression, variables, self)
+	value, ok := resolveCompletionValue(expression, variables, self)
+	if ok {
+		return value, true
+	}
+
+	return resolveLocalArrayCompletionTarget(document.text, position, expression)
+}
+
+func resolveLocalArrayCompletionTarget(text string, position protocol.Position, expression ast.Expression) (processor.Value, bool) {
+	file, ok := partialScriptFile(text, position)
+	if !ok || file.Script == nil {
+		return processor.Value{}, false
+	}
+
+	declarations := map[string]ast.Expression{}
+	for _, item := range file.Script.Items {
+		declaration, ok := item.(ast.VariableDeclaration)
+		if !ok || !declaration.HasValue {
+			continue
+		}
+		declarations[declaration.Name] = declaration.Value
+	}
+
+	return resolveLocalCompletionValue(expression, declarations, map[string]struct{}{})
+}
+
+func resolveLocalCompletionValue(expression ast.Expression, declarations map[string]ast.Expression, seen map[string]struct{}) (processor.Value, bool) {
+	switch typed := expression.(type) {
+	case ast.Identifier:
+		declaration, ok := declarations[typed.Name]
+		if !ok {
+			return processor.Value{}, false
+		}
+		if _, recursive := seen[typed.Name]; recursive {
+			return processor.Value{}, false
+		}
+		nextSeen := maps.Clone(seen)
+		nextSeen[typed.Name] = struct{}{}
+		return resolveLocalCompletionValue(declaration, declarations, nextSeen)
+	case ast.MemberAccess:
+		target, ok := resolveLocalCompletionValue(typed.Target, declarations, seen)
+		if !ok || target.Kind != processor.ValueRecord {
+			return processor.Value{}, false
+		}
+		value, ok := target.Record[typed.Name]
+		return value, ok
+	case ast.ArrayAccess:
+		target, ok := resolveLocalCompletionValue(typed.Target, declarations, seen)
+		if !ok || target.Kind != processor.ValueArray {
+			return processor.Value{}, false
+		}
+		index, err := strconv.Atoi(typed.Index.Lexeme)
+		if err != nil || index < 0 || index >= len(target.Array) {
+			return processor.Value{}, false
+		}
+		return target.Array[index], true
+	case ast.ArrayLiteral:
+		values := make([]processor.Value, 0, len(typed.Elements))
+		for _, element := range typed.Elements {
+			value, ok := resolveLocalCompletionValue(element, declarations, seen)
+			if !ok {
+				return processor.Value{}, false
+			}
+			values = append(values, value)
+		}
+		return processor.Value{Kind: processor.ValueArray, Array: values}, true
+	case ast.RecordLiteral:
+		fields := map[string]processor.Value{}
+		for _, field := range typed.Fields {
+			value, ok := resolveLocalCompletionValue(field.Value, declarations, seen)
+			if !ok {
+				return processor.Value{}, false
+			}
+			fields[field.Name] = value
+		}
+		return processor.Value{Kind: processor.ValueRecord, Record: fields}, true
+	case ast.StringLiteral, ast.IntLiteral, ast.FloatLiteral, ast.BooleanLiteral:
+		return resolveCompletionValue(expression, nil, processor.Value{})
+	default:
+		return processor.Value{}, false
+	}
 }
 
 func partialScriptVariables(text string, uri protocol.DocumentUri, position protocol.Position) map[string]processor.Value {
