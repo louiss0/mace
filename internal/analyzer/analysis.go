@@ -12,6 +12,7 @@ import (
 	"github.com/samber/lo"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
+	"github.com/louiss0/mace/internal/formatter"
 	"github.com/louiss0/mace/internal/lexer"
 	"github.com/louiss0/mace/internal/parser/ast"
 	"github.com/louiss0/mace/internal/processor"
@@ -449,6 +450,7 @@ func analyzeDocumentAt(text string, documentPath string) analysisSnapshot {
 		snapshot.diagnostics = append(snapshot.diagnostics, fileDiagnostics...)
 		if semanticDiagnostic, ok := semanticDiagnosticFromError(file, tokens, processErr); ok {
 			snapshot.diagnostics = append(snapshot.diagnostics, semanticDiagnostic)
+			snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, semanticCodeActions(text, file, tokens, documentPath, semanticDiagnostic, processErr.Error())...)
 		} else if len(snapshot.diagnostics) == 0 {
 			snapshot.diagnostics = append(snapshot.diagnostics, diagnosticFromError(processErr))
 		}
@@ -595,6 +597,57 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 	return diagnostics, actions
 }
 
+func semanticCodeActions(text string, file ast.File, tokens []lexer.Token, documentPath string, diagnostic protocol.Diagnostic, message string) []analysisCodeActionCandidate {
+	if documentPath == "" {
+		return nil
+	}
+
+	actions := []analysisCodeActionCandidate{}
+	uri := pathURI(documentPath)
+	addAction := func(title string, rangeValue protocol.Range, newText string) {
+		actions = append(actions, analysisCodeActionCandidate{Range: diagnostic.Range, Action: protocol.CodeAction{Title: title, Kind: Ptr(protocol.CodeActionKindQuickFix), Edit: &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: {{Range: rangeValue, NewText: newText}}}}}})
+	}
+
+	if rangeValue, textValue, ok := missingSchemaFieldEdit(text, file, message); ok {
+		addAction("Add missing schema field", rangeValue, textValue)
+	}
+	if rangeValue, ok := unknownFieldEditRange(text, file, tokens, message); ok {
+		addAction("Remove unknown field", rangeValue, "")
+	}
+	if rangeValue, ok := duplicateFieldEditRange(text, tokens, message); ok {
+		addAction("Remove duplicate field", rangeValue, "")
+	}
+	if rangeValue, textValue, ok := typeMismatchEdit(file, diagnostic, message); ok {
+		addAction("Fix type mismatch", rangeValue, textValue)
+	}
+	if rangeValue, textValue, ok := enumValueEdit(file, tokens, diagnostic, message); ok {
+		addAction("Convert raw value to enum member", rangeValue, textValue)
+	}
+	if rangeValue, textValue, ok := missingImportEdit(text, file, tokens, message); ok {
+		addAction("Add missing import", rangeValue, textValue)
+	}
+	if rangeValue, textValue, ok := moveImportsToTopEdit(text, file, tokens, message); ok {
+		addAction("Move imports to top", rangeValue, textValue)
+	}
+	if rangeValue, ok := duplicateDeclarationEditRange(text, file, tokens, message); ok {
+		addAction("Remove duplicate declaration", rangeValue, "")
+	}
+	if rangeValue, textValue, ok := declarationOperatorEdit(text, tokens, message); ok {
+		addAction("Fix declaration operator", rangeValue, textValue)
+	}
+	if rangeValue, textValue, ok := selfOrderingEdit(text, file, tokens, message); ok {
+		addAction("Move referenced field before $self use", rangeValue, textValue)
+	}
+	if rangeValue, ok := invalidDirectiveComboEditRange(text, file, tokens, message); ok {
+		addAction("Fix invalid output directive combination", rangeValue, "")
+	}
+	if rangeValue, textValue, ok := generateOutputFromSchemaEdit(text, file, tokens, message); ok {
+		addAction("Generate output from schema", rangeValue, textValue)
+	}
+
+	return actions
+}
+
 func documentationCodeActions(text string, file ast.File, tokens []lexer.Token, documentPath string) []analysisCodeActionCandidate {
 	if file.Script == nil || documentPath == "" {
 		return nil
@@ -699,6 +752,274 @@ func documentationInsertRange(text string, tokens []lexer.Token) (protocol.Range
 	}
 
 	return protocol.Range{}, false
+}
+
+func missingSchemaFieldEdit(text string, file ast.File, message string) (protocol.Range, string, bool) {
+	matches := regexp.MustCompile(`missing required field "([^"]+)"`).FindStringSubmatch(message)
+	if len(matches) != 2 || file.Output.Mode != ast.OutputModeData {
+		return protocol.Range{}, "", false
+	}
+	insertRange, ok := outputInsertRange(text)
+	if !ok {
+		return protocol.Range{}, "", false
+	}
+	return insertRange, fmt.Sprintf("  %s: TODO;\n", matches[1]), true
+}
+
+func unknownFieldEditRange(text string, file ast.File, tokens []lexer.Token, message string) (protocol.Range, bool) {
+	matches := regexp.MustCompile(`unknown field "([^"]+)"`).FindStringSubmatch(message)
+	if len(matches) != 2 {
+		return protocol.Range{}, false
+	}
+	return namedFieldEditRange(text, tokens, matches[1])
+}
+
+func duplicateFieldEditRange(text string, tokens []lexer.Token, message string) (protocol.Range, bool) {
+	matches := regexp.MustCompile(`duplicate (?:output )?field "([^"]+)"`).FindStringSubmatch(message)
+	if len(matches) != 2 {
+		return protocol.Range{}, false
+	}
+	return namedFieldEditRangeFromEnd(text, tokens, matches[1])
+}
+
+func typeMismatchEdit(file ast.File, diagnostic protocol.Diagnostic, message string) (protocol.Range, string, bool) {
+	expected, _, ok := parseExpectedAndActualType(message)
+	if !ok {
+		return protocol.Range{}, "", false
+	}
+	return diagnostic.Range, placeholderForType(file, expected), true
+}
+
+func enumValueEdit(file ast.File, tokens []lexer.Token, diagnostic protocol.Diagnostic, message string) (protocol.Range, string, bool) {
+	matches := regexp.MustCompile(`invalid enum value .+ for enum "([^"]+)"`).FindStringSubmatch(message)
+	if len(matches) != 2 || file.Script == nil {
+		return protocol.Range{}, "", false
+	}
+	for _, item := range file.Script.Items {
+		declaration, ok := item.(ast.EnumDeclaration)
+		if !ok || declaration.Name != matches[1] || len(declaration.Members) == 0 {
+			continue
+		}
+		return diagnostic.Range, declaration.Name + "." + declaration.Members[0].Name, true
+	}
+	return protocol.Range{}, "", false
+}
+
+func missingImportEdit(text string, file ast.File, tokens []lexer.Token, message string) (protocol.Range, string, bool) {
+	matches := regexp.MustCompile(`unknown type "([^"]+)"|unknown type reference "([^"]+)"|unknown identifier "([^"]+)"`).FindStringSubmatch(message)
+	if len(matches) == 0 || file.Script != nil {
+		return protocol.Range{}, "", false
+	}
+	name := ""
+	for _, match := range matches[1:] {
+		if match != "" {
+			name = match
+			break
+		}
+	}
+	if name == "" {
+		return protocol.Range{}, "", false
+	}
+	return protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, fmt.Sprintf("|===|\nfrom \"./shared.mace\" import %s;\n|===|\n", name), true
+}
+
+func moveImportsToTopEdit(text string, file ast.File, tokens []lexer.Token, message string) (protocol.Range, string, bool) {
+	if !strings.Contains(message, "import declarations must appear at top of script block") {
+		return protocol.Range{}, "", false
+	}
+	formatted, ok := formatTextQuick(text)
+	return fullDocumentRange(text), formatted, ok
+}
+
+func duplicateDeclarationEditRange(text string, file ast.File, tokens []lexer.Token, message string) (protocol.Range, bool) {
+	matches := regexp.MustCompile(`duplicate (?:enum )?declaration "([^"]+)"`).FindStringSubmatch(message)
+	if len(matches) != 2 {
+		return protocol.Range{}, false
+	}
+	for index := len(tokens) - 1; index >= 0; index-- {
+		if tokens[index].Type == lexer.TokenIdentifier && tokens[index].Lexeme == matches[1] {
+			return declarationEditRange(text, tokens, tokens[index])
+		}
+	}
+	return protocol.Range{}, false
+}
+
+func declarationOperatorEdit(text string, tokens []lexer.Token, message string) (protocol.Range, string, bool) {
+	if !strings.Contains(message, "expected ':'") && !strings.Contains(message, "expected '='") {
+		return protocol.Range{}, "", false
+	}
+	for _, token := range tokens {
+		if token.Type == lexer.TokenColon && strings.Contains(message, "expected '='") {
+			return tokenProtocolRange(token), "=", true
+		}
+		if token.Type == lexer.TokenAssign && strings.Contains(message, "expected ':'") {
+			return tokenProtocolRange(token), ":", true
+		}
+	}
+	return protocol.Range{}, "", false
+}
+
+func selfOrderingEdit(text string, file ast.File, tokens []lexer.Token, message string) (protocol.Range, string, bool) {
+	if !strings.Contains(message, "unknown self reference") && !strings.Contains(message, "forward") {
+		return protocol.Range{}, "", false
+	}
+	formatted, ok := formatTextQuick(text)
+	return fullDocumentRange(text), formatted, ok
+}
+
+func invalidDirectiveComboEditRange(text string, file ast.File, tokens []lexer.Token, message string) (protocol.Range, bool) {
+	if !strings.Contains(message, "schema directive is invalid when output mode is schema") && !strings.Contains(message, "schema_file directive is invalid when output mode is schema") {
+		return protocol.Range{}, false
+	}
+	for index, token := range tokens {
+		if token.Type == lexer.TokenSchema || token.Type == lexer.TokenSchemaFile {
+			start := tokenStartIndex(text, token)
+			end := start + len(token.Lexeme)
+			for index > 0 && tokens[index-1].Type == lexer.TokenComma {
+				start = tokenStartIndex(text, tokens[index-1])
+				break
+			}
+			for j := index; j < len(tokens) && tokens[j].Type != lexer.TokenComma && tokens[j].Type != lexer.TokenRBracket; j++ {
+				end = tokenStartIndex(text, tokens[j]) + len(tokens[j].Lexeme)
+			}
+			return protocol.Range{Start: positionFromIndex(text, start), End: positionFromIndex(text, end)}, true
+		}
+	}
+	return protocol.Range{}, false
+}
+
+func generateOutputFromSchemaEdit(text string, file ast.File, tokens []lexer.Token, message string) (protocol.Range, string, bool) {
+	if !strings.Contains(message, "missing required field") || file.Script == nil {
+		return protocol.Range{}, "", false
+	}
+	for _, directive := range file.Output.Directives {
+		if directive.Kind != ast.OutputDirectiveSchema {
+			continue
+		}
+		for _, item := range file.Script.Items {
+			declaration, ok := item.(ast.SchemaDeclaration)
+			if !ok || declaration.Name != directive.Value {
+				continue
+			}
+			fields := []string{}
+			for _, field := range declaration.Type.Fields {
+				fields = append(fields, fmt.Sprintf("  %s: %s;", field.Name, placeholderForType(file, typeReferenceDetail(field.Type))))
+			}
+			if rangeValue, ok := outputBodyRange(text, tokens); ok {
+				return rangeValue, "{\n" + strings.Join(fields, "\n") + "\n}", true
+			}
+		}
+	}
+	return protocol.Range{}, "", false
+}
+
+func placeholderForType(file ast.File, name string) string {
+	switch name {
+	case "string":
+		return `""`
+	case "int":
+		return "0"
+	case "float":
+		return "0.0"
+	case "boolean":
+		return "false"
+	}
+	if file.Script != nil {
+		for _, item := range file.Script.Items {
+			if declaration, ok := item.(ast.EnumDeclaration); ok && declaration.Name == name && len(declaration.Members) > 0 {
+				return declaration.Name + "." + declaration.Members[0].Name
+			}
+		}
+	}
+	return "TODO"
+}
+
+func outputInsertRange(text string) (protocol.Range, bool) {
+	index := strings.LastIndex(text, "}")
+	if index < 0 {
+		return protocol.Range{}, false
+	}
+	return protocol.Range{Start: positionFromIndex(text, index), End: positionFromIndex(text, index)}, true
+}
+
+func outputBodyRange(text string, tokens []lexer.Token) (protocol.Range, bool) {
+	start, end := -1, -1
+	for _, token := range tokens {
+		if token.Type == lexer.TokenLBrace {
+			start = tokenStartIndex(text, token)
+			break
+		}
+	}
+	for index := len(tokens) - 1; index >= 0; index-- {
+		if tokens[index].Type == lexer.TokenRBrace {
+			end = tokenStartIndex(text, tokens[index]) + 1
+			break
+		}
+	}
+	if start < 0 || end <= start {
+		return protocol.Range{}, false
+	}
+	return protocol.Range{Start: positionFromIndex(text, start), End: positionFromIndex(text, end)}, true
+}
+
+func namedFieldEditRange(text string, tokens []lexer.Token, name string) (protocol.Range, bool) {
+	for index, token := range tokens {
+		if token.Type == lexer.TokenIdentifier && token.Lexeme == name {
+			if rangeValue, ok := fieldEditRangeAt(text, tokens, index); ok {
+				return rangeValue, true
+			}
+		}
+	}
+	return protocol.Range{}, false
+}
+
+func namedFieldEditRangeFromEnd(text string, tokens []lexer.Token, name string) (protocol.Range, bool) {
+	for index := len(tokens) - 1; index >= 0; index-- {
+		if tokens[index].Type == lexer.TokenIdentifier && tokens[index].Lexeme == name {
+			if rangeValue, ok := fieldEditRangeAt(text, tokens, index); ok {
+				return rangeValue, true
+			}
+		}
+	}
+	return protocol.Range{}, false
+}
+
+func fieldEditRangeAt(text string, tokens []lexer.Token, nameIndex int) (protocol.Range, bool) {
+	endIndex := nameIndex
+	for endIndex < len(tokens) && tokens[endIndex].Type != lexer.TokenSemicolon && tokens[endIndex].Type != lexer.TokenComma && tokens[endIndex].Type != lexer.TokenRBrace {
+		endIndex++
+	}
+	if endIndex >= len(tokens) {
+		return protocol.Range{}, false
+	}
+	start := tokenStartIndex(text, tokens[nameIndex])
+	end := tokenStartIndex(text, tokens[endIndex]) + len(tokens[endIndex].Lexeme)
+	for start > 0 && (text[start-1] == ' ' || text[start-1] == '\t') {
+		start--
+	}
+	if end < len(text) && text[end] == '\r' {
+		end++
+	}
+	if end < len(text) && text[end] == '\n' {
+		end++
+	}
+	return protocol.Range{Start: positionFromIndex(text, start), End: positionFromIndex(text, end)}, true
+}
+
+func fullDocumentRange(text string) protocol.Range {
+	return protocol.Range{Start: protocol.Position{}, End: positionFromIndex(text, len(text))}
+}
+
+func formatTextQuick(text string) (string, bool) {
+	file, err := parseFile(text)
+	if err != nil {
+		return "", false
+	}
+	formatted, err := formatter.FormatFile(file)
+	if err != nil {
+		return "", false
+	}
+	return formatted, true
 }
 
 func unusedImportAnalysis(text string, file ast.File, tokens []lexer.Token, documentPath string) ([]protocol.Diagnostic, []analysisCodeActionCandidate) {
