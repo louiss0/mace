@@ -814,13 +814,8 @@ func arrayAccessDiagnostic(tokens []lexer.Token, message string) (protocol.Diagn
 	}
 
 	if strings.Contains(message, "array index ") && strings.Contains(message, "out of range") {
-		for _, token := range tokens {
-			if token.Type != lexer.TokenInt {
-				continue
-			}
-			if strings.Contains(message, fmt.Sprintf("array index %s", token.Lexeme)) {
-				return diagnosticWithCode(tokenProtocolRange(token), protocol.DiagnosticSeverityError, diagnosticTypeInvalidArrayAccess, message), true
-			}
+		if token, ok := arrayAccessIndexToken(tokens, message); ok {
+			return diagnosticWithCode(tokenProtocolRange(token), protocol.DiagnosticSeverityError, diagnosticTypeInvalidArrayAccess, message), true
 		}
 	}
 
@@ -832,6 +827,24 @@ func arrayAccessDiagnostic(tokens []lexer.Token, message string) (protocol.Diagn
 	}
 
 	return protocol.Diagnostic{}, false
+}
+
+func arrayAccessIndexToken(tokens []lexer.Token, message string) (lexer.Token, bool) {
+	for index := len(tokens) - 2; index >= 1; index-- {
+		token := tokens[index]
+		if token.Type != lexer.TokenInt {
+			continue
+		}
+		if tokens[index-1].Type != lexer.TokenLBracket || tokens[index+1].Type != lexer.TokenRBracket {
+			continue
+		}
+		if !strings.Contains(message, fmt.Sprintf("array index %s", token.Lexeme)) {
+			continue
+		}
+		return token, true
+	}
+
+	return lexer.Token{}, false
 }
 
 func parseExpectedAndActualType(message string) (string, string, bool) {

@@ -560,6 +560,28 @@ array<int> values = [1, 2, 3];
 		}
 	})
 
+	It("binds out-of-range diagnostics to the array index token", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+int count = 9;
+array<int> values = [1, 2, 3];
+|===|
+[output = data]
+{
+  result: values[9]
+}`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Equal(protocol.UInteger(6), params.Diagnostics[0].Range.Start.Line)
+				tAssert.Equal(protocol.UInteger(17), params.Diagnostics[0].Range.Start.Character)
+				tAssert.Equal(protocol.UInteger(18), params.Diagnostics[0].Range.End.Character)
+			}
+		}
+	})
+
 	It("does not report mixed array diagnostics for string arrays", func() {
 		notifications := []capturedNotification{}
 
