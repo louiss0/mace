@@ -19,6 +19,7 @@ const (
 	diagnosticSyntaxMalformedSchema                 diagnosticCode = "mace.syntax.malformed-schema"
 	diagnosticSyntaxMalformedVariableDeclaration    diagnosticCode = "mace.syntax.malformed-variable-declaration"
 	diagnosticSyntaxMalformedOutputField            diagnosticCode = "mace.syntax.malformed-output-field"
+	diagnosticSyntaxInvalidArrayAccessIndex         diagnosticCode = "mace.syntax.invalid-array-access-index"
 	diagnosticSyntaxUnexpectedToken                 diagnosticCode = "mace.syntax.unexpected-token"
 	diagnosticFileImportAfterScript                 diagnosticCode = "mace.file-structure.import-after-script-block"
 	diagnosticFileImportAfterOutput                 diagnosticCode = "mace.file-structure.import-after-output-block"
@@ -55,6 +56,7 @@ const (
 	diagnosticTypeInvalidUnaryOperator              diagnosticCode = "mace.type.invalid-unary-operator"
 	diagnosticTypeInvalidBinaryOperator             diagnosticCode = "mace.type.invalid-binary-operator"
 	diagnosticTypeMixedArrayLiteral                 diagnosticCode = "mace.type.mixed-array-literal"
+	diagnosticTypeInvalidArrayAccess                diagnosticCode = "mace.type.invalid-array-access"
 	diagnosticTypeInvalidEnumValue                  diagnosticCode = "mace.type.invalid-enum-value"
 	diagnosticTypeUnknownIdentifier                 diagnosticCode = "mace.type.unknown-identifier"
 	diagnosticTypeUnknownSelfField                  diagnosticCode = "mace.type.unknown-self-field"
@@ -101,6 +103,8 @@ func classifyParseDiagnostic(message string) diagnosticCode {
 		return diagnosticSyntaxMalformedEnum
 	case strings.Contains(message, "schema declaration") || strings.Contains(message, "record type") || strings.Contains(message, "schema field"):
 		return diagnosticSyntaxMalformedSchema
+	case strings.Contains(message, "integer index in array access") || strings.Contains(message, "after array access index"):
+		return diagnosticSyntaxInvalidArrayAccessIndex
 	case strings.Contains(message, "variable declaration"):
 		return diagnosticSyntaxMalformedVariableDeclaration
 	case strings.Contains(message, "output field"):
@@ -162,6 +166,8 @@ func classifyProcessorDiagnostic(message string) diagnosticCode {
 		return diagnosticDeclarationDuplicateOutputField
 	case strings.Contains(message, "array literal has mixed element types"):
 		return diagnosticTypeMixedArrayLiteral
+	case strings.Contains(message, "array access requires an array value") || strings.Contains(message, "array index ") && strings.Contains(message, "out of range"):
+		return diagnosticTypeInvalidArrayAccess
 	case strings.Contains(message, "invalid enum value"):
 		return diagnosticTypeInvalidEnumValue
 	case strings.Contains(message, "unknown identifier"):

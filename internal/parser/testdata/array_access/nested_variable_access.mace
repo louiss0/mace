@@ -1,0 +1,15 @@
+|===|
+array<int> level1 = [1];
+array<array<int>> level2 = [[1]];
+array<array<array<int>>> level3 = [[[1]]];
+array<array<array<array<int>>>> level4 = [[[[1]]]];
+array<array<array<array<array<int>>>>> level5 = [[[[[1]]]]];
+|===|
+[output = data]
+{
+  level1: level1[0],
+  level2: level2[0][0],
+  level3: level3[0][0][0],
+  level4: level4[0][0][0][0],
+  level5: level5[0][0][0][0][0],
+}

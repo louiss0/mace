@@ -253,32 +253,32 @@ type Scalar: variant[string, int];
 Scalar value = "Ada";
 |===|`)),
 		Entry("documentation declarations", wrapScriptWithOutput(`|===|
-schema User: { name: string; };
+schema User: { name: string, };
 
 enum Status: string {
-  Pending,
+  Pending /# Current state,
 };
 
 type Name: string;
 string greeting = "Hello";
 
 schema_doc User {
-  summary: "Represents a user.";
+  summary: "Represents a user.",
   description: """
 # User
-""";
+""",
 };
 
 schema_doc Status {
-  summary: "Represents a status.";
+  summary: "Represents a status.",
 };
 
 gen_doc Name {
-  summary: "Represents a name.";
+  summary: "Represents a name.",
 };
 
 gen_doc greeting {
-  summary: "Rendered greeting.";
+  summary: "Rendered greeting.",
 };
 |===|`)),
 		Entry("line and block comments are ignored", `from "testdata/imports/base.mace" import Name; /= trailing import comment
@@ -336,9 +336,6 @@ Unknown value = 1;
 |===|`), "unknown type"),
 		Entry("int type mismatch", wrapScriptWithOutput(`|===|
 int total = 1.5;
-|===|`), "type mismatch"),
-		Entry("mixed numeric expression", wrapScriptWithOutput(`|===|
-float total = 1 + 2.0;
 |===|`), "type mismatch"),
 		Entry("duplicate declaration name", wrapScriptWithOutput(`|===|
 type User: string;
@@ -943,6 +940,19 @@ Identity second = 42;
 		}}),
 	)
 
+	It("processes nested variable array access fixtures", func() {
+		processor := New()
+		result, err := processor.ProcessFile("testdata/array_access/nested_variable_access.mace")
+		tAssert.NoError(err)
+		assertExpectedOutput(result, map[string]expectedValue{
+			"level1": {kind: ValueInt, int64: 1},
+			"level2": {kind: ValueInt, int64: 2},
+			"level3": {kind: ValueInt, int64: 3},
+			"level4": {kind: ValueInt, int64: 4},
+			"level5": {kind: ValueInt, int64: 5},
+		})
+	})
+
 	DescribeTable("rejects circular imports",
 		func(path string) {
 			processor := New()
@@ -1187,6 +1197,7 @@ string value = "Ada";
 		Entry("multiplication", `[output = data] { result: 2 * 3; }`, expectedValue{kind: ValueInt, int64: 6}),
 		Entry("division", `[output = data] { result: 8 / 2; }`, expectedValue{kind: ValueInt, int64: 4}),
 		Entry("modulo", `[output = data] { result: 9 % 4; }`, expectedValue{kind: ValueInt, int64: 1}),
+		Entry("mixed modulo", `[output = data] { result: 9 % 2.5; }`, expectedValue{kind: ValueFloat, float: 1.5}),
 		Entry("exponentiation", `[output = data] { result: 2 ** 3; }`, expectedValue{kind: ValueInt, int64: 8}),
 		Entry("shift left", `[output = data] { result: 1 << 3; }`, expectedValue{kind: ValueInt, int64: 8}),
 		Entry("shift right", `[output = data] { result: 8 >> 1; }`, expectedValue{kind: ValueInt, int64: 4}),
@@ -1251,6 +1262,15 @@ float result = 1.5 + 2.5;
 		Entry("float division", wrapScriptWithOutputFields(`|===|
 float result = 7.5 / 2.5;
 |===|`, "result: result;"), expectedValue{kind: ValueFloat, float: 3.0}),
+		Entry("mixed numeric addition", wrapScriptWithOutputFields(`|===|
+float result = 1 + 2.5;
+|===|`, "result: result;"), expectedValue{kind: ValueFloat, float: 3.5}),
+		Entry("mixed numeric exponentiation", wrapScriptWithOutputFields(`|===|
+float result = 2 ** 3.0;
+|===|`, "result: result;"), expectedValue{kind: ValueFloat, float: 8.0}),
+		Entry("mixed numeric modulo", wrapScriptWithOutputFields(`|===|
+float result = 5 % 2.5;
+|===|`, "result: result;"), expectedValue{kind: ValueFloat, float: 0.0}),
 	)
 
 	DescribeTable("returns operator precedence results",
@@ -1291,22 +1311,6 @@ int result = false || true ? 5 : 2;
 |===|`, "result: result;"), expectedValue{kind: ValueInt, int64: 5}),
 	)
 
-	DescribeTable("rejects invalid math operators",
-		func(file string) {
-			processor := New()
-			_, err := processor.Process(file)
-			tAssert.Error(err)
-		},
-		Entry("mixed numeric addition", wrapScriptWithOutputFields(`|===|
-int total = 1 + 2.0;
-|===|`, "total: total;")),
-		Entry("mixed numeric exponentiation", wrapScriptWithOutputFields(`|===|
-float total = 2 ** 3.0;
-|===|`, "total: total;")),
-		Entry("modulo with float", wrapScriptWithOutputFields(`|===|
-int total = 5 % 2.5;
-|===|`, "total: total;")),
-	)
 
 	DescribeTable("accepts non-math operators in script variables",
 		func(file string, expected map[string]expectedValue) {
@@ -1408,6 +1412,20 @@ array<int> result = [base, base + 1, base + 2];
 			{kind: ValueInt, int64: 6},
 			{kind: ValueInt, int64: 7},
 		}}),
+		Entry("string arrays support all string literal forms", wrapScriptWithOutputFields(`|===|
+array<string> result = ['Kyle', "Tyrone", """Luke"""];
+|===|`, "result: result;"), expectedValue{kind: ValueArray, array: []expectedValue{
+			{kind: ValueString, string: "Kyle"},
+			{kind: ValueString, string: "Tyrone"},
+			{kind: ValueString, string: "Luke"},
+		}}),
+		Entry("negative int arrays", wrapScriptWithOutputFields(`|===|
+array<int> result = [-1, -2, -3];
+|===|`, "result: result;"), expectedValue{kind: ValueArray, array: []expectedValue{
+			{kind: ValueInt, int64: -1},
+			{kind: ValueInt, int64: -2},
+			{kind: ValueInt, int64: -3},
+		}}),
 		Entry("nested arrays", wrapScriptWithOutputFields(`|===|
 int base = 1 + 2;
 array<array<int> > result = [[base, base + 1], [base + 2, base + 3]];
@@ -1456,6 +1474,18 @@ array<Point> result = [
 				"y": {kind: ValueInt, int64: 5},
 			}},
 		}}),
+		Entry("primitive array access", wrapScriptWithOutputFields(`|===|
+array<int> numbers = [5, 6, 7];
+int result = numbers[1];
+|===|`, "result: result;"), expectedValue{kind: ValueInt, int64: 6}),
+		Entry("record array access with member access", wrapScriptWithOutputFields(`|===|
+schema User: { name: string; age: int; };
+array<User> users = [
+  { name: "Ada"; age: 30; },
+  { name: "Linus"; age: 55; }
+];
+string result = users[0].name;
+|===|`, "result: result;"), expectedValue{kind: ValueString, string: "Ada"}),
 		Entry("self reference", wrapScriptWithOutputFields(`|===|
 int base = 3 * 4;
 |===|`, "base: base;\nresult: $self.base + base;"), expectedValue{kind: ValueInt, int64: 24}),
@@ -1493,6 +1523,12 @@ int base = 3 * 4;
 				{kind: ValueInt, int64: 4},
 			}},
 		}}),
+		Entry("inline negative float array expression", `[output = data] { result: [-1.5, -2.5]; }`, expectedValue{kind: ValueArray, array: []expectedValue{
+			{kind: ValueFloat, float: -1.5},
+			{kind: ValueFloat, float: -2.5},
+		}}),
+		Entry("inline primitive array access", `[output = data] { result: [1, 2, 3][0]; }`, expectedValue{kind: ValueInt, int64: 1}),
+		Entry("inline record array access", `[output = data] { result: [{ name: "Ada"; }, { name: "Linus"; }][1].name; }`, expectedValue{kind: ValueString, string: "Linus"}),
 		Entry("inline optional output field", `[output = data] { result?: 1 + 1; }`, expectedValue{kind: ValueInt, int64: 2}),
 	)
 
@@ -1519,6 +1555,17 @@ int base = 3 * 4;
 		Entry("level 3", `[output = data] { profile: { details: { age: 30; }; }; result: $self.profile.details.age; }`, expectedValue{kind: ValueInt, int64: 30}),
 		Entry("level 4", `[output = data] { tree: { branch: { leaf: { value: 9; }; }; }; result: $self.tree.branch.leaf.value; }`, expectedValue{kind: ValueInt, int64: 9}),
 		Entry("level 5", `[output = data] { a: { b: { c: { d: { e: true; }; }; }; }; result: $self.a.b.c.d.e; }`, expectedValue{kind: ValueBoolean, bool: true}),
+	)
+
+	DescribeTable("returns nested array access results by depth",
+		func(input string, expected expectedValue) {
+			assertProcessedResult(input, expected)
+		},
+		Entry("level 1", `[output = data] { result: [10][0]; }`, expectedValue{kind: ValueInt, int64: 10}),
+		Entry("level 2", `[output = data] { result: [[10]][0][0]; }`, expectedValue{kind: ValueInt, int64: 10}),
+		Entry("level 3", `[output = data] { result: [[[10]]][0][0][0]; }`, expectedValue{kind: ValueInt, int64: 10}),
+		Entry("level 4", `[output = data] { result: [[[[10]]]][0][0][0][0]; }`, expectedValue{kind: ValueInt, int64: 10}),
+		Entry("level 5", `[output = data] { result: [[[[[10]]]]][0][0][0][0][0]; }`, expectedValue{kind: ValueInt, int64: 10}),
 	)
 
 	DescribeTable("returns mixed self reference results",
@@ -1548,6 +1595,18 @@ int base = 3 * 4;
 		},
 		Entry("future field reference", `[output = data] { result: $self.base; base: 4; }`, "unknown self reference"),
 		Entry("nested path through non record", `[output = data] { base: 4; result: $self.base.value; }`, "non-record"),
+	)
+
+	DescribeTable("rejects invalid array access",
+		func(input, message string) {
+			processor := New()
+			_, err := processor.Process(input)
+			tAssert.Error(err)
+			tAssert.ErrorContains(err, message)
+		},
+		Entry("non array target", `[output = data] { result: 1[0]; }`, "array access requires an array value at level 1"),
+		Entry("out of range index", `[output = data] { result: [1, 2][3]; }`, "out of range at level 1"),
+		Entry("wrong nested level", `[output = data] { result: [[1]][0][0][0]; }`, "array access requires an array value at level 3"),
 	)
 
 	DescribeTable("rejects inline arrays with mixed types",

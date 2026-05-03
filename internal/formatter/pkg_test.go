@@ -43,7 +43,10 @@ var _ = Describe("FormatFile", func() {
 |===|
 type Name: string;
 schema User: { name: string; age?: int; };
-enum Fruit: string { Apple, Strawberry = "strawberry" };
+enum Fruit: string {
+  Apple /# Default apple,
+  Strawberry = "strawberry" /# Explicit strawberry
+};
 injectable string user = "Ada";
 |===|
 [output = data, schema = User]
@@ -52,20 +55,19 @@ injectable string user = "Ada";
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
-		tAssert.Equal(`from "./base.mace" import User, Config;
-
-|===============================|
+		tAssert.Equal(`|==================================================|
+from "./base.mace" import User, Config;
 type Name: string;
 schema User: {
   name: string,
   age?: int
 }
 enum Fruit: string {
-  Apple,
-  Strawberry = "strawberry"
+  Apple /# Default apple,
+  Strawberry = "strawberry" /# Explicit strawberry
 }
 injectable string user = "Ada";
-|===============================|
+|==================================================|
 [output = data, schema = User]
 {
   name: user,
@@ -73,14 +75,37 @@ injectable string user = "Ada";
 }`, output)
 	})
 
+	It("keeps legacy top-level imports when script imports also exist", func() {
+		file, err := parseMaceFile(`from "./legacy.mace" import Config;
+|===|
+from "./shared.mace" import User;
+string name = "Ada";
+|===|
+[output = data]
+{ result: name; }`)
+		tAssert.NoError(err)
+
+		output, err := FormatFile(file)
+		tAssert.NoError(err)
+		tAssert.Equal(`|===================================|
+from "./legacy.mace" import Config;
+from "./shared.mace" import User;
+string name = "Ada";
+|===================================|
+[output = data]
+{
+  result: name
+}`, output)
+	})
+
 	It("formats documentation declarations and inline output docs", func() {
 		file, err := parseMaceFile(`|===|
 schema User: { name: string; };
 schema_doc User {
-  summary: "Represents a user.";
+  summary: "Represents a user.",
   description: """
 # User
-""";
+""",
 };
 |===|
 [output = schema]
@@ -97,10 +122,10 @@ schema User: {
   name: string
 }
 schema_doc User {
-  summary: "Represents a user.";
+  summary: "Represents a user.",
   description: """
 # User
-""";
+""",
 };
 |================================|
 [output = schema]
@@ -121,6 +146,18 @@ schema_doc User {
 		tAssert.Equal(`[output = data]
 {
   result: (1 + 2) * (3 - 4 ? 5 : 6)
+}`, output)
+	})
+
+	It("formats array access expressions", func() {
+		file, err := parseMaceFile(`[output = data] { result: users [ 0 ] . name; }`)
+		tAssert.NoError(err)
+
+		output, err := FormatFile(file)
+		tAssert.NoError(err)
+		tAssert.Equal(`[output = data]
+{
+  result: users[0].name
 }`, output)
 	})
 

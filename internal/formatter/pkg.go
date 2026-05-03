@@ -30,19 +30,9 @@ func newFormatter() *formatter {
 }
 
 func (f *formatter) writeFile(file ast.File) error {
-	for index, importDeclaration := range file.Imports {
-		if index > 0 {
-			f.writeLine("")
-		}
-		f.writeImportDeclaration(importDeclaration)
-	}
-
-	if len(file.Imports) > 0 && file.Script != nil {
-		f.writeLine("")
-	}
-
-	if file.Script != nil {
-		if err := f.writeScriptBlock(*file.Script); err != nil {
+	script, hasScript := normalizedScriptBlock(file)
+	if hasScript {
+		if err := f.writeScriptBlock(script); err != nil {
 			return err
 		}
 		f.writeLine("")
@@ -51,16 +41,49 @@ func (f *formatter) writeFile(file ast.File) error {
 	return f.writeOutputBlock(file.Output)
 }
 
-func (f *formatter) writeImportDeclaration(importDeclaration ast.ImportDeclaration) {
-	f.write("from ")
-	f.write(importDeclaration.Path.Lexeme)
-	f.write(" import ")
-	f.write(strings.Join(importDeclaration.Identifiers, ", "))
-	f.writeLine(";")
+func formatImportDeclaration(importDeclaration ast.ImportDeclaration) string {
+	return "from " + importDeclaration.Path.Lexeme + " import " + strings.Join(importDeclaration.Identifiers, ", ") + ";"
+}
+
+func normalizedScriptBlock(file ast.File) (ast.ScriptBlock, bool) {
+	if file.Script == nil && len(file.Imports) == 0 {
+		return ast.ScriptBlock{}, false
+	}
+
+	script := ast.ScriptBlock{}
+	if file.Script != nil {
+		script = *file.Script
+	}
+
+	legacyImports := topLevelImports(file.Imports, script.Imports)
+	script.Imports = append(append([]ast.ImportDeclaration{}, legacyImports...), script.Imports...)
+	return script, true
+}
+
+func topLevelImports(fileImports []ast.ImportDeclaration, scriptImports []ast.ImportDeclaration) []ast.ImportDeclaration {
+	if len(scriptImports) == 0 || len(fileImports) < len(scriptImports) {
+		return append([]ast.ImportDeclaration{}, fileImports...)
+	}
+
+	offset := len(fileImports) - len(scriptImports)
+	for index, importDeclaration := range scriptImports {
+		if !sameImportDeclaration(fileImports[offset+index], importDeclaration) {
+			return append([]ast.ImportDeclaration{}, fileImports...)
+		}
+	}
+
+	return append([]ast.ImportDeclaration{}, fileImports[:offset]...)
+}
+
+func sameImportDeclaration(left ast.ImportDeclaration, right ast.ImportDeclaration) bool {
+	return left.Path.Lexeme == right.Path.Lexeme && slices.Equal(left.Identifiers, right.Identifiers)
 }
 
 func (f *formatter) writeScriptBlock(script ast.ScriptBlock) error {
-	lines := make([]string, 0, len(script.Items))
+	lines := make([]string, 0, len(script.Imports)+len(script.Items))
+	for _, importDeclaration := range script.Imports {
+		lines = append(lines, formatImportDeclaration(importDeclaration))
+	}
 	for _, declaration := range script.Items {
 		line, err := formatDeclaration(declaration)
 		if err != nil {
@@ -206,8 +229,9 @@ func formatEnumDeclaration(declaration ast.EnumDeclaration) (string, error) {
 }
 
 func formatEnumMember(member ast.EnumMember, trailingComma bool) (string, error) {
+	description := formatInlineDescription(member.Description)
 	if !member.HasValue {
-		return formatTrailingComma(member.Name, trailingComma), nil
+		return formatTrailingComma(member.Name+description, trailingComma), nil
 	}
 
 	value, err := formatExpressionWithDepth(member.Value, 0)
@@ -215,7 +239,7 @@ func formatEnumMember(member ast.EnumMember, trailingComma bool) (string, error)
 		return "", err
 	}
 
-	return formatTrailingComma(fmt.Sprintf("%s = %s", member.Name, value), trailingComma), nil
+	return formatTrailingComma(fmt.Sprintf("%s = %s%s", member.Name, value, description), trailingComma), nil
 }
 
 func formatTypeReference(typeReference ast.TypeReference) (string, error) {
@@ -295,17 +319,17 @@ func formatDocDeclaration(declaration ast.DocDeclaration) (string, error) {
 
 	lines := []string{fmt.Sprintf("%s %s {", keyword, declaration.Target)}
 	if declaration.Documentation.Summary != nil {
-		lines = append(lines, fmt.Sprintf("  summary: %s;", declaration.Documentation.Summary.Lexeme))
+		lines = append(lines, fmt.Sprintf("  summary: %s,", declaration.Documentation.Summary.Lexeme))
 	}
 	if declaration.Documentation.Description != nil {
-		lines = append(lines, fmt.Sprintf("  description: %s;", declaration.Documentation.Description.Lexeme))
+		lines = append(lines, fmt.Sprintf("  description: %s,", declaration.Documentation.Description.Lexeme))
 	}
 	if len(declaration.Documentation.Props) > 0 {
 		lines = append(lines, "  props: {")
 		keys := lo.Keys(declaration.Documentation.Props)
 		slices.Sort(keys)
 		for _, key := range keys {
-			lines = append(lines, fmt.Sprintf("    %s: %s;", key, declaration.Documentation.Props[key].Lexeme))
+			lines = append(lines, fmt.Sprintf("    %s: %s,", key, declaration.Documentation.Props[key].Lexeme))
 		}
 		lines = append(lines, "  };")
 	}
@@ -396,6 +420,12 @@ func formatExpressionNode(expression ast.Expression, depth int) (string, int, er
 			return "", 0, err
 		}
 		return target + "." + typedExpression.Name, precedencePrimary, nil
+	case ast.ArrayAccess:
+		target, err := formatExpressionWithPrecedence(typedExpression.Target, precedencePrimary, depth)
+		if err != nil {
+			return "", 0, err
+		}
+		return target + "[" + typedExpression.Index.Lexeme + "]", precedencePrimary, nil
 	case ast.StringLiteral:
 		return typedExpression.Lexeme, precedencePrimary, nil
 	case ast.IntLiteral:

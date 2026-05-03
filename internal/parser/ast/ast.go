@@ -19,6 +19,13 @@ type MemberAccess struct {
 
 func (MemberAccess) expressionNode() {}
 
+type ArrayAccess struct {
+	Target Expression
+	Index  IntLiteral
+}
+
+func (ArrayAccess) expressionNode() {}
+
 type StringLiteral struct {
 	Lexeme string
 }
@@ -102,7 +109,8 @@ type ImportDeclaration struct {
 }
 
 type ScriptBlock struct {
-	Items []Declaration
+	Imports []ImportDeclaration
+	Items    []Declaration
 }
 
 type Documentation struct {
@@ -170,10 +178,11 @@ type EnumDeclaration struct {
 func (EnumDeclaration) declarationNode() {}
 
 type EnumMember struct {
-	NameToken lexer.Token
-	Name      string
-	HasValue  bool
-	Value     Expression
+	NameToken   lexer.Token
+	Name        string
+	HasValue    bool
+	Value       Expression
+	Description string
 }
 
 type TypeReference interface {

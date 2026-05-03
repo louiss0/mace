@@ -140,15 +140,15 @@ schema_doc_declaration
    `schema_doc` must appear after the target `schema` declaration. *)
 
 gen_doc_entry
-  = "summary" , ws0 , ":" , ws0 , string_literal , ws0 , ";"
-  | "description" , ws0 , ":" , ws0 , block_string , ws0 , ";"
-  | "props" , ws0 , ":" , ws0 , "{" , ws0 , { prop_entry , ws0 } , "}" , ws0 , ";" ;
+  = "summary" , ws0 , ":" , ws0 , string_literal , ws0 , pair_separator
+  | "description" , ws0 , ":" , ws0 , block_string , ws0 , pair_separator
+  | "props" , ws0 , ":" , ws0 , "{" , ws0 , { prop_entry , ws0 } , "}" , ws0 , pair_separator ;
 
 schema_doc_entry
   = gen_doc_entry ;
 
 prop_entry
-  = identifier , ws0 , ":" , ws0 , string_literal , ws0 , ";" ;
+  = identifier , ws0 , ":" , ws0 , string_literal , ws0 , pair_separator ;
 
 (* ===================================================== *)
 (* 7. ENUM DECLARATIONS                                 *)
@@ -168,7 +168,8 @@ enum_backing_type
 
 enum_member
   = identifier ,
-    [ ws0 , "=" , ws0 , enum_member_value ] ;
+    [ ws0 , "=" , ws0 , enum_member_value ] ,
+    [ ws0 , inline_description ] ;
 
 enum_member_value
   = string_literal
@@ -203,8 +204,11 @@ schema_field
     field_terminator ;
 
 field_terminator
-  = ws0 , ( "," | ";" ) , [ ws0 , inline_description ]
-  | [ ws0 , inline_description ] , [ ws0 , ( "," | ";" ) ] ;
+  = ws0 , pair_separator , [ ws0 , inline_description ]
+  | [ ws0 , inline_description ] , [ ws0 , pair_separator ] ;
+
+pair_separator
+  = "," | ";" ;
 
 (* ===================================================== *)
 (* 9. TYPE REFERENCES                                   *)
@@ -287,25 +291,31 @@ expression
   = conditional_expression ;
 
 primary_expression
-  = identifier
-  | member_access
+  = postfix_expression
   | int_literal
   | float_literal
   | string_literal
   | boolean_literal
   | array_literal
-  | record_literal
+  | record_literal ;
+
+postfix_expression
+  = postfix_target , { postfix_suffix } ;
+
+postfix_target
+  = identifier
   | self_reference
   | "(" , expression , ")" ;
 
-member_access
-  = primary_target , "." , identifier ;
+postfix_suffix
+  = member_access_suffix
+  | array_access_suffix ;
 
-primary_target
-  = identifier
-  | self_reference
-  | "(" , expression , ")"
-  | member_access ;
+member_access_suffix
+  = "." , identifier ;
+
+array_access_suffix
+  = "[" , ws0 , int_literal , ws0 , "]" ;
 
 self_reference
   = "$self" , "." , identifier , { "." , identifier } ;

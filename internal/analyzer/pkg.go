@@ -250,6 +250,15 @@ func parseFile(text string) (ast.File, error) {
 	return parser.New(tokens).ParseFile()
 }
 
+func parseExpression(text string) (ast.Expression, error) {
+	tokens, err := lex(text)
+	if err != nil {
+		return nil, err
+	}
+
+	return parser.New(tokens).ParseExpression()
+}
+
 func lex(text string) ([]lexer.Token, error) {
 	lexerInstance := lexer.New(text)
 	tokens := []lexer.Token{}

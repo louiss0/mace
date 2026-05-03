@@ -365,11 +365,12 @@ func localEnumMemberSymbol(file ast.File, uri protocol.DocumentUri, enumName str
 
 			rangeValue := tokenProtocolRange(member.NameToken)
 			return semanticSymbol{
-				Name:   enumName + "." + memberName,
-				Kind:   protocol.CompletionItemKindEnumMember,
-				Detail: enumMemberDetail(declaration, member),
-				Origin: symbolOriginLocal,
-				Range:  rangeValue,
+				Name:          enumName + "." + memberName,
+				Kind:          protocol.CompletionItemKindEnumMember,
+				Detail:        enumMemberDetail(declaration, member),
+				Documentation: inlineDescriptionDocumentation(member.Description),
+				Origin:        symbolOriginLocal,
+				Range:         rangeValue,
 				Definition: protocol.Location{
 					URI:   uri,
 					Range: rangeValue,
@@ -688,6 +689,10 @@ func semanticDiagnosticFromError(file ast.File, tokens []lexer.Token, err error)
 		return diagnostic, true
 	}
 
+	if diagnostic, ok := arrayAccessDiagnostic(tokens, message); ok {
+		return diagnostic, true
+	}
+
 	if diagnostic, ok := schemaDiagnostic(tokens, message); ok {
 		return diagnostic, true
 	}
@@ -801,6 +806,47 @@ func mixedArrayLiteralDiagnostic(file ast.File, tokens []lexer.Token, message st
 	}
 
 	return protocol.Diagnostic{}, false
+}
+
+func arrayAccessDiagnostic(tokens []lexer.Token, message string) (protocol.Diagnostic, bool) {
+	hasArrayAccessError := strings.Contains(message, "array access requires an array value")
+	hasOutOfRangeError := strings.Contains(message, "array index ") && strings.Contains(message, "out of range")
+	if !hasArrayAccessError && !hasOutOfRangeError {
+		return protocol.Diagnostic{}, false
+	}
+
+	if hasOutOfRangeError {
+		if token, ok := arrayAccessIndexToken(tokens, message); ok {
+			return diagnosticWithCode(tokenProtocolRange(token), protocol.DiagnosticSeverityError, diagnosticTypeInvalidArrayAccess, message), true
+		}
+	}
+
+	for index := len(tokens) - 1; index >= 0; index-- {
+		if tokens[index].Type != lexer.TokenLBracket {
+			continue
+		}
+		return diagnosticWithCode(tokenProtocolRange(tokens[index]), protocol.DiagnosticSeverityError, diagnosticTypeInvalidArrayAccess, message), true
+	}
+
+	return protocol.Diagnostic{}, false
+}
+
+func arrayAccessIndexToken(tokens []lexer.Token, message string) (lexer.Token, bool) {
+	for index := len(tokens) - 2; index >= 1; index-- {
+		token := tokens[index]
+		if token.Type != lexer.TokenInt {
+			continue
+		}
+		if tokens[index-1].Type != lexer.TokenLBracket || tokens[index+1].Type != lexer.TokenRBracket {
+			continue
+		}
+		if !strings.Contains(message, fmt.Sprintf("array index %s", token.Lexeme)) {
+			continue
+		}
+		return token, true
+	}
+
+	return lexer.Token{}, false
 }
 
 func parseExpectedAndActualType(message string) (string, string, bool) {

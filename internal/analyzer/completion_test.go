@@ -55,6 +55,35 @@ var _ = Describe("completion analysis", func() {
 		tAssert.Equal([]string{"$self"}, labels)
 	})
 
+	It("replaces the typed dollar when completing $self", func() {
+		text := `[output = data]
+{
+  result: $
+}`
+
+		position := protocol.Position{
+			Line:      2,
+			Character: uint32(len(`  result: $`)),
+		}
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		tAssert.Len(items, 1)
+
+		edit, ok := items[0].TextEdit.(protocol.TextEdit)
+		tAssert.True(ok)
+		if !ok {
+			return
+		}
+
+		tAssert.Equal("$self", edit.NewText)
+		tAssert.Equal(protocol.Range{
+			Start: protocol.Position{Line: 2, Character: uint32(len(`  result: `))},
+			End:   position,
+		}, edit.Range)
+	})
+
 	It("suggests $self after earlier self references on the same line", func() {
 		text := `[output = data]
 {

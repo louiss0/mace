@@ -57,6 +57,7 @@ func (p *Parser) ParseFile() (ast.File, error) {
 		if err != nil {
 			return ast.File{}, err
 		}
+		imports = append(imports, scriptBlock.Imports...)
 		script = &scriptBlock
 	}
 
@@ -170,8 +171,21 @@ func (p *Parser) parseScriptBlock() (ast.ScriptBlock, error) {
 		return ast.ScriptBlock{}, err
 	}
 
+	imports := []ast.ImportDeclaration{}
+	for p.current().Type == lexer.TokenFrom {
+		importDecl, err := p.parseImportDeclaration()
+		if err != nil {
+			return ast.ScriptBlock{}, err
+		}
+		imports = append(imports, importDecl)
+	}
+
 	items := []ast.Declaration{}
 	for !p.isAtEnd() && p.current().Type != lexer.TokenScriptDelimiter {
+		if p.current().Type == lexer.TokenFrom {
+			return ast.ScriptBlock{}, p.unexpectedTokenError("parser: import declarations must appear at top of script block")
+		}
+
 		declaration, err := p.parseDeclaration()
 		if err != nil {
 			return ast.ScriptBlock{}, err
@@ -183,7 +197,7 @@ func (p *Parser) parseScriptBlock() (ast.ScriptBlock, error) {
 		return ast.ScriptBlock{}, err
 	}
 
-	return ast.ScriptBlock{Items: items}, nil
+	return ast.ScriptBlock{Imports: imports, Items: items}, nil
 }
 
 func (p *Parser) parseDeclaration() (ast.Declaration, error) {
@@ -350,7 +364,7 @@ func (p *Parser) parseDocDeclaration(kind ast.DocumentationKind, keywordType lex
 				return nil, err
 			}
 
-			if _, err := p.consume(lexer.TokenSemicolon, fmt.Sprintf("parser: expected ';' after %s entry", keyword)); err != nil {
+			if err := p.consumePairSeparator(fmt.Sprintf("%s entry", keyword)); err != nil {
 				return nil, err
 			}
 
@@ -380,7 +394,7 @@ func (p *Parser) parseDocDeclaration(kind ast.DocumentationKind, keywordType lex
 				if err != nil {
 					return nil, err
 				}
-				if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after props entry"); err != nil {
+				if err := p.consumePairSeparator("props entry"); err != nil {
 					return nil, err
 				}
 				documentation.Props[nameToken.Lexeme] = ast.StringLiteral{Lexeme: valueToken.Lexeme}
@@ -389,7 +403,7 @@ func (p *Parser) parseDocDeclaration(kind ast.DocumentationKind, keywordType lex
 			if _, err := p.consume(lexer.TokenRBrace, "parser: expected '}' to close props entry"); err != nil {
 				return nil, err
 			}
-			if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after props entry"); err != nil {
+			if err := p.consumePairSeparator("props entry"); err != nil {
 				return nil, err
 			}
 		default:
@@ -479,19 +493,19 @@ func (p *Parser) parseEnumMember() (ast.EnumMember, error) {
 		Name:      nameToken.Lexeme,
 	}
 
-	if p.current().Type != lexer.TokenAssign {
-		return member, nil
+	if p.current().Type == lexer.TokenAssign {
+		p.advance()
+
+		value, err := p.parseEnumMemberValue()
+		if err != nil {
+			return ast.EnumMember{}, err
+		}
+
+		member.HasValue = true
+		member.Value = value
 	}
 
-	p.advance()
-
-	value, err := p.parseEnumMemberValue()
-	if err != nil {
-		return ast.EnumMember{}, err
-	}
-
-	member.HasValue = true
-	member.Value = value
+	member.Description = p.parseOptionalInlineDescription()
 	return member, nil
 }
 
@@ -1089,6 +1103,16 @@ func (p *Parser) consumeOptionalToken(tokenType lexer.TokenType) bool {
 	return true
 }
 
+func (p *Parser) consumePairSeparator(context string) error {
+	switch p.current().Type {
+	case lexer.TokenComma, lexer.TokenSemicolon:
+		p.advance()
+		return nil
+	default:
+		return p.unexpectedTokenError(fmt.Sprintf("parser: expected ',' after %s", context))
+	}
+}
+
 func (p *Parser) consumeRecordSeparator(context string) error {
 	switch p.current().Type {
 	case lexer.TokenComma, lexer.TokenSemicolon:
@@ -1134,6 +1158,17 @@ func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token)
 			return nil, err
 		}
 		return ast.MemberAccess{Target: left, Name: memberToken.Lexeme}, nil
+	}
+
+	if operator.Type == lexer.TokenLBracket {
+		indexToken, err := p.consume(lexer.TokenInt, "parser: expected integer index in array access")
+		if err != nil {
+			return nil, err
+		}
+		if _, err := p.consume(lexer.TokenRBracket, "parser: expected ']' after array access index"); err != nil {
+			return nil, err
+		}
+		return ast.ArrayAccess{Target: left, Index: ast.IntLiteral{Lexeme: indexToken.Lexeme}}, nil
 	}
 
 	precedence := p.precedenceFor(operator.Type)
@@ -1245,7 +1280,7 @@ func (p *Parser) precedenceFor(tokenType lexer.TokenType) int {
 		return precedenceMultiplicative
 	case lexer.TokenDoubleStar:
 		return precedenceExponent
-	case lexer.TokenDot:
+	case lexer.TokenDot, lexer.TokenLBracket:
 		return precedenceMember
 	default:
 		return precedenceLowest
