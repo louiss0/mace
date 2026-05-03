@@ -609,7 +609,13 @@ func documentationCodeActions(text string, file ast.File, tokens []lexer.Token, 
 	for _, item := range file.Script.Items {
 		switch declaration := item.(type) {
 		case ast.TypeDeclaration:
-			actions = append(actions, documentationCodeAction(documentPath, tokenProtocolRange(declaration.NameToken), insertRange, "Generate gen_doc", genDocText(declaration.Name)))
+			rangeValue := tokenProtocolRange(declaration.NameToken)
+			actions = append(actions, documentationCodeAction(documentPath, rangeValue, insertRange, "Generate gen_doc", genDocText(declaration.Name)))
+			if declaration.Description == "" {
+				if editRange, ok := declarationSemicolonInsertRange(text, tokens, declaration.NameToken); ok {
+					actions = append(actions, inlineDescriptionCodeAction(documentPath, rangeValue, editRange))
+				}
+			}
 		case ast.VariableDeclaration:
 			actions = append(actions, documentationCodeAction(documentPath, tokenProtocolRange(declaration.NameToken), insertRange, "Generate gen_doc", genDocText(declaration.Name)))
 		case ast.SchemaDeclaration:
@@ -635,6 +641,44 @@ func documentationCodeAction(documentPath string, targetRange protocol.Range, in
 			},
 		},
 	}
+}
+
+func inlineDescriptionCodeAction(documentPath string, targetRange protocol.Range, insertRange protocol.Range) analysisCodeActionCandidate {
+	return analysisCodeActionCandidate{
+		Range: targetRange,
+		Action: protocol.CodeAction{
+			Title: "Add inline /# description",
+			Kind:  Ptr(protocol.CodeActionKindRefactor),
+			Edit: &protocol.WorkspaceEdit{
+				Changes: map[protocol.DocumentUri][]protocol.TextEdit{
+					pathURI(documentPath): {{Range: insertRange, NewText: ` /# description`}},
+				},
+			},
+		},
+	}
+}
+
+func declarationSemicolonInsertRange(text string, tokens []lexer.Token, nameToken lexer.Token) (protocol.Range, bool) {
+	nameIndex := -1
+	for index, token := range tokens {
+		if token.Line == nameToken.Line && token.Column == nameToken.Column && token.Lexeme == nameToken.Lexeme {
+			nameIndex = index
+			break
+		}
+	}
+	if nameIndex < 0 {
+		return protocol.Range{}, false
+	}
+
+	for index := nameIndex; index < len(tokens); index++ {
+		if tokens[index].Type != lexer.TokenSemicolon {
+			continue
+		}
+		position := positionFromIndex(text, tokenStartIndex(text, tokens[index]))
+		return protocol.Range{Start: position, End: position}, true
+	}
+
+	return protocol.Range{}, false
 }
 
 func genDocText(name string) string {

@@ -272,6 +272,27 @@ schema User: { name: string; };
 		}
 	})
 
+	It("offers inline description actions for type declarations", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := analyzeDocumentAt(`|===|
+type Name: string;
+|===|
+[output = schema]
+{
+  Name: Name;
+}`, documentPath)
+
+		rangeValue := protocol.Range{
+			Start: protocol.Position{Line: 1, Character: 5},
+			End:   protocol.Position{Line: 1, Character: 9},
+		}
+		action := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), rangeValue, "Add inline /# description")
+		edits := action.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
+		if tAssert.Len(edits, 1) {
+			tAssert.Equal(` /# description`, edits[0].NewText)
+		}
+	})
+
 	It("warns about unused imports and offers removal", func() {
 		workspace, err := os.MkdirTemp("", "mace-analysis-unused-import-*")
 		tAssert.NoError(err)
