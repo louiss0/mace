@@ -589,9 +589,72 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 		diagnostics = append(diagnostics, unusedImportDiagnostics...)
 		actions = append(actions, unusedImportActions...)
 	}
+	actions = append(actions, documentationCodeActions(text, file, tokens, documentPath)...)
 	diagnostics = append(diagnostics, schemaOutputVariableDiagnostics(file, tokens)...)
 
 	return diagnostics, actions
+}
+
+func documentationCodeActions(text string, file ast.File, tokens []lexer.Token, documentPath string) []analysisCodeActionCandidate {
+	if file.Script == nil || documentPath == "" {
+		return nil
+	}
+
+	insertRange, ok := documentationInsertRange(text, tokens)
+	if !ok {
+		return nil
+	}
+
+	actions := []analysisCodeActionCandidate{}
+	for _, item := range file.Script.Items {
+		switch declaration := item.(type) {
+		case ast.TypeDeclaration:
+			actions = append(actions, documentationCodeAction(documentPath, tokenProtocolRange(declaration.NameToken), insertRange, "Generate gen_doc", genDocText(declaration.Name)))
+		case ast.VariableDeclaration:
+			actions = append(actions, documentationCodeAction(documentPath, tokenProtocolRange(declaration.NameToken), insertRange, "Generate gen_doc", genDocText(declaration.Name)))
+		case ast.SchemaDeclaration:
+			actions = append(actions, documentationCodeAction(documentPath, tokenProtocolRange(declaration.NameToken), insertRange, "Generate schema_doc", schemaDocText(declaration.Name)))
+		case ast.EnumDeclaration:
+			actions = append(actions, documentationCodeAction(documentPath, tokenProtocolRange(declaration.NameToken), insertRange, "Generate schema_doc", schemaDocText(declaration.Name)))
+		}
+	}
+
+	return actions
+}
+
+func documentationCodeAction(documentPath string, targetRange protocol.Range, insertRange protocol.Range, title string, text string) analysisCodeActionCandidate {
+	return analysisCodeActionCandidate{
+		Range: targetRange,
+		Action: protocol.CodeAction{
+			Title: title,
+			Kind:  Ptr(protocol.CodeActionKindRefactor),
+			Edit: &protocol.WorkspaceEdit{
+				Changes: map[protocol.DocumentUri][]protocol.TextEdit{
+					pathURI(documentPath): {{Range: insertRange, NewText: text}},
+				},
+			},
+		},
+	}
+}
+
+func genDocText(name string) string {
+	return fmt.Sprintf("gen_doc %s {\n  summary: \"\";\n}\n", name)
+}
+
+func schemaDocText(name string) string {
+	return fmt.Sprintf("schema_doc %s {\n  summary: \"\";\n}\n", name)
+}
+
+func documentationInsertRange(text string, tokens []lexer.Token) (protocol.Range, bool) {
+	for index := len(tokens) - 1; index >= 0; index-- {
+		if tokens[index].Type != lexer.TokenScriptDelimiter {
+			continue
+		}
+		start := tokenStartIndex(text, tokens[index])
+		return protocol.Range{Start: positionFromIndex(text, start), End: positionFromIndex(text, start)}, true
+	}
+
+	return protocol.Range{}, false
 }
 
 func unusedImportAnalysis(text string, file ast.File, tokens []lexer.Token, documentPath string) ([]protocol.Diagnostic, []analysisCodeActionCandidate) {

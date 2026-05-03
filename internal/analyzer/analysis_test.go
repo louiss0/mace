@@ -251,6 +251,27 @@ injectable string env;
 		tAssert.Empty(snapshot.diagnostics)
 	})
 
+	It("offers documentation generation actions for declarations", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := analyzeDocumentAt(`|===|
+schema User: { name: string; };
+|===|
+[output = schema]
+{
+  User: User;
+}`, documentPath)
+
+		rangeValue := protocol.Range{
+			Start: protocol.Position{Line: 1, Character: 7},
+			End:   protocol.Position{Line: 1, Character: 11},
+		}
+		action := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), rangeValue, "Generate schema_doc")
+		edits := action.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
+		if tAssert.Len(edits, 1) {
+			tAssert.Contains(edits[0].NewText, `schema_doc User`)
+		}
+	})
+
 	It("warns about unused imports and offers removal", func() {
 		workspace, err := os.MkdirTemp("", "mace-analysis-unused-import-*")
 		tAssert.NoError(err)
