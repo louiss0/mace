@@ -689,6 +689,10 @@ func semanticDiagnosticFromError(file ast.File, tokens []lexer.Token, err error)
 		return diagnostic, true
 	}
 
+	if diagnostic, ok := arrayAccessDiagnostic(tokens, message); ok {
+		return diagnostic, true
+	}
+
 	if diagnostic, ok := schemaDiagnostic(tokens, message); ok {
 		return diagnostic, true
 	}
@@ -799,6 +803,32 @@ func mixedArrayLiteralDiagnostic(file ast.File, tokens []lexer.Token, message st
 		}
 
 		return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticTypeMixedArrayLiteral, message), true
+	}
+
+	return protocol.Diagnostic{}, false
+}
+
+func arrayAccessDiagnostic(tokens []lexer.Token, message string) (protocol.Diagnostic, bool) {
+	if !strings.Contains(message, "array access requires an array value") && !(strings.Contains(message, "array index ") && strings.Contains(message, "out of range")) {
+		return protocol.Diagnostic{}, false
+	}
+
+	if strings.Contains(message, "array index ") && strings.Contains(message, "out of range") {
+		for _, token := range tokens {
+			if token.Type != lexer.TokenInt {
+				continue
+			}
+			if strings.Contains(message, fmt.Sprintf("array index %s", token.Lexeme)) {
+				return diagnosticWithCode(tokenProtocolRange(token), protocol.DiagnosticSeverityError, diagnosticTypeInvalidArrayAccess, message), true
+			}
+		}
+	}
+
+	for index := len(tokens) - 1; index >= 0; index-- {
+		if tokens[index].Type != lexer.TokenLBracket {
+			continue
+		}
+		return diagnosticWithCode(tokenProtocolRange(tokens[index]), protocol.DiagnosticSeverityError, diagnosticTypeInvalidArrayAccess, message), true
 	}
 
 	return protocol.Diagnostic{}, false

@@ -540,6 +540,43 @@ Personality value = Personality.is_type;
 		}
 	})
 
+	It("publishes diagnostics when an array index is out of range", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+array<int> values = [1, 2, 3];
+|===|
+[output = data]
+{
+  result: values[9]
+}`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, `array index 9 is out of range`)
+				tAssert.Equal(`mace.type.invalid-array-access`, params.Diagnostics[0].Code.Value)
+			}
+		}
+	})
+
+	It("does not report mixed array diagnostics for string arrays", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+array<string> names = ['Kyle', 'Tyrone', 'Luke'];
+|===|
+[output = data]
+{
+  names: names
+}`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			tAssert.Empty(params.Diagnostics)
+		}
+	})
+
 	It("refreshes diagnostics when a document is saved", func() {
 		notifications := []capturedNotification{}
 
@@ -932,6 +969,27 @@ string selected = names[
 		tAssert.Equal([]string{"0", "1", "2"}, labels)
 	})
 
+	It("suggests array indexes for imported values in script variables", func() {
+		workspace, err := os.MkdirTemp("", "mace-lsp-imported-array-index-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "shared.mace", `[output = data]
+{
+  names: ["Ada", "Linus", "Grace"]
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `from "./shared.mace" import names;
+|===|
+string selected = names[
+|===|
+[output = data] {}`, nil)
+
+		labels := completeLabels(server, uri, 2, uint32(len(`string selected = names[`)))
+		tAssert.Equal([]string{"0", "1", "2"}, labels)
+	})
+
 	It("suggests enum members after a dot for local enums", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
@@ -1188,6 +1246,7 @@ Personality value = Personality.
 		labels := completeLabels(server, uri, 3, uint32(len(`  result: $self.profile.`)))
 		tAssert.Equal([]string{"details", "name"}, labels)
 	})
+
 
 	It("suggests nested keys from uppercase self paths", func() {
 		openEmptyDocument(server, uri, nil)

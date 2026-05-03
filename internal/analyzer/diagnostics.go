@@ -56,6 +56,7 @@ const (
 	diagnosticTypeInvalidUnaryOperator              diagnosticCode = "mace.type.invalid-unary-operator"
 	diagnosticTypeInvalidBinaryOperator             diagnosticCode = "mace.type.invalid-binary-operator"
 	diagnosticTypeMixedArrayLiteral                 diagnosticCode = "mace.type.mixed-array-literal"
+	diagnosticTypeInvalidArrayAccess                diagnosticCode = "mace.type.invalid-array-access"
 	diagnosticTypeInvalidEnumValue                  diagnosticCode = "mace.type.invalid-enum-value"
 	diagnosticTypeUnknownIdentifier                 diagnosticCode = "mace.type.unknown-identifier"
 	diagnosticTypeUnknownSelfField                  diagnosticCode = "mace.type.unknown-self-field"
@@ -165,6 +166,8 @@ func classifyProcessorDiagnostic(message string) diagnosticCode {
 		return diagnosticDeclarationDuplicateOutputField
 	case strings.Contains(message, "array literal has mixed element types"):
 		return diagnosticTypeMixedArrayLiteral
+	case strings.Contains(message, "array access requires an array value") || strings.Contains(message, "array index ") && strings.Contains(message, "out of range"):
+		return diagnosticTypeInvalidArrayAccess
 	case strings.Contains(message, "invalid enum value"):
 		return diagnosticTypeInvalidEnumValue
 	case strings.Contains(message, "unknown identifier"):

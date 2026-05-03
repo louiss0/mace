@@ -352,7 +352,7 @@ func resolveArrayCompletionTarget(document document, uri protocol.DocumentUri, p
 		return processor.Value{}, false
 	}
 
-	variables := partialScriptVariables(document.text, position)
+	variables := partialScriptVariables(document.text, uri, position)
 	self := processor.Value{Kind: processor.ValueRecord, Record: map[string]processor.Value{}}
 	if scope == completionScopeOutput {
 		result, ok := partialOutputResult(document, uri, position)
@@ -364,26 +364,35 @@ func resolveArrayCompletionTarget(document document, uri protocol.DocumentUri, p
 	return resolveCompletionValue(expression, variables, self)
 }
 
-func partialScriptVariables(text string, position protocol.Position) map[string]processor.Value {
+func partialScriptVariables(text string, uri protocol.DocumentUri, position protocol.Position) map[string]processor.Value {
 	index := positionIndex(text, position)
 	if index < 0 {
 		return nil
 	}
 
-	prefix := text[:index]
-	start := strings.Index(prefix, "|")
-	end := strings.LastIndex(prefix, "\n")
-	if start < 0 || end < start {
+	lineStart := strings.LastIndex(text[:index], "\n")
+	if lineStart < 0 {
+		lineStart = 0
+	} else {
+		lineStart++
+	}
+
+	prefix := text[:lineStart]
+	if !strings.Contains(prefix, "|") {
 		return nil
 	}
 
-	scriptText := prefix[start:end] + "\n|===|"
+	partialText := prefix + "\n|===|\n[output = data] {}"
+	baseDir := filepath.Dir(documentPath(uri))
+	if baseDir == "" {
+		baseDir = "."
+	}
 
-	result, err := processor.New().ProcessScriptBlock(scriptText)
+	variables, err := processor.New().ProcessVariablesInDir(partialText, baseDir)
 	if err != nil {
 		return nil
 	}
-	return result.Variables
+	return variables
 }
 
 func resolveCompletionValue(expression ast.Expression, variables map[string]processor.Value, self processor.Value) (processor.Value, bool) {

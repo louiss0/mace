@@ -1412,6 +1412,20 @@ array<int> result = [base, base + 1, base + 2];
 			{kind: ValueInt, int64: 6},
 			{kind: ValueInt, int64: 7},
 		}}),
+		Entry("string arrays support all string literal forms", wrapScriptWithOutputFields(`|===|
+array<string> result = ['Kyle', "Tyrone", """Luke"""];
+|===|`, "result: result;"), expectedValue{kind: ValueArray, array: []expectedValue{
+			{kind: ValueString, string: "Kyle"},
+			{kind: ValueString, string: "Tyrone"},
+			{kind: ValueString, string: "Luke"},
+		}}),
+		Entry("negative int arrays", wrapScriptWithOutputFields(`|===|
+array<int> result = [-1, -2, -3];
+|===|`, "result: result;"), expectedValue{kind: ValueArray, array: []expectedValue{
+			{kind: ValueInt, int64: -1},
+			{kind: ValueInt, int64: -2},
+			{kind: ValueInt, int64: -3},
+		}}),
 		Entry("nested arrays", wrapScriptWithOutputFields(`|===|
 int base = 1 + 2;
 array<array<int> > result = [[base, base + 1], [base + 2, base + 3]];
@@ -1508,6 +1522,10 @@ int base = 3 * 4;
 				{kind: ValueInt, int64: 3},
 				{kind: ValueInt, int64: 4},
 			}},
+		}}),
+		Entry("inline negative float array expression", `[output = data] { result: [-1.5, -2.5]; }`, expectedValue{kind: ValueArray, array: []expectedValue{
+			{kind: ValueFloat, float: -1.5},
+			{kind: ValueFloat, float: -2.5},
 		}}),
 		Entry("inline primitive array access", `[output = data] { result: [1, 2, 3][0]; }`, expectedValue{kind: ValueInt, int64: 1}),
 		Entry("inline record array access", `[output = data] { result: [{ name: "Ada"; }, { name: "Linus"; }][1].name; }`, expectedValue{kind: ValueString, string: "Linus"}),

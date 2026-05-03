@@ -134,6 +134,29 @@ func (p *Processor) ProcessScriptBlock(input string) (ScriptResult, error) {
 	return p.processScriptInput(input, baseDir)
 }
 
+func (p *Processor) ProcessVariablesInDir(input string, baseDir string) (map[string]Value, error) {
+	if baseDir == "" {
+		baseDir = "."
+	}
+
+	tokens, err := lex(input)
+	if err != nil {
+		return nil, err
+	}
+
+	file, err := parser.New(tokens).ParseFile()
+	if err != nil {
+		return nil, err
+	}
+
+	context, err := buildProcessContext(file.Imports, file.Script, baseDir, p.injections)
+	if err != nil {
+		return nil, err
+	}
+
+	return context.environment.Values(), nil
+}
+
 func (p *Processor) ProcessOutputBlock(input string, scriptResult ScriptResult) (Result, error) {
 	baseDir := scriptResult.context.baseDir
 	if baseDir == "" {
