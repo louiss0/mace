@@ -582,6 +582,47 @@ array<int> values = [1, 2, 3];
 		}
 	})
 
+	It("binds out-of-range diagnostics to the first failing array access", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+array<int> values = [1, 2, 3];
+|===|
+[output = data]
+{
+  first: values[9],
+  second: values[9]
+}`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Equal(protocol.UInteger(5), params.Diagnostics[0].Range.Start.Line)
+				tAssert.Equal(protocol.UInteger(16), params.Diagnostics[0].Range.Start.Character)
+				tAssert.Equal(protocol.UInteger(17), params.Diagnostics[0].Range.End.Character)
+			}
+		}
+	})
+
+	It("binds invalid array access diagnostics to the first failing expression", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `[output = data]
+{
+  first: 1[0],
+  second: 2[0]
+}`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Equal(protocol.UInteger(2), params.Diagnostics[0].Range.Start.Line)
+				tAssert.Equal(protocol.UInteger(10), params.Diagnostics[0].Range.Start.Character)
+				tAssert.Equal(protocol.UInteger(11), params.Diagnostics[0].Range.End.Character)
+			}
+		}
+	})
+
 	It("does not report mixed array diagnostics for string arrays", func() {
 		notifications := []capturedNotification{}
 
@@ -1022,6 +1063,43 @@ string selected = names[
 [output = data] {}`, nil)
 
 		labels := completeLabels(server, uri, 3, uint32(len(`string selected = names[`)))
+		tAssert.Equal([]string{"0", "1", "2"}, labels)
+	})
+
+	It("suggests array indexes for script arrays in output fields", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+array<string> names = ["Ada", "Linus", "Grace"];
+|===|
+[output = data]
+{
+  result: names[
+}`, nil)
+
+		labels := completeLabels(server, uri, 5, uint32(len(`  result: names[`)))
+		tAssert.Equal([]string{"0", "1", "2"}, labels)
+	})
+
+	It("suggests array indexes for imported arrays in output fields", func() {
+		workspace, err := os.MkdirTemp("", "mace-lsp-output-imported-array-index-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "shared.mace", `[output = data]
+{
+  names: ["Ada", "Linus", "Grace"]
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+from "./shared.mace" import names;
+|===|
+[output = data]
+{
+  result: names[
+}`, nil)
+
+		labels := completeLabels(server, uri, 5, uint32(len(`  result: names[`)))
 		tAssert.Equal([]string{"0", "1", "2"}, labels)
 	})
 

@@ -356,6 +356,7 @@ func resolveArrayCompletionTarget(document document, uri protocol.DocumentUri, p
 	variables := partialScriptVariables(document.text, uri, position)
 	self := processor.Value{Kind: processor.ValueRecord, Record: map[string]processor.Value{}}
 	if scope == completionScopeOutput {
+		variables = scriptVariablesForOutput(document.text, uri)
 		result, ok := partialOutputResult(document, uri, position)
 		if ok {
 			self = processor.Value{Kind: processor.ValueRecord, Record: result.Output}
@@ -464,12 +465,45 @@ func partialScriptVariables(text string, uri protocol.DocumentUri, position prot
 	}
 
 	partialText := prefix + "\n|===|\n[output = data] {}"
+	return processVariablesInDocument(partialText, uri)
+}
+
+func scriptVariablesForOutput(text string, uri protocol.DocumentUri) map[string]processor.Value {
+	tokens, err := lex(text)
+	if err != nil {
+		return nil
+	}
+
+	inScript := false
+	scriptStart := -1
+	scriptEnd := -1
+	for _, token := range tokens {
+		if token.Type != lexer.TokenScriptDelimiter {
+			continue
+		}
+		if !inScript {
+			inScript = true
+			scriptStart = tokenStartIndex(text, token)
+			continue
+		}
+		scriptEnd = tokenStartIndex(text, token) + len(token.Lexeme)
+		break
+	}
+	if scriptStart < 0 || scriptEnd <= scriptStart {
+		return nil
+	}
+
+	partialText := text[:scriptEnd] + "\n[output = data] {}"
+	return processVariablesInDocument(partialText, uri)
+}
+
+func processVariablesInDocument(text string, uri protocol.DocumentUri) map[string]processor.Value {
 	baseDir := filepath.Dir(documentPath(uri))
 	if baseDir == "" {
 		baseDir = "."
 	}
 
-	variables, err := processor.New().ProcessVariablesInDir(partialText, baseDir)
+	variables, err := processor.New().ProcessVariablesInDir(text, baseDir)
 	if err != nil {
 		return nil
 	}
@@ -857,8 +891,13 @@ func parseDirectiveState(parts []string) directiveState {
 }
 
 func directivePrefix(linePrefix string) (string, bool) {
+	trimmedStart := len(linePrefix) - len(strings.TrimLeft(linePrefix, " \t"))
+	if trimmedStart >= len(linePrefix) || linePrefix[trimmedStart] != '[' {
+		return "", false
+	}
+
 	openIndex := strings.LastIndex(linePrefix, "[")
-	if openIndex < 0 {
+	if openIndex != trimmedStart {
 		return "", false
 	}
 
