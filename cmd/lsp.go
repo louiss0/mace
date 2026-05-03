@@ -71,6 +71,8 @@ func newLSPServer() *Server {
 		TextDocumentDefinition:     server.definition,
 		TextDocumentDocumentSymbol: server.documentSymbols,
 		TextDocumentCodeAction:     server.codeActions,
+		TextDocumentRename:         server.rename,
+		TextDocumentPrepareRename:  server.prepareRename,
 		TextDocumentFormatting:     server.formatDocument,
 	}
 
@@ -259,6 +261,32 @@ func (server *Server) definition(context *glsp.Context, params *protocol.Definit
 	}
 
 	return location, nil
+}
+
+func (server *Server) prepareRename(context *glsp.Context, params *protocol.PrepareRenameParams) (any, error) {
+	document, ok := server.documentForPosition(params.TextDocument.URI, params.Position)
+	if !ok {
+		return nil, nil
+	}
+
+	rangeValue, ok := analyzer.PrepareRename(document.analysis, params.Position)
+	if !ok {
+		return nil, nil
+	}
+	return rangeValue, nil
+}
+
+func (server *Server) rename(context *glsp.Context, params *protocol.RenameParams) (*protocol.WorkspaceEdit, error) {
+	document, ok := server.documentForPosition(params.TextDocument.URI, params.Position)
+	if !ok {
+		return nil, nil
+	}
+
+	edit, ok := analyzer.Rename(document.text, document.analysis, params.TextDocument.URI, params.Position, params.NewName)
+	if !ok {
+		return nil, nil
+	}
+	return edit, nil
 }
 
 func (server *Server) documentSymbols(context *glsp.Context, params *protocol.DocumentSymbolParams) (any, error) {

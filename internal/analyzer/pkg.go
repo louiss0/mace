@@ -191,6 +191,46 @@ func CodeActions(snapshot Snapshot, uri protocol.DocumentUri, targetRange protoc
 	return snapshot.codeActions(uri, targetRange)
 }
 
+func PrepareRename(snapshot Snapshot, position protocol.Position) (protocol.Range, bool) {
+	symbol, ok := snapshot.symbolAt(position)
+	if !ok {
+		return protocol.Range{}, false
+	}
+	return symbol.Range, true
+}
+
+func Rename(text string, snapshot Snapshot, uri protocol.DocumentUri, position protocol.Position, newName string) (*protocol.WorkspaceEdit, bool) {
+	symbol, ok := snapshot.symbolAt(position)
+	if !ok || newName == "" {
+		return nil, false
+	}
+
+	edits := map[protocol.DocumentUri][]protocol.TextEdit{}
+	currentURI := uri
+	if snapshot.documentURI != "" {
+		currentURI = snapshot.documentURI
+	}
+
+	for _, token := range snapshot.tokens {
+		if token.Type != lexer.TokenIdentifier || token.Lexeme != symbol.Name {
+			continue
+		}
+		edits[currentURI] = append(edits[currentURI], protocol.TextEdit{Range: tokenProtocolRange(token), NewText: newName})
+	}
+
+	if symbol.Origin == symbolOriginImport {
+		definitionURI := symbol.Definition.URI
+		if definitionURI != "" && definitionURI != currentURI {
+			edits[definitionURI] = append(edits[definitionURI], protocol.TextEdit{Range: symbol.Definition.Range, NewText: newName})
+		}
+	}
+
+	if len(edits) == 0 {
+		return nil, false
+	}
+	return &protocol.WorkspaceEdit{Changes: edits}, true
+}
+
 func FormatDocumentText(text string) string {
 	return formatDocumentText(text)
 }
