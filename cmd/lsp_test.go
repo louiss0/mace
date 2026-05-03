@@ -1025,6 +1025,43 @@ string selected = names[
 		tAssert.Equal([]string{"0", "1", "2"}, labels)
 	})
 
+	It("suggests array indexes for script arrays in output fields", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+array<string> names = ["Ada", "Linus", "Grace"];
+|===|
+[output = data]
+{
+  result: names[
+}`, nil)
+
+		labels := completeLabels(server, uri, 5, uint32(len(`  result: names[`)))
+		tAssert.Equal([]string{"0", "1", "2"}, labels)
+	})
+
+	It("suggests array indexes for imported arrays in output fields", func() {
+		workspace, err := os.MkdirTemp("", "mace-lsp-output-imported-array-index-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "shared.mace", `[output = data]
+{
+  names: ["Ada", "Linus", "Grace"]
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+from "./shared.mace" import names;
+|===|
+[output = data]
+{
+  result: names[
+}`, nil)
+
+		labels := completeLabels(server, uri, 5, uint32(len(`  result: names[`)))
+		tAssert.Equal([]string{"0", "1", "2"}, labels)
+	})
+
 	It("suggests enum members after a dot for local enums", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
