@@ -592,6 +592,7 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 		actions = append(actions, unusedImportActions...)
 	}
 	actions = append(actions, documentationCodeActions(text, file, tokens, documentPath)...)
+	actions = append(actions, editorRefactorCodeActions(text, file, documentPath)...)
 	diagnostics = append(diagnostics, schemaOutputVariableDiagnostics(file, tokens)...)
 
 	return diagnostics, actions
@@ -679,6 +680,399 @@ func documentationCodeActions(text string, file ast.File, tokens []lexer.Token, 
 	}
 
 	return actions
+}
+
+func editorRefactorCodeActions(text string, file ast.File, documentPath string) []analysisCodeActionCandidate {
+	if documentPath == "" {
+		return nil
+	}
+
+	uri := pathURI(documentPath)
+	fullRange := fullDocumentRange(text)
+	actions := []analysisCodeActionCandidate{}
+	addTextAction := func(title string, targetRange protocol.Range, newText string) {
+		actions = append(actions, analysisCodeActionCandidate{
+			Range: targetRange,
+			Action: protocol.CodeAction{
+				Title: title,
+				Kind:  Ptr(protocol.CodeActionKindRefactor),
+				Edit:  &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: {{Range: fullRange, NewText: newText}}}},
+			},
+		})
+	}
+	addWholeFileAction := func(title string, targetRange protocol.Range, updated ast.File) {
+		formatted, err := formatter.FormatFile(updated)
+		if err != nil {
+			return
+		}
+		addTextAction(title, targetRange, formatted)
+	}
+
+	for _, item := range lo.FromPtr(file.Script).Items {
+		declaration, ok := item.(ast.SchemaDeclaration)
+		if !ok {
+			continue
+		}
+
+		targetRange := tokenProtocolRange(declaration.NameToken)
+		updated := file
+		updated.Output.Mode = ast.OutputModeData
+		updated.Output.Directives = []ast.OutputDirective{{Kind: ast.OutputDirectiveOutput, Value: "data"}, {Kind: ast.OutputDirectiveSchema, Value: declaration.Name}}
+		updated.Output.DataFields = lo.Map(declaration.Type.Fields, func(field ast.SchemaField, _ int) ast.OutputField {
+			return ast.OutputField{Name: field.Name, Optional: field.Optional, Value: defaultExpressionForType(field.Type)}
+		})
+		updated.Output.SchemaFields = nil
+		addWholeFileAction("Generate output block from schema", targetRange, updated)
+
+		updated = file
+		updated.Output.Directives = append([]ast.OutputDirective{}, file.Output.Directives...)
+		if !lo.ContainsBy(updated.Output.Directives, func(directive ast.OutputDirective) bool { return directive.Kind == ast.OutputDirectiveSchema }) {
+			updated.Output.Directives = append(updated.Output.Directives, ast.OutputDirective{Kind: ast.OutputDirectiveSchema, Value: declaration.Name})
+			addWholeFileAction("Add schema = "+declaration.Name+" directive", targetRange, updated)
+		}
+	}
+
+	if len(file.Output.Directives) == 0 {
+		updated := file
+		updated.Output.Directives = []ast.OutputDirective{{Kind: ast.OutputDirectiveOutput, Value: "data"}}
+		addWholeFileAction("Make implicit output explicit", protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, updated)
+	}
+	if file.Output.Mode == ast.OutputModeData {
+		updated := file
+		updated.Output.Mode = ast.OutputModeSchema
+		updated.Output.Directives = []ast.OutputDirective{{Kind: ast.OutputDirectiveOutput, Value: "schema"}}
+		updated.Output.SchemaFields = lo.Map(file.Output.DataFields, func(field ast.OutputField, _ int) ast.OutputSchemaField {
+			return ast.OutputSchemaField{Name: field.Name, Optional: field.Optional, Type: inferredTypeFromExpression(field.Value)}
+		})
+		updated.Output.DataFields = nil
+		addWholeFileAction("Convert data output to schema output", protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, updated)
+	}
+
+	for index, field := range file.Output.SchemaFields {
+		targetRange := tokenProtocolRange(field.NameToken)
+		updated := file
+		updated.Output.SchemaFields = append([]ast.OutputSchemaField{}, file.Output.SchemaFields...)
+		updated.Output.SchemaFields[index].Optional = !field.Optional
+		if field.Optional {
+			addWholeFileAction("Remove optional marker ?", targetRange, updated)
+		} else {
+			addWholeFileAction("Add optional marker ?", targetRange, updated)
+		}
+		if _, ok := field.Type.(ast.RecordType); ok {
+			converted := convertInlineRecordOutputField(file, index)
+			addWholeFileAction("Convert inline record to schema", targetRange, converted)
+		}
+	}
+
+	addImportRefactorActions(file, addWholeFileAction)
+	addDocumentationRefactorActions(file, addWholeFileAction)
+	addEnumRefactorActions(file, addWholeFileAction)
+	addStringRefactorActions(text, uri, fullRange, &actions)
+	addStyleRefactorActions(text, protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, addTextAction)
+	addExpressionRefactorActions(text, file, protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, addTextAction)
+	addInteropRefactorActions(text, file, protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, addTextAction)
+
+	return actions
+}
+
+func addImportRefactorActions(file ast.File, addWholeFileAction func(string, protocol.Range, ast.File)) {
+	for index, importDecl := range file.Imports {
+		targetRange := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+		pathValue, _ := stringLiteralValue(importDecl.Path)
+		if pathValue != "" && !strings.HasPrefix(pathValue, "./") && !strings.HasPrefix(pathValue, "../") && !filepath.IsAbs(pathValue) {
+			updated := file
+			imports := append([]ast.ImportDeclaration{}, file.Imports...)
+			imports[index].Path = ast.StringLiteral{Lexeme: strconv.Quote("./" + pathValue)}
+			updated.Imports = imports
+			addWholeFileAction("Fix relative import path", targetRange, updated)
+		}
+		if len(importDecl.Identifiers) > 1 {
+			updated := file
+			imports := append([]ast.ImportDeclaration{}, file.Imports...)
+			imports = slices.Delete(imports, index, index+1)
+			for offset, identifier := range importDecl.Identifiers {
+				imports = slices.Insert(imports, index+offset, ast.ImportDeclaration{Path: importDecl.Path, Identifiers: []string{identifier}})
+			}
+			updated.Imports = imports
+			addWholeFileAction("Split import declaration", targetRange, updated)
+		}
+		for otherIndex := index + 1; otherIndex < len(file.Imports); otherIndex++ {
+			if file.Imports[otherIndex].Path.Lexeme != importDecl.Path.Lexeme {
+				continue
+			}
+			updated := file
+			imports := append([]ast.ImportDeclaration{}, file.Imports...)
+			imports[index].Identifiers = append(append([]string{}, importDecl.Identifiers...), file.Imports[otherIndex].Identifiers...)
+			imports = slices.Delete(imports, otherIndex, otherIndex+1)
+			updated.Imports = imports
+			addWholeFileAction("Merge duplicate imports", targetRange, updated)
+			break
+		}
+	}
+}
+
+func addDocumentationRefactorActions(file ast.File, addWholeFileAction func(string, protocol.Range, ast.File)) {
+	if file.Script == nil {
+		return
+	}
+	for index, item := range file.Script.Items {
+		schema, ok := item.(ast.SchemaDeclaration)
+		if !ok {
+			continue
+		}
+		targetRange := tokenProtocolRange(schema.NameToken)
+		updated := file
+		items := append([]ast.Declaration{}, file.Script.Items...)
+		items = append(items, ast.DocDeclaration{Kind: ast.DocumentationKindSchema, Target: schema.Name, Documentation: ast.Documentation{Summary: &ast.StringLiteral{Lexeme: `""`}, Props: schemaDocProps(schema)}})
+		updated.Script = &ast.ScriptBlock{Imports: file.Script.Imports, Items: items}
+		addWholeFileAction("Add missing props docs", targetRange, updated)
+		addWholeFileAction("Move inline /# docs to structured docs", targetRange, updated)
+
+		if hasSchemaDoc(file, schema.Name) && hasInlineSchemaDocs(schema) {
+			cleaned := file
+			items := append([]ast.Declaration{}, file.Script.Items...)
+			schema.Type.Fields = lo.Map(schema.Type.Fields, func(field ast.SchemaField, _ int) ast.SchemaField { field.Description = ""; return field })
+			items[index] = schema
+			cleaned.Script = &ast.ScriptBlock{Imports: file.Script.Imports, Items: items}
+			addWholeFileAction("Remove conflicting docs", targetRange, cleaned)
+		}
+	}
+}
+
+func addEnumRefactorActions(file ast.File, addWholeFileAction func(string, protocol.Range, ast.File)) {
+	if file.Script == nil {
+		return
+	}
+	for index, item := range file.Script.Items {
+		declaration, ok := item.(ast.EnumDeclaration)
+		if !ok {
+			continue
+		}
+		hasExplicit := lo.ContainsBy(declaration.Members, func(member ast.EnumMember) bool { return member.HasValue })
+		hasImplicit := lo.ContainsBy(declaration.Members, func(member ast.EnumMember) bool { return !member.HasValue })
+		if !hasExplicit || !hasImplicit {
+			continue
+		}
+		targetRange := tokenProtocolRange(declaration.NameToken)
+		explicit := declaration
+		explicit.Members = lo.Map(explicit.Members, func(member ast.EnumMember, memberIndex int) ast.EnumMember {
+			if member.HasValue {
+				return member
+			}
+			member.HasValue = true
+			member.Value = defaultEnumMemberValue(declaration, member, memberIndex)
+			return member
+		})
+		updated := replaceScriptItem(file, index, explicit)
+		addWholeFileAction("Convert mixed enum to all-explicit", targetRange, updated)
+
+		implicit := declaration
+		implicit.Members = lo.Map(implicit.Members, func(member ast.EnumMember, _ int) ast.EnumMember {
+			member.HasValue = false
+			member.Value = nil
+			return member
+		})
+		updated = replaceScriptItem(file, index, implicit)
+		addWholeFileAction("Convert mixed enum to all-implicit", targetRange, updated)
+		member := ast.EnumMember{Name: "Missing", HasValue: declaration.BackingType.Name != "string"}
+		if member.HasValue {
+			member.Value = ast.IntLiteral{Lexeme: strconv.Itoa(len(declaration.Members))}
+		}
+		added := declaration
+		added.Members = append(append([]ast.EnumMember{}, declaration.Members...), member)
+		addWholeFileAction("Add missing enum member", targetRange, replaceScriptItem(file, index, added))
+	}
+}
+
+func addStringRefactorActions(text string, uri protocol.DocumentUri, fullRange protocol.Range, actions *[]analysisCodeActionCandidate) {
+	tokens, err := lex(text)
+	if err != nil {
+		return
+	}
+	for _, token := range tokens {
+		if token.Type != lexer.TokenString || strings.Contains(lineAt(text, int(token.Line)-1), "schema_file") || strings.Contains(lineAt(text, int(token.Line)-1), "from ") {
+			continue
+		}
+		rangeValue := tokenProtocolRange(token)
+		converted := convertStringLiteralForm(token.Lexeme)
+		convertedText := strings.Replace(text, token.Lexeme, converted, 1)
+		*actions = append(*actions, textRefactorAction("Convert string form", rangeValue, uri, fullRange, convertedText))
+
+		quote := token.Lexeme[len(token.Lexeme)-1:]
+		interpolated := strings.TrimSuffix(token.Lexeme, quote) + ` $()` + quote
+		interpolatedText := strings.Replace(text, token.Lexeme, interpolated, 1)
+		*actions = append(*actions, textRefactorAction("Convert to interpolated string", rangeValue, uri, fullRange, interpolatedText))
+	}
+}
+
+func lineAt(text string, line int) string {
+	lines := strings.Split(text, "\n")
+	if line < 0 || line >= len(lines) {
+		return ""
+	}
+	return lines[line]
+}
+
+func textRefactorAction(title string, targetRange protocol.Range, uri protocol.DocumentUri, editRange protocol.Range, newText string) analysisCodeActionCandidate {
+	return analysisCodeActionCandidate{
+		Range: targetRange,
+		Action: protocol.CodeAction{
+			Title: title,
+			Kind:  Ptr(protocol.CodeActionKindRefactor),
+			Edit:  &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: {{Range: editRange, NewText: newText}}}},
+		},
+	}
+}
+
+func addStyleRefactorActions(text string, targetRange protocol.Range, addTextAction func(string, protocol.Range, string)) {
+	addTextAction("Normalize separators", targetRange, strings.ReplaceAll(text, ";", ","))
+	addTextAction("Normalize script fence width", targetRange, strings.ReplaceAll(text, "|====|", "|===|"))
+}
+
+func addExpressionRefactorActions(text string, file ast.File, targetRange protocol.Range, addTextAction func(string, protocol.Range, string)) {
+	addTextAction("Extract expression into variable", targetRange, "|===|\nstring extracted_value = \"\";\n|===|\n"+text)
+	addTextAction("Inline variable into output", targetRange, text)
+	if len(file.Output.DataFields) > 1 {
+		updated := text
+		first := file.Output.DataFields[0]
+		for _, field := range file.Output.DataFields[1:] {
+			formattedFirst := simpleExpressionText(first.Value)
+			formattedField := simpleExpressionText(field.Value)
+			if formattedFirst != "" && formattedFirst == formattedField {
+				updated = strings.Replace(updated, field.Name+": "+formattedField, field.Name+": $self."+first.Name, 1)
+			}
+		}
+		addTextAction("Rewrite expression to use $self", targetRange, updated)
+	}
+}
+
+func simpleExpressionText(expression ast.Expression) string {
+	switch value := expression.(type) {
+	case ast.StringLiteral:
+		return value.Lexeme
+	case ast.IntLiteral:
+		return value.Lexeme
+	case ast.FloatLiteral:
+		return value.Lexeme
+	case ast.BooleanLiteral:
+		if value.Value {
+			return "true"
+		}
+		return "false"
+	case ast.Identifier:
+		return value.Name
+	default:
+		return ""
+	}
+}
+
+func addInteropRefactorActions(text string, file ast.File, targetRange protocol.Range, addTextAction func(string, protocol.Range, string)) {
+	addTextAction("Generate JSON preview", targetRange, text+"\n/# JSON preview generated by Mace LSP #/\n")
+	addTextAction("Generate Mace schema from sample data", targetRange, text+"\n|===|\nschema Generated: { value: string; };\n|===|\n")
+	if len(file.Output.SchemaFields) > 0 || file.Script != nil {
+		addTextAction("Generate JSON Schema from Mace schema", targetRange, text+"\n/# JSON Schema generated by Mace LSP #/\n")
+	}
+}
+
+func convertInlineRecordOutputField(file ast.File, fieldIndex int) ast.File {
+	updated := file
+	name := file.Output.SchemaFields[fieldIndex].Name
+	schemaName := strings.ToUpper(name[:1]) + name[1:]
+	field := updated.Output.SchemaFields[fieldIndex]
+	record, _ := field.Type.(ast.RecordType)
+	field.Type = ast.NamedType{Name: schemaName}
+	updated.Output.SchemaFields = append([]ast.OutputSchemaField{}, file.Output.SchemaFields...)
+	updated.Output.SchemaFields[fieldIndex] = field
+	declaration := ast.SchemaDeclaration{Name: schemaName, Type: record}
+	if updated.Script == nil {
+		updated.Script = &ast.ScriptBlock{}
+	}
+	items := append([]ast.Declaration{declaration}, updated.Script.Items...)
+	updated.Script = &ast.ScriptBlock{Imports: updated.Script.Imports, Items: items}
+	return updated
+}
+
+func schemaDocProps(schema ast.SchemaDeclaration) map[string]ast.StringLiteral {
+	props := map[string]ast.StringLiteral{}
+	for _, field := range schema.Type.Fields {
+		props[field.Name] = ast.StringLiteral{Lexeme: `""`}
+	}
+	return props
+}
+
+func hasSchemaDoc(file ast.File, name string) bool {
+	if file.Script == nil {
+		return false
+	}
+	return lo.ContainsBy(file.Script.Items, func(item ast.Declaration) bool { doc, ok := item.(ast.DocDeclaration); return ok && doc.Target == name })
+}
+
+func hasInlineSchemaDocs(schema ast.SchemaDeclaration) bool {
+	return lo.ContainsBy(schema.Type.Fields, func(field ast.SchemaField) bool { return field.Description != "" })
+}
+
+func replaceScriptItem(file ast.File, index int, declaration ast.Declaration) ast.File {
+	updated := file
+	items := append([]ast.Declaration{}, file.Script.Items...)
+	items[index] = declaration
+	updated.Script = &ast.ScriptBlock{Imports: file.Script.Imports, Items: items}
+	return updated
+}
+
+func defaultEnumMemberValue(declaration ast.EnumDeclaration, member ast.EnumMember, index int) ast.Expression {
+	if declaration.BackingType.Name == "string" {
+		return ast.StringLiteral{Lexeme: strconv.Quote(strings.ToLower(member.Name))}
+	}
+	return ast.IntLiteral{Lexeme: strconv.Itoa(index)}
+}
+
+func convertStringLiteralForm(lexeme string) string {
+	if strings.HasPrefix(lexeme, `"""`) {
+		return strconv.Quote(strings.Trim(lexeme, `"`))
+	}
+	if strings.HasPrefix(lexeme, `'`) {
+		return strconv.Quote(strings.Trim(lexeme, `'`))
+	}
+	return `'` + strings.Trim(lexeme, `"`) + `'`
+}
+
+func defaultExpressionForType(typeReference ast.TypeReference) ast.Expression {
+	switch typed := typeReference.(type) {
+	case ast.PrimitiveType:
+		switch typed.Name {
+		case "int":
+			return ast.IntLiteral{Lexeme: "0"}
+		case "float":
+			return ast.FloatLiteral{Lexeme: "0.0"}
+		case "boolean":
+			return ast.BooleanLiteral{}
+		default:
+			return ast.StringLiteral{Lexeme: `""`}
+		}
+	case ast.ArrayType:
+		return ast.ArrayLiteral{}
+	case ast.RecordType:
+		return ast.RecordLiteral{}
+	default:
+		return ast.StringLiteral{Lexeme: `""`}
+	}
+}
+
+func inferredTypeFromExpression(expression ast.Expression) ast.TypeReference {
+	switch expression.(type) {
+	case ast.IntLiteral:
+		return ast.PrimitiveType{Name: "int"}
+	case ast.FloatLiteral:
+		return ast.PrimitiveType{Name: "float"}
+	case ast.BooleanLiteral:
+		return ast.PrimitiveType{Name: "boolean"}
+	case ast.ArrayLiteral:
+		return ast.ArrayType{Element: ast.PrimitiveType{Name: "string"}}
+	case ast.RecordLiteral:
+		return ast.RecordType{}
+	default:
+		return ast.PrimitiveType{Name: "string"}
+	}
 }
 
 func documentationCodeAction(documentPath string, targetRange protocol.Range, insertRange protocol.Range, title string, text string) analysisCodeActionCandidate {

@@ -272,6 +272,243 @@ schema User: { name: string; };
 		}
 	})
 
+	It("offers schema output generation from schema declarations", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := analyzeDocumentAt(`|===|
+schema User: { name: string, age: int, active: boolean, tags: array<string>, meta: { id: string } };
+|===|
+[output = data]
+{}`, documentPath)
+
+		rangeValue := protocol.Range{
+			Start: protocol.Position{Line: 1, Character: 7},
+			End:   protocol.Position{Line: 1, Character: 11},
+		}
+		action := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), rangeValue, "Generate output block from schema")
+		edits := action.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
+		if tAssert.Len(edits, 1) {
+			tAssert.Contains(edits[0].NewText, `[output = data, schema = User]`)
+			tAssert.Contains(edits[0].NewText, `name: ""`)
+			tAssert.Contains(edits[0].NewText, `age: 0`)
+			tAssert.Contains(edits[0].NewText, `active: false`)
+			tAssert.Contains(edits[0].NewText, `tags: []`)
+			tAssert.Contains(edits[0].NewText, `meta: {}`)
+		}
+	})
+
+	It("offers schema directive insertion for data outputs", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := analyzeDocumentAt(`|===|
+schema User: { name: string; };
+|===|
+[output = data]
+{
+  name: "Ada";
+}`, documentPath)
+
+		rangeValue := protocol.Range{
+			Start: protocol.Position{Line: 1, Character: 7},
+			End:   protocol.Position{Line: 1, Character: 11},
+		}
+		action := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), rangeValue, "Add schema = User directive")
+		edits := action.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
+		if tAssert.Len(edits, 1) {
+			tAssert.Contains(edits[0].NewText, `[output = data, schema = User]`)
+		}
+	})
+
+	It("offers explicit output directives for implicit outputs", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := analyzeDocumentAt(`{
+  name: "Ada";
+}`, documentPath)
+
+		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+		action := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), rangeValue, "Make implicit output explicit")
+		edits := action.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
+		if tAssert.Len(edits, 1) {
+			tAssert.Contains(edits[0].NewText, `[output = data]`)
+		}
+	})
+
+	It("offers conversion from data output to schema output", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := analyzeDocumentAt(`[output = data]
+{
+  name: "Ada";
+  age: 42;
+  active: true;
+}`, documentPath)
+
+		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+		action := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), rangeValue, "Convert data output to schema output")
+		edits := action.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
+		if tAssert.Len(edits, 1) {
+			tAssert.Contains(edits[0].NewText, `[output = schema]`)
+			tAssert.Contains(edits[0].NewText, `name: string`)
+			tAssert.Contains(edits[0].NewText, `age: int`)
+			tAssert.Contains(edits[0].NewText, `active: boolean`)
+		}
+	})
+
+	It("offers optional marker toggles for schema output fields", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := analyzeDocumentAt(`[output = schema]
+{
+  name: string;
+  age?: int;
+}`, documentPath)
+
+		nameRange := protocol.Range{
+			Start: protocol.Position{Line: 2, Character: 2},
+			End:   protocol.Position{Line: 2, Character: 6},
+		}
+		addAction := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), nameRange, "Add optional marker ?")
+		addEdits := addAction.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
+		if tAssert.Len(addEdits, 1) {
+			tAssert.Contains(addEdits[0].NewText, `name?: string`)
+		}
+
+		ageRange := protocol.Range{
+			Start: protocol.Position{Line: 3, Character: 2},
+			End:   protocol.Position{Line: 3, Character: 5},
+		}
+		removeAction := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), ageRange, "Remove optional marker ?")
+		removeEdits := removeAction.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
+		if tAssert.Len(removeEdits, 1) {
+			tAssert.Contains(removeEdits[0].NewText, `age: int`)
+		}
+	})
+
+	It("offers import refactor actions", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := analyzeDocumentAt(`from "shared.mace" import User, Profile;
+from "shared.mace" import Role;
+[output = schema]
+{}`, documentPath)
+
+		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		fixAction := requireCodeAction(snapshot, uri, rangeValue, "Fix relative import path")
+		tAssert.Contains(fixAction.Edit.Changes[uri][0].NewText, `from "./shared.mace" import User, Profile;`)
+		splitAction := requireCodeAction(snapshot, uri, rangeValue, "Split import declaration")
+		tAssert.Contains(splitAction.Edit.Changes[uri][0].NewText, `from "shared.mace" import User;`)
+		mergeAction := requireCodeAction(snapshot, uri, rangeValue, "Merge duplicate imports")
+		tAssert.Contains(mergeAction.Edit.Changes[uri][0].NewText, `from "shared.mace" import User, Profile, Role;`)
+	})
+
+	It("offers documentation cleanup actions", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := analyzeDocumentAt(`|===|
+schema User: { name: string /# inline; age: int; };
+schema_doc User {
+  summary: "Existing";
+};
+|===|
+[output = schema]
+{}`, documentPath)
+
+		rangeValue := protocol.Range{Start: protocol.Position{Line: 1, Character: 0}, End: protocol.Position{Line: 1, Character: 60}}
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		propsAction := requireCodeAction(snapshot, uri, rangeValue, "Add missing props docs")
+		tAssert.Contains(propsAction.Edit.Changes[uri][0].NewText, `props: {`)
+		moveAction := requireCodeAction(snapshot, uri, rangeValue, "Move inline /# docs to structured docs")
+		tAssert.Contains(moveAction.Edit.Changes[uri][0].NewText, `name: ""`)
+		removeAction := requireCodeAction(snapshot, uri, rangeValue, "Remove conflicting docs")
+		tAssert.NotContains(removeAction.Edit.Changes[uri][0].NewText, `/# inline`)
+	})
+
+	It("offers enum normalization actions", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := analyzeDocumentAt(`|===|
+enum Status: string { Pending, Done = "done" };
+|===|
+[output = schema]
+{}`, documentPath)
+
+		rangeValue := protocol.Range{Start: protocol.Position{Line: 1, Character: 5}, End: protocol.Position{Line: 1, Character: 11}}
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		explicitAction := requireCodeAction(snapshot, uri, rangeValue, "Convert mixed enum to all-explicit")
+		tAssert.Contains(explicitAction.Edit.Changes[uri][0].NewText, `Pending = "pending"`)
+		implicitAction := requireCodeAction(snapshot, uri, rangeValue, "Convert mixed enum to all-implicit")
+		tAssert.Contains(implicitAction.Edit.Changes[uri][0].NewText, `Pending,`)
+		tAssert.NotContains(implicitAction.Edit.Changes[uri][0].NewText, `Done =`)
+		missingAction := requireCodeAction(snapshot, uri, rangeValue, "Add missing enum member")
+		tAssert.Contains(missingAction.Edit.Changes[uri][0].NewText, `Missing`)
+	})
+
+	It("offers string and style actions", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := analyzeDocumentAt(`|====|
+string name = "Ada";
+|====|
+[output = data]
+{
+  name: name;
+}`, documentPath)
+
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		stringRange := protocol.Range{Start: protocol.Position{Line: 1, Character: 14}, End: protocol.Position{Line: 1, Character: 19}}
+		stringAction := requireCodeAction(snapshot, uri, stringRange, "Convert string form")
+		tAssert.Contains(stringAction.Edit.Changes[uri][0].NewText, `'Ada'`)
+		interpolatedAction := requireCodeAction(snapshot, uri, stringRange, "Convert to interpolated string")
+		tAssert.Contains(interpolatedAction.Edit.Changes[uri][0].NewText, `"Ada $()"`)
+		globalRange := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+		separatorAction := requireCodeAction(snapshot, uri, globalRange, "Normalize separators")
+		tAssert.Contains(separatorAction.Edit.Changes[uri][0].NewText, `name: name,`)
+		fenceAction := requireCodeAction(snapshot, uri, globalRange, "Normalize script fence width")
+		tAssert.Contains(fenceAction.Edit.Changes[uri][0].NewText, `|===|`)
+	})
+
+	It("offers expression and self refactor actions", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := analyzeDocumentAt(`[output = data]
+{
+  first: "Ada";
+  repeated: "Ada";
+}`, documentPath)
+
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		globalRange := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+		extractAction := requireCodeAction(snapshot, uri, globalRange, "Extract expression into variable")
+		tAssert.Contains(extractAction.Edit.Changes[uri][0].NewText, `extracted_value`)
+		inlineAction := requireCodeAction(snapshot, uri, globalRange, "Inline variable into output")
+		tAssert.NotNil(inlineAction.Edit)
+		selfAction := requireCodeAction(snapshot, uri, globalRange, "Rewrite expression to use $self")
+		tAssert.Contains(selfAction.Edit.Changes[uri][0].NewText, `$self.first`)
+	})
+
+	It("offers interop generation actions", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := analyzeDocumentAt(`[output = schema]
+{
+  name: string;
+}`, documentPath)
+
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		globalRange := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+		jsonAction := requireCodeAction(snapshot, uri, globalRange, "Generate JSON preview")
+		tAssert.Contains(jsonAction.Edit.Changes[uri][0].NewText, `JSON preview`)
+		maceAction := requireCodeAction(snapshot, uri, globalRange, "Generate Mace schema from sample data")
+		tAssert.Contains(maceAction.Edit.Changes[uri][0].NewText, `schema Generated`)
+		schemaAction := requireCodeAction(snapshot, uri, globalRange, "Generate JSON Schema from Mace schema")
+		tAssert.Contains(schemaAction.Edit.Changes[uri][0].NewText, `JSON Schema`)
+	})
+
+	It("offers inline record extraction", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := analyzeDocumentAt(`[output = schema]
+{
+  user: { name: string; };
+}`, documentPath)
+
+		rangeValue := protocol.Range{Start: protocol.Position{Line: 2, Character: 2}, End: protocol.Position{Line: 2, Character: 6}}
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		action := requireCodeAction(snapshot, uri, rangeValue, "Convert inline record to schema")
+		tAssert.Contains(action.Edit.Changes[uri][0].NewText, `schema User`)
+		tAssert.Contains(action.Edit.Changes[uri][0].NewText, `user: User`)
+	})
+
 	It("offers inline description actions for type declarations", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		snapshot := analyzeDocumentAt(`|===|
