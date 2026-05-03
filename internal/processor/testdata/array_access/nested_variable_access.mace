@@ -1,10 +1,10 @@
-|===|
+|============================================================|
 array<int> level1 = [1];
 array<array<int>> level2 = [[2]];
 array<array<array<int>>> level3 = [[[3]]];
 array<array<array<array<int>>>> level4 = [[[[4]]]];
 array<array<array<array<array<int>>>>> level5 = [[[[[5]]]]];
-|===|
+|============================================================|
 [output = data]
 {
   level1: level1[0],

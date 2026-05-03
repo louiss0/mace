@@ -55,9 +55,8 @@ injectable string user = "Ada";
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
-		tAssert.Equal(`from "./base.mace" import User, Config;
-
-|==================================================|
+		tAssert.Equal(`|==================================================|
+from "./base.mace" import User, Config;
 type Name: string;
 schema User: {
   name: string,

@@ -57,6 +57,7 @@ func (p *Parser) ParseFile() (ast.File, error) {
 		if err != nil {
 			return ast.File{}, err
 		}
+		imports = append(imports, scriptBlock.Imports...)
 		script = &scriptBlock
 	}
 
@@ -170,8 +171,21 @@ func (p *Parser) parseScriptBlock() (ast.ScriptBlock, error) {
 		return ast.ScriptBlock{}, err
 	}
 
+	imports := []ast.ImportDeclaration{}
+	for p.current().Type == lexer.TokenFrom {
+		importDecl, err := p.parseImportDeclaration()
+		if err != nil {
+			return ast.ScriptBlock{}, err
+		}
+		imports = append(imports, importDecl)
+	}
+
 	items := []ast.Declaration{}
 	for !p.isAtEnd() && p.current().Type != lexer.TokenScriptDelimiter {
+		if p.current().Type == lexer.TokenFrom {
+			return ast.ScriptBlock{}, p.unexpectedTokenError("parser: import declarations must appear at top of script block")
+		}
+
 		declaration, err := p.parseDeclaration()
 		if err != nil {
 			return ast.ScriptBlock{}, err
@@ -183,7 +197,7 @@ func (p *Parser) parseScriptBlock() (ast.ScriptBlock, error) {
 		return ast.ScriptBlock{}, err
 	}
 
-	return ast.ScriptBlock{Items: items}, nil
+	return ast.ScriptBlock{Imports: imports, Items: items}, nil
 }
 
 func (p *Parser) parseDeclaration() (ast.Declaration, error) {

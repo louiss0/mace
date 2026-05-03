@@ -30,19 +30,9 @@ func newFormatter() *formatter {
 }
 
 func (f *formatter) writeFile(file ast.File) error {
-	for index, importDeclaration := range file.Imports {
-		if index > 0 {
-			f.writeLine("")
-		}
-		f.writeImportDeclaration(importDeclaration)
-	}
-
-	if len(file.Imports) > 0 && file.Script != nil {
-		f.writeLine("")
-	}
-
-	if file.Script != nil {
-		if err := f.writeScriptBlock(*file.Script); err != nil {
+	script, hasScript := normalizedScriptBlock(file)
+	if hasScript {
+		if err := f.writeScriptBlock(script); err != nil {
 			return err
 		}
 		f.writeLine("")
@@ -51,16 +41,30 @@ func (f *formatter) writeFile(file ast.File) error {
 	return f.writeOutputBlock(file.Output)
 }
 
-func (f *formatter) writeImportDeclaration(importDeclaration ast.ImportDeclaration) {
-	f.write("from ")
-	f.write(importDeclaration.Path.Lexeme)
-	f.write(" import ")
-	f.write(strings.Join(importDeclaration.Identifiers, ", "))
-	f.writeLine(";")
+func formatImportDeclaration(importDeclaration ast.ImportDeclaration) string {
+	return "from " + importDeclaration.Path.Lexeme + " import " + strings.Join(importDeclaration.Identifiers, ", ") + ";"
+}
+
+func normalizedScriptBlock(file ast.File) (ast.ScriptBlock, bool) {
+	if file.Script == nil && len(file.Imports) == 0 {
+		return ast.ScriptBlock{}, false
+	}
+
+	script := ast.ScriptBlock{}
+	if file.Script != nil {
+		script = *file.Script
+	}
+	if len(script.Imports) == 0 {
+		script.Imports = append([]ast.ImportDeclaration{}, file.Imports...)
+	}
+	return script, true
 }
 
 func (f *formatter) writeScriptBlock(script ast.ScriptBlock) error {
-	lines := make([]string, 0, len(script.Items))
+	lines := make([]string, 0, len(script.Imports)+len(script.Items))
+	for _, importDeclaration := range script.Imports {
+		lines = append(lines, formatImportDeclaration(importDeclaration))
+	}
 	for _, declaration := range script.Items {
 		line, err := formatDeclaration(declaration)
 		if err != nil {

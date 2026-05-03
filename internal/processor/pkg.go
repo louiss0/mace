@@ -232,7 +232,7 @@ func (p *Processor) processScriptInput(input string, baseDir string) (ScriptResu
 		return ScriptResult{}, err
 	}
 
-	context, err := buildProcessContext(nil, &script, baseDir, p.injections)
+	context, err := buildProcessContext(script.Imports, &script, baseDir, p.injections)
 	if err != nil {
 		return ScriptResult{}, err
 	}

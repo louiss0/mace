@@ -109,7 +109,8 @@ type ImportDeclaration struct {
 }
 
 type ScriptBlock struct {
-	Items []Declaration
+	Imports []ImportDeclaration
+	Items    []Declaration
 }
 
 type Documentation struct {

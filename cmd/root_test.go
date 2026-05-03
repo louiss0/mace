@@ -335,14 +335,13 @@ schema User: { name: string; age?: int; };
 			err := command.Execute()
 			tAssert.NoError(err)
 			tAssert.Equal("", stderr.String())
-			tAssert.Equal(`from "./base.mace" import User;
-
-|===============|
+			tAssert.Equal(`|===============================|
+from "./base.mace" import User;
 schema User: {
   name: string,
   age?: int
 }
-|===============|
+|===============================|
 [output = data, schema = User]
 {
   name: "Ada",
