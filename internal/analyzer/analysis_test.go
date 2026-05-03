@@ -251,6 +251,42 @@ injectable string env;
 		tAssert.Empty(snapshot.diagnostics)
 	})
 
+	It("warns about unused imports and offers removal", func() {
+		workspace, err := os.MkdirTemp("", "mace-analysis-unused-import-*")
+		tAssert.NoError(err)
+
+		writeAnalysisFile(workspace, "shared.mace", `[output = schema]
+{
+  User: { name: string; };
+  Config: { enabled: boolean; };
+}`)
+		documentPath := filepath.Join(workspace, "consumer.mace")
+		snapshot := analyzeDocumentAt(`|===|
+from "./shared.mace" import User, Config;
+User user = { name: "Ada"; };
+|===|
+[output = data]
+{
+  user: user;
+}`, documentPath)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			diagnostic := snapshot.diagnostics[0]
+			tAssert.Contains(diagnostic.Message, `import "Config" is never used`)
+			tAssert.Equal(protocol.DiagnosticSeverityWarning, *diagnostic.Severity)
+			tAssert.Equal(string(diagnosticImportUnused), requireDiagnosticCode(diagnostic))
+
+			action := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), diagnostic.Range, "Remove unused import")
+			edits := action.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
+			if tAssert.Len(edits, 1) {
+				tAssert.Equal(``, edits[0].NewText)
+				tAssert.Equal(protocol.UInteger(1), edits[0].Range.Start.Line)
+				tAssert.Equal(protocol.UInteger(32), edits[0].Range.Start.Character)
+				tAssert.Equal(protocol.UInteger(40), edits[0].Range.End.Character)
+			}
+		}
+	})
+
 	It("warns about unused script variables and offers removal", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		snapshot := analyzeDocumentAt(`|===|

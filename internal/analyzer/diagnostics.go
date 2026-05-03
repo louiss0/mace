@@ -37,6 +37,7 @@ const (
 	diagnosticImportNameNotExposed                  diagnosticCode = "mace.import.name-not-exposed"
 	diagnosticImportInternalDeclaration             diagnosticCode = "mace.import.internal-declaration"
 	diagnosticImportTargetNotPublic                 diagnosticCode = "mace.import.target-not-public"
+	diagnosticImportUnused                          diagnosticCode = "mace.import.unused"
 	diagnosticDeclarationDuplicateType              diagnosticCode = "mace.declaration.duplicate-type"
 	diagnosticDeclarationDuplicateEnum              diagnosticCode = "mace.declaration.duplicate-enum"
 	diagnosticDeclarationDuplicateEnumMember        diagnosticCode = "mace.declaration.duplicate-enum-member"

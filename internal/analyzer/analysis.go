@@ -577,14 +577,191 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 		return *result.action, true
 	})
 
+	hasSchemaFileConflict := false
 	if diagnostic, candidates, ok := schemaFileConflictAnalysis(text, file, documentPath); ok {
 		diagnostics = append(diagnostics, diagnostic)
 		actions = append(actions, candidates...)
+		hasSchemaFileConflict = true
 	}
 
+	if !hasSchemaFileConflict {
+		unusedImportDiagnostics, unusedImportActions := unusedImportAnalysis(text, file, tokens, documentPath)
+		diagnostics = append(diagnostics, unusedImportDiagnostics...)
+		actions = append(actions, unusedImportActions...)
+	}
 	diagnostics = append(diagnostics, schemaOutputVariableDiagnostics(file, tokens)...)
 
 	return diagnostics, actions
+}
+
+func unusedImportAnalysis(text string, file ast.File, tokens []lexer.Token, documentPath string) ([]protocol.Diagnostic, []analysisCodeActionCandidate) {
+	if len(file.Imports) == 0 {
+		return nil, nil
+	}
+
+	referencedNames := referencedNames(file)
+	diagnostics := []protocol.Diagnostic{}
+	actions := []analysisCodeActionCandidate{}
+	for _, importDecl := range file.Imports {
+		for _, name := range importDecl.Identifiers {
+			if _, ok := referencedNames[name]; ok {
+				continue
+			}
+
+			token, ok := importIdentifierToken(tokens, importDecl, name)
+			if !ok {
+				continue
+			}
+
+			rangeValue := tokenProtocolRange(token)
+			message := fmt.Sprintf("import %q is never used", name)
+			diagnostics = append(diagnostics, diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityWarning, diagnosticImportUnused, message))
+			if documentPath == "" {
+				continue
+			}
+			editRange, ok := importIdentifierEditRange(text, tokens, token, len(importDecl.Identifiers) == 1)
+			if !ok {
+				continue
+			}
+			actions = append(actions, analysisCodeActionCandidate{
+				Range: rangeValue,
+				Action: protocol.CodeAction{
+					Title: "Remove unused import",
+					Kind:  Ptr(protocol.CodeActionKindQuickFix),
+					Edit: &protocol.WorkspaceEdit{
+						Changes: map[protocol.DocumentUri][]protocol.TextEdit{
+							pathURI(documentPath): {{Range: editRange, NewText: ""}},
+						},
+					},
+				},
+			})
+		}
+	}
+
+	return diagnostics, actions
+}
+
+func importIdentifierToken(tokens []lexer.Token, importDecl ast.ImportDeclaration, name string) (lexer.Token, bool) {
+	for index := 0; index < len(tokens); index++ {
+		if tokens[index].Type != lexer.TokenFrom {
+			continue
+		}
+		if index+3 >= len(tokens) || tokens[index+1].Lexeme != importDecl.Path.Lexeme || tokens[index+2].Type != lexer.TokenImport {
+			continue
+		}
+		for current := index + 3; current < len(tokens) && tokens[current].Type != lexer.TokenSemicolon; current++ {
+			if tokens[current].Type == lexer.TokenIdentifier && tokens[current].Lexeme == name {
+				return tokens[current], true
+			}
+		}
+	}
+
+	return lexer.Token{}, false
+}
+
+func importIdentifierEditRange(text string, tokens []lexer.Token, nameToken lexer.Token, onlyIdentifier bool) (protocol.Range, bool) {
+	nameIndex := -1
+	for index, token := range tokens {
+		if token.Line == nameToken.Line && token.Column == nameToken.Column && token.Lexeme == nameToken.Lexeme {
+			nameIndex = index
+			break
+		}
+	}
+	if nameIndex < 0 {
+		return protocol.Range{}, false
+	}
+
+	if onlyIdentifier {
+		return importDeclarationEditRange(text, tokens, nameIndex)
+	}
+
+	start := tokenStartIndex(text, nameToken)
+	end := start + len(nameToken.Lexeme)
+	if nameIndex+1 < len(tokens) && tokens[nameIndex+1].Type == lexer.TokenComma {
+		end = tokenStartIndex(text, tokens[nameIndex+1]) + len(tokens[nameIndex+1].Lexeme)
+		for end < len(text) && (text[end] == ' ' || text[end] == '\t') {
+			end++
+		}
+	} else if nameIndex > 0 && tokens[nameIndex-1].Type == lexer.TokenComma {
+		start = tokenStartIndex(text, tokens[nameIndex-1])
+		for start > 0 && (text[start-1] == ' ' || text[start-1] == '\t') {
+			start--
+		}
+	}
+
+	return protocol.Range{Start: positionFromIndex(text, start), End: positionFromIndex(text, end)}, true
+}
+
+func importDeclarationEditRange(text string, tokens []lexer.Token, nameIndex int) (protocol.Range, bool) {
+	startIndex := nameIndex
+	for startIndex > 0 && tokens[startIndex].Type != lexer.TokenFrom {
+		startIndex--
+	}
+	if tokens[startIndex].Type != lexer.TokenFrom {
+		return protocol.Range{}, false
+	}
+
+	endIndex := nameIndex
+	for endIndex < len(tokens) && tokens[endIndex].Type != lexer.TokenSemicolon {
+		endIndex++
+	}
+	if endIndex >= len(tokens) {
+		return protocol.Range{}, false
+	}
+
+	start := tokenStartIndex(text, tokens[startIndex])
+	end := tokenStartIndex(text, tokens[endIndex]) + len(tokens[endIndex].Lexeme)
+	if end < len(text) && text[end] == '\r' {
+		end++
+	}
+	if end < len(text) && text[end] == '\n' {
+		end++
+	}
+
+	return protocol.Range{Start: positionFromIndex(text, start), End: positionFromIndex(text, end)}, true
+}
+
+func referencedNames(file ast.File) map[string]struct{} {
+	names := usedVariableNames(file)
+	visitType := func(typeReference ast.TypeReference) {}
+	visitType = func(typeReference ast.TypeReference) {
+		switch typed := typeReference.(type) {
+		case ast.NamedType:
+			names[typed.Name] = struct{}{}
+		case ast.ArrayType:
+			visitType(typed.Element)
+		case ast.UnionType:
+			for _, member := range typed.Members {
+				visitType(member)
+			}
+		case ast.VariantType:
+			for _, member := range typed.Members {
+				visitType(member)
+			}
+		case ast.RecordType:
+			for _, field := range typed.Fields {
+				visitType(field.Type)
+			}
+		}
+	}
+
+	if file.Script != nil {
+		for _, item := range file.Script.Items {
+			switch declaration := item.(type) {
+			case ast.VariableDeclaration:
+				visitType(declaration.Type)
+			case ast.TypeDeclaration:
+				visitType(declaration.Type)
+			case ast.SchemaDeclaration:
+				visitType(declaration.Type)
+			}
+		}
+	}
+	for _, field := range file.Output.SchemaFields {
+		visitType(field.Type)
+	}
+
+	return names
 }
 
 func unusedVariableAnalysis(text string, file ast.File, tokens []lexer.Token, documentPath string) ([]protocol.Diagnostic, []analysisCodeActionCandidate) {
