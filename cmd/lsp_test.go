@@ -582,6 +582,47 @@ array<int> values = [1, 2, 3];
 		}
 	})
 
+	It("binds out-of-range diagnostics to the first failing array access", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+array<int> values = [1, 2, 3];
+|===|
+[output = data]
+{
+  first: values[9],
+  second: values[9]
+}`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Equal(protocol.UInteger(5), params.Diagnostics[0].Range.Start.Line)
+				tAssert.Equal(protocol.UInteger(16), params.Diagnostics[0].Range.Start.Character)
+				tAssert.Equal(protocol.UInteger(17), params.Diagnostics[0].Range.End.Character)
+			}
+		}
+	})
+
+	It("binds invalid array access diagnostics to the first failing expression", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `[output = data]
+{
+  first: 1[0],
+  second: 2[0]
+}`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Equal(protocol.UInteger(2), params.Diagnostics[0].Range.Start.Line)
+				tAssert.Equal(protocol.UInteger(10), params.Diagnostics[0].Range.Start.Character)
+				tAssert.Equal(protocol.UInteger(11), params.Diagnostics[0].Range.End.Character)
+			}
+		}
+	})
+
 	It("does not report mixed array diagnostics for string arrays", func() {
 		notifications := []capturedNotification{}
 

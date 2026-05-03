@@ -26,6 +26,8 @@ var (
 	missingInjectablePattern    = regexp.MustCompile(`injectable "([^"]+)" requires a runtime value`)
 	enumNamePattern             = regexp.MustCompile(`enum "([^"]+)"`)
 	enumMemberPattern           = regexp.MustCompile(`enum member "([^"]+)"`)
+	arrayAccessLevelPattern     = regexp.MustCompile(`at level (\d+)`)
+	arrayAccessIndexPattern     = regexp.MustCompile(`array index (-?\d+) is out of range`)
 )
 
 type symbolOrigin string
@@ -815,38 +817,127 @@ func arrayAccessDiagnostic(tokens []lexer.Token, message string) (protocol.Diagn
 		return protocol.Diagnostic{}, false
 	}
 
+	candidates := arrayAccessCandidates(tokens)
 	if hasOutOfRangeError {
-		if token, ok := arrayAccessIndexToken(tokens, message); ok {
+		if token, ok := outOfRangeArrayAccessToken(candidates, message); ok {
 			return diagnosticWithCode(tokenProtocolRange(token), protocol.DiagnosticSeverityError, diagnosticTypeInvalidArrayAccess, message), true
 		}
 	}
 
-	for index := len(tokens) - 1; index >= 0; index-- {
-		if tokens[index].Type != lexer.TokenLBracket {
-			continue
-		}
-		return diagnosticWithCode(tokenProtocolRange(tokens[index]), protocol.DiagnosticSeverityError, diagnosticTypeInvalidArrayAccess, message), true
+	if token, ok := invalidArrayAccessToken(candidates, message); ok {
+		return diagnosticWithCode(tokenProtocolRange(token), protocol.DiagnosticSeverityError, diagnosticTypeInvalidArrayAccess, message), true
 	}
 
 	return protocol.Diagnostic{}, false
 }
 
-func arrayAccessIndexToken(tokens []lexer.Token, message string) (lexer.Token, bool) {
-	for index := len(tokens) - 2; index >= 1; index-- {
-		token := tokens[index]
-		if token.Type != lexer.TokenInt {
+type arrayAccessCandidate struct {
+	Bracket lexer.Token
+	Index   *lexer.Token
+	Level   int
+	End     int
+}
+
+func arrayAccessCandidates(tokens []lexer.Token) []arrayAccessCandidate {
+	candidates := []arrayAccessCandidate{}
+	for index, token := range tokens {
+		if token.Type != lexer.TokenLBracket || !isArrayAccessOpen(tokens, index) {
 			continue
 		}
-		if tokens[index-1].Type != lexer.TokenLBracket || tokens[index+1].Type != lexer.TokenRBracket {
-			continue
+
+		candidate := arrayAccessCandidate{
+			Bracket: token,
+			Level:   1,
+			End:     index,
 		}
-		if !strings.Contains(message, fmt.Sprintf("array index %s", token.Lexeme)) {
-			continue
+		if len(candidates) > 0 {
+			previous := candidates[len(candidates)-1]
+			if previous.End == index-1 {
+				candidate.Level = previous.Level + 1
+			}
 		}
-		return token, true
+		if index+1 < len(tokens) && tokens[index+1].Type == lexer.TokenInt {
+			candidate.Index = &tokens[index+1]
+			candidate.End = index + 1
+		}
+		if candidate.End+1 < len(tokens) && tokens[candidate.End+1].Type == lexer.TokenRBracket {
+			candidate.End++
+		}
+		candidates = append(candidates, candidate)
+	}
+
+	return candidates
+}
+
+func isArrayAccessOpen(tokens []lexer.Token, index int) bool {
+	if index == 0 {
+		return false
+	}
+
+	switch tokens[index-1].Type {
+	case lexer.TokenIdentifier, lexer.TokenSelf,
+		lexer.TokenString, lexer.TokenInt, lexer.TokenFloat, lexer.TokenBoolean,
+		lexer.TokenRParen, lexer.TokenRBracket, lexer.TokenRBrace:
+		return true
+	default:
+		return false
+	}
+}
+
+func invalidArrayAccessToken(candidates []arrayAccessCandidate, message string) (lexer.Token, bool) {
+	level, ok := arrayAccessLevelFromMessage(message)
+	if !ok {
+		return lexer.Token{}, false
+	}
+
+	for _, candidate := range candidates {
+		if candidate.Level == level {
+			return candidate.Bracket, true
+		}
 	}
 
 	return lexer.Token{}, false
+}
+
+func outOfRangeArrayAccessToken(candidates []arrayAccessCandidate, message string) (lexer.Token, bool) {
+	level, ok := arrayAccessLevelFromMessage(message)
+	if !ok {
+		return lexer.Token{}, false
+	}
+	index, ok := arrayAccessIndexFromMessage(message)
+	if !ok {
+		return lexer.Token{}, false
+	}
+
+	for _, candidate := range candidates {
+		if candidate.Level != level || candidate.Index == nil || candidate.Index.Lexeme != index {
+			continue
+		}
+		return *candidate.Index, true
+	}
+
+	return lexer.Token{}, false
+}
+
+func arrayAccessLevelFromMessage(message string) (int, bool) {
+	matches := arrayAccessLevelPattern.FindStringSubmatch(message)
+	if len(matches) != 2 {
+		return 0, false
+	}
+
+	level, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return 0, false
+	}
+	return level, true
+}
+
+func arrayAccessIndexFromMessage(message string) (string, bool) {
+	matches := arrayAccessIndexPattern.FindStringSubmatch(message)
+	if len(matches) != 2 {
+		return "", false
+	}
+	return matches[1], true
 }
 
 func parseExpectedAndActualType(message string) (string, string, bool) {
