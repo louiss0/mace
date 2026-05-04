@@ -728,13 +728,14 @@ func typeAliasTextCodeActions(text string, documentPath string) []analysisCodeAc
 }
 
 func createTypeAliasFromSelectedTypeText(text string) (string, bool) {
-	pattern := regexp.MustCompile(`(?m)^([ \t]*)(string|int|float|boolean|array<[^>]+>)\s+([A-Za-z_][A-Za-z0-9_]*\s*=)`)
+	pattern := regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(string|int|float|boolean|array<[^>]+>|[A-Za-z_][A-Za-z0-9_]*)`)
 	matches := pattern.FindStringSubmatch(text)
 	if len(matches) == 0 || strings.Contains(text, "type ExtractedType:") {
 		return "", false
 	}
 	updated := strings.Replace(text, "|===|\n", "|===|\ntype ExtractedType: "+matches[2]+";\n", 1)
-	updated = pattern.ReplaceAllString(updated, `${1}ExtractedType ${3}`)
+	updated = pattern.ReplaceAllString(updated, `${1}: ExtractedType`)
+	updated = strings.Replace(updated, "type ExtractedType: ExtractedType;", "type ExtractedType: "+matches[2]+";", 1)
 	return updated, updated != text
 }
 
@@ -743,7 +744,8 @@ func inlineTypeAliasUsageText(text string) (string, bool) {
 	if len(matches) == 0 {
 		return "", false
 	}
-	updated := regexp.MustCompile(`(?m)^([ \t]*)`+regexp.QuoteMeta(matches[1])+`\s+`).ReplaceAllString(text, `${1}`+matches[2]+` `)
+	updated := strings.ReplaceAll(text, ": "+matches[1], ": "+matches[2])
+	updated = regexp.MustCompile(`(?m)^([ \t]*)`+regexp.QuoteMeta(matches[1])+`\s+`).ReplaceAllString(updated, `${1}`+matches[2]+` `)
 	return updated, updated != text
 }
 
@@ -758,7 +760,8 @@ func replaceUnknownTypeText(text string) (string, string, bool) {
 		return "", "", false
 	}
 	known := matches[1]
-	updated := regexp.MustCompile(`(?m)^([ \t]*)Nmae\s+`).ReplaceAllString(text, `${1}`+known+` `)
+	updated := regexp.MustCompile(`:\s*Nmae`).ReplaceAllString(text, ": "+known)
+	updated = regexp.MustCompile(`(?m)^([ \t]*)Nmae\s+`).ReplaceAllString(updated, `${1}`+known+` `)
 	return updated, known, updated != text
 }
 

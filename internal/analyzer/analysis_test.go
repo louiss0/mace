@@ -468,27 +468,27 @@ from "dupes.mace" import User, User, Role;
 		uri := protocol.DocumentUri(fileURI(documentPath))
 		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
 
-		It("creates type aliases from selected non-schema types", func() {
+		It("creates type aliases from selected schema field types", func() {
 			snapshot := analyzeDocumentAt(`|===|
-string name = "Ada";
+schema User: { name: string; };
 |===|
-[output = data]
-{ value: name; }`, documentPath)
+[output = schema]
+{}`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Create type alias from selected type")
 			text := action.Edit.Changes[uri][0].NewText
 			tAssert.Contains(text, "type ExtractedType: string;")
-			tAssert.Contains(text, `ExtractedType name = "Ada";`)
+			tAssert.Contains(text, "name: ExtractedType")
 		})
 
-		It("inlines type alias usage", func() {
+		It("inlines type alias usage in schema fields", func() {
 			snapshot := analyzeDocumentAt(`|===|
 type Name: string;
-Name name = "Ada";
+schema User: { name: Name; };
 |===|
-[output = data]
-{ value: name; }`, documentPath)
+[output = schema]
+{}`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Inline type alias usage")
-			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `string name = "Ada";`)
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "name: string")
 		})
 
 		It("renames type aliases", func() {
@@ -504,12 +504,12 @@ type Name: string;
 		It("replaces unknown types with closest known types", func() {
 			snapshot := analyzeDocumentAt(`|===|
 type Name: string;
-Nmae name = "Ada";
+schema User: { name: Nmae; };
 |===|
-[output = data]
-{ value: name; }`, documentPath)
+[output = schema]
+{}`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Replace unknown type with Name")
-			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `Name name = "Ada";`)
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "name: Name")
 		})
 
 		It("converts Array casing to array", func() {
