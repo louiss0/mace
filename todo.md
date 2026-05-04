@@ -16,11 +16,11 @@ Absolutely. Mace has *great* Code Action potential because it has a lot of “st
 
 * [x] **Add missing import** for unresolved schema/type/enum/value.
 * [x] **Remove unused import**.
-* [ ] **Sort imports** alphabetically.
+* [x] **Sort imports** alphabetically.
 * [x] **Move imports to top of file**.
-* [ ] **Fix import path extension** by adding `.mace`.
-* [ ] **Convert invalid wildcard import** into named imports.
-* [ ] **Remove duplicate imported names**.
+* [x] **Fix import path extension** by adding `.mace`.
+* [x] **Convert invalid wildcard import** into named imports.
+* [x] **Remove duplicate imported names**.
 * [x] **Split import declaration** into one import per file.
 * [x] **Merge imports from same file**.
 

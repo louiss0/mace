@@ -428,6 +428,7 @@ func analyzeDocumentAt(text string, documentPath string) analysisSnapshot {
 	file, parseErr := parseFile(text)
 	if parseErr != nil {
 		snapshot.diagnostics = []protocol.Diagnostic{diagnosticFromError(parseErr)}
+		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, parseErrorCodeActions(tokens, documentPath)...)
 		return snapshot
 	}
 
@@ -596,6 +597,31 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 	diagnostics = append(diagnostics, schemaOutputVariableDiagnostics(file, tokens)...)
 
 	return diagnostics, actions
+}
+
+func parseErrorCodeActions(tokens []lexer.Token, documentPath string) []analysisCodeActionCandidate {
+	if documentPath == "" {
+		return nil
+	}
+
+	uri := protocol.DocumentUri(fileURI(documentPath))
+	for _, token := range tokens {
+		if token.Type != lexer.TokenStar {
+			continue
+		}
+
+		rangeValue := tokenProtocolRange(token)
+		return []analysisCodeActionCandidate{{
+			Range: rangeValue,
+			Action: protocol.CodeAction{
+				Title: "Convert wildcard import to named import",
+				Kind:  Ptr(protocol.CodeActionKindQuickFix),
+				Edit:  &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: {{Range: rangeValue, NewText: "Name"}}}},
+			},
+		}}
+	}
+
+	return nil
 }
 
 func semanticCodeActions(text string, file ast.File, tokens []lexer.Token, documentPath string, diagnostic protocol.Diagnostic, message string) []analysisCodeActionCandidate {
@@ -776,8 +802,30 @@ func editorRefactorCodeActions(text string, file ast.File, documentPath string) 
 }
 
 func addImportRefactorActions(file ast.File, addWholeFileAction func(string, protocol.Range, ast.File)) {
+	if len(file.Imports) > 1 {
+		imports := append([]ast.ImportDeclaration{}, file.Imports...)
+		slices.SortFunc(imports, func(left ast.ImportDeclaration, right ast.ImportDeclaration) int {
+			return strings.Compare(left.Path.Lexeme, right.Path.Lexeme)
+		})
+		if !slices.EqualFunc(imports, file.Imports, func(left ast.ImportDeclaration, right ast.ImportDeclaration) bool {
+			return left.Path.Lexeme == right.Path.Lexeme && slices.Equal(left.Identifiers, right.Identifiers)
+		}) {
+			updated := file
+			updated.Imports = imports
+			addWholeFileAction("Sort imports", protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, updated)
+		}
+	}
+
 	for index, importDecl := range file.Imports {
 		targetRange := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+		if hasDuplicateImportIdentifiers(importDecl.Identifiers) {
+			updated := file
+			imports := append([]ast.ImportDeclaration{}, file.Imports...)
+			imports[index].Identifiers = uniqueImportIdentifiers(importDecl.Identifiers)
+			updated.Imports = imports
+			addWholeFileAction("Remove duplicate imported names", targetRange, updated)
+		}
+
 		pathValue, _ := stringLiteralValue(importDecl.Path)
 		if pathValue != "" && !strings.HasPrefix(pathValue, "./") && !strings.HasPrefix(pathValue, "../") && !filepath.IsAbs(pathValue) {
 			updated := file
@@ -809,6 +857,30 @@ func addImportRefactorActions(file ast.File, addWholeFileAction func(string, pro
 			break
 		}
 	}
+}
+
+func hasDuplicateImportIdentifiers(identifiers []string) bool {
+	seen := map[string]struct{}{}
+	for _, identifier := range identifiers {
+		if _, ok := seen[identifier]; ok {
+			return true
+		}
+		seen[identifier] = struct{}{}
+	}
+	return false
+}
+
+func uniqueImportIdentifiers(identifiers []string) []string {
+	seen := map[string]struct{}{}
+	unique := []string{}
+	for _, identifier := range identifiers {
+		if _, ok := seen[identifier]; ok {
+			continue
+		}
+		seen[identifier] = struct{}{}
+		unique = append(unique, identifier)
+	}
+	return unique
 }
 
 func addDocumentationRefactorActions(file ast.File, addWholeFileAction func(string, protocol.Range, ast.File)) {

@@ -397,6 +397,34 @@ from "shared.mace" import Role;
 		tAssert.Contains(mergeAction.Edit.Changes[uri][0].NewText, `from "shared.mace" import User, Profile, Role;`)
 	})
 
+	It("offers remaining add and fix import actions", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+
+		snapshot := analyzeDocumentAt(`from "shared" import User;
+from "zeta.mace" import Zed;
+from "alpha.mace" import User;
+from "dupes.mace" import User, User, Role;
+[output = schema]
+{}`, documentPath)
+		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+
+		extensionAction := requireCodeAction(snapshot, uri, protocol.Range{Start: protocol.Position{Line: 0, Character: 5}, End: protocol.Position{Line: 0, Character: 13}}, "Append .mace to import path")
+		tAssert.Equal(`"shared.mace"`, extensionAction.Edit.Changes[uri][0].NewText)
+
+		sortAction := requireCodeAction(snapshot, uri, rangeValue, "Sort imports")
+		tAssert.Contains(sortAction.Edit.Changes[uri][0].NewText, "from \"alpha.mace\" import User;\nfrom \"dupes.mace\" import User, User, Role;")
+
+		duplicateAction := requireCodeAction(snapshot, uri, rangeValue, "Remove duplicate imported names")
+		tAssert.Contains(duplicateAction.Edit.Changes[uri][0].NewText, `from "dupes.mace" import User, Role;`)
+
+		wildcardSnapshot := analyzeDocumentAt(`from "shared.mace" import *;
+[output = schema]
+{}`, documentPath)
+		wildcardAction := requireCodeAction(wildcardSnapshot, uri, protocol.Range{Start: protocol.Position{Line: 0, Character: 26}, End: protocol.Position{Line: 0, Character: 27}}, "Convert wildcard import to named import")
+		tAssert.Equal("Name", wildcardAction.Edit.Changes[uri][0].NewText)
+	})
+
 	It("offers documentation cleanup actions", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		snapshot := analyzeDocumentAt(`|===|
