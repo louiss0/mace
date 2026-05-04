@@ -29,6 +29,7 @@ var (
 	enumMemberPattern           = regexp.MustCompile(`enum member "([^"]+)"`)
 	arrayAccessLevelPattern     = regexp.MustCompile(`at level (\d+)`)
 	arrayAccessIndexPattern     = regexp.MustCompile(`array index (-?\d+) is out of range`)
+	emptyScriptBlockPattern     = regexp.MustCompile(`(?s)^\s*\|===\|\s*\|===\|\s*`)
 )
 
 type symbolOrigin string
@@ -429,6 +430,7 @@ func analyzeDocumentAt(text string, documentPath string) analysisSnapshot {
 	if parseErr != nil {
 		snapshot.diagnostics = []protocol.Diagnostic{diagnosticFromError(parseErr)}
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, parseErrorCodeActions(tokens, documentPath)...)
+		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, scriptBlockStructureCodeActions(text, documentPath)...)
 		return snapshot
 	}
 
@@ -593,11 +595,68 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 		actions = append(actions, unusedImportActions...)
 	}
 	actions = append(actions, importResolutionCodeActions(text, file, tokens, documentPath)...)
+	actions = append(actions, scriptBlockStructureCodeActions(text, documentPath)...)
 	actions = append(actions, documentationCodeActions(text, file, tokens, documentPath)...)
 	actions = append(actions, editorRefactorCodeActions(text, file, documentPath)...)
 	diagnostics = append(diagnostics, schemaOutputVariableDiagnostics(file, tokens)...)
 
 	return diagnostics, actions
+}
+
+func scriptBlockStructureCodeActions(text string, documentPath string) []analysisCodeActionCandidate {
+	if documentPath == "" {
+		return nil
+	}
+
+	uri := protocol.DocumentUri(fileURI(documentPath))
+	fullRange := fullDocumentRange(text)
+	targetRange := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+	actions := []analysisCodeActionCandidate{}
+	addTextAction := func(title string, newText string) {
+		actions = append(actions, textRefactorAction(title, targetRange, uri, fullRange, newText))
+	}
+
+	if !strings.Contains(text, "|===|") && !strings.Contains(text, "|====|") {
+		addTextAction("Create script block", "|===|\n|===|\n"+text)
+		addTextAction("Wrap selection in script block", "|===|\n"+text+"\n|===|")
+	}
+	if strings.Contains(text, "|====|") {
+		fixed := strings.ReplaceAll(text, "|====|", "|===|")
+		addTextAction("Fix script delimiter length mismatch", fixed)
+		addTextAction("Normalize script fence", fixed)
+	}
+	if emptyScriptBlockPattern.MatchString(text) {
+		addTextAction("Remove empty script block", emptyScriptBlockPattern.ReplaceAllString(text, ""))
+	}
+	if moved, ok := moveScriptBlockBeforeOutputText(text); ok {
+		addTextAction("Move script block before output block", moved)
+	}
+
+	return actions
+}
+
+func moveScriptBlockBeforeOutputText(text string) (string, bool) {
+	firstScript := strings.Index(text, "|===|")
+	if firstScript < 0 {
+		return "", false
+	}
+	secondScript := strings.Index(text[firstScript+len("|===|"):], "|===|")
+	if secondScript < 0 {
+		return "", false
+	}
+	secondScript += firstScript + len("|===|")
+	firstOutput := strings.Index(text, "[")
+	if firstOutput < 0 {
+		firstOutput = strings.Index(text, "{")
+	}
+	if firstOutput < 0 || firstScript < firstOutput {
+		return "", false
+	}
+
+	scriptEnd := secondScript + len("|===|")
+	script := strings.TrimSpace(text[firstScript:scriptEnd])
+	withoutScript := strings.TrimSpace(text[:firstScript] + text[scriptEnd:])
+	return script + "\n" + withoutScript, true
 }
 
 func parseErrorCodeActions(tokens []lexer.Token, documentPath string) []analysisCodeActionCandidate {

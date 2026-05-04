@@ -3,6 +3,7 @@ package analyzer
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/samber/lo"
@@ -460,6 +461,71 @@ from "dupes.mace" import User, User, Role;
 {}`, documentPath)
 		wildcardAction := requireCodeAction(wildcardSnapshot, uri, protocol.Range{Start: protocol.Position{Line: 0, Character: 26}, End: protocol.Position{Line: 0, Character: 27}}, "Convert wildcard import to named import")
 		tAssert.Equal("Name", wildcardAction.Edit.Changes[uri][0].NewText)
+	})
+
+	Describe("script block structure actions", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+
+		It("creates a script block above the output block", func() {
+			snapshot := analyzeDocumentAt(`[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Create script block")
+
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "|===|\n|===|\n[output = schema]")
+		})
+
+		It("wraps the document in a script block", func() {
+			snapshot := analyzeDocumentAt(`[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Wrap selection in script block")
+
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "|===|\n[output = schema]")
+		})
+
+		It("fixes mismatched script delimiter widths", func() {
+			snapshot := analyzeDocumentAt(`|====|
+type Name: string;
+|====|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Fix script delimiter length mismatch")
+
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "|===|\ntype Name: string;")
+		})
+
+		It("normalizes script fences", func() {
+			snapshot := analyzeDocumentAt(`|====|
+type Name: string;
+|====|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Normalize script fence")
+
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "|===|\ntype Name: string;")
+		})
+
+		It("removes empty script blocks", func() {
+			snapshot := analyzeDocumentAt(`|===|
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Remove empty script block")
+
+			tAssert.NotContains(action.Edit.Changes[uri][0].NewText, "|===|\n|===|")
+		})
+
+		It("moves script blocks before output blocks", func() {
+			snapshot := analyzeDocumentAt(`[output = schema]
+{}
+|===|
+type Name: string;
+|===|`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Move script block before output block")
+
+			tAssert.True(strings.HasPrefix(action.Edit.Changes[uri][0].NewText, "|===|\ntype Name: string;"))
+		})
 	})
 
 	It("offers documentation cleanup actions", func() {

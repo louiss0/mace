@@ -38,12 +38,12 @@ Absolutely. Mace has *great* Code Action potential because it has a lot of “st
 
 ### Script Block Structure
 
-* [ ] **Create script block** above output block.
-* [ ] **Wrap selected declarations in script block**.
-* [ ] **Fix script delimiter length mismatch**.
-* [ ] **Normalize script fence** to `|===|`.
-* [ ] **Move script block before output block**.
-* [ ] **Remove empty script block**.
+* [x] **Create script block** above output block.
+* [x] **Wrap selected declarations in script block**.
+* [x] **Fix script delimiter length mismatch**.
+* [x] **Normalize script fence** to `|===|`.
+* [x] **Move script block before output block**.
+* [x] **Remove empty script block**.
 
 ### Declarations
 
