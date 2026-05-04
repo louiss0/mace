@@ -463,6 +463,62 @@ from "dupes.mace" import User, User, Role;
 		tAssert.Equal("Name", wildcardAction.Edit.Changes[uri][0].NewText)
 	})
 
+	Describe("declaration actions", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+
+		It("adds missing semicolons after script declarations", func() {
+			snapshot := analyzeDocumentAt(`|===|
+type Name: string
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Add missing semicolon")
+
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "type Name: string;")
+		})
+
+		It("extracts repeated type references into an alias", func() {
+			snapshot := analyzeDocumentAt(`|===|
+schema User: { name: string; email: string; };
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Extract repeated type into alias")
+
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, "type ExtractedType: string;")
+			tAssert.Contains(text, "name: ExtractedType")
+		})
+
+		It("extracts inline record types into schemas", func() {
+			snapshot := analyzeDocumentAt(`|===|
+schema User: { profile: { name: string; }; };
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Extract inline record type into schema")
+
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, "schema Profile:")
+			tAssert.Contains(text, "profile: Profile")
+		})
+
+		It("converts record variables into schema-backed variables", func() {
+			snapshot := analyzeDocumentAt(`|===|
+{ name: string; } user = { name: "Ada"; };
+|===|
+[output = data]
+{ value: user; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Convert record variable into schema-backed variable")
+
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, "schema User:")
+			tAssert.Contains(text, "User user =")
+		})
+	})
+
 	Describe("script block structure actions", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))

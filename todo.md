@@ -49,11 +49,11 @@ Absolutely. Mace has *great* Code Action potential because it has a lot of “st
 
 * [x] **Change `=` to `:`** for `type`, `schema`, and `enum` declarations.
 * [x] **Change `:` to `=`** for variable initializers.
-* [ ] **Add missing semicolon** after script declaration.
+* [x] **Add missing semicolon** after script declaration.
 * [x] **Rename duplicate declaration**.
-* [ ] **Extract repeated type into `type` alias**.
-* [ ] **Extract inline record type into `schema`**.
-* [ ] **Convert record variable into schema-backed variable**.
+* [x] **Extract repeated type into `type` alias**.
+* [x] **Extract inline record type into `schema`**.
+* [x] **Convert record variable into schema-backed variable**.
 
 ---
 
