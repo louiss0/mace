@@ -26,11 +26,11 @@ Absolutely. Mace has *great* Code Action potential because it has a lot of “st
 
 ### Import Resolution
 
-* [ ] **Create missing imported file**.
-* [ ] **Update import path after file rename**.
-* [ ] **Replace unavailable imported symbol** with closest matching exported output symbol.
-* [ ] **Open source output block** for importable symbols.
-* [ ] **Explain why symbol is not importable** when it exists internally but is not surfaced through output.
+* [x] **Create missing imported file**.
+* [x] **Update import path after file rename**.
+* [x] **Replace unavailable imported symbol** with closest matching exported output symbol.
+* [x] **Open source output block** for importable symbols.
+* [x] **Explain why symbol is not importable** when it exists internally but is not surfaced through output.
 
 ---
 

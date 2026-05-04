@@ -397,6 +397,43 @@ from "shared.mace" import Role;
 		tAssert.Contains(mergeAction.Edit.Changes[uri][0].NewText, `from "shared.mace" import User, Profile, Role;`)
 	})
 
+	It("offers import resolution actions", func() {
+		workspace, err := os.MkdirTemp("", "mace-analysis-import-resolution-*")
+		tAssert.NoError(err)
+		defer os.RemoveAll(workspace)
+
+		sharedPath := writeAnalysisFile(workspace, "shared.mace", `[output = schema]
+{
+  User: string;
+  Role: string;
+}`)
+		documentPath := writeAnalysisFile(workspace, "document.mace", `from "./missing.mace" import User;
+from "./shared.mace" import Usre;
+from "./shared-old.mace" import Role;
+[output = schema]
+{}`)
+		contents, err := os.ReadFile(documentPath)
+		tAssert.NoError(err)
+		snapshot := analyzeDocumentAt(string(contents), documentPath)
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+
+		createAction := requireCodeAction(snapshot, uri, rangeValue, "Create missing imported file")
+		tAssert.Contains(createAction.Edit.Changes[protocol.DocumentUri(fileURI(filepath.Join(workspace, "missing.mace")))][0].NewText, "[output = schema]")
+
+		renameAction := requireCodeAction(snapshot, uri, rangeValue, "Update import path after file rename")
+		tAssert.Equal(`"./shared.mace"`, renameAction.Edit.Changes[uri][0].NewText)
+
+		replaceAction := requireCodeAction(snapshot, uri, rangeValue, "Replace unavailable imported symbol with User")
+		tAssert.Equal("User", replaceAction.Edit.Changes[uri][0].NewText)
+
+		openAction := requireCodeAction(snapshot, uri, rangeValue, "Open source output block")
+		tAssert.Equal(protocol.DocumentUri(fileURI(sharedPath)), openAction.Command.Arguments[0])
+
+		explainAction := requireCodeAction(snapshot, uri, rangeValue, "Explain why symbol is not importable")
+		tAssert.Contains(explainAction.Command.Arguments[0], "Only names surfaced through the imported file output block are importable")
+	})
+
 	It("offers remaining add and fix import actions", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))

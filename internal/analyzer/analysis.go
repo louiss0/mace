@@ -592,6 +592,7 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 		diagnostics = append(diagnostics, unusedImportDiagnostics...)
 		actions = append(actions, unusedImportActions...)
 	}
+	actions = append(actions, importResolutionCodeActions(text, file, tokens, documentPath)...)
 	actions = append(actions, documentationCodeActions(text, file, tokens, documentPath)...)
 	actions = append(actions, editorRefactorCodeActions(text, file, documentPath)...)
 	diagnostics = append(diagnostics, schemaOutputVariableDiagnostics(file, tokens)...)
@@ -673,6 +674,138 @@ func semanticCodeActions(text string, file ast.File, tokens []lexer.Token, docum
 	}
 
 	return actions
+}
+
+func importResolutionCodeActions(text string, file ast.File, tokens []lexer.Token, documentPath string) []analysisCodeActionCandidate {
+	if documentPath == "" {
+		return nil
+	}
+
+	uri := protocol.DocumentUri(fileURI(documentPath))
+	baseDir := filepath.Dir(documentPath)
+	fullRange := fullDocumentRange(text)
+	_ = fullRange
+	actions := []analysisCodeActionCandidate{}
+	for _, importDecl := range file.Imports {
+		pathValue, ok := stringLiteralValue(importDecl.Path)
+		if !ok {
+			continue
+		}
+
+		importedPath := filepath.Clean(filepath.Join(baseDir, pathValue))
+		importRange, _ := tokenRangeByType(tokens, lexer.TokenString, importDecl.Path.Lexeme)
+		if _, err := os.Stat(importedPath); os.IsNotExist(err) {
+			actions = append(actions, analysisCodeActionCandidate{
+				Range: protocol.Range{Start: protocol.Position{}, End: protocol.Position{}},
+				Action: protocol.CodeAction{
+					Title: "Create missing imported file",
+					Kind:  Ptr(protocol.CodeActionKindQuickFix),
+					Edit: &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{
+						protocol.DocumentUri(fileURI(importedPath)): {{Range: protocol.Range{}, NewText: "[output = schema]\n{}\n"}},
+					}},
+				},
+			})
+
+			if renamedPath, ok := existingMacePathWithSimilarName(importedPath); ok && importRange != (protocol.Range{}) {
+				relativePath, err := filepath.Rel(baseDir, renamedPath)
+				if err == nil {
+					relativePath = filepath.ToSlash(relativePath)
+					if !strings.HasPrefix(relativePath, ".") {
+						relativePath = "./" + relativePath
+					}
+					actions = append(actions, analysisCodeActionCandidate{
+						Range:  protocol.Range{Start: protocol.Position{}, End: protocol.Position{}},
+						Action: protocol.CodeAction{Title: "Update import path after file rename", Kind: Ptr(protocol.CodeActionKindQuickFix), Edit: &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: {{Range: importRange, NewText: strconv.Quote(relativePath)}}}}},
+					})
+				}
+			}
+			continue
+		}
+
+		_, importedFile, _, ok := parsedFile(importedPath)
+		if !ok {
+			continue
+		}
+		exportedNames := exportedOutputNames(importedFile)
+		if len(exportedNames) > 0 {
+			actions = append(actions, analysisCodeActionCandidate{Range: protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, Action: protocol.CodeAction{Title: "Open source output block", Kind: Ptr(protocol.CodeActionKindRefactor), Command: &protocol.Command{Title: "Open source output block", Command: "mace.openOutput", Arguments: []any{protocol.DocumentUri(fileURI(importedPath))}}}})
+			actions = append(actions, analysisCodeActionCandidate{Range: protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, Action: protocol.CodeAction{Title: "Explain why symbol is not importable", Kind: Ptr(protocol.CodeActionKindQuickFix), Command: &protocol.Command{Title: "Explain why symbol is not importable", Command: "mace.explainImport", Arguments: []any{"Only names surfaced through the imported file output block are importable."}}}})
+		}
+		for _, name := range importDecl.Identifiers {
+			if lo.Contains(exportedNames, name) {
+				continue
+			}
+			closest, ok := closestName(name, exportedNames)
+			if !ok {
+				continue
+			}
+			nameToken, ok := importIdentifierToken(tokens, importDecl, name)
+			if !ok {
+				continue
+			}
+			actions = append(actions, analysisCodeActionCandidate{Range: protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, Action: protocol.CodeAction{Title: "Replace unavailable imported symbol with " + closest, Kind: Ptr(protocol.CodeActionKindQuickFix), Edit: &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: {{Range: tokenProtocolRange(nameToken), NewText: closest}}}}}})
+		}
+	}
+	return actions
+}
+
+func existingMacePathWithSimilarName(path string) (string, bool) {
+	directory := filepath.Dir(path)
+	base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return "", false
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".mace" {
+			continue
+		}
+		candidate := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+		if strings.Contains(candidate, base) || strings.Contains(base, candidate) || levenshteinDistance(base, candidate) <= 4 {
+			return filepath.Join(directory, entry.Name()), true
+		}
+	}
+	return "", false
+}
+
+func exportedOutputNames(file ast.File) []string {
+	if file.Output.Mode == ast.OutputModeSchema {
+		return lo.Map(file.Output.SchemaFields, func(field ast.OutputSchemaField, _ int) string { return field.Name })
+	}
+	return lo.Map(file.Output.DataFields, func(field ast.OutputField, _ int) string { return field.Name })
+}
+
+func closestName(name string, names []string) (string, bool) {
+	closest := ""
+	closestDistance := 1000
+	for _, candidate := range names {
+		distance := levenshteinDistance(strings.ToLower(name), strings.ToLower(candidate))
+		if distance < closestDistance {
+			closest = candidate
+			closestDistance = distance
+		}
+	}
+	return closest, closest != "" && closestDistance <= 3
+}
+
+func levenshteinDistance(left string, right string) int {
+	previous := make([]int, len(right)+1)
+	for index := range previous {
+		previous[index] = index
+	}
+	for leftIndex, leftRune := range left {
+		current := make([]int, len(right)+1)
+		current[0] = leftIndex + 1
+		for rightIndex, rightRune := range right {
+			cost := 1
+			if leftRune == rightRune {
+				cost = 0
+			}
+			current[rightIndex+1] = min(current[rightIndex]+1, previous[rightIndex+1]+1, previous[rightIndex]+cost)
+		}
+		previous = current
+	}
+	return previous[len(right)]
 }
 
 func documentationCodeActions(text string, file ast.File, tokens []lexer.Token, documentPath string) []analysisCodeActionCandidate {
