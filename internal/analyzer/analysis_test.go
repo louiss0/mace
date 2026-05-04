@@ -463,6 +463,63 @@ from "dupes.mace" import User, User, Role;
 		tAssert.Equal("Name", wildcardAction.Edit.Changes[uri][0].NewText)
 	})
 
+	Describe("injectable variable actions", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+
+		It("converts variables to injectable", func() {
+			snapshot := analyzeDocumentAt(`|===|
+string name;
+|===|
+[output = data]
+{ value: name; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Convert variable to injectable")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `injectable string name;`)
+		})
+
+		DescribeTable("adds default initializers to injectables by type", func(typeName string, variableName string, literal string) {
+			snapshot := analyzeDocumentAt(`|===|
+injectable `+typeName+` `+variableName+`;
+|===|
+[output = data]
+{ value: `+variableName+`; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Add default initializer to injectable")
+
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `injectable `+typeName+` `+variableName+` = `+literal+`;`)
+		},
+			Entry("string", "string", "name", `""`),
+			Entry("int", "int", "count", "0"),
+			Entry("float", "float", "ratio", "0.0"),
+			Entry("boolean", "boolean", "enabled", "false"),
+			Entry("array", "array<string>", "names", "[]"),
+		)
+
+		It("generates injection config stubs", func() {
+			snapshot := analyzeDocumentAt(`|===|
+injectable string name;
+injectable int count;
+|===|
+[output = data]
+{ value: name; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Generate injection config stub")
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, `"name": ""`)
+			tAssert.Contains(text, `"count": 0`)
+		})
+
+		It("finds all injectable variables", func() {
+			snapshot := analyzeDocumentAt(`|===|
+injectable string name;
+injectable int count;
+|===|
+[output = data]
+{ value: name; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Find all injectable variables")
+			tAssert.Contains(action.Command.Arguments[0], "name, count")
+		})
+	})
+
 	Describe("variable fix actions", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))

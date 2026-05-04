@@ -73,10 +73,10 @@ Absolutely. Mace has *great* Code Action potential because it has a lot of “st
 
 ### Injectable Variables
 
-* [ ] **Convert variable to injectable**.
-* [ ] **Add default initializer to injectable**.
-* [ ] **Generate injection config stub** for CLI/processor usage.
-* [ ] **Find all injectable variables**.
+* [x] **Convert variable to injectable**.
+* [x] **Add default initializer to injectable**.
+* [x] **Generate injection config stub** for CLI/processor usage.
+* [x] **Find all injectable variables**.
 
 ---
 
