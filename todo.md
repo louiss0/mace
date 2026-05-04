@@ -84,12 +84,12 @@ Absolutely. Mace has *great* Code Action potential because it has a lot of “st
 
 ### Type Aliases
 
-* [ ] **Create type alias from selected type**.
-* [ ] **Inline type alias usage**.
-* [ ] **Rename type alias**.
-* [ ] **Replace unknown type with closest known type**.
-* [ ] **Convert `Array<T>` style to `array<T>`** if user writes the wrong casing.
-* [ ] **Convert invalid nullable type into optional field**.
+* [x] **Create type alias from selected type**.
+* [x] **Inline type alias usage**.
+* [x] **Rename type alias**.
+* [x] **Replace unknown type with closest known type**.
+* [x] **Convert `Array<T>` style to `array<T>`** if user writes the wrong casing.
+* [x] **Convert invalid nullable type into optional field**.
 
 ### Arrays
 

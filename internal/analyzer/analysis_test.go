@@ -463,6 +463,76 @@ from "dupes.mace" import User, User, Role;
 		tAssert.Equal("Name", wildcardAction.Edit.Changes[uri][0].NewText)
 	})
 
+	Describe("type alias actions", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+
+		It("creates type aliases from selected types", func() {
+			snapshot := analyzeDocumentAt(`|===|
+schema User: { name: string; };
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Create type alias from selected type")
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, "type ExtractedType: string;")
+			tAssert.Contains(text, "name: ExtractedType")
+		})
+
+		It("inlines type alias usage", func() {
+			snapshot := analyzeDocumentAt(`|===|
+type Name: string;
+schema User: { name: Name; };
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Inline type alias usage")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "name: string")
+		})
+
+		It("renames type aliases", func() {
+			snapshot := analyzeDocumentAt(`|===|
+type Name: string;
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Rename type alias")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "type RenamedName: string;")
+		})
+
+		It("replaces unknown types with closest known types", func() {
+			snapshot := analyzeDocumentAt(`|===|
+type Name: string;
+schema User: { name: Nmae; };
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Replace unknown type with Name")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "name: Name")
+		})
+
+		It("converts Array casing to array", func() {
+			snapshot := analyzeDocumentAt(`|===|
+type Names: Array<string>;
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Convert Array<T> to array<T>")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "array<string>")
+		})
+
+		It("converts invalid nullable types into optional fields", func() {
+			snapshot := analyzeDocumentAt(`|===|
+schema User: { name: string?; };
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Convert nullable type into optional field")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "name?: string")
+		})
+	})
+
 	Describe("injectable variable actions", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))
