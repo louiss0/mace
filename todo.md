@@ -14,15 +14,15 @@ Absolutely. Mace has *great* Code Action potential because it has a lot of “st
 
 ### Add / Fix Imports
 
-* [ ] **Add missing import** for unresolved schema/type/enum/value.
-* [ ] **Remove unused import**.
+* [x] **Add missing import** for unresolved schema/type/enum/value.
+* [x] **Remove unused import**.
 * [ ] **Sort imports** alphabetically.
-* [ ] **Move imports to top of file**.
+* [x] **Move imports to top of file**.
 * [ ] **Fix import path extension** by adding `.mace`.
 * [ ] **Convert invalid wildcard import** into named imports.
 * [ ] **Remove duplicate imported names**.
-* [ ] **Split import declaration** into one import per file.
-* [ ] **Merge imports from same file**.
+* [x] **Split import declaration** into one import per file.
+* [x] **Merge imports from same file**.
 
 ### Import Resolution
 
@@ -47,10 +47,10 @@ Absolutely. Mace has *great* Code Action potential because it has a lot of “st
 
 ### Declarations
 
-* [ ] **Change `=` to `:`** for `type`, `schema`, and `enum` declarations.
-* [ ] **Change `:` to `=`** for variable initializers.
+* [x] **Change `=` to `:`** for `type`, `schema`, and `enum` declarations.
+* [x] **Change `:` to `=`** for variable initializers.
 * [ ] **Add missing semicolon** after script declaration.
-* [ ] **Rename duplicate declaration**.
+* [x] **Rename duplicate declaration**.
 * [ ] **Extract repeated type into `type` alias**.
 * [ ] **Extract inline record type into `schema`**.
 * [ ] **Convert record variable into schema-backed variable**.
@@ -108,13 +108,13 @@ Absolutely. Mace has *great* Code Action potential because it has a lot of “st
 * [ ] **Extract record literal into schema**.
 * [ ] **Create schema from selected fields**.
 * [ ] **Create schema from validation error**.
-* [ ] **Generate output block from schema**.
+* [x] **Generate output block from schema**.
 * [ ] **Generate sample data from schema**.
 
 ### Schema Fields
 
-* [ ] **Add missing required field**.
-* [ ] **Remove unknown field**.
+* [x] **Add missing required field**.
+* [x] **Remove unknown field**.
 * [ ] **Mark field optional** with `?`.
 * [ ] **Make optional field required** by removing `?`.
 * [ ] **Rename duplicate schema field**.
@@ -125,11 +125,11 @@ Absolutely. Mace has *great* Code Action potential because it has a lot of “st
 
 ### Schema Validation
 
-* [ ] **Add `schema = Name` directive** to validate output.
-* [ ] **Remove invalid `schema = Name` directive**.
+* [x] **Add `schema = Name` directive** to validate output.
+* [x] **Remove invalid `schema = Name` directive**.
 * [ ] **Create missing schema referenced by directive**.
 * [ ] **Change schema directive to closest schema name**.
-* [ ] **Convert output data block to schema mode**.
+* [x] **Convert output data block to schema mode**.
 * [ ] **Convert schema output block to data mode**.
 
 ---
@@ -143,13 +143,13 @@ Absolutely. Mace has *great* Code Action potential because it has a lot of “st
 * [ ] **Rename duplicate enum member**.
 * [ ] **Fix duplicate enum value**.
 * [ ] **Add missing comma between enum members**.
-* [ ] **Convert all enum members to explicit values**.
-* [ ] **Convert all enum members to implicit values**.
-* [ ] **Fix mixed implicit/explicit enum members**.
+* [x] **Convert all enum members to explicit values**.
+* [x] **Convert all enum members to implicit values**.
+* [x] **Fix mixed implicit/explicit enum members**.
 
 ### Enum Usage
 
-* [ ] **Replace raw enum value with enum member access**.
+* [x] **Replace raw enum value with enum member access**.
 * [ ] **Change invalid enum member to closest match**.
 * [ ] **Create enum member from usage**.
 * [ ] **Extract repeated string/int literals into enum**.
@@ -162,21 +162,21 @@ Absolutely. Mace has *great* Code Action potential because it has a lot of “st
 ### Output Structure
 
 * [ ] **Create missing output block**.
-* [ ] **Move output block after imports/script block**.
-* [ ] **Add `[output = data]` directive**.
-* [ ] **Add `[output = schema]` directive**.
+* [x] **Move output block after imports/script block**.
+* [x] **Add `[output = data]` directive**.
+* [x] **Add `[output = schema]` directive**.
 * [ ] **Remove duplicate output directive**.
-* [ ] **Fix invalid directive combination**.
-* [ ] **Remove `schema` when `schema_file` is present**.
-* [ ] **Remove extra directives when `output = schema` is used**.
+* [x] **Fix invalid directive combination**.
+* [x] **Remove `schema` when `schema_file` is present**.
+* [x] **Remove extra directives when `output = schema` is used**.
 
 ### Output Fields
 
-* [ ] **Rename duplicate output field**.
+* [x] **Rename duplicate output field**.
 * [ ] **Add comma between output fields**.
 * [ ] **Convert semicolon separators to commas**.
-* [ ] **Add optional marker `?`**.
-* [ ] **Remove optional marker `?`**.
+* [x] **Add optional marker `?`**.
+* [x] **Remove optional marker `?`**.
 * [ ] **Extract output field value into variable**.
 * [ ] **Inline script variable into output field**.
 * [ ] **Generate missing fields from schema**.
@@ -189,11 +189,11 @@ Absolutely. Mace has *great* Code Action potential because it has a lot of “st
 ### `$self` References
 
 * [ ] **Replace identifier with `$self.field`** when referencing prior output field.
-* [ ] **Move referenced field above current field**.
+* [x] **Move referenced field above current field**.
 * [ ] **Extract referenced value into script variable**.
 * [ ] **Fix unknown `$self` field with closest prior field**.
 * [ ] **Remove invalid forward `$self` reference**.
-* [ ] **Convert repeated expression into `$self` reference**.
+* [x] **Convert repeated expression into `$self` reference**.
 * [ ] **Add safe previous field suggestion** for autocomplete/code action.
 
 ---
@@ -202,18 +202,18 @@ Absolutely. Mace has *great* Code Action potential because it has a lot of “st
 
 ### Inline Declaration Descriptions
 
-* [ ] **Add `/#` inline description**.
+* [x] **Add `/#` inline description**.
 * [ ] **Remove duplicate inline description**.
 * [ ] **Move inline description before separator**.
 * [ ] **Move inline description after separator**.
 * [ ] **Convert inline description to `gen_doc`**.
 * [ ] **Convert inline description to `schema_doc` prop**.
-* [ ] **Remove inline description when structured doc already exists**.
+* [x] **Remove inline description when structured doc already exists**.
 
 ### `gen_doc`
 
-* [ ] **Generate `gen_doc` for type**.
-* [ ] **Generate `gen_doc` for variable**.
+* [x] **Generate `gen_doc` for type**.
+* [x] **Generate `gen_doc` for variable**.
 * [ ] **Move `gen_doc` after target declaration**.
 * [ ] **Rename `gen_doc` target after symbol rename**.
 * [ ] **Remove duplicate `gen_doc`**.
@@ -222,9 +222,9 @@ Absolutely. Mace has *great* Code Action potential because it has a lot of “st
 
 ### `schema_doc`
 
-* [ ] **Generate `schema_doc` for schema**.
-* [ ] **Generate `schema_doc` for enum**.
-* [ ] **Add missing `props` entries from schema fields**.
+* [x] **Generate `schema_doc` for schema**.
+* [x] **Generate `schema_doc` for enum**.
+* [x] **Add missing `props` entries from schema fields**.
 * [ ] **Remove unknown `props` keys**.
 * [ ] **Rename doc prop after schema field rename**.
 * [ ] **Move `schema_doc` after target declaration**.
@@ -244,9 +244,9 @@ Absolutely. Mace has *great* Code Action potential because it has a lot of “st
 
 ### String Fixes
 
-* [ ] **Convert single string to double string** when interpolation is used.
-* [ ] **Convert double string to single string** when interpolation is not needed.
-* [ ] **Convert multiline string to block string**.
+* [x] **Convert single string to double string** when interpolation is used.
+* [x] **Convert double string to single string** when interpolation is not needed.
+* [x] **Convert multiline string to block string**.
 * [ ] **Escape invalid string characters**.
 * [ ] **Remove invalid interpolation from documentation string**.
 * [ ] **Replace type interpolation with value interpolation**.
@@ -263,7 +263,7 @@ Absolutely. Mace has *great* Code Action potential because it has a lot of “st
 * [ ] **Replace invalid array index with integer literal**.
 * [ ] **Wrap expression in parentheses** to clarify precedence.
 * [ ] **Simplify constant expression**.
-* [ ] **Extract expression into variable**.
+* [x] **Extract expression into variable**.
 * [ ] **Replace unresolved identifier with closest symbol**.
 * [ ] **Replace invalid member access with valid member**.
 
@@ -306,14 +306,14 @@ Absolutely. Mace has *great* Code Action potential because it has a lot of “st
 
 ### Organize / Format
 
-* [ ] **Format document**.
+* [x] **Format document**.
 * [ ] **Organize imports**.
 * [ ] **Sort declarations by kind**.
 * [ ] **Remove unused declarations**.
 * [ ] **Remove unreachable/internal-only declarations**.
 * [ ] **Add missing separators**.
-* [ ] **Normalize commas vs semicolons**.
-* [ ] **Normalize script fence style**.
+* [x] **Normalize commas vs semicolons**.
+* [x] **Normalize script fence style**.
 * [ ] **Normalize directive spacing**.
 * [ ] **Normalize type casing**.
 
@@ -321,11 +321,11 @@ Absolutely. Mace has *great* Code Action potential because it has a lot of “st
 
 * [ ] **Rename symbol across file**.
 * [ ] **Rename symbol across imports**.
-* [ ] **Extract schema**.
+* [x] **Extract schema**.
 * [ ] **Extract type alias**.
 * [ ] **Extract enum**.
 * [ ] **Extract variable**.
-* [ ] **Inline variable**.
+* [x] **Inline variable**.
 * [ ] **Move declaration to imported file**.
 * [ ] **Expose declaration through output block**.
 
@@ -335,18 +335,18 @@ Absolutely. Mace has *great* Code Action potential because it has a lot of “st
 
 Start with these. They’ll feel magical without requiring your LSP to become a tiny wizard with a mortgage.
 
-* [ ] Add missing required schema field.
-* [ ] Remove unknown output field.
+* [x] Add missing required schema field.
+* [x] Remove unknown output field.
 * [ ] Replace unknown symbol with closest match.
-* [ ] Add missing import.
-* [ ] Remove unused import.
-* [ ] Move imports to top.
-* [ ] Fix `=` vs `:` in declarations.
+* [x] Add missing import.
+* [x] Remove unused import.
+* [x] Move imports to top.
+* [x] Fix `=` vs `:` in declarations.
 * [ ] Add missing comma.
 * [ ] Fix duplicate output directive.
-* [ ] Fix invalid directive combination.
-* [ ] Replace raw enum value with `Enum.Member`.
-* [ ] Move `$self` referenced field above current field.
-* [ ] Generate `schema_doc` props from schema fields.
-* [ ] Convert inline record output into named schema.
-* [ ] Format document.
+* [x] Fix invalid directive combination.
+* [x] Replace raw enum value with `Enum.Member`.
+* [x] Move `$self` referenced field above current field.
+* [x] Generate `schema_doc` props from schema fields.
+* [x] Convert inline record output into named schema.
+* [x] Format document.
