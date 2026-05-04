@@ -468,27 +468,27 @@ from "dupes.mace" import User, User, Role;
 		uri := protocol.DocumentUri(fileURI(documentPath))
 		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
 
-		It("creates type aliases from selected types", func() {
+		It("creates type aliases from selected non-schema types", func() {
 			snapshot := analyzeDocumentAt(`|===|
-schema User: { name: string; };
+string name = "Ada";
 |===|
-[output = schema]
-{}`, documentPath)
+[output = data]
+{ value: name; }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Create type alias from selected type")
 			text := action.Edit.Changes[uri][0].NewText
 			tAssert.Contains(text, "type ExtractedType: string;")
-			tAssert.Contains(text, "name: ExtractedType")
+			tAssert.Contains(text, `ExtractedType name = "Ada";`)
 		})
 
 		It("inlines type alias usage", func() {
 			snapshot := analyzeDocumentAt(`|===|
 type Name: string;
-schema User: { name: Name; };
+Name name = "Ada";
 |===|
-[output = schema]
-{}`, documentPath)
+[output = data]
+{ value: name; }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Inline type alias usage")
-			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "name: string")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `string name = "Ada";`)
 		})
 
 		It("renames type aliases", func() {
@@ -504,12 +504,12 @@ type Name: string;
 		It("replaces unknown types with closest known types", func() {
 			snapshot := analyzeDocumentAt(`|===|
 type Name: string;
-schema User: { name: Nmae; };
+Nmae name = "Ada";
 |===|
-[output = schema]
-{}`, documentPath)
+[output = data]
+{ value: name; }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Replace unknown type with Name")
-			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "name: Name")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `Name name = "Ada";`)
 		})
 
 		It("converts Array casing to array", func() {
