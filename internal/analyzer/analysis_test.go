@@ -463,6 +463,102 @@ from "dupes.mace" import User, User, Role;
 		tAssert.Equal("Name", wildcardAction.Edit.Changes[uri][0].NewText)
 	})
 
+	Describe("variable fix actions", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+
+		It("adds missing type annotations", func() {
+			snapshot := analyzeDocumentAt(`|===|
+name = "Ada";
+|===|
+[output = data]
+{ value: name; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Add missing type annotation")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `string name = "Ada";`)
+		})
+
+		It("adds missing initializers", func() {
+			snapshot := analyzeDocumentAt(`|===|
+string name;
+|===|
+[output = data]
+{ value: name; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Add missing initializer")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `string name = "";`)
+		})
+
+		It("marks variables injectable", func() {
+			snapshot := analyzeDocumentAt(`|===|
+string name;
+|===|
+[output = data]
+{ value: name; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Mark variable as injectable")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `injectable string name;`)
+		})
+
+		It("adds placeholder initializers", func() {
+			snapshot := analyzeDocumentAt(`|===|
+int count;
+|===|
+[output = data]
+{ value: count; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Add placeholder initializer")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `int count = 0;`)
+		})
+
+		It("changes variable type to inferred expression type", func() {
+			snapshot := analyzeDocumentAt(`|===|
+int name = "Ada";
+|===|
+[output = data]
+{ value: name; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Change variable type to inferred expression type")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `string name = "Ada";`)
+		})
+
+		It("changes initializers to match declared types", func() {
+			snapshot := analyzeDocumentAt(`|===|
+int count = "Ada";
+|===|
+[output = data]
+{ value: count; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Change initializer to match declared type")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `int count = 0;`)
+		})
+
+		It("renames duplicate variables", func() {
+			snapshot := analyzeDocumentAt(`|===|
+string name = "Ada";
+string name = "Grace";
+|===|
+[output = data]
+{ value: name; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Rename duplicate variable")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `string name_2 = "Grace";`)
+		})
+
+		It("inlines variables into output fields", func() {
+			snapshot := analyzeDocumentAt(`|===|
+string name = "Ada";
+|===|
+[output = data]
+{ value: name; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Inline variable into output field")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `value: "Ada"`)
+		})
+
+		It("extracts output expressions into script variables", func() {
+			snapshot := analyzeDocumentAt(`[output = data]
+{ value: "Ada"; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Extract output expression into script variable")
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, `string value = "Ada";`)
+			tAssert.Contains(text, `value: value`)
+		})
+	})
+
 	Describe("declaration actions", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))

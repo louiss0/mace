@@ -61,15 +61,15 @@ Absolutely. Mace has *great* Code Action potential because it has a lot of “st
 
 ### Variable Fixes
 
-* [ ] **Add missing type annotation**.
-* [ ] **Add missing initializer** for non-injectable variable.
-* [ ] **Mark variable as `injectable`** when initializer is intentionally absent.
-* [ ] **Add placeholder initializer** based on declared type.
-* [ ] **Change variable type to inferred expression type**.
-* [ ] **Change initializer to match declared type**.
-* [ ] **Rename variable to avoid duplicate declaration**.
-* [ ] **Inline variable into output field**.
-* [ ] **Extract output expression into script variable**.
+* [x] **Add missing type annotation**.
+* [x] **Add missing initializer** for non-injectable variable.
+* [x] **Mark variable as `injectable`** when initializer is intentionally absent.
+* [x] **Add placeholder initializer** based on declared type.
+* [x] **Change variable type to inferred expression type**.
+* [x] **Change initializer to match declared type**.
+* [x] **Rename variable to avoid duplicate declaration**.
+* [x] **Inline variable into output field**.
+* [x] **Extract output expression into script variable**.
 
 ### Injectable Variables
 

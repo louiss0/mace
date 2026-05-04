@@ -431,6 +431,7 @@ func analyzeDocumentAt(text string, documentPath string) analysisSnapshot {
 		snapshot.diagnostics = []protocol.Diagnostic{diagnosticFromError(parseErr)}
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, parseErrorCodeActions(tokens, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, scriptBlockStructureCodeActions(text, documentPath)...)
+		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, variableFixTextCodeActions(text, documentPath)...)
 		return snapshot
 	}
 
@@ -596,6 +597,7 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 	}
 	actions = append(actions, importResolutionCodeActions(text, file, tokens, documentPath)...)
 	actions = append(actions, scriptBlockStructureCodeActions(text, documentPath)...)
+	actions = append(actions, variableFixTextCodeActions(text, documentPath)...)
 	actions = append(actions, documentationCodeActions(text, file, tokens, documentPath)...)
 	actions = append(actions, editorRefactorCodeActions(text, file, documentPath)...)
 	diagnostics = append(diagnostics, schemaOutputVariableDiagnostics(file, tokens)...)
@@ -688,6 +690,108 @@ func moveScriptBlockBeforeOutputText(text string) (string, bool) {
 	script := strings.TrimSpace(text[firstScript:scriptEnd])
 	withoutScript := strings.TrimSpace(text[:firstScript] + text[scriptEnd:])
 	return script + "\n" + withoutScript, true
+}
+
+func variableFixTextCodeActions(text string, documentPath string) []analysisCodeActionCandidate {
+	if documentPath == "" {
+		return nil
+	}
+
+	uri := protocol.DocumentUri(fileURI(documentPath))
+	fullRange := fullDocumentRange(text)
+	targetRange := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+	actions := []analysisCodeActionCandidate{}
+	addTextAction := func(title string, newText string) {
+		actions = append(actions, textRefactorAction(title, targetRange, uri, fullRange, newText))
+	}
+
+	if updated, ok := replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*)([A-Za-z_][A-Za-z0-9_]*)\s*=\s*("[^"]*");`), func(matches []string) string {
+		return matches[1] + "string " + matches[2] + " = " + matches[3] + ";"
+	}); ok {
+		addTextAction("Add missing type annotation", updated)
+	}
+	if updated, ok := replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*)(string)\s+([A-Za-z_][A-Za-z0-9_]*)\s*;`), func(matches []string) string {
+		return matches[1] + matches[2] + " " + matches[3] + ` = "";`
+	}); ok {
+		addTextAction("Add missing initializer", updated)
+	}
+	if updated, ok := replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*)([A-Za-z_][A-Za-z0-9_]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*;`), func(matches []string) string {
+		return matches[1] + "injectable " + matches[2] + " " + matches[3] + ";"
+	}); ok {
+		addTextAction("Mark variable as injectable", updated)
+	}
+	if updated, ok := replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*)(int)\s+([A-Za-z_][A-Za-z0-9_]*)\s*;`), func(matches []string) string {
+		return matches[1] + matches[2] + " " + matches[3] + " = 0;"
+	}); ok {
+		addTextAction("Add placeholder initializer", updated)
+	}
+	if updated, ok := replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*)int\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*("[^"]*");`), func(matches []string) string {
+		return matches[1] + "string " + matches[2] + " = " + matches[3] + ";"
+	}); ok {
+		addTextAction("Change variable type to inferred expression type", updated)
+	}
+	if updated, ok := replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*)int\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"[^"]*";`), func(matches []string) string {
+		return matches[1] + "int " + matches[2] + " = 0;"
+	}); ok {
+		addTextAction("Change initializer to match declared type", updated)
+	}
+	if updated, ok := renameDuplicateVariableText(text); ok {
+		addTextAction("Rename duplicate variable", updated)
+	}
+	if updated, ok := inlineVariableIntoOutputText(text); ok {
+		addTextAction("Inline variable into output field", updated)
+	}
+	if updated, ok := extractOutputExpressionText(text); ok {
+		addTextAction("Extract output expression into script variable", updated)
+	}
+	return actions
+}
+
+func replaceVariableDeclaration(text string, pattern *regexp.Regexp, replacement func([]string) string) (string, bool) {
+	matches := pattern.FindStringSubmatch(text)
+	if len(matches) == 0 {
+		return "", false
+	}
+	return pattern.ReplaceAllString(text, replacement(matches)), true
+}
+
+func renameDuplicateVariableText(text string) (string, bool) {
+	pattern := regexp.MustCompile(`(?m)^([ \t]*[A-Za-z_][A-Za-z0-9_<>{};: ]*\s+)([A-Za-z_][A-Za-z0-9_]*)(\s*=\s*[^;]+;)`)
+	seen := map[string]struct{}{}
+	updated := pattern.ReplaceAllStringFunc(text, func(line string) string {
+		matches := pattern.FindStringSubmatch(line)
+		if len(matches) == 0 {
+			return line
+		}
+		name := matches[2]
+		if _, ok := seen[name]; ok {
+			return matches[1] + name + "_2" + matches[3]
+		}
+		seen[name] = struct{}{}
+		return line
+	})
+	return updated, updated != text
+}
+
+func inlineVariableIntoOutputText(text string) (string, bool) {
+	matches := regexp.MustCompile(`(?m)^\s*string\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*("[^"]*");`).FindStringSubmatch(text)
+	if len(matches) == 0 {
+		return "", false
+	}
+	updated := strings.Replace(text, ": "+matches[1], ": "+matches[2], 1)
+	return updated, updated != text
+}
+
+func extractOutputExpressionText(text string) (string, bool) {
+	pattern := regexp.MustCompile(`(?m)([A-Za-z_][A-Za-z0-9_]*)\s*:\s*("[^"]*")`)
+	matches := pattern.FindStringSubmatch(text)
+	if len(matches) == 0 || strings.Contains(text, "|===|") {
+		return "", false
+	}
+	name := matches[1]
+	value := matches[2]
+	updated := pattern.ReplaceAllString(text, name+": "+name)
+	return "|===|\nstring " + name + " = " + value + ";\n|===|\n" + updated, true
 }
 
 func parseErrorCodeActions(tokens []lexer.Token, documentPath string) []analysisCodeActionCandidate {
