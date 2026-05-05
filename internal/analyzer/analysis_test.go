@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,8 +49,18 @@ func requireCodeAction(snapshot analysisSnapshot, uri protocol.DocumentUri, targ
 }
 
 func rangeForWord(text string, word string) protocol.Range {
-	start := strings.Index(text, word)
-	tAssert.NotEqual(-1, start)
+	return rangeForNthWord(text, word, 1)
+}
+
+func rangeForNthWord(text string, word string, occurrence int) protocol.Range {
+	start := -1
+	searchStart := 0
+	for range occurrence {
+		index := strings.Index(text[searchStart:], word)
+		tAssert.NotEqual(-1, index)
+		start = searchStart + index
+		searchStart = start + len(word)
+	}
 	end := start + len(word)
 	return protocol.Range{Start: positionFromIndex(text, start), End: positionFromIndex(text, end)}
 }
@@ -386,6 +397,80 @@ schema User: { name: string, };
 		if tAssert.Len(removeEdits, 1) {
 			tAssert.Contains(removeEdits[0].NewText, `age: int`)
 		}
+	})
+
+	Describe("schema field actions", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+
+		It("toggles optional markers and fixes schema field separators", func() {
+			optionalSnapshot := analyzeDocumentAt(`|===|
+schema User: { name: string, age?: int, };
+|===|
+[output = schema]
+{}`, documentPath)
+			optionalAction := requireCodeAction(optionalSnapshot, uri, rangeForWord(optionalSnapshot.text, "name"), "Mark field optional with ?")
+			tAssert.Contains(optionalAction.Edit.Changes[uri][0].NewText, `name?: string`)
+			requiredAction := requireCodeAction(optionalSnapshot, uri, rangeForWord(optionalSnapshot.text, "age?"), "Make optional field required")
+			tAssert.Contains(requiredAction.Edit.Changes[uri][0].NewText, `age: int`)
+
+			duplicateSnapshot := analyzeDocumentAt(`|===|
+schema User: { name: string, name: int, };
+|===|
+[output = schema]
+{}`, documentPath)
+			renameAction := requireCodeAction(duplicateSnapshot, uri, rangeForNthWord(duplicateSnapshot.text, "name", 2), "Rename duplicate schema field")
+			tAssert.Contains(renameAction.Edit.Changes[uri][0].NewText, `name_2: int`)
+
+			commaSnapshot := analyzeDocumentAt(`|===|
+schema User: { name: string age: int, };
+|===|
+[output = schema]
+{}`, documentPath)
+			commaAction := requireCodeAction(commaSnapshot, uri, rangeForWord(commaSnapshot.text, "age"), "Add comma between schema fields")
+			tAssert.Contains(commaAction.Edit.Changes[uri][0].NewText, `name: string, age: int`)
+		})
+
+		DescribeTable("offers optional marker actions for every schema field", func(fieldCount int) {
+			fields := []string{}
+			for index := 1; index <= fieldCount; index++ {
+				fields = append(fields, fmt.Sprintf("field%d: string", index))
+			}
+			snapshot := analyzeDocumentAt(`|===|
+schema User: { `+strings.Join(fields, ", ")+`, };
+|===|
+[output = schema]
+{}`, documentPath)
+
+			for index := 1; index <= fieldCount; index++ {
+				field := fmt.Sprintf("field%d", index)
+				action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, field), "Mark field optional with ?")
+				tAssert.Contains(action.Edit.Changes[uri][0].NewText, field+`?: string`)
+			}
+		},
+			Entry("one field", 1),
+			Entry("two fields", 2),
+			Entry("three fields", 3),
+			Entry("four fields", 4),
+			Entry("five fields", 5),
+		)
+
+		It("offers optional marker actions for nested schema fields", func() {
+			snapshot := analyzeDocumentAt(`|===|
+schema User: { profile: { name: string, contact: { email: string, }, }, };
+|===|
+[output = schema]
+{}`, documentPath)
+
+			profileAction := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "profile"), "Mark field optional with ?")
+			tAssert.Contains(profileAction.Edit.Changes[uri][0].NewText, `profile?: {`)
+			nameAction := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "name"), "Mark field optional with ?")
+			tAssert.Contains(nameAction.Edit.Changes[uri][0].NewText, `name?: string`)
+			contactAction := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "contact"), "Mark field optional with ?")
+			tAssert.Contains(contactAction.Edit.Changes[uri][0].NewText, `contact?: {`)
+			emailAction := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "email"), "Mark field optional with ?")
+			tAssert.Contains(emailAction.Edit.Changes[uri][0].NewText, `email?: string`)
+		})
 	})
 
 	It("offers import refactor actions", func() {

@@ -434,6 +434,7 @@ func analyzeDocumentAt(text string, documentPath string) analysisSnapshot {
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, variableFixTextCodeActions(text, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, typeAliasTextCodeActions(text, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, arrayTextCodeActions(text, documentPath)...)
+		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, schemaFieldTextCodeActions(text, documentPath)...)
 		return snapshot
 	}
 
@@ -603,6 +604,7 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 	actions = append(actions, typeAliasTextCodeActions(text, documentPath)...)
 	actions = append(actions, arrayTextCodeActions(text, documentPath)...)
 	actions = append(actions, schemaCreationTextCodeActions(text, documentPath)...)
+	actions = append(actions, schemaFieldTextCodeActions(text, documentPath)...)
 	actions = append(actions, documentationCodeActions(text, file, tokens, documentPath)...)
 	actions = append(actions, editorRefactorCodeActions(text, file, documentPath)...)
 	diagnostics = append(diagnostics, schemaOutputVariableDiagnostics(file, tokens)...)
@@ -834,6 +836,176 @@ func inferredTypeNameFromLiteral(literal string) string {
 		return "array<string>"
 	}
 	return "string"
+}
+
+func schemaFieldTextCodeActions(text string, documentPath string) []analysisCodeActionCandidate {
+	if documentPath == "" {
+		return nil
+	}
+
+	uri := protocol.DocumentUri(fileURI(documentPath))
+	fullRange := fullDocumentRange(text)
+	actions := []analysisCodeActionCandidate{}
+	addTextAction := func(title string, targetRange protocol.Range, newText string) {
+		actions = append(actions, textRefactorAction(title, targetRange, uri, fullRange, newText))
+	}
+
+	for _, action := range schemaFieldOptionalTextActions(text) {
+		addTextAction(action.title, action.targetRange, action.newText)
+	}
+	if updated, targetRange, ok := renameDuplicateSchemaFieldText(text); ok {
+		addTextAction("Rename duplicate schema field", targetRange, updated)
+	}
+	if updated, field, ok := addCommaBetweenSchemaFieldsText(text); ok {
+		addTextAction("Add comma between schema fields", rangeForText(text, field), updated)
+	}
+	return actions
+}
+
+type schemaFieldOptionalTextAction struct {
+	title       string
+	targetRange protocol.Range
+	newText     string
+}
+
+func schemaFieldOptionalTextActions(text string) []schemaFieldOptionalTextAction {
+	actions := []schemaFieldOptionalTextAction{}
+	for _, schemaRange := range schemaRecordBodyRanges(text) {
+		for _, field := range schemaFieldNameRanges(text, schemaRange.start, schemaRange.end) {
+			if field.optional {
+				updated := text[:field.optionalIndex] + text[field.optionalIndex+1:]
+				actions = append(actions, schemaFieldOptionalTextAction{title: "Make optional field required", targetRange: protocol.Range{Start: positionFromIndex(text, field.start), End: positionFromIndex(text, field.optionalIndex+1)}, newText: updated})
+			} else {
+				updated := text[:field.end] + "?" + text[field.end:]
+				actions = append(actions, schemaFieldOptionalTextAction{title: "Mark field optional with ?", targetRange: protocol.Range{Start: positionFromIndex(text, field.start), End: positionFromIndex(text, field.end)}, newText: updated})
+			}
+		}
+	}
+	return actions
+}
+
+type textRange struct {
+	start int
+	end   int
+}
+
+type schemaFieldNameRange struct {
+	start         int
+	end           int
+	optional      bool
+	optionalIndex int
+}
+
+func schemaRecordBodyRanges(text string) []textRange {
+	ranges := []textRange{}
+	pattern := regexp.MustCompile(`schema\s+[A-Za-z_][A-Za-z0-9_]*\s*:`)
+	for _, match := range pattern.FindAllStringIndex(text, -1) {
+		open := strings.Index(text[match[1]:], "{")
+		if open < 0 {
+			continue
+		}
+		open += match[1]
+		close := matchingBraceIndex(text, open)
+		if close < 0 {
+			continue
+		}
+		ranges = append(ranges, textRange{start: open + 1, end: close})
+	}
+	return ranges
+}
+
+func schemaFieldNameRanges(text string, start int, end int) []schemaFieldNameRange {
+	fields := []schemaFieldNameRange{}
+	for index := start; index < end; index++ {
+		char := text[index]
+		if !isIdentifierStart(char) || isPreviousIdentifierPart(text, index) {
+			continue
+		}
+		nameEnd := index + 1
+		for nameEnd < end && isIdentifierPart(text[nameEnd]) {
+			nameEnd++
+		}
+		cursor := skipWhitespace(text, nameEnd, end)
+		optional := false
+		optionalIndex := -1
+		if cursor < end && text[cursor] == '?' {
+			optional = true
+			optionalIndex = cursor
+			cursor = skipWhitespace(text, cursor+1, end)
+		}
+		if cursor >= end || text[cursor] != ':' {
+			continue
+		}
+		fields = append(fields, schemaFieldNameRange{start: index, end: nameEnd, optional: optional, optionalIndex: optionalIndex})
+	}
+	return fields
+}
+
+func matchingBraceIndex(text string, open int) int {
+	depth := 0
+	for index := open; index < len(text); index++ {
+		switch text[index] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return index
+			}
+		}
+	}
+	return -1
+}
+
+func skipWhitespace(text string, start int, end int) int {
+	for start < end && (text[start] == ' ' || text[start] == '\t' || text[start] == '\r' || text[start] == '\n') {
+		start++
+	}
+	return start
+}
+
+func isPreviousIdentifierPart(text string, index int) bool {
+	return index > 0 && isIdentifierPart(text[index-1])
+}
+
+func isIdentifierStart(char byte) bool {
+	return char == '_' || char >= 'A' && char <= 'Z' || char >= 'a' && char <= 'z'
+}
+
+func isIdentifierPart(char byte) bool {
+	return isIdentifierStart(char) || char >= '0' && char <= '9'
+}
+
+func renameDuplicateSchemaFieldText(text string) (string, protocol.Range, bool) {
+	pattern := regexp.MustCompile(`schema\s+[A-Za-z_][A-Za-z0-9_]*\s*:\s*\{([^}]*)\}`)
+	match := pattern.FindStringSubmatchIndex(text)
+	if match == nil {
+		return "", protocol.Range{}, false
+	}
+	body := text[match[2]:match[3]]
+	fieldPattern := regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)(\??\s*:)`)
+	seen := map[string]int{}
+	for _, field := range fieldPattern.FindAllStringSubmatchIndex(body, -1) {
+		name := body[field[2]:field[3]]
+		seen[name]++
+		if seen[name] == 2 {
+			start := match[2] + field[2]
+			end := match[2] + field[3]
+			targetRange := protocol.Range{Start: positionFromIndex(text, start), End: positionFromIndex(text, end)}
+			return text[:start] + name + "_2" + text[end:], targetRange, true
+		}
+	}
+	return "", protocol.Range{}, false
+}
+
+func addCommaBetweenSchemaFieldsText(text string) (string, string, bool) {
+	pattern := regexp.MustCompile(`(schema\s+[A-Za-z_][A-Za-z0-9_]*\s*:\s*\{[^}]*?:\s*[^,;}\s]+)\s+([A-Za-z_][A-Za-z0-9_]*)(\??\s*:)`)
+	match := pattern.FindStringSubmatch(text)
+	if len(match) == 0 {
+		return "", "", false
+	}
+	updated := pattern.ReplaceAllString(text, `${1}, ${2}${3}`)
+	return updated, match[2], updated != text
 }
 
 func arrayTextCodeActions(text string, documentPath string) []analysisCodeActionCandidate {
