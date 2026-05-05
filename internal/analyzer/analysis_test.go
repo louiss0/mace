@@ -690,14 +690,15 @@ schema User: { name: string };
 |===|
 [output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "string"), "Create type alias from selected type")
+			targetRange := protocol.Range{Start: protocol.Position{Line: 1, Character: 21}, End: protocol.Position{Line: 1, Character: 27}}
+			action := requireCodeAction(snapshot, uri, targetRange, "Create type alias from selected type")
 			edits := action.Edit.Changes[uri]
-			if tAssert.Len(edits, 2) {
-				tAssert.Equal(protocol.Range{Start: protocol.Position{Line: 1, Character: 0}, End: protocol.Position{Line: 1, Character: 0}}, edits[0].Range)
-				tAssert.Equal("type ExtractedType: string;\n\n", edits[0].NewText)
-				tAssert.Equal(rangeForWord(snapshot.text, "string"), edits[1].Range)
-				tAssert.Equal("ExtractedType", edits[1].NewText)
-			}
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 0},
+				End:   protocol.Position{Line: 1, Character: 0}}, edits[0].Range)
+			tAssert.Equal("type ExtractedType: string;\n\n", edits[0].NewText)
+			tAssert.Equal(protocol.Range{Start: protocol.Position{Line: 1, Character: 21}, End: protocol.Position{Line: 1, Character: 27}}, edits[1].Range)
+			tAssert.Equal("ExtractedType", edits[1].NewText)
 		})
 
 		It("creates type aliases from selected schema property types", func() {
@@ -706,13 +707,11 @@ schema User: { name: string, age: int };
 |===|
 [output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "int"), "Create type alias from selected type")
+			action := requireCodeAction(snapshot, uri, protocol.Range{Start: protocol.Position{Line: 1, Character: 34}, End: protocol.Position{Line: 1, Character: 37}}, "Create type alias from selected type")
 			edits := action.Edit.Changes[uri]
-			if tAssert.Len(edits, 2) {
-				tAssert.Equal("type ExtractedType: int;\n\n", edits[0].NewText)
-				tAssert.Equal(rangeForWord(snapshot.text, "int"), edits[1].Range)
-				tAssert.Equal("ExtractedType", edits[1].NewText)
-			}
+			tAssert.Equal("type ExtractedType: int;\n\n", edits[0].NewText)
+			tAssert.Equal(protocol.Range{Start: protocol.Position{Line: 1, Character: 34}, End: protocol.Position{Line: 1, Character: 37}}, edits[1].Range)
+			tAssert.Equal("ExtractedType", edits[1].NewText)
 		})
 
 		It("creates schema property aliases from cursor positions inside types", func() {
@@ -730,7 +729,7 @@ Name default_name = "Ada";
 			edits := action.Edit.Changes[uri]
 			if tAssert.Len(edits, 2) {
 				tAssert.Equal("type ExtractedType: string;\n\n", edits[0].NewText)
-				tAssert.Equal(rangeForWord(snapshot.text, "string"), edits[1].Range)
+				tAssert.Equal(protocol.Range{Start: protocol.Position{Line: 1, Character: 23}, End: protocol.Position{Line: 1, Character: 29}}, edits[1].Range)
 				tAssert.Equal("ExtractedType", edits[1].NewText)
 			}
 		})
@@ -744,35 +743,33 @@ Age default_age = 30;
 |===|
 [output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "string"), "Create type alias from selected type")
+			action := requireCodeAction(snapshot, uri, protocol.Range{Start: protocol.Position{Line: 1, Character: 23}, End: protocol.Position{Line: 1, Character: 29}}, "Create type alias from selected type")
 			edits := action.Edit.Changes[uri]
-			if tAssert.Len(edits, 2) {
-				tAssert.Equal(protocol.Range{Start: protocol.Position{Line: 1, Character: 0}, End: protocol.Position{Line: 1, Character: 0}}, edits[0].Range)
-				tAssert.Equal("type ExtractedType: string;\n\n", edits[0].NewText)
-				tAssert.Equal(rangeForWord(snapshot.text, "string"), edits[1].Range)
-				tAssert.Equal("ExtractedType", edits[1].NewText)
-			}
+			tAssert.Equal(protocol.Range{Start: protocol.Position{Line: 1, Character: 0}, End: protocol.Position{Line: 1, Character: 0}}, edits[0].Range)
+			tAssert.Equal("type ExtractedType: string;\n\n", edits[0].NewText)
+			tAssert.Equal(protocol.Range{Start: protocol.Position{Line: 1, Character: 23}, End: protocol.Position{Line: 1, Character: 29}}, edits[1].Range)
+			tAssert.Equal("ExtractedType", edits[1].NewText)
 		})
 
 		DescribeTable("generates aliases with the selected schema property type",
-			func(typeName string) {
+			func(typeName string, targetRange protocol.Range) {
 				snapshot := analyzeDocumentAt(`|===|
 schema Sample: { value: `+typeName+` };
 |===|
 [output = schema]
 {}`, documentPath)
-				action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, typeName), "Create type alias from selected type")
+				action := requireCodeAction(snapshot, uri, targetRange, "Create type alias from selected type")
 				edits := action.Edit.Changes[uri]
 				if tAssert.Len(edits, 2) {
 					tAssert.Equal("type ExtractedType: "+typeName+";\n\n", edits[0].NewText)
 					tAssert.Equal("ExtractedType", edits[1].NewText)
 				}
 			},
-			Entry("string", "string"),
-			Entry("int", "int"),
-			Entry("float", "float"),
-			Entry("boolean", "boolean"),
-			Entry("array<int>", "array<int>"),
+			Entry("string", "string", protocol.Range{Start: protocol.Position{Line: 1, Character: 24}, End: protocol.Position{Line: 1, Character: 30}}),
+			Entry("int", "int", protocol.Range{Start: protocol.Position{Line: 1, Character: 24}, End: protocol.Position{Line: 1, Character: 27}}),
+			Entry("float", "float", protocol.Range{Start: protocol.Position{Line: 1, Character: 24}, End: protocol.Position{Line: 1, Character: 29}}),
+			Entry("boolean", "boolean", protocol.Range{Start: protocol.Position{Line: 1, Character: 24}, End: protocol.Position{Line: 1, Character: 31}}),
+			Entry("array<int>", "array<int>", protocol.Range{Start: protocol.Position{Line: 1, Character: 24}, End: protocol.Position{Line: 1, Character: 34}}),
 		)
 
 		It("creates additional schema property aliases when one already exists", func() {
@@ -783,14 +780,12 @@ schema Avatar: { name: ExtractedType, image_path: string, age: int };
 |===|
 [output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "int"), "Create type alias from selected type")
+			action := requireCodeAction(snapshot, uri, protocol.Range{Start: protocol.Position{Line: 3, Character: 63}, End: protocol.Position{Line: 3, Character: 66}}, "Create type alias from selected type")
 			edits := action.Edit.Changes[uri]
-			if tAssert.Len(edits, 2) {
-				tAssert.Equal(protocol.Range{Start: protocol.Position{Line: 1, Character: 0}, End: protocol.Position{Line: 1, Character: 0}}, edits[0].Range)
-				tAssert.Equal("type ExtractedType2: int;\n\n", edits[0].NewText)
-				tAssert.Equal(rangeForWord(snapshot.text, "int"), edits[1].Range)
-				tAssert.Equal("ExtractedType2", edits[1].NewText)
-			}
+			tAssert.Equal(protocol.Range{Start: protocol.Position{Line: 1, Character: 0}, End: protocol.Position{Line: 1, Character: 0}}, edits[0].Range)
+			tAssert.Equal("type ExtractedType2: int;\n\n", edits[0].NewText)
+			tAssert.Equal(protocol.Range{Start: protocol.Position{Line: 3, Character: 63}, End: protocol.Position{Line: 3, Character: 66}}, edits[1].Range)
+			tAssert.Equal("ExtractedType2", edits[1].NewText)
 		})
 
 		It("inlines type alias usage in schema fields", func() {
@@ -800,7 +795,7 @@ schema User: { name: Name };
 |===|
 [output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "Name"), "Inline type alias usage")
+			action := requireCodeAction(snapshot, uri, protocol.Range{Start: protocol.Position{Line: 1, Character: 5}, End: protocol.Position{Line: 1, Character: 9}}, "Inline type alias usage")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "name: string")
 		})
 
@@ -810,7 +805,7 @@ type Name: string;
 |===|
 [output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "Name"), "Rename type alias")
+			action := requireCodeAction(snapshot, uri, protocol.Range{Start: protocol.Position{Line: 1, Character: 5}, End: protocol.Position{Line: 1, Character: 9}}, "Rename type alias")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "type RenamedName: string;")
 		})
 
@@ -821,7 +816,7 @@ schema User: { name: Nmae };
 |===|
 [output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "Nmae"), "Replace unknown type with Name")
+			action := requireCodeAction(snapshot, uri, protocol.Range{Start: protocol.Position{Line: 2, Character: 21}, End: protocol.Position{Line: 2, Character: 25}}, "Replace unknown type with Name")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "name: Name")
 		})
 
@@ -831,7 +826,7 @@ type Names: Array<string>;
 |===|
 [output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "Array"), "Convert Array<T> to array<T>")
+			action := requireCodeAction(snapshot, uri, protocol.Range{Start: protocol.Position{Line: 1, Character: 12}, End: protocol.Position{Line: 1, Character: 17}}, "Convert Array<T> to array<T>")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "array<string>")
 		})
 
@@ -841,7 +836,7 @@ schema User: { name: string? };
 |===|
 [output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "string?"), "Convert nullable type into optional field")
+			action := requireCodeAction(snapshot, uri, protocol.Range{Start: protocol.Position{Line: 1, Character: 21}, End: protocol.Position{Line: 1, Character: 28}}, "Convert nullable type into optional field")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "name?: string")
 		})
 	})
