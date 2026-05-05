@@ -1,6 +1,6 @@
 |===|
 type Name: string;
-schema User: { name: Name; age?: int; };
-schema Envelope: { result: User; };
+schema User: { name: Name, age?: int, };
+schema Envelope: { result: User, };
 |===|
 [output = data] {}

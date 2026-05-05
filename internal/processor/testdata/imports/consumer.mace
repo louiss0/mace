@@ -2,8 +2,8 @@
 |=======================================|
 from "./base.mace" import Name, User;
 Name name = "Ada";
-User result = { name: name; age: 27; };
+User result = { name: name, age: 27, };
 |=======================================|
 
 [output = data]
-{ result: result; }
+{ result: result, }

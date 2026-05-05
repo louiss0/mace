@@ -1,13 +1,13 @@
 |===|
 type ID: string;
-schema Member: { id: ID; role: string; };
-schema Team: { name: string; members: array<Member>; };
+schema Member: { id: ID, role: string, };
+schema Team: { name: string, members: array<Member>, };
 string hidden_name = "ops";
 |===|
 
 [output = schema]
 {
-  ID: ID;
-  Member: Member;
-  Team: Team;
+  ID: ID,
+  Member: Member,
+  Team: Team,
 }

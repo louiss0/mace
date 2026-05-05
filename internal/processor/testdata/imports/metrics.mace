@@ -1,11 +1,11 @@
 |===|
 int count = 3;
 boolean enabled = true;
-schema Hidden: { total: int; };
+schema Hidden: { total: int, };
 |===|
 
 [output = data]
 {
-  count: count;
-  enabled: enabled;
+  count: count,
+  enabled: enabled,
 }
