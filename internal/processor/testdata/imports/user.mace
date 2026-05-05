@@ -1,6 +1,7 @@
-from "./profile.mace" import Profile, Age;
 
 |==================================================|
+from "./profile.mace" import Profile, Age;
+
 type Name: string;
 
 injectable string name;
