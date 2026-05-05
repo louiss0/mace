@@ -401,7 +401,9 @@ from "shared.mace" import Role;
 	It("offers import resolution actions", func() {
 		workspace, err := os.MkdirTemp("", "mace-analysis-import-resolution-*")
 		tAssert.NoError(err)
-		defer os.RemoveAll(workspace)
+		defer func() {
+			tAssert.NoError(os.RemoveAll(workspace))
+		}()
 
 		sharedPath := writeAnalysisFile(workspace, "shared.mace", `[output = schema]
 {
