@@ -1097,6 +1097,11 @@ schema User: { profile: Profile; };
 |===|
 [output = data, schema = User]
 { profile: { age: 30; }; }`),
+		Entry("variant array field", `|===|
+schema Team: { values: array<variant[string, int]>; };
+|===|
+[output = data, schema = Team]
+{ values: ["Ada", 1]; }`),
 		Entry("bare output block defaults to data", `{ result: 1 + 2; }`),
 	)
 
@@ -1311,7 +1316,6 @@ int result = false || true ? 5 : 2;
 |===|`, "result: result;"), expectedValue{kind: ValueInt, int64: 5}),
 	)
 
-
 	DescribeTable("accepts non-math operators in script variables",
 		func(file string, expected map[string]expectedValue) {
 			processor := New()
@@ -1418,6 +1422,12 @@ array<string> result = ['Kyle', "Tyrone", """Luke"""];
 			{kind: ValueString, string: "Kyle"},
 			{kind: ValueString, string: "Tyrone"},
 			{kind: ValueString, string: "Luke"},
+		}}),
+		Entry("variant arrays", wrapScriptWithOutputFields(`|===|
+array<variant[string, int]> result = ["Ada", 1];
+|===|`, "result: result;"), expectedValue{kind: ValueArray, array: []expectedValue{
+			{kind: ValueString, string: "Ada"},
+			{kind: ValueInt, int64: 1},
 		}}),
 		Entry("negative int arrays", wrapScriptWithOutputFields(`|===|
 array<int> result = [-1, -2, -3];
@@ -1609,14 +1619,23 @@ int base = 3 * 4;
 		Entry("wrong nested level", `[output = data] { result: [[1]][0][0][0]; }`, "array access requires an array value at level 3"),
 	)
 
-	DescribeTable("rejects inline arrays with mixed types",
+	DescribeTable("rejects arrays that do not match declared element types",
 		func(file string) {
 			processor := New()
 			_, err := processor.Process(file)
 			tAssert.Error(err)
 		},
-		Entry("mixed primitive types", `[output = data] { result: [1, "two"]; }`),
-		Entry("mixed numeric types", `[output = data] { result: [1, 2.0]; }`),
-		Entry("mixed nested array types", `[output = data] { result: [[1], ["two"]]; }`),
+		Entry("primitive type mismatch", `|===|
+array<int> result = [1, "two"];
+|===|
+[output = data] { result: result; }`),
+		Entry("numeric type mismatch", `|===|
+array<int> result = [1, 2.0];
+|===|
+[output = data] { result: result; }`),
+		Entry("nested array type mismatch", `|===|
+array<array<int>> result = [[1], ["two"]];
+|===|
+[output = data] { result: result; }`),
 	)
 })

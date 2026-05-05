@@ -2451,17 +2451,10 @@ func evaluateConditional(expr ast.ConditionalExpression, environment *valueEnvir
 
 func evaluateArrayLiteral(expr ast.ArrayLiteral, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) (Value, error) {
 	values := make([]Value, 0, len(expr.Elements))
-	var elementType *valueType
 	for _, element := range expr.Elements {
 		value, err := evaluateExpression(element, environment, self, symbols, types, schemas, enums)
 		if err != nil {
 			return Value{}, err
-		}
-		currentType := valueTypeFromValue(value)
-		if elementType == nil {
-			elementType = &currentType
-		} else if !typesEqual(*elementType, currentType) {
-			return Value{}, validationErrorf("array literal has mixed element types")
 		}
 		values = append(values, value)
 	}
@@ -2944,22 +2937,21 @@ func inferArrayLiteralType(expr ast.ArrayLiteral, variables *variableRegistry, s
 		return valueType{kind: ValueArray, element: &valueType{kind: ValueUnknown}}, nil
 	}
 
-	firstType, err := inferExpressionType(expr.Elements[0], variables, symbols, types, schemas, enums)
-	if err != nil {
-		return valueType{}, err
-	}
-
-	for _, element := range expr.Elements[1:] {
+	elementTypes := []valueType{}
+	for _, element := range expr.Elements {
 		elementType, err := inferExpressionType(element, variables, symbols, types, schemas, enums)
 		if err != nil {
 			return valueType{}, err
 		}
-		if !typesEqual(firstType, elementType) {
-			return valueType{}, validationErrorf("array literal has mixed element types")
-		}
+		elementTypes = appendUniqueValueType(elementTypes, elementType)
 	}
 
-	return valueType{kind: ValueArray, element: &firstType}, nil
+	if len(elementTypes) == 1 {
+		return valueType{kind: ValueArray, element: &elementTypes[0]}, nil
+	}
+
+	elementType := valueType{members: elementTypes}
+	return valueType{kind: ValueArray, element: &elementType}, nil
 }
 
 func inferPrefixType(expr ast.PrefixExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) (valueType, error) {
@@ -3117,6 +3109,14 @@ func typesEqual(leftType, rightType valueType) bool {
 
 func ensureAssignable(expectedType, actualType valueType) error {
 	if len(expectedType.members) > 0 {
+		if len(actualType.members) > 0 {
+			for _, actualMember := range actualType.members {
+				if err := ensureAssignable(expectedType, actualMember); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
 		for _, member := range expectedType.members {
 			if err := ensureAssignable(member, actualType); err == nil {
 				return nil
@@ -3151,9 +3151,22 @@ func ensureAssignable(expectedType, actualType valueType) error {
 		if expectedType.element == nil || actualType.element == nil {
 			return validationErrorf("type mismatch: expected %s, got %s", expectedType.name(), actualType.name())
 		}
-		return ensureAssignable(*expectedType.element, *actualType.element)
+		if err := ensureAssignable(*expectedType.element, *actualType.element); err != nil {
+			return validationErrorf("type mismatch: expected %s, got %s", expectedType.name(), actualType.name())
+		}
+		return nil
 	}
 	return nil
+}
+
+func appendUniqueValueType(types []valueType, next valueType) []valueType {
+	for _, existing := range types {
+		if typesEqual(existing, next) {
+			return types
+		}
+	}
+
+	return append(types, next)
 }
 
 type symbolKind int

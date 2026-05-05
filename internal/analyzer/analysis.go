@@ -3489,9 +3489,34 @@ func expressionTypeSummary(expression ast.Expression, knownTypes map[string]stri
 	case ast.Identifier:
 		knownType, ok := knownTypes[typed.Name]
 		return knownType, ok
+	case ast.ArrayLiteral:
+		return arrayExpressionTypeSummary(typed, knownTypes)
 	default:
 		return "", false
 	}
+}
+
+func arrayExpressionTypeSummary(expression ast.ArrayLiteral, knownTypes map[string]string) (string, bool) {
+	if len(expression.Elements) == 0 {
+		return "array<unknown>", true
+	}
+
+	elementTypes := []string{}
+	for _, element := range expression.Elements {
+		elementType, ok := expressionTypeSummary(element, knownTypes)
+		if !ok {
+			return "", false
+		}
+		if !lo.Contains(elementTypes, elementType) {
+			elementTypes = append(elementTypes, elementType)
+		}
+	}
+
+	if len(elementTypes) == 1 {
+		return "array<" + elementTypes[0] + ">", true
+	}
+
+	return "array<variant[" + strings.Join(elementTypes, ", ") + "]>", true
 }
 
 func schemaDiagnostic(tokens []lexer.Token, message string) (protocol.Diagnostic, bool) {
