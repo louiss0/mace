@@ -755,6 +755,24 @@ schema Sample: { value: `+typeName+` };
 			Entry("array<int>", "array<int>"),
 		)
 
+		It("creates additional schema property aliases when one already exists", func() {
+			snapshot := analyzeDocumentAt(`|===|
+type ExtractedType: string;
+
+schema Avatar: { name: ExtractedType, image_path: string, age: int };
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "int"), "Create type alias from selected type")
+			edits := action.Edit.Changes[uri]
+			if tAssert.Len(edits, 2) {
+				tAssert.Equal(protocol.Range{Start: protocol.Position{Line: 1, Character: 0}, End: protocol.Position{Line: 1, Character: 0}}, edits[0].Range)
+				tAssert.Equal("type ExtractedType2: int;\n\n", edits[0].NewText)
+				tAssert.Equal(rangeForWord(snapshot.text, "int"), edits[1].Range)
+				tAssert.Equal("ExtractedType2", edits[1].NewText)
+			}
+		})
+
 		It("inlines type alias usage in schema fields", func() {
 			snapshot := analyzeDocumentAt(`|===|
 type Name: string;

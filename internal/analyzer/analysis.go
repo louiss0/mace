@@ -1228,14 +1228,12 @@ type typeAliasTextAction struct {
 }
 
 func createTypeAliasFromSchemaFieldTypeActions(text string) []typeAliasTextAction {
-	if strings.Contains(text, "type ExtractedType:") {
-		return nil
-	}
 	scriptInsertIndex, ok := scriptDeclarationInsertIndex(text)
 	if !ok {
 		return nil
 	}
 
+	aliasName := nextExtractedTypeAliasName(text)
 	actions := []typeAliasTextAction{}
 	schemaPattern := regexp.MustCompile(`schema\s+[A-Za-z_][A-Za-z0-9_]*\s*:\s*\{([^}]*)\}`)
 	fieldPattern := regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*\??\s*:\s*)(string|int|float|boolean|array<[^>]+>|[A-Za-z_][A-Za-z0-9_]*)`)
@@ -1250,13 +1248,25 @@ func createTypeAliasFromSchemaFieldTypeActions(text string) []typeAliasTextActio
 				targetRange:  protocol.Range{Start: positionFromIndex(text, typeStart), End: positionFromIndex(text, typeEnd)},
 				insertRange:  protocol.Range{Start: positionFromIndex(text, scriptInsertIndex), End: positionFromIndex(text, scriptInsertIndex)},
 				replaceRange: protocol.Range{Start: positionFromIndex(text, typeStart), End: positionFromIndex(text, typeEnd)},
-				declaration:  "type ExtractedType: " + typeName + ";\n\n",
-				aliasName:    "ExtractedType",
+				declaration:  "type " + aliasName + ": " + typeName + ";\n\n",
+				aliasName:    aliasName,
 			})
 		}
 	}
 
 	return actions
+}
+
+func nextExtractedTypeAliasName(text string) string {
+	for index := 0; ; index++ {
+		name := "ExtractedType"
+		if index > 0 {
+			name = fmt.Sprintf("ExtractedType%d", index+1)
+		}
+		if !regexp.MustCompile(`(?m)^type\s+` + regexp.QuoteMeta(name) + `\s*:`).MatchString(text) {
+			return name
+		}
+	}
 }
 
 func typeAliasExtractCodeAction(uri protocol.DocumentUri, action typeAliasTextAction) analysisCodeActionCandidate {
