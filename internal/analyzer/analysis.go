@@ -1196,7 +1196,7 @@ func typeAliasTextCodeActions(text string, documentPath string) []analysisCodeAc
 		actions = append(actions, textRefactorAction(title, targetRange, uri, fullRange, newText))
 	}
 	for _, action := range createTypeAliasFromSchemaFieldTypeActions(text) {
-		addTextAction("Create type alias from selected type", action.targetRange, action.newText)
+		actions = append(actions, typeAliasExtractCodeAction(uri, action))
 	}
 	if updated, targetRange, ok := createTypeAliasFromSelectedTypeText(text); ok {
 		addTextAction("Create type alias from selected type", targetRange, updated)
@@ -1220,12 +1220,19 @@ func typeAliasTextCodeActions(text string, documentPath string) []analysisCodeAc
 }
 
 type typeAliasTextAction struct {
-	targetRange protocol.Range
-	newText     string
+	targetRange  protocol.Range
+	insertRange  protocol.Range
+	replaceRange protocol.Range
+	declaration  string
+	aliasName    string
 }
 
 func createTypeAliasFromSchemaFieldTypeActions(text string) []typeAliasTextAction {
 	if strings.Contains(text, "type ExtractedType:") {
+		return nil
+	}
+	scriptInsertIndex, ok := scriptDeclarationInsertIndex(text)
+	if !ok {
 		return nil
 	}
 
@@ -1239,18 +1246,39 @@ func createTypeAliasFromSchemaFieldTypeActions(text string) []typeAliasTextActio
 			typeStart := bodyStart + fieldMatches[4]
 			typeEnd := bodyStart + fieldMatches[5]
 			typeName := text[typeStart:typeEnd]
-			declaration := "type ExtractedType: " + typeName + ";"
-			updated := insertTopScriptDeclarationText(text, declaration)
-			updatedTypeStart := typeStart + len(declaration) + len("\n\n")
-			updated = updated[:updatedTypeStart] + "ExtractedType" + updated[updatedTypeStart+len(typeName):]
 			actions = append(actions, typeAliasTextAction{
-				targetRange: protocol.Range{Start: positionFromIndex(text, typeStart), End: positionFromIndex(text, typeEnd)},
-				newText:     updated,
+				targetRange:  protocol.Range{Start: positionFromIndex(text, typeStart), End: positionFromIndex(text, typeEnd)},
+				insertRange:  protocol.Range{Start: positionFromIndex(text, scriptInsertIndex), End: positionFromIndex(text, scriptInsertIndex)},
+				replaceRange: protocol.Range{Start: positionFromIndex(text, typeStart), End: positionFromIndex(text, typeEnd)},
+				declaration:  "type ExtractedType: " + typeName + ";\n\n",
+				aliasName:    "ExtractedType",
 			})
 		}
 	}
 
 	return actions
+}
+
+func typeAliasExtractCodeAction(uri protocol.DocumentUri, action typeAliasTextAction) analysisCodeActionCandidate {
+	return analysisCodeActionCandidate{
+		Range: action.targetRange,
+		Action: protocol.CodeAction{
+			Title: "Create type alias from selected type",
+			Kind:  Ptr(protocol.CodeActionKindRefactorExtract),
+			Edit: &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: {
+				{Range: action.insertRange, NewText: action.declaration},
+				{Range: action.replaceRange, NewText: action.aliasName},
+			}}},
+		},
+	}
+}
+
+func scriptDeclarationInsertIndex(text string) (int, bool) {
+	open := strings.Index(text, "|===|\n")
+	if open < 0 {
+		return 0, false
+	}
+	return open + len("|===|\n"), true
 }
 
 func createTypeAliasFromSelectedTypeText(text string) (string, protocol.Range, bool) {

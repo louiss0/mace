@@ -691,9 +691,13 @@ schema User: { name: string };
 [output = schema]
 {}`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "string"), "Create type alias from selected type")
-			text := action.Edit.Changes[uri][0].NewText
-			tAssert.Contains(text, "type ExtractedType: string;")
-			tAssert.Contains(text, "name: ExtractedType")
+			edits := action.Edit.Changes[uri]
+			if tAssert.Len(edits, 2) {
+				tAssert.Equal(protocol.Range{Start: protocol.Position{Line: 1, Character: 0}, End: protocol.Position{Line: 1, Character: 0}}, edits[0].Range)
+				tAssert.Equal("type ExtractedType: string;\n\n", edits[0].NewText)
+				tAssert.Equal(rangeForWord(snapshot.text, "string"), edits[1].Range)
+				tAssert.Equal("ExtractedType", edits[1].NewText)
+			}
 		})
 
 		It("creates type aliases from selected schema property types", func() {
@@ -703,10 +707,12 @@ schema User: { name: string, age: int };
 [output = schema]
 {}`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "int"), "Create type alias from selected type")
-			text := action.Edit.Changes[uri][0].NewText
-			tAssert.Contains(text, "type ExtractedType: int;")
-			tAssert.Contains(text, "name: string")
-			tAssert.Contains(text, "age: ExtractedType")
+			edits := action.Edit.Changes[uri]
+			if tAssert.Len(edits, 2) {
+				tAssert.Equal("type ExtractedType: int;\n\n", edits[0].NewText)
+				tAssert.Equal(rangeForWord(snapshot.text, "int"), edits[1].Range)
+				tAssert.Equal("ExtractedType", edits[1].NewText)
+			}
 		})
 
 		It("places schema property aliases first with vertical spacing", func() {
@@ -719,11 +725,13 @@ Age default_age = 30;
 [output = schema]
 {}`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "string"), "Create type alias from selected type")
-			text := action.Edit.Changes[uri][0].NewText
-			tAssert.Contains(text, `|===|
-type ExtractedType: string;
-
-schema Avatar: { name: ExtractedType, image_path: string, };`)
+			edits := action.Edit.Changes[uri]
+			if tAssert.Len(edits, 2) {
+				tAssert.Equal(protocol.Range{Start: protocol.Position{Line: 1, Character: 0}, End: protocol.Position{Line: 1, Character: 0}}, edits[0].Range)
+				tAssert.Equal("type ExtractedType: string;\n\n", edits[0].NewText)
+				tAssert.Equal(rangeForWord(snapshot.text, "string"), edits[1].Range)
+				tAssert.Equal("ExtractedType", edits[1].NewText)
+			}
 		})
 
 		DescribeTable("generates aliases with the selected schema property type",
@@ -734,9 +742,11 @@ schema Sample: { value: `+typeName+` };
 [output = schema]
 {}`, documentPath)
 				action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, typeName), "Create type alias from selected type")
-				text := action.Edit.Changes[uri][0].NewText
-				tAssert.Contains(text, "type ExtractedType: "+typeName+";")
-				tAssert.Contains(text, "value: ExtractedType")
+				edits := action.Edit.Changes[uri]
+				if tAssert.Len(edits, 2) {
+					tAssert.Equal("type ExtractedType: "+typeName+";\n\n", edits[0].NewText)
+					tAssert.Equal("ExtractedType", edits[1].NewText)
+				}
 			},
 			Entry("string", "string"),
 			Entry("int", "int"),
