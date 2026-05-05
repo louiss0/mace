@@ -47,6 +47,13 @@ func requireCodeAction(snapshot analysisSnapshot, uri protocol.DocumentUri, targ
 	return action
 }
 
+func rangeForWord(text string, word string) protocol.Range {
+	start := strings.Index(text, word)
+	tAssert.NotEqual(-1, start)
+	end := start + len(word)
+	return protocol.Range{Start: positionFromIndex(text, start), End: positionFromIndex(text, end)}
+}
+
 func requireDiagnosticCode(diagnostic protocol.Diagnostic) string {
 	tAssert.NotNil(diagnostic.Code)
 	if diagnostic.Code == nil {
@@ -388,8 +395,8 @@ from "shared.mace" import Role;
 [output = schema]
 {}`, documentPath)
 
-		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
 		uri := protocol.DocumentUri(fileURI(documentPath))
+		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
 		fixAction := requireCodeAction(snapshot, uri, rangeValue, "Fix relative import path")
 		tAssert.Contains(fixAction.Edit.Changes[uri][0].NewText, `from "./shared.mace" import User, Profile;`)
 		splitAction := requireCodeAction(snapshot, uri, rangeValue, "Split import declaration")
@@ -527,7 +534,6 @@ schema User: { name: string, age: int };
 	Describe("array actions", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))
-		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
 
 		It("wraps types in arrays", func() {
 			snapshot := analyzeDocumentAt(`|===|
@@ -535,7 +541,7 @@ type Name: string;
 |===|
 [output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Wrap type in array")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "string"), "Wrap type in array")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "type Name: array<string>;")
 		})
 
@@ -545,7 +551,7 @@ array<string> values = ["Ada", 1];
 |===|
 [output = data]
 { value: values }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Fix mixed array literal")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, `["Ada", 1]`), "Fix mixed array literal")
 			text := action.Edit.Changes[uri][0].NewText
 			tAssert.Contains(text, "type ValuesItem: variant[string, int];")
 			tAssert.Contains(text, "array<ValuesItem> values")
@@ -557,14 +563,14 @@ array<string> values = [1, 2];
 |===|
 [output = data]
 { value: values }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Change array element type")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "array<string>"), "Change array element type")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "array<int> values")
 		})
 
 		It("replaces invalid array indexes", func() {
 			snapshot := analyzeDocumentAt(`[output = data]
 { value: ["Ada"][3] }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Replace invalid array index")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "[3]"), "Replace invalid array index")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `value: ["Ada"][0]`)
 		})
 	})
@@ -572,7 +578,6 @@ array<string> values = [1, 2];
 	Describe("type alias actions", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))
-		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
 
 		It("creates type aliases from selected schema field types", func() {
 			snapshot := analyzeDocumentAt(`|===|
@@ -580,7 +585,7 @@ schema User: { name: string };
 |===|
 [output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Create type alias from selected type")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "string"), "Create type alias from selected type")
 			text := action.Edit.Changes[uri][0].NewText
 			tAssert.Contains(text, "type ExtractedType: string;")
 			tAssert.Contains(text, "name: ExtractedType")
@@ -593,7 +598,7 @@ schema User: { name: Name };
 |===|
 [output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Inline type alias usage")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "Name"), "Inline type alias usage")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "name: string")
 		})
 
@@ -603,7 +608,7 @@ type Name: string;
 |===|
 [output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Rename type alias")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "Name"), "Rename type alias")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "type RenamedName: string;")
 		})
 
@@ -614,7 +619,7 @@ schema User: { name: Nmae };
 |===|
 [output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Replace unknown type with Name")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "Nmae"), "Replace unknown type with Name")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "name: Name")
 		})
 
@@ -624,7 +629,7 @@ type Names: Array<string>;
 |===|
 [output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Convert Array<T> to array<T>")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "Array"), "Convert Array<T> to array<T>")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "array<string>")
 		})
 
@@ -634,7 +639,7 @@ schema User: { name: string? };
 |===|
 [output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Convert nullable type into optional field")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "string?"), "Convert nullable type into optional field")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "name?: string")
 		})
 	})
@@ -642,7 +647,6 @@ schema User: { name: string? };
 	Describe("injectable variable actions", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))
-		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
 
 		It("converts variables to injectable", func() {
 			snapshot := analyzeDocumentAt(`|===|
@@ -650,7 +654,7 @@ string name;
 |===|
 [output = data]
 { value: name }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Convert variable to injectable")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "name"), "Convert variable to injectable")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `injectable string name;`)
 		})
 
@@ -660,7 +664,7 @@ injectable `+typeName+` `+variableName+`;
 |===|
 [output = data]
 { value: `+variableName+` }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Add default initializer to injectable")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "injectable"), "Add default initializer to injectable")
 
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `injectable `+typeName+` `+variableName+` = `+literal+`;`)
 		},
@@ -678,7 +682,7 @@ injectable int count;
 |===|
 [output = data]
 { value: name }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Generate injection config stub")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "injectable"), "Generate injection config stub")
 			text := action.Edit.Changes[uri][0].NewText
 			tAssert.Contains(text, `"name": ""`)
 			tAssert.Contains(text, `"count": 0`)
@@ -691,7 +695,7 @@ injectable int count;
 |===|
 [output = data]
 { value: name }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Find all injectable variables")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "injectable"), "Find all injectable variables")
 			tAssert.Contains(action.Command.Arguments[0], "name, count")
 		})
 	})
@@ -699,7 +703,6 @@ injectable int count;
 	Describe("variable fix actions", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))
-		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
 
 		It("adds missing type annotations", func() {
 			snapshot := analyzeDocumentAt(`|===|
@@ -708,7 +711,7 @@ title = "Engineer";
 |===|
 [output = data]
 { value: name, }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Add missing type annotation")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "name"), "Add missing type annotation")
 			text := action.Edit.Changes[uri][0].NewText
 
 			tAssert.Contains(text, `string name = "Ada";`)
@@ -721,7 +724,7 @@ string name;
 |===|
 [output = data]
 { value: name, }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Add missing initializer")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "name"), "Add missing initializer")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `string name = "";`)
 		})
 
@@ -731,7 +734,7 @@ string name;
 |===|
 [output = data]
 { value: name, }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Mark variable as injectable")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "name"), "Mark variable as injectable")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `injectable string name;`)
 		})
 
@@ -741,7 +744,7 @@ int count;
 |===|
 [output = data]
 { value: count }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Add placeholder initializer")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "count"), "Add placeholder initializer")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `int count = 0;`)
 		})
 
@@ -751,7 +754,7 @@ int name = "Ada";
 |===|
 [output = data]
 { value: name }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Change variable type to inferred expression type")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "int"), "Change variable type to inferred expression type")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `string name = "Ada";`)
 		})
 
@@ -761,7 +764,7 @@ int count = "Ada";
 |===|
 [output = data]
 { value: count }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Change initializer to match declared type")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, `"Ada"`), "Change initializer to match declared type")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `int count = 0;`)
 		})
 
@@ -772,7 +775,7 @@ string name = "Grace";
 |===|
 [output = data]
 { value: name }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Rename duplicate variable")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "Grace"), "Rename duplicate variable")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `string name_2 = "Grace";`)
 		})
 
@@ -782,14 +785,14 @@ string name = "Ada";
 |===|
 [output = data]
 { value: name }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Inline variable into output field")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "value: name"), "Inline variable into output field")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `value: "Ada"`)
 		})
 
 		It("extracts output expressions into script variables", func() {
 			snapshot := analyzeDocumentAt(`[output = data]
 { value: "Ada" }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Extract output expression into script variable")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, `"Ada"`), "Extract output expression into script variable")
 			text := action.Edit.Changes[uri][0].NewText
 			tAssert.Contains(text, `string value = "Ada";`)
 			tAssert.Contains(text, `value: value`)
@@ -799,7 +802,6 @@ string name = "Ada";
 	Describe("declaration actions", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))
-		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
 
 		It("adds missing semicolons after script declarations", func() {
 			snapshot := analyzeDocumentAt(`|===|
@@ -807,7 +809,7 @@ type Name: string
 |===|
 [output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Add missing semicolon")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "Name"), "Add missing semicolon")
 
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "type Name: string;")
 		})
@@ -818,7 +820,7 @@ schema User: { name: string, email: string };
 |===|
 [output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Extract repeated type into alias")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "User"), "Extract repeated type into alias")
 
 			text := action.Edit.Changes[uri][0].NewText
 			tAssert.Contains(text, "type ExtractedType: string;")
@@ -831,7 +833,7 @@ schema User: { profile: { name: string } };
 |===|
 [output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Extract inline record type into schema")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "User"), "Extract inline record type into schema")
 
 			text := action.Edit.Changes[uri][0].NewText
 			tAssert.Contains(text, "schema Profile:")
@@ -844,7 +846,7 @@ schema User: { profile: { name: string } };
 |===|
 [output = data]
 { value: user }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Convert record variable into schema-backed variable")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "user"), "Convert record variable into schema-backed variable")
 
 			text := action.Edit.Changes[uri][0].NewText
 			tAssert.Contains(text, "schema User:")
@@ -855,12 +857,11 @@ schema User: { profile: { name: string } };
 	Describe("script block structure actions", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))
-		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
 
 		It("creates a script block above the output block", func() {
 			snapshot := analyzeDocumentAt(`[output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Create script block")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "[output"), "Create script block")
 
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "|===|\n|===|\n[output = schema]")
 		})
@@ -868,7 +869,7 @@ schema User: { profile: { name: string } };
 		It("wraps the document in a script block", func() {
 			snapshot := analyzeDocumentAt(`[output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Wrap selection in script block")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "[output"), "Wrap selection in script block")
 
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "|===|\n[output = schema]")
 		})
@@ -879,7 +880,7 @@ type Name: string;
 |====|
 [output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Fix script delimiter length mismatch")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "|====|"), "Fix script delimiter length mismatch")
 
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "|===|\ntype Name: string;")
 		})
@@ -890,7 +891,7 @@ type Name: string;
 |====|
 [output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Normalize script fence")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "|====|"), "Normalize script fence")
 
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "|===|\ntype Name: string;")
 		})
@@ -900,7 +901,7 @@ type Name: string;
 |===|
 [output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Remove empty script block")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "|===|"), "Remove empty script block")
 
 			tAssert.NotContains(action.Edit.Changes[uri][0].NewText, "|===|\n|===|")
 		})
@@ -911,7 +912,7 @@ type Name: string;
 |===|
 type Name: string;
 |===|`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Move script block before output block")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "type Name"), "Move script block before output block")
 
 			tAssert.True(strings.HasPrefix(action.Edit.Changes[uri][0].NewText, "|===|\ntype Name: string;"))
 		})
@@ -919,7 +920,7 @@ type Name: string;
 
 	It("offers documentation cleanup actions", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
-			snapshot := analyzeDocumentAt(`|===|
+		snapshot := analyzeDocumentAt(`|===|
 schema User: { name: string /# inline, age: int };
 schema_doc User {
   summary: "Existing";

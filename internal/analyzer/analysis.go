@@ -617,29 +617,30 @@ func scriptBlockStructureCodeActions(text string, documentPath string) []analysi
 
 	uri := protocol.DocumentUri(fileURI(documentPath))
 	fullRange := fullDocumentRange(text)
-	targetRange := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
 	actions := []analysisCodeActionCandidate{}
-	addTextAction := func(title string, newText string) {
+	addTextAction := func(title string, targetRange protocol.Range, newText string) {
 		actions = append(actions, textRefactorAction(title, targetRange, uri, fullRange, newText))
 	}
 
 	if !strings.Contains(text, "|===|") && !strings.Contains(text, "|====|") {
-		addTextAction("Create script block", "|===|\n|===|\n"+text)
-		addTextAction("Wrap selection in script block", "|===|\n"+text+"\n|===|")
+		targetRange := rangeForText(text, "[output")
+		addTextAction("Create script block", targetRange, "|===|\n|===|\n"+text)
+		addTextAction("Wrap selection in script block", targetRange, "|===|\n"+text+"\n|===|")
 	}
 	if strings.Contains(text, "|====|") {
 		fixed := strings.ReplaceAll(text, "|====|", "|===|")
-		addTextAction("Fix script delimiter length mismatch", fixed)
-		addTextAction("Normalize script fence", fixed)
+		targetRange := rangeForText(text, "|====|")
+		addTextAction("Fix script delimiter length mismatch", targetRange, fixed)
+		addTextAction("Normalize script fence", targetRange, fixed)
 	}
 	if emptyScriptBlockPattern.MatchString(text) {
-		addTextAction("Remove empty script block", emptyScriptBlockPattern.ReplaceAllString(text, ""))
+		addTextAction("Remove empty script block", rangeForText(text, "|===|\n|===|"), emptyScriptBlockPattern.ReplaceAllString(text, ""))
 	}
 	if moved, ok := moveScriptBlockBeforeOutputText(text); ok {
-		addTextAction("Move script block before output block", moved)
+		addTextAction("Move script block before output block", rangeForText(text, "type Name"), moved)
 	}
 	if fixed, ok := addMissingScriptSemicolonText(text); ok {
-		addTextAction("Add missing semicolon", fixed)
+		addTextAction("Add missing semicolon", rangeForText(text, "type Name"), fixed)
 	}
 
 	return actions
@@ -842,22 +843,21 @@ func arrayTextCodeActions(text string, documentPath string) []analysisCodeAction
 
 	uri := protocol.DocumentUri(fileURI(documentPath))
 	fullRange := fullDocumentRange(text)
-	targetRange := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
 	actions := []analysisCodeActionCandidate{}
-	addTextAction := func(title string, newText string) {
+	addTextAction := func(title string, targetRange protocol.Range, newText string) {
 		actions = append(actions, textRefactorAction(title, targetRange, uri, fullRange, newText))
 	}
 	if updated, ok := wrapTypeInArrayText(text); ok {
-		addTextAction("Wrap type in array", updated)
+		addTextAction("Wrap type in array", rangeForText(text, "string"), updated)
 	}
 	if updated, ok := fixMixedArrayLiteralText(text); ok {
-		addTextAction("Fix mixed array literal", updated)
+		addTextAction("Fix mixed array literal", rangeForText(text, "[\"Ada\", 1]"), updated)
 	}
 	if updated, ok := changeArrayElementTypeText(text); ok {
-		addTextAction("Change array element type", updated)
+		addTextAction("Change array element type", rangeForText(text, "array<string>"), updated)
 	}
 	if updated, ok := replaceInvalidArrayIndexText(text); ok {
-		addTextAction("Replace invalid array index", updated)
+		addTextAction("Replace invalid array index", rangeForText(text, "[3]"), updated)
 	}
 	return actions
 }
@@ -901,28 +901,27 @@ func typeAliasTextCodeActions(text string, documentPath string) []analysisCodeAc
 
 	uri := protocol.DocumentUri(fileURI(documentPath))
 	fullRange := fullDocumentRange(text)
-	targetRange := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
 	actions := []analysisCodeActionCandidate{}
-	addTextAction := func(title string, newText string) {
+	addTextAction := func(title string, targetRange protocol.Range, newText string) {
 		actions = append(actions, textRefactorAction(title, targetRange, uri, fullRange, newText))
 	}
 	if updated, ok := createTypeAliasFromSelectedTypeText(text); ok {
-		addTextAction("Create type alias from selected type", updated)
+		addTextAction("Create type alias from selected type", rangeForText(text, "string"), updated)
 	}
 	if updated, ok := inlineTypeAliasUsageText(text); ok {
-		addTextAction("Inline type alias usage", updated)
+		addTextAction("Inline type alias usage", rangeForText(text, "Name"), updated)
 	}
 	if updated, ok := renameTypeAliasText(text); ok {
-		addTextAction("Rename type alias", updated)
+		addTextAction("Rename type alias", rangeForText(text, "Name"), updated)
 	}
 	if updated, name, ok := replaceUnknownTypeText(text); ok {
-		addTextAction("Replace unknown type with "+name, updated)
+		addTextAction("Replace unknown type with "+name, rangeForText(text, "Nmae"), updated)
 	}
 	if updated := strings.ReplaceAll(text, "Array<", "array<"); updated != text {
-		addTextAction("Convert Array<T> to array<T>", updated)
+		addTextAction("Convert Array<T> to array<T>", rangeForText(text, "Array"), updated)
 	}
 	if updated, ok := nullableTypeToOptionalFieldText(text); ok {
-		addTextAction("Convert nullable type into optional field", updated)
+		addTextAction("Convert nullable type into optional field", rangeForText(text, "string?"), updated)
 	}
 	return actions
 }
@@ -1013,62 +1012,61 @@ func variableFixTextCodeActions(text string, documentPath string) []analysisCode
 
 	uri := protocol.DocumentUri(fileURI(documentPath))
 	fullRange := fullDocumentRange(text)
-	targetRange := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
 	actions := []analysisCodeActionCandidate{}
-	addTextAction := func(title string, newText string) {
+	addTextAction := func(title string, targetRange protocol.Range, newText string) {
 		actions = append(actions, textRefactorAction(title, targetRange, uri, fullRange, newText))
 	}
 
 	if updated, ok := replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*)([A-Za-z_][A-Za-z0-9_]*)\s*=\s*("[^"]*");`), func(matches []string) string {
 		return matches[1] + "string " + matches[2] + " = " + matches[3] + ";"
 	}); ok {
-		addTextAction("Add missing type annotation", updated)
+		addTextAction("Add missing type annotation", rangeForText(text, "name"), updated)
 	}
 	if updated, ok := replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*)(string)\s+([A-Za-z_][A-Za-z0-9_]*)\s*;`), func(matches []string) string {
 		return matches[1] + matches[2] + " " + matches[3] + ` = "";`
 	}); ok {
-		addTextAction("Add missing initializer", updated)
+		addTextAction("Add missing initializer", rangeForText(text, "name"), updated)
 	}
 	if updated, ok := replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*)([A-Za-z_][A-Za-z0-9_]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*;`), func(matches []string) string {
 		return matches[1] + "injectable " + matches[2] + " " + matches[3] + ";"
 	}); ok {
-		addTextAction("Mark variable as injectable", updated)
+		addTextAction("Mark variable as injectable", rangeForText(text, "name"), updated)
 	}
 	if updated, ok := replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*)(int)\s+([A-Za-z_][A-Za-z0-9_]*)\s*;`), func(matches []string) string {
 		return matches[1] + matches[2] + " " + matches[3] + " = 0;"
 	}); ok {
-		addTextAction("Add placeholder initializer", updated)
+		addTextAction("Add placeholder initializer", rangeForText(text, "count"), updated)
 	}
 	if updated, ok := replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*)int\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*("[^"]*");`), func(matches []string) string {
 		return matches[1] + "string " + matches[2] + " = " + matches[3] + ";"
 	}); ok {
-		addTextAction("Change variable type to inferred expression type", updated)
+		addTextAction("Change variable type to inferred expression type", rangeForText(text, "int"), updated)
 	}
 	if updated, ok := replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*)int\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"[^"]*";`), func(matches []string) string {
 		return matches[1] + "int " + matches[2] + " = 0;"
 	}); ok {
-		addTextAction("Change initializer to match declared type", updated)
+		addTextAction("Change initializer to match declared type", rangeForText(text, "\"Ada\""), updated)
 	}
 	if updated, ok := renameDuplicateVariableText(text); ok {
-		addTextAction("Rename duplicate variable", updated)
+		addTextAction("Rename duplicate variable", rangeForText(text, "Grace"), updated)
 	}
 	if updated, ok := inlineVariableIntoOutputText(text); ok {
-		addTextAction("Inline variable into output field", updated)
+		addTextAction("Inline variable into output field", rangeForText(text, "value: name"), updated)
 	}
 	if updated, ok := extractOutputExpressionText(text); ok {
-		addTextAction("Extract output expression into script variable", updated)
+		addTextAction("Extract output expression into script variable", rangeForText(text, "\"Ada\""), updated)
 	}
 	if updated, ok := convertVariableToInjectableText(text); ok {
-		addTextAction("Convert variable to injectable", updated)
+		addTextAction("Convert variable to injectable", rangeForText(text, "name"), updated)
 	}
 	if updated, ok := addDefaultInitializerToInjectableText(text); ok {
-		addTextAction("Add default initializer to injectable", updated)
+		addTextAction("Add default initializer to injectable", rangeForText(text, "injectable"), updated)
 	}
 	if stub, ok := injectionConfigStubText(text); ok {
-		addTextAction("Generate injection config stub", text+"\n"+stub)
+		addTextAction("Generate injection config stub", rangeForText(text, "injectable"), text+"\n"+stub)
 	}
 	if names, ok := injectableVariableNames(text); ok {
-		actions = append(actions, analysisCodeActionCandidate{Range: targetRange, Action: protocol.CodeAction{Title: "Find all injectable variables", Kind: Ptr(protocol.CodeActionKindRefactor), Command: &protocol.Command{Title: "Find all injectable variables", Command: "mace.findInjectables", Arguments: []any{strings.Join(names, ", ")}}}})
+		actions = append(actions, analysisCodeActionCandidate{Range: rangeForText(text, "injectable"), Action: protocol.CodeAction{Title: "Find all injectable variables", Kind: Ptr(protocol.CodeActionKindRefactor), Command: &protocol.Command{Title: "Find all injectable variables", Command: "mace.findInjectables", Arguments: []any{strings.Join(names, ", ")}}}})
 	}
 	return actions
 }
@@ -1681,7 +1679,7 @@ func addRepeatedTypeAliasAction(file ast.File, index int, schema ast.SchemaDecla
 	updated := replaceScriptItem(file, index, updatedSchema)
 	items := append([]ast.Declaration{ast.TypeDeclaration{Name: aliasName, Type: typed}}, updated.Script.Items...)
 	updated.Script = &ast.ScriptBlock{Imports: updated.Script.Imports, Items: items}
-	addWholeFileAction("Extract repeated type into alias", protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, updated)
+	addWholeFileAction("Extract repeated type into alias", tokenProtocolRange(schema.NameToken), updated)
 }
 
 func addInlineRecordSchemaAction(file ast.File, index int, schema ast.SchemaDeclaration, addWholeFileAction func(string, protocol.Range, ast.File)) {
@@ -1701,7 +1699,7 @@ func addInlineRecordSchemaAction(file ast.File, index int, schema ast.SchemaDecl
 	updated := replaceScriptItem(file, index, updatedSchema)
 	items := append([]ast.Declaration{ast.SchemaDeclaration{Name: schemaName, Type: record}}, updated.Script.Items...)
 	updated.Script = &ast.ScriptBlock{Imports: updated.Script.Imports, Items: items}
-	addWholeFileAction("Extract inline record type into schema", protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, updated)
+	addWholeFileAction("Extract inline record type into schema", tokenProtocolRange(schema.NameToken), updated)
 }
 
 func addVariableDeclarationRefactorActions(file ast.File, addWholeFileAction func(string, protocol.Range, ast.File)) {
@@ -1728,7 +1726,7 @@ func addRecordVariableSchemaAction(file ast.File, index int, variable ast.Variab
 	updated := replaceScriptItem(file, index, variable)
 	items := append([]ast.Declaration{ast.SchemaDeclaration{Name: schemaName, Type: recordTypeFromLiteral(record)}}, updated.Script.Items...)
 	updated.Script = &ast.ScriptBlock{Imports: updated.Script.Imports, Items: items}
-	addWholeFileAction("Convert record variable into schema-backed variable", protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, updated)
+	addWholeFileAction("Convert record variable into schema-backed variable", tokenProtocolRange(variable.NameToken), updated)
 }
 
 func repeatedSchemaFieldType(schema ast.SchemaDeclaration) (string, ast.TypeReference, bool) {
@@ -2339,6 +2337,16 @@ func fieldEditRangeAt(text string, tokens []lexer.Token, nameIndex int) (protoco
 
 func fullDocumentRange(text string) protocol.Range {
 	return protocol.Range{Start: protocol.Position{}, End: positionFromIndex(text, len(text))}
+}
+
+func rangeForText(text string, needle string) protocol.Range {
+	start := strings.Index(text, needle)
+	if start < 0 {
+		return protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+	}
+
+	end := start + len(needle)
+	return protocol.Range{Start: positionFromIndex(text, start), End: positionFromIndex(text, end)}
 }
 
 func formatTextQuick(text string) (string, bool) {
