@@ -3,6 +3,9 @@ type ID: string;
 schema Member: { id: ID, role: string, };
 schema Team: { name: string, members: array<Member>, };
 string hidden_name = "ops";
+
+string foo = "bar";
+
 |=======================================================|
 
 [output = schema]
@@ -10,6 +13,6 @@ string hidden_name = "ops";
   ID: ID,
   Member: Member,
   Team: Team,
-  foo: 'bar',
-  bar: 'bar',
+  foo: "bar",
+  bar: foo,
 }
