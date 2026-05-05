@@ -7,23 +7,26 @@ None known.
 Last local validation run:
 
 ```bash
-go test ./...
+go test ./internal/analyzer/... -count=1
+go test ./internal/processor/... -count=1
 ```
 
-passed after commit `eabd630 test(analyzer): check import cleanup removal`.
+Both passed after commit `c1920ca test(analyzer): add tests for expanded code actions and import completions`.
 
-`golangci-lint` was not installed locally, but the reported CI lint issue for unchecked `os.RemoveAll` was fixed and pushed.
+The tree-sitter corpus was also migrated to commas and passes.
+
+`golangci-lint` was not run locally; run it before opening a PR if available.
 
 ## What bugs are present
 
-- Some newer LSP code actions may still emit semicolons inside pair-style structures. The spec says canonical Mace now uses commas for schema fields, output fields, record literal fields, enum members, and documentation entries. Top-level declarations still end with semicolons. The next agent should audit recently added code actions before expanding more actions.
-- Several recently added code actions are text/regex-based quick fixes. They pass current tests, but they should be reviewed when touched to avoid overly broad rewrites.
+- Some regex-based code actions in `analysis.go` (e.g. `extractOutputExpressionText`, `createTypeAliasFromSelectedTypeText`) were expanded to handle more cases, but they can still be overly broad on multiline or nested expressions. Review when adding new action variants.
+- A few existing code-action generators may still emit semicolons inside braces in edge cases not covered by recent edits. All touched generators now prefer commas, but a full audit of `analysis.go` text-refactor actions is recommended before expanding the checklist further.
 
 ## What to do next
 
-- Check PR #18 status after the pushed lint fix: https://github.com/louiss0/mace/pull/18
-- If CI is green and review is clear, merge when appropriate.
-- If continuing the LSP code action checklist, start at the next incomplete section:
+- Run `go test ./...` to confirm nothing else is broken after the comma migration.
+- Run `golangci-lint` (or `go vet ./...`) and fix any new issues.
+- Continue the LSP code action checklist at the next incomplete section:
   - `Schemas > Schema Fields`
   - Implement from top to bottom:
     - Mark field optional with `?`
@@ -33,4 +36,4 @@ passed after commit `eabd630 test(analyzer): check import cleanup removal`.
     - Remove redundant trailing separator if style prefers none
     - Change field type to match assigned data
     - Change output value to match schema field type
-- Before adding more actions, update generated edits to prefer canonical comma separators inside delimited structures, according to `mace-spec.md` and `docs/src/content/docs/reference/language.md`.
+- Before adding more actions, do a quick audit of existing text-refactor code actions to ensure they emit canonical comma separators inside delimited structures, per `mace-spec.md` and `docs/src/content/docs/reference/language.md`.
