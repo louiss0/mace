@@ -497,7 +497,7 @@ from "shared.mace" import Role;
 			tAssert.NoError(os.RemoveAll(workspace))
 		}()
 
-		sharedPath := writeAnalysisFile(workspace, "shared.mace", `[output = schema]
+		writeAnalysisFile(workspace, "shared.mace", `[output = schema]
 {
   User: string;
   Role: string;
@@ -511,22 +511,24 @@ from "./shared-old.mace" import Role;
 		tAssert.NoError(err)
 		snapshot := analyzeDocumentAt(string(contents), documentPath)
 		uri := protocol.DocumentUri(fileURI(documentPath))
-		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
-
-		createAction := requireCodeAction(snapshot, uri, rangeValue, "Create missing imported file")
+		createAction := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, `"./missing.mace"`), "Create missing imported file")
 		tAssert.Contains(createAction.Edit.Changes[protocol.DocumentUri(fileURI(filepath.Join(workspace, "missing.mace")))][0].NewText, "[output = schema]")
 
-		renameAction := requireCodeAction(snapshot, uri, rangeValue, "Update import path after file rename")
+		renameAction := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, `"./shared-old.mace"`), "Update import path after file rename")
 		tAssert.Equal(`"./shared.mace"`, renameAction.Edit.Changes[uri][0].NewText)
 
-		replaceAction := requireCodeAction(snapshot, uri, rangeValue, "Replace unavailable imported symbol with User")
+		replaceAction := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "Usre"), "Replace unavailable imported symbol with User")
 		tAssert.Equal("User", replaceAction.Edit.Changes[uri][0].NewText)
 
-		openAction := requireCodeAction(snapshot, uri, rangeValue, "Open source output block")
-		tAssert.Equal(protocol.DocumentUri(fileURI(sharedPath)), openAction.Command.Arguments[0])
+		_, hasOpenAction := lo.Find(snapshot.codeActions(uri, rangeForWord(snapshot.text, "Usre")), func(action protocol.CodeAction) bool {
+			return action.Title == "Open source output block"
+		})
+		tAssert.False(hasOpenAction)
 
-		explainAction := requireCodeAction(snapshot, uri, rangeValue, "Explain why symbol is not importable")
-		tAssert.Contains(explainAction.Command.Arguments[0], "Only names surfaced through the imported file output block are importable")
+		_, hasExplainAction := lo.Find(snapshot.codeActions(uri, rangeForWord(snapshot.text, "Usre")), func(action protocol.CodeAction) bool {
+			return action.Title == "Explain why symbol is not importable"
+		})
+		tAssert.False(hasExplainAction)
 	})
 
 	It("offers remaining add and fix import actions", func() {
@@ -560,16 +562,18 @@ from "dupes.mace" import User, User, Role;
 	Describe("schema creation actions", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))
-		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
-
 		It("extracts output block shapes into schemas", func() {
 			snapshot := analyzeDocumentAt(`[output = data]
 { name: "Ada"; age: 30, }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Extract output block shape into schema")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "name"), "Extract output block shape into schema")
 			text := action.Edit.Changes[uri][0].NewText
 			tAssert.Contains(text, "schema Output:")
 			tAssert.Contains(text, "name: string")
 			tAssert.Contains(text, "schema = Output")
+			_, hasActionAtDocumentStart := lo.Find(snapshot.codeActions(uri, protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}), func(action protocol.CodeAction) bool {
+				return action.Title == "Extract output block shape into schema"
+			})
+			tAssert.False(hasActionAtDocumentStart)
 		})
 
 		It("extracts record literals into schemas", func() {
@@ -578,7 +582,7 @@ User user = { name: "Ada", };
 |===|
 [output = data]
 { value: user, }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Extract record literal into schema")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, `{ name: "Ada", }`), "Extract record literal into schema")
 			text := action.Edit.Changes[uri][0].NewText
 			tAssert.Contains(text, "schema User:")
 			tAssert.Contains(text, `User user = { name: "Ada", };`)
@@ -590,7 +594,7 @@ schema User: { name: string, age: int };
 |===|
 [output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Create schema from selected fields")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "age"), "Create schema from selected fields")
 			text := action.Edit.Changes[uri][0].NewText
 			tAssert.Contains(text, "schema Extracted:")
 			tAssert.Contains(text, "name: string")
@@ -599,7 +603,7 @@ schema User: { name: string, age: int };
 		It("creates schemas from validation errors", func() {
 			snapshot := analyzeDocumentAt(`[output = data, schema = User]
 { name: "Ada" }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Create schema from validation error")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "schema = User"), "Create schema from validation error")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "schema User:")
 		})
 
@@ -609,7 +613,7 @@ schema User: { name: string, age: int };
 |===|
 [output = schema]
 {}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Generate sample data from schema")
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "User"), "Generate sample data from schema")
 			text := action.Edit.Changes[uri][0].NewText
 			tAssert.Contains(text, `[output = data, schema = User]`)
 			tAssert.Contains(text, `name: ""`)
@@ -637,9 +641,15 @@ array<string> values = ["Ada", 1];
 [output = data]
 { value: values }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, `["Ada", 1]`), "Fix mixed array literal")
-			text := action.Edit.Changes[uri][0].NewText
-			tAssert.Contains(text, "type ValuesItem: variant[string, int];")
-			tAssert.Contains(text, "array<ValuesItem> values")
+			edit := action.Edit.Changes[uri][0]
+			tAssert.Equal(rangeForWord(snapshot.text, "array<string>"), edit.Range)
+			tAssert.Equal("array<variant[string, int]>", edit.NewText)
+
+			typeAction := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "array<string>"), "Fix mixed array literal")
+			tAssert.Equal("array<variant[string, int]>", typeAction.Edit.Changes[uri][0].NewText)
+
+			elementAction := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, `"Ada"`), "Fix mixed array literal")
+			tAssert.Equal("array<variant[string, int]>", elementAction.Edit.Changes[uri][0].NewText)
 		})
 
 		It("changes array element types to match literals", func() {
@@ -649,14 +659,24 @@ array<string> values = [1, 2];
 [output = data]
 { value: values }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "array<string>"), "Change array element type")
-			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "array<int> values")
+			edit := action.Edit.Changes[uri][0]
+			tAssert.Equal(rangeForWord(snapshot.text, "array<string>"), edit.Range)
+			tAssert.Equal("array<int>", edit.NewText)
+
+			literalAction := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "[1, 2]"), "Change array element type")
+			tAssert.Equal("array<int>", literalAction.Edit.Changes[uri][0].NewText)
 		})
 
 		It("replaces invalid array indexes", func() {
 			snapshot := analyzeDocumentAt(`[output = data]
 { value: ["Ada"][3] }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "[3]"), "Replace invalid array index")
-			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `value: ["Ada"][0]`)
+			edit := action.Edit.Changes[uri][0]
+			tAssert.Equal(rangeForWord(snapshot.text, "[3]"), edit.Range)
+			tAssert.Equal("[0]", edit.NewText)
+
+			expressionAction := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, `["Ada"][3]`), "Replace invalid array index")
+			tAssert.Equal("[0]", expressionAction.Edit.Changes[uri][0].NewText)
 		})
 	})
 
@@ -675,6 +695,55 @@ schema User: { name: string };
 			tAssert.Contains(text, "type ExtractedType: string;")
 			tAssert.Contains(text, "name: ExtractedType")
 		})
+
+		It("creates type aliases from selected schema property types", func() {
+			snapshot := analyzeDocumentAt(`|===|
+schema User: { name: string, age: int };
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "int"), "Create type alias from selected type")
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, "type ExtractedType: int;")
+			tAssert.Contains(text, "name: string")
+			tAssert.Contains(text, "age: ExtractedType")
+		})
+
+		It("places schema property aliases first with vertical spacing", func() {
+			snapshot := analyzeDocumentAt(`|===|
+schema Avatar: { name: string, image_path: string, };
+
+Name default_name = "Ada";
+Age default_age = 30;
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "string"), "Create type alias from selected type")
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, `|===|
+type ExtractedType: string;
+
+schema Avatar: { name: ExtractedType, image_path: string, };`)
+		})
+
+		DescribeTable("generates aliases with the selected schema property type",
+			func(typeName string) {
+				snapshot := analyzeDocumentAt(`|===|
+schema Sample: { value: `+typeName+` };
+|===|
+[output = schema]
+{}`, documentPath)
+				action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, typeName), "Create type alias from selected type")
+				text := action.Edit.Changes[uri][0].NewText
+				tAssert.Contains(text, "type ExtractedType: "+typeName+";")
+				tAssert.Contains(text, "value: ExtractedType")
+			},
+			Entry("string", "string"),
+			Entry("int", "int"),
+			Entry("float", "float"),
+			Entry("boolean", "boolean"),
+			Entry("array<int>", "array<int>"),
+		)
 
 		It("inlines type alias usage in schema fields", func() {
 			snapshot := analyzeDocumentAt(`|===|
@@ -773,15 +842,17 @@ injectable int count;
 			tAssert.Contains(text, `"count": 0`)
 		})
 
-		It("finds all injectable variables", func() {
+		It("does not surface command-only injectable actions", func() {
 			snapshot := analyzeDocumentAt(`|===|
 injectable string name;
 injectable int count;
 |===|
 [output = data]
 { value: name }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "injectable"), "Find all injectable variables")
-			tAssert.Contains(action.Command.Arguments[0], "name, count")
+			_, ok := lo.Find(snapshot.codeActions(uri, rangeForWord(snapshot.text, "injectable")), func(action protocol.CodeAction) bool {
+				return action.Title == "Find all injectable variables"
+			})
+			tAssert.False(ok)
 		})
 	})
 
@@ -841,6 +912,44 @@ int name = "Ada";
 { value: name }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "int"), "Change variable type to inferred expression type")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `string name = "Ada";`)
+		})
+
+		It("anchors inferred variable type actions to matched declarations", func() {
+			snapshot := analyzeDocumentAt(`|===|
+schema Team: { age: int };
+/= int ignored = "Ada";
+int name = "Ada";
+|===|
+[output = data]
+{ value: name }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeForNthWord(snapshot.text, "int", 3), "Change variable type to inferred expression type")
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, `schema Team: { age: int };`)
+			tAssert.Contains(text, `/= int ignored = "Ada";`)
+			tAssert.Contains(text, `string name = "Ada";`)
+
+			_, hasActionAtSchemaType := lo.Find(snapshot.codeActions(uri, rangeForWord(snapshot.text, "int")), func(action protocol.CodeAction) bool {
+				return action.Title == "Change variable type to inferred expression type"
+			})
+			tAssert.False(hasActionAtSchemaType)
+		})
+
+		It("changes array variable types to inferred literal types", func() {
+			snapshot := analyzeDocumentAt(`|===|
+type Name: string;
+type Age: int;
+Name default_name = "Ada";
+Age default_age = 30;
+int num = Status.happy + 45;
+array<int> numbers = ["foo", 42, false];
+|===|
+[output = data]
+{ value: numbers }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeForWord(snapshot.text, "array<int>"), "Change variable type to inferred expression type")
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, `array<variant[string, int, boolean]> numbers = ["foo", 42, false];`)
+			tAssert.Contains(text, `Name default_name = "Ada";`)
+			tAssert.Contains(text, `Age default_age = 30;`)
 		})
 
 		It("changes initializers to match declared types", func() {
