@@ -702,11 +702,15 @@ injectable int count;
 		It("adds missing type annotations", func() {
 			snapshot := analyzeDocumentAt(`|===|
 name = "Ada";
+title = "Engineer";
 |===|
 [output = data]
 { value: name; }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Add missing type annotation")
-			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `string name = "Ada";`)
+			text := action.Edit.Changes[uri][0].NewText
+
+			tAssert.Contains(text, `string name = "Ada";`)
+			tAssert.Contains(text, `string title = "Engineer";`)
 		})
 
 		It("adds missing initializers", func() {

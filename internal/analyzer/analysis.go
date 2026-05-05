@@ -1094,11 +1094,14 @@ func defaultLiteralForTypeName(name string) string {
 }
 
 func replaceVariableDeclaration(text string, pattern *regexp.Regexp, replacement func([]string) string) (string, bool) {
-	matches := pattern.FindStringSubmatch(text)
-	if len(matches) == 0 {
-		return "", false
-	}
-	return pattern.ReplaceAllString(text, replacement(matches)), true
+	updated := pattern.ReplaceAllStringFunc(text, func(declaration string) string {
+		matches := pattern.FindStringSubmatch(declaration)
+		if len(matches) == 0 {
+			return declaration
+		}
+		return replacement(matches)
+	})
+	return updated, updated != text
 }
 
 func renameDuplicateVariableText(text string) (string, bool) {
