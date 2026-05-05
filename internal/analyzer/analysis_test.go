@@ -69,7 +69,7 @@ var _ = Describe("LSP analysis", func() {
 
 		writeAnalysisFile(workspace, "shared.mace", `|===|
 type Hidden: string;
-schema User: { name: string; };
+schema User: { name: string, };
 string local = "Ada";
 |===|
 [output = schema]
@@ -80,8 +80,8 @@ string local = "Ada";
 
 		snapshot := analyzeDocumentAt(`from "./shared.mace" import User;
 |===|
-schema Local: { id: int; };
-User current = { name: "Ada"; };
+schema Local: { id: int, };
+User current = { name: "Ada", };
 |===|
 [output = data]
 {
@@ -103,13 +103,13 @@ User current = { name: "Ada"; };
 
 		importPath := writeAnalysisFile(workspace, "shared.mace", `[output = schema]
 {
-  User: { name: string; };
+  User: { name: string, };
 }`)
 		documentPath := filepath.Join(workspace, "consumer.mace")
 
 		snapshot := analyzeDocumentAt(`from "./shared.mace" import User;
 |===|
-User current = { name: "Ada"; };
+User current = { name: "Ada", };
 |===|
 [output = data]
 {
@@ -130,11 +130,11 @@ User current = { name: "Ada"; };
 		documentPath := filepath.Join(workspace, "consumer.mace")
 
 		snapshot := analyzeDocumentAt(`|===|
-schema User: { name: string; };
+schema User: { name: string, };
 |===|
 [output = data]
 {
-  User: { name: "Ada"; };
+  User: { name: "Ada", };
 }`, documentPath)
 
 		definition := requireDefinition(snapshot, protocol.Position{Line: 5, Character: 3})
@@ -200,7 +200,7 @@ Fruit selected = Fruit.Apple;
 		workspace, err := os.MkdirTemp("", "mace-analysis-import-fix-*")
 		tAssert.NoError(err)
 
-		writeAnalysisFile(workspace, "shared.mace", `[output = data] { name: "Ada"; }`)
+		writeAnalysisFile(workspace, "shared.mace", `[output = data] { name: "Ada", }`)
 		documentPath := filepath.Join(workspace, "consumer.mace")
 
 		snapshot := analyzeDocumentAt(`from "./shared" import name;
@@ -255,7 +255,7 @@ injectable string env;
 	It("offers documentation generation actions for declarations", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		snapshot := analyzeDocumentAt(`|===|
-schema User: { name: string; };
+schema User: { name: string, };
 |===|
 [output = schema]
 {
@@ -300,7 +300,7 @@ schema User: { name: string, age: int, active: boolean, tags: array<string>, met
 	It("offers schema directive insertion for data outputs", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		snapshot := analyzeDocumentAt(`|===|
-schema User: { name: string; };
+schema User: { name: string, };
 |===|
 [output = data]
 {
@@ -472,7 +472,7 @@ from "dupes.mace" import User, User, Role;
 
 		It("extracts output block shapes into schemas", func() {
 			snapshot := analyzeDocumentAt(`[output = data]
-{ name: "Ada"; age: 30; }`, documentPath)
+{ name: "Ada"; age: 30, }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Extract output block shape into schema")
 			text := action.Edit.Changes[uri][0].NewText
 			tAssert.Contains(text, "schema Output:")
@@ -482,19 +482,19 @@ from "dupes.mace" import User, User, Role;
 
 		It("extracts record literals into schemas", func() {
 			snapshot := analyzeDocumentAt(`|===|
-User user = { name: "Ada"; };
+User user = { name: "Ada", };
 |===|
 [output = data]
-{ value: user; }`, documentPath)
+{ value: user, }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Extract record literal into schema")
 			text := action.Edit.Changes[uri][0].NewText
 			tAssert.Contains(text, "schema User:")
-			tAssert.Contains(text, `User user = { name: "Ada"; };`)
+			tAssert.Contains(text, `User user = { name: "Ada", };`)
 		})
 
 		It("creates schemas from selected fields", func() {
 			snapshot := analyzeDocumentAt(`|===|
-schema User: { name: string; age: int; };
+schema User: { name: string, age: int };
 |===|
 [output = schema]
 {}`, documentPath)
@@ -506,14 +506,14 @@ schema User: { name: string; age: int; };
 
 		It("creates schemas from validation errors", func() {
 			snapshot := analyzeDocumentAt(`[output = data, schema = User]
-{ name: "Ada"; }`, documentPath)
+{ name: "Ada" }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Create schema from validation error")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "schema User:")
 		})
 
 		It("generates sample data from schemas", func() {
 			snapshot := analyzeDocumentAt(`|===|
-schema User: { name: string; age: int; };
+schema User: { name: string, age: int };
 |===|
 [output = schema]
 {}`, documentPath)
@@ -544,7 +544,7 @@ type Name: string;
 array<string> values = ["Ada", 1];
 |===|
 [output = data]
-{ value: values; }`, documentPath)
+{ value: values }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Fix mixed array literal")
 			text := action.Edit.Changes[uri][0].NewText
 			tAssert.Contains(text, "type ValuesItem: variant[string, int];")
@@ -556,14 +556,14 @@ array<string> values = ["Ada", 1];
 array<string> values = [1, 2];
 |===|
 [output = data]
-{ value: values; }`, documentPath)
+{ value: values }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Change array element type")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "array<int> values")
 		})
 
 		It("replaces invalid array indexes", func() {
 			snapshot := analyzeDocumentAt(`[output = data]
-{ value: ["Ada"][3]; }`, documentPath)
+{ value: ["Ada"][3] }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Replace invalid array index")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `value: ["Ada"][0]`)
 		})
@@ -576,7 +576,7 @@ array<string> values = [1, 2];
 
 		It("creates type aliases from selected schema field types", func() {
 			snapshot := analyzeDocumentAt(`|===|
-schema User: { name: string; };
+schema User: { name: string };
 |===|
 [output = schema]
 {}`, documentPath)
@@ -589,7 +589,7 @@ schema User: { name: string; };
 		It("inlines type alias usage in schema fields", func() {
 			snapshot := analyzeDocumentAt(`|===|
 type Name: string;
-schema User: { name: Name; };
+schema User: { name: Name };
 |===|
 [output = schema]
 {}`, documentPath)
@@ -610,7 +610,7 @@ type Name: string;
 		It("replaces unknown types with closest known types", func() {
 			snapshot := analyzeDocumentAt(`|===|
 type Name: string;
-schema User: { name: Nmae; };
+schema User: { name: Nmae };
 |===|
 [output = schema]
 {}`, documentPath)
@@ -630,7 +630,7 @@ type Names: Array<string>;
 
 		It("converts invalid nullable types into optional fields", func() {
 			snapshot := analyzeDocumentAt(`|===|
-schema User: { name: string?; };
+schema User: { name: string? };
 |===|
 [output = schema]
 {}`, documentPath)
@@ -649,7 +649,7 @@ schema User: { name: string?; };
 string name;
 |===|
 [output = data]
-{ value: name; }`, documentPath)
+{ value: name }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Convert variable to injectable")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `injectable string name;`)
 		})
@@ -659,7 +659,7 @@ string name;
 injectable `+typeName+` `+variableName+`;
 |===|
 [output = data]
-{ value: `+variableName+`; }`, documentPath)
+{ value: `+variableName+` }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Add default initializer to injectable")
 
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `injectable `+typeName+` `+variableName+` = `+literal+`;`)
@@ -677,7 +677,7 @@ injectable string name;
 injectable int count;
 |===|
 [output = data]
-{ value: name; }`, documentPath)
+{ value: name }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Generate injection config stub")
 			text := action.Edit.Changes[uri][0].NewText
 			tAssert.Contains(text, `"name": ""`)
@@ -690,7 +690,7 @@ injectable string name;
 injectable int count;
 |===|
 [output = data]
-{ value: name; }`, documentPath)
+{ value: name }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Find all injectable variables")
 			tAssert.Contains(action.Command.Arguments[0], "name, count")
 		})
@@ -707,7 +707,7 @@ name = "Ada";
 title = "Engineer";
 |===|
 [output = data]
-{ value: name; }`, documentPath)
+{ value: name, }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Add missing type annotation")
 			text := action.Edit.Changes[uri][0].NewText
 
@@ -720,7 +720,7 @@ title = "Engineer";
 string name;
 |===|
 [output = data]
-{ value: name; }`, documentPath)
+{ value: name, }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Add missing initializer")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `string name = "";`)
 		})
@@ -730,7 +730,7 @@ string name;
 string name;
 |===|
 [output = data]
-{ value: name; }`, documentPath)
+{ value: name, }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Mark variable as injectable")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `injectable string name;`)
 		})
@@ -740,7 +740,7 @@ string name;
 int count;
 |===|
 [output = data]
-{ value: count; }`, documentPath)
+{ value: count }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Add placeholder initializer")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `int count = 0;`)
 		})
@@ -750,7 +750,7 @@ int count;
 int name = "Ada";
 |===|
 [output = data]
-{ value: name; }`, documentPath)
+{ value: name }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Change variable type to inferred expression type")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `string name = "Ada";`)
 		})
@@ -760,7 +760,7 @@ int name = "Ada";
 int count = "Ada";
 |===|
 [output = data]
-{ value: count; }`, documentPath)
+{ value: count }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Change initializer to match declared type")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `int count = 0;`)
 		})
@@ -771,7 +771,7 @@ string name = "Ada";
 string name = "Grace";
 |===|
 [output = data]
-{ value: name; }`, documentPath)
+{ value: name }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Rename duplicate variable")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `string name_2 = "Grace";`)
 		})
@@ -781,14 +781,14 @@ string name = "Grace";
 string name = "Ada";
 |===|
 [output = data]
-{ value: name; }`, documentPath)
+{ value: name }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Inline variable into output field")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `value: "Ada"`)
 		})
 
 		It("extracts output expressions into script variables", func() {
 			snapshot := analyzeDocumentAt(`[output = data]
-{ value: "Ada"; }`, documentPath)
+{ value: "Ada" }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Extract output expression into script variable")
 			text := action.Edit.Changes[uri][0].NewText
 			tAssert.Contains(text, `string value = "Ada";`)
@@ -814,7 +814,7 @@ type Name: string
 
 		It("extracts repeated type references into an alias", func() {
 			snapshot := analyzeDocumentAt(`|===|
-schema User: { name: string; email: string; };
+schema User: { name: string, email: string };
 |===|
 [output = schema]
 {}`, documentPath)
@@ -827,7 +827,7 @@ schema User: { name: string; email: string; };
 
 		It("extracts inline record types into schemas", func() {
 			snapshot := analyzeDocumentAt(`|===|
-schema User: { profile: { name: string; }; };
+schema User: { profile: { name: string } };
 |===|
 [output = schema]
 {}`, documentPath)
@@ -840,10 +840,10 @@ schema User: { profile: { name: string; }; };
 
 		It("converts record variables into schema-backed variables", func() {
 			snapshot := analyzeDocumentAt(`|===|
-{ name: string; } user = { name: "Ada"; };
+{ name: string } user = { name: "Ada" };
 |===|
 [output = data]
-{ value: user; }`, documentPath)
+{ value: user }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Convert record variable into schema-backed variable")
 
 			text := action.Edit.Changes[uri][0].NewText
@@ -919,8 +919,8 @@ type Name: string;
 
 	It("offers documentation cleanup actions", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
-		snapshot := analyzeDocumentAt(`|===|
-schema User: { name: string /# inline; age: int; };
+			snapshot := analyzeDocumentAt(`|===|
+schema User: { name: string /# inline, age: int };
 schema_doc User {
   summary: "Existing";
 };
@@ -1019,7 +1019,7 @@ string name = "Ada";
 		documentPath := filepath.Join("workspace", "document.mace")
 		snapshot := analyzeDocumentAt(`[output = schema]
 {
-  user: { name: string; };
+  user: { name: string, };
 }`, documentPath)
 
 		rangeValue := protocol.Range{Start: protocol.Position{Line: 2, Character: 2}, End: protocol.Position{Line: 2, Character: 6}}
@@ -1056,7 +1056,7 @@ type Name: string;
 
 		writeAnalysisFile(workspace, "shared.mace", `[output = schema]
 {
-  User: { name: string; };
+  User: { name: string, };
 }`)
 		documentPath := filepath.Join(workspace, "consumer.mace")
 		snapshot := analyzeDocumentAt(`|===|
@@ -1073,7 +1073,7 @@ from "./shared.mace" import User;
 	It("inserts inline descriptions after complex type declarations", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		snapshot := analyzeDocumentAt(`|===|
-type User: { name: string; };
+type User: { name: string, };
 |===|
 [output = schema]
 {
@@ -1098,13 +1098,13 @@ type User: { name: string; };
 
 		writeAnalysisFile(workspace, "shared.mace", `[output = schema]
 {
-  User: { name: string; };
-  Config: { enabled: boolean; };
+  User: { name: string, };
+  Config: { enabled: boolean, };
 }`)
 		documentPath := filepath.Join(workspace, "consumer.mace")
 		snapshot := analyzeDocumentAt(`|===|
 from "./shared.mace" import User, Config;
-User user = { name: "Ada"; };
+User user = { name: "Ada", };
 |===|
 [output = data]
 {
@@ -1177,7 +1177,7 @@ array<int> foo = ["4", 6];
 	It("translates schema output value exports into schema-field diagnostics", func() {
 		snapshot := analyzeDocument(`|===|
 type Name: string;
-schema User: { name: Name; age: int; };
+schema User: { name: Name; age: int, };
 int local = 1;
 |===|
 [output = schema]
@@ -1199,7 +1199,7 @@ int local = 1;
 	It("translates data output type exports into value diagnostics", func() {
 		snapshot := analyzeDocument(`|===|
 type Name: string;
-schema User: { name: string; };
+schema User: { name: string, };
 string value = "Ada";
 |===|
 {
@@ -1217,14 +1217,14 @@ string value = "Ada";
 
 	It("translates processor schema validation errors into schema-scoped diagnostics", func() {
 		snapshot := analyzeDocument(`|===|
-schema Point: { x: int; y: int; };
-schema Plot: { points: array<Point>; };
+schema Point: { x: int; y: int, };
+schema Plot: { points: array<Point>, };
 |===|
 [output = data, schema = Plot]
 {
   points: [
-    { x: 1; y: 2; },
-    { x: 3; }
+    { x: 1; y: 2, },
+    { x: 3, }
   ];
 }`)
 
@@ -1243,11 +1243,11 @@ schema Plot: { points: array<Point>; };
 		documentPath := filepath.Join(workspace, "consumer.mace")
 		snapshot := analyzeDocumentAt(`from "./shared.mace" import User;
 |===|
-schema User: { name: string; };
+schema User: { name: string, };
 |===|
 [output = data, schema = User, schema_file = "./shared.mace"]
 {
-  result: { name: "Ada"; };
+  result: { name: "Ada", };
 }`, documentPath)
 
 		if tAssert.Len(snapshot.diagnostics, 1) {
@@ -1266,7 +1266,7 @@ schema User: { name: string; };
 
 	It("warns when script variables are present in schema output mode", func() {
 		snapshot := analyzeDocument(`|===|
-schema User: { name: string; };
+schema User: { name: string, };
 string value = "Ada";
 |===|
 [output = schema]
@@ -1299,7 +1299,7 @@ string value = "Ada";
 
 	It("recovers visible declarations for incomplete edits used by interactive LSP features", func() {
 		snapshot := analyzeCompletionContext(`|===|
-schema User: { name: string; };
+schema User: { name: string, };
 Us`, "", protocol.Position{Line: 2, Character: 2})
 
 		tAssert.True(snapshot.recovered)
