@@ -272,13 +272,7 @@ var _ = Describe("LSP server", func() {
 		tAssert.Equal(true, result.Capabilities.HoverProvider)
 		tAssert.Equal(true, result.Capabilities.DefinitionProvider)
 		tAssert.Equal(true, result.Capabilities.DocumentSymbolProvider)
-		codeActionOptions, ok := result.Capabilities.CodeActionProvider.(protocol.CodeActionOptions)
-		tAssert.True(ok)
-		if ok {
-			tAssert.Contains(codeActionOptions.CodeActionKinds, protocol.CodeActionKindQuickFix)
-			tAssert.Contains(codeActionOptions.CodeActionKinds, protocol.CodeActionKindRefactor)
-			tAssert.Contains(codeActionOptions.CodeActionKinds, protocol.CodeActionKindRefactorExtract)
-		}
+		tAssert.Equal(true, result.Capabilities.CodeActionProvider)
 		tAssert.Equal(true, result.Capabilities.RenameProvider)
 		tAssert.Equal(true, result.Capabilities.DocumentFormattingProvider)
 	})
@@ -2263,6 +2257,58 @@ int qux = 2;
 		}
 
 		tAssert.Equal("Append .mace to import path", actions[0].Title)
+	})
+
+	It("returns code actions for schema property type extraction", func() {
+		workspace, err := os.MkdirTemp("", "mace-lsp-type-alias-action-*")
+		tAssert.NoError(err)
+
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "document.mace", `|===|
+schema Avatar: { name: string, image_path: string, };
+|===|
+[output = schema]
+{}`))
+		requestURI := uri
+		if strings.Contains(string(uri), "C:") {
+			requestURI = protocol.DocumentUri(strings.Replace(string(uri), "C:", "C%3A", 1))
+		}
+
+		didOpen(server, requestURI, `|===|
+schema Avatar: { name: string, image_path: string, };
+|===|
+[output = schema]
+{}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentCodeAction, protocol.CodeActionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: requestURI},
+			Range: protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 24},
+				End:   protocol.Position{Line: 1, Character: 24},
+			},
+			Context: protocol.CodeActionContext{},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		actions, ok := resultValue.([]protocol.CodeAction)
+		tAssert.True(ok)
+		if !ok || !tAssert.NotEmpty(actions) {
+			return
+		}
+
+		action := actions[0]
+		tAssert.Equal("Create type alias from selected type", action.Title)
+		tAssert.NotNil(action.Edit)
+		if action.Edit == nil {
+			return
+		}
+
+		edits := action.Edit.Changes[requestURI]
+		if tAssert.Len(edits, 2) {
+			tAssert.Equal("type ExtractedType: string;\n\n", edits[0].NewText)
+			tAssert.Equal("ExtractedType", edits[1].NewText)
+		}
 	})
 
 	It("returns code actions for schema and schema_file conflicts", func() {

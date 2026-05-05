@@ -401,13 +401,32 @@ func (snapshot analysisSnapshot) codeActions(uri protocol.DocumentUri, targetRan
 			action.Edit.Changes = map[protocol.DocumentUri][]protocol.TextEdit{}
 		}
 		if action.Edit != nil && action.Edit.Changes != nil {
-			if _, ok := action.Edit.Changes[uri]; !ok {
-				action.Edit.Changes[uri] = []protocol.TextEdit{}
-			}
+			retargetDocumentEdits(action.Edit.Changes, uri)
 		}
 
 		return action, true
 	})
+}
+
+func retargetDocumentEdits(changes map[protocol.DocumentUri][]protocol.TextEdit, uri protocol.DocumentUri) {
+	if _, ok := changes[uri]; ok {
+		return
+	}
+
+	path := documentPath(uri)
+	if path == "" {
+		return
+	}
+
+	for editURI, edits := range changes {
+		if documentPath(editURI) != path {
+			continue
+		}
+
+		delete(changes, editURI)
+		changes[uri] = edits
+		return
+	}
 }
 
 func analyzeDocument(text string) analysisSnapshot {
