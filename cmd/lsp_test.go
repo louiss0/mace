@@ -272,7 +272,13 @@ var _ = Describe("LSP server", func() {
 		tAssert.Equal(true, result.Capabilities.HoverProvider)
 		tAssert.Equal(true, result.Capabilities.DefinitionProvider)
 		tAssert.Equal(true, result.Capabilities.DocumentSymbolProvider)
-		tAssert.Equal(true, result.Capabilities.CodeActionProvider)
+		codeActionOptions, ok := result.Capabilities.CodeActionProvider.(protocol.CodeActionOptions)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(codeActionOptions.CodeActionKinds, protocol.CodeActionKindQuickFix)
+			tAssert.Contains(codeActionOptions.CodeActionKinds, protocol.CodeActionKindRefactor)
+			tAssert.Contains(codeActionOptions.CodeActionKinds, protocol.CodeActionKindRefactorExtract)
+		}
 		tAssert.Equal(true, result.Capabilities.RenameProvider)
 		tAssert.Equal(true, result.Capabilities.DocumentFormattingProvider)
 	})

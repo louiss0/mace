@@ -715,6 +715,26 @@ schema User: { name: string, age: int };
 			}
 		})
 
+		It("creates schema property aliases from cursor positions inside types", func() {
+			snapshot := analyzeDocumentAt(`|===|
+schema Avatar: { name: string, image_path: string, };
+
+Name default_name = "Ada";
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 24},
+				End:   protocol.Position{Line: 1, Character: 24},
+			}, "Create type alias from selected type")
+			edits := action.Edit.Changes[uri]
+			if tAssert.Len(edits, 2) {
+				tAssert.Equal("type ExtractedType: string;\n\n", edits[0].NewText)
+				tAssert.Equal(rangeForWord(snapshot.text, "string"), edits[1].Range)
+				tAssert.Equal("ExtractedType", edits[1].NewText)
+			}
+		})
+
 		It("places schema property aliases first with vertical spacing", func() {
 			snapshot := analyzeDocumentAt(`|===|
 schema Avatar: { name: string, image_path: string, };
