@@ -463,6 +463,65 @@ from "dupes.mace" import User, User, Role;
 		tAssert.Equal("Name", wildcardAction.Edit.Changes[uri][0].NewText)
 	})
 
+	Describe("schema creation actions", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+
+		It("extracts output block shapes into schemas", func() {
+			snapshot := analyzeDocumentAt(`[output = data]
+{ name: "Ada"; age: 30; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Extract output block shape into schema")
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, "schema Output:")
+			tAssert.Contains(text, "name: string")
+			tAssert.Contains(text, "schema = Output")
+		})
+
+		It("extracts record literals into schemas", func() {
+			snapshot := analyzeDocumentAt(`|===|
+User user = { name: "Ada"; };
+|===|
+[output = data]
+{ value: user; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Extract record literal into schema")
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, "schema User:")
+			tAssert.Contains(text, `User user = { name: "Ada"; };`)
+		})
+
+		It("creates schemas from selected fields", func() {
+			snapshot := analyzeDocumentAt(`|===|
+schema User: { name: string; age: int; };
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Create schema from selected fields")
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, "schema Extracted:")
+			tAssert.Contains(text, "name: string")
+		})
+
+		It("creates schemas from validation errors", func() {
+			snapshot := analyzeDocumentAt(`[output = data, schema = User]
+{ name: "Ada"; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Create schema from validation error")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "schema User:")
+		})
+
+		It("generates sample data from schemas", func() {
+			snapshot := analyzeDocumentAt(`|===|
+schema User: { name: string; age: int; };
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Generate sample data from schema")
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, `[output = data, schema = User]`)
+			tAssert.Contains(text, `name: ""`)
+		})
+	})
+
 	Describe("array actions", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))

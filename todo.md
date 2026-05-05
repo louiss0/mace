@@ -104,12 +104,12 @@ Absolutely. Mace has *great* Code Action potential because it has a lot of “st
 
 ### Schema Creation / Extraction
 
-* [ ] **Extract output block shape into schema**.
-* [ ] **Extract record literal into schema**.
-* [ ] **Create schema from selected fields**.
-* [ ] **Create schema from validation error**.
+* [x] **Extract output block shape into schema**.
+* [x] **Extract record literal into schema**.
+* [x] **Create schema from selected fields**.
+* [x] **Create schema from validation error**.
 * [x] **Generate output block from schema**.
-* [ ] **Generate sample data from schema**.
+* [x] **Generate sample data from schema**.
 
 ### Schema Fields
 

@@ -602,6 +602,7 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 	actions = append(actions, variableFixTextCodeActions(text, documentPath)...)
 	actions = append(actions, typeAliasTextCodeActions(text, documentPath)...)
 	actions = append(actions, arrayTextCodeActions(text, documentPath)...)
+	actions = append(actions, schemaCreationTextCodeActions(text, documentPath)...)
 	actions = append(actions, documentationCodeActions(text, file, tokens, documentPath)...)
 	actions = append(actions, editorRefactorCodeActions(text, file, documentPath)...)
 	diagnostics = append(diagnostics, schemaOutputVariableDiagnostics(file, tokens)...)
@@ -694,6 +695,144 @@ func moveScriptBlockBeforeOutputText(text string) (string, bool) {
 	script := strings.TrimSpace(text[firstScript:scriptEnd])
 	withoutScript := strings.TrimSpace(text[:firstScript] + text[scriptEnd:])
 	return script + "\n" + withoutScript, true
+}
+
+func schemaCreationTextCodeActions(text string, documentPath string) []analysisCodeActionCandidate {
+	if documentPath == "" {
+		return nil
+	}
+
+	uri := protocol.DocumentUri(fileURI(documentPath))
+	fullRange := fullDocumentRange(text)
+	targetRange := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+	actions := []analysisCodeActionCandidate{}
+	addTextAction := func(title string, newText string) {
+		actions = append(actions, textRefactorAction(title, targetRange, uri, fullRange, newText))
+	}
+	if updated, ok := extractOutputShapeIntoSchemaText(text); ok {
+		addTextAction("Extract output block shape into schema", updated)
+	}
+	if updated, ok := extractRecordLiteralIntoSchemaText(text); ok {
+		addTextAction("Extract record literal into schema", updated)
+	}
+	if updated, ok := createSchemaFromSelectedFieldsText(text); ok {
+		addTextAction("Create schema from selected fields", updated)
+	}
+	if updated, ok := createSchemaFromValidationErrorText(text); ok {
+		addTextAction("Create schema from validation error", updated)
+	}
+	if updated, ok := generateSampleDataFromSchemaText(text); ok {
+		addTextAction("Generate sample data from schema", updated)
+	}
+	return actions
+}
+
+func extractOutputShapeIntoSchemaText(text string) (string, bool) {
+	if strings.Contains(text, "schema Output:") || !strings.Contains(text, "[output = data]") {
+		return "", false
+	}
+	fields := inferOutputSchemaFields(text)
+	if len(fields) == 0 {
+		return "", false
+	}
+	schema := "|===|\nschema Output: { " + strings.Join(fields, "; ") + "; };\n|===|\n"
+	updated := schema + strings.Replace(text, "[output = data]", "[output = data, schema = Output]", 1)
+	return updated, true
+}
+
+func extractRecordLiteralIntoSchemaText(text string) (string, bool) {
+	pattern := regexp.MustCompile(`(?m)^([ \t]*)([A-Za-z_][A-Za-z0-9_]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\{([^}]+)\};`)
+	matches := pattern.FindStringSubmatch(text)
+	if len(matches) == 0 || strings.Contains(text, "schema "+matches[2]+":") {
+		return "", false
+	}
+	fields := inferRecordSchemaFields(matches[4])
+	if len(fields) == 0 {
+		return "", false
+	}
+	updated := strings.Replace(text, "|===|\n", "|===|\nschema "+matches[2]+": { "+strings.Join(fields, "; ")+"; };\n", 1)
+	return updated, updated != text
+}
+
+func createSchemaFromSelectedFieldsText(text string) (string, bool) {
+	matches := regexp.MustCompile(`schema\s+[A-Za-z_][A-Za-z0-9_]*\s*:\s*\{([^}]+)\}`).FindStringSubmatch(text)
+	if len(matches) == 0 || strings.Contains(text, "schema Extracted:") {
+		return "", false
+	}
+	updated := strings.Replace(text, "|===|\n", "|===|\nschema Extracted: {"+matches[1]+"};\n", 1)
+	return updated, updated != text
+}
+
+func createSchemaFromValidationErrorText(text string) (string, bool) {
+	matches := regexp.MustCompile(`schema\s*=\s*([A-Za-z_][A-Za-z0-9_]*)`).FindStringSubmatch(text)
+	if len(matches) == 0 || strings.Contains(text, "schema "+matches[1]+":") {
+		return "", false
+	}
+	fields := inferOutputSchemaFields(text)
+	if len(fields) == 0 {
+		return "", false
+	}
+	return "|===|\nschema " + matches[1] + ": { " + strings.Join(fields, "; ") + "; };\n|===|\n" + text, true
+}
+
+func generateSampleDataFromSchemaText(text string) (string, bool) {
+	matches := regexp.MustCompile(`schema\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*\{([^}]+)\}`).FindStringSubmatch(text)
+	if len(matches) == 0 {
+		return "", false
+	}
+	sampleFields := lo.FilterMap(strings.Split(matches[2], ";"), func(field string, _ int) (string, bool) {
+		parts := strings.Split(field, ":")
+		if len(parts) != 2 {
+			return "", false
+		}
+		name := strings.TrimSuffix(strings.TrimSpace(parts[0]), "?")
+		typeName := strings.TrimSpace(parts[1])
+		return name + ": " + defaultLiteralForTypeName(typeName), true
+	})
+	if len(sampleFields) == 0 {
+		return "", false
+	}
+	updated := regexp.MustCompile(`\[output\s*=\s*schema\]\s*\{\}`).ReplaceAllString(text, "[output = data, schema = "+matches[1]+"]\n{ "+strings.Join(sampleFields, "; ")+"; }")
+	return updated, updated != text
+}
+
+func inferOutputSchemaFields(text string) []string {
+	matches := regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^;{}]+)`).FindAllStringSubmatch(text, -1)
+	return lo.FilterMap(matches, func(match []string, _ int) (string, bool) {
+		if len(match) < 3 || match[1] == "schema" {
+			return "", false
+		}
+		return match[1] + ": " + inferredTypeNameFromLiteral(strings.TrimSpace(match[2])), true
+	})
+}
+
+func inferRecordSchemaFields(record string) []string {
+	matches := regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^;{}]+)`).FindAllStringSubmatch(record, -1)
+	return lo.FilterMap(matches, func(match []string, _ int) (string, bool) {
+		if len(match) < 3 {
+			return "", false
+		}
+		return match[1] + ": " + inferredTypeNameFromLiteral(strings.TrimSpace(match[2])), true
+	})
+}
+
+func inferredTypeNameFromLiteral(literal string) string {
+	if strings.HasPrefix(literal, `"`) {
+		return "string"
+	}
+	if literal == "true" || literal == "false" {
+		return "boolean"
+	}
+	if strings.Contains(literal, ".") {
+		return "float"
+	}
+	if regexp.MustCompile(`^-?\d+$`).MatchString(literal) {
+		return "int"
+	}
+	if strings.HasPrefix(literal, "[") {
+		return "array<string>"
+	}
+	return "string"
 }
 
 func arrayTextCodeActions(text string, documentPath string) []analysisCodeActionCandidate {
