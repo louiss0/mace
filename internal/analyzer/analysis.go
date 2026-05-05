@@ -29,6 +29,7 @@ var (
 	enumMemberPattern           = regexp.MustCompile(`enum member "([^"]+)"`)
 	arrayAccessLevelPattern     = regexp.MustCompile(`at level (\d+)`)
 	arrayAccessIndexPattern     = regexp.MustCompile(`array index (-?\d+) is out of range`)
+	emptyScriptBlockPattern     = regexp.MustCompile(`(?s)^\s*\|===\|\s*\|===\|\s*`)
 )
 
 type symbolOrigin string
@@ -428,6 +429,11 @@ func analyzeDocumentAt(text string, documentPath string) analysisSnapshot {
 	file, parseErr := parseFile(text)
 	if parseErr != nil {
 		snapshot.diagnostics = []protocol.Diagnostic{diagnosticFromError(parseErr)}
+		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, parseErrorCodeActions(tokens, documentPath)...)
+		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, scriptBlockStructureCodeActions(text, documentPath)...)
+		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, variableFixTextCodeActions(text, documentPath)...)
+		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, typeAliasTextCodeActions(text, documentPath)...)
+		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, arrayTextCodeActions(text, documentPath)...)
 		return snapshot
 	}
 
@@ -591,11 +597,575 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 		diagnostics = append(diagnostics, unusedImportDiagnostics...)
 		actions = append(actions, unusedImportActions...)
 	}
+	actions = append(actions, importResolutionCodeActions(text, file, tokens, documentPath)...)
+	actions = append(actions, scriptBlockStructureCodeActions(text, documentPath)...)
+	actions = append(actions, variableFixTextCodeActions(text, documentPath)...)
+	actions = append(actions, typeAliasTextCodeActions(text, documentPath)...)
+	actions = append(actions, arrayTextCodeActions(text, documentPath)...)
+	actions = append(actions, schemaCreationTextCodeActions(text, documentPath)...)
 	actions = append(actions, documentationCodeActions(text, file, tokens, documentPath)...)
 	actions = append(actions, editorRefactorCodeActions(text, file, documentPath)...)
 	diagnostics = append(diagnostics, schemaOutputVariableDiagnostics(file, tokens)...)
 
 	return diagnostics, actions
+}
+
+func scriptBlockStructureCodeActions(text string, documentPath string) []analysisCodeActionCandidate {
+	if documentPath == "" {
+		return nil
+	}
+
+	uri := protocol.DocumentUri(fileURI(documentPath))
+	fullRange := fullDocumentRange(text)
+	targetRange := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+	actions := []analysisCodeActionCandidate{}
+	addTextAction := func(title string, newText string) {
+		actions = append(actions, textRefactorAction(title, targetRange, uri, fullRange, newText))
+	}
+
+	if !strings.Contains(text, "|===|") && !strings.Contains(text, "|====|") {
+		addTextAction("Create script block", "|===|\n|===|\n"+text)
+		addTextAction("Wrap selection in script block", "|===|\n"+text+"\n|===|")
+	}
+	if strings.Contains(text, "|====|") {
+		fixed := strings.ReplaceAll(text, "|====|", "|===|")
+		addTextAction("Fix script delimiter length mismatch", fixed)
+		addTextAction("Normalize script fence", fixed)
+	}
+	if emptyScriptBlockPattern.MatchString(text) {
+		addTextAction("Remove empty script block", emptyScriptBlockPattern.ReplaceAllString(text, ""))
+	}
+	if moved, ok := moveScriptBlockBeforeOutputText(text); ok {
+		addTextAction("Move script block before output block", moved)
+	}
+	if fixed, ok := addMissingScriptSemicolonText(text); ok {
+		addTextAction("Add missing semicolon", fixed)
+	}
+
+	return actions
+}
+
+func addMissingScriptSemicolonText(text string) (string, bool) {
+	start := strings.Index(text, "|===|")
+	if start < 0 {
+		return "", false
+	}
+	bodyStart := start + len("|===|")
+	end := strings.Index(text[bodyStart:], "|===|")
+	if end < 0 {
+		return "", false
+	}
+	end += bodyStart
+	body := text[bodyStart:end]
+	lines := strings.Split(body, "\n")
+	line, index, ok := lo.FindIndexOf(lines, func(line string) bool {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasSuffix(trimmed, ";") || strings.HasSuffix(trimmed, "{") || strings.HasSuffix(trimmed, "}") {
+			return false
+		}
+		return strings.HasPrefix(trimmed, "type ") || strings.HasPrefix(trimmed, "schema ") || strings.HasPrefix(trimmed, "enum ") || strings.Contains(trimmed, "=")
+	})
+	if !ok {
+		return "", false
+	}
+
+	lines[index] = line + ";"
+	return text[:bodyStart] + strings.Join(lines, "\n") + text[end:], true
+}
+
+func moveScriptBlockBeforeOutputText(text string) (string, bool) {
+	firstScript := strings.Index(text, "|===|")
+	if firstScript < 0 {
+		return "", false
+	}
+	secondScript := strings.Index(text[firstScript+len("|===|"):], "|===|")
+	if secondScript < 0 {
+		return "", false
+	}
+	secondScript += firstScript + len("|===|")
+	firstOutput := strings.Index(text, "[")
+	if firstOutput < 0 {
+		firstOutput = strings.Index(text, "{")
+	}
+	if firstOutput < 0 || firstScript < firstOutput {
+		return "", false
+	}
+
+	scriptEnd := secondScript + len("|===|")
+	script := strings.TrimSpace(text[firstScript:scriptEnd])
+	withoutScript := strings.TrimSpace(text[:firstScript] + text[scriptEnd:])
+	return script + "\n" + withoutScript, true
+}
+
+func schemaCreationTextCodeActions(text string, documentPath string) []analysisCodeActionCandidate {
+	if documentPath == "" {
+		return nil
+	}
+
+	uri := protocol.DocumentUri(fileURI(documentPath))
+	fullRange := fullDocumentRange(text)
+	targetRange := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+	actions := []analysisCodeActionCandidate{}
+	addTextAction := func(title string, newText string) {
+		actions = append(actions, textRefactorAction(title, targetRange, uri, fullRange, newText))
+	}
+	if updated, ok := extractOutputShapeIntoSchemaText(text); ok {
+		addTextAction("Extract output block shape into schema", updated)
+	}
+	if updated, ok := extractRecordLiteralIntoSchemaText(text); ok {
+		addTextAction("Extract record literal into schema", updated)
+	}
+	if updated, ok := createSchemaFromSelectedFieldsText(text); ok {
+		addTextAction("Create schema from selected fields", updated)
+	}
+	if updated, ok := createSchemaFromValidationErrorText(text); ok {
+		addTextAction("Create schema from validation error", updated)
+	}
+	if updated, ok := generateSampleDataFromSchemaText(text); ok {
+		addTextAction("Generate sample data from schema", updated)
+	}
+	return actions
+}
+
+func extractOutputShapeIntoSchemaText(text string) (string, bool) {
+	if strings.Contains(text, "schema Output:") || !strings.Contains(text, "[output = data]") {
+		return "", false
+	}
+	fields := inferOutputSchemaFields(text)
+	if len(fields) == 0 {
+		return "", false
+	}
+	schema := "|===|\nschema Output: { " + strings.Join(fields, "; ") + "; };\n|===|\n"
+	updated := schema + strings.Replace(text, "[output = data]", "[output = data, schema = Output]", 1)
+	return updated, true
+}
+
+func extractRecordLiteralIntoSchemaText(text string) (string, bool) {
+	pattern := regexp.MustCompile(`(?m)^([ \t]*)([A-Za-z_][A-Za-z0-9_]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\{([^}]+)\};`)
+	matches := pattern.FindStringSubmatch(text)
+	if len(matches) == 0 || strings.Contains(text, "schema "+matches[2]+":") {
+		return "", false
+	}
+	fields := inferRecordSchemaFields(matches[4])
+	if len(fields) == 0 {
+		return "", false
+	}
+	updated := strings.Replace(text, "|===|\n", "|===|\nschema "+matches[2]+": { "+strings.Join(fields, "; ")+"; };\n", 1)
+	return updated, updated != text
+}
+
+func createSchemaFromSelectedFieldsText(text string) (string, bool) {
+	matches := regexp.MustCompile(`schema\s+[A-Za-z_][A-Za-z0-9_]*\s*:\s*\{([^}]+)\}`).FindStringSubmatch(text)
+	if len(matches) == 0 || strings.Contains(text, "schema Extracted:") {
+		return "", false
+	}
+	updated := strings.Replace(text, "|===|\n", "|===|\nschema Extracted: {"+matches[1]+"};\n", 1)
+	return updated, updated != text
+}
+
+func createSchemaFromValidationErrorText(text string) (string, bool) {
+	matches := regexp.MustCompile(`schema\s*=\s*([A-Za-z_][A-Za-z0-9_]*)`).FindStringSubmatch(text)
+	if len(matches) == 0 || strings.Contains(text, "schema "+matches[1]+":") {
+		return "", false
+	}
+	fields := inferOutputSchemaFields(text)
+	if len(fields) == 0 {
+		return "", false
+	}
+	return "|===|\nschema " + matches[1] + ": { " + strings.Join(fields, "; ") + "; };\n|===|\n" + text, true
+}
+
+func generateSampleDataFromSchemaText(text string) (string, bool) {
+	matches := regexp.MustCompile(`schema\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*\{([^}]+)\}`).FindStringSubmatch(text)
+	if len(matches) == 0 {
+		return "", false
+	}
+	sampleFields := lo.FilterMap(strings.Split(matches[2], ";"), func(field string, _ int) (string, bool) {
+		parts := strings.Split(field, ":")
+		if len(parts) != 2 {
+			return "", false
+		}
+		name := strings.TrimSuffix(strings.TrimSpace(parts[0]), "?")
+		typeName := strings.TrimSpace(parts[1])
+		return name + ": " + defaultLiteralForTypeName(typeName), true
+	})
+	if len(sampleFields) == 0 {
+		return "", false
+	}
+	updated := regexp.MustCompile(`\[output\s*=\s*schema\]\s*\{\}`).ReplaceAllString(text, "[output = data, schema = "+matches[1]+"]\n{ "+strings.Join(sampleFields, "; ")+"; }")
+	return updated, updated != text
+}
+
+func inferOutputSchemaFields(text string) []string {
+	matches := regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^;{}]+)`).FindAllStringSubmatch(text, -1)
+	return lo.FilterMap(matches, func(match []string, _ int) (string, bool) {
+		if len(match) < 3 || match[1] == "schema" {
+			return "", false
+		}
+		return match[1] + ": " + inferredTypeNameFromLiteral(strings.TrimSpace(match[2])), true
+	})
+}
+
+func inferRecordSchemaFields(record string) []string {
+	matches := regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^;{}]+)`).FindAllStringSubmatch(record, -1)
+	return lo.FilterMap(matches, func(match []string, _ int) (string, bool) {
+		if len(match) < 3 {
+			return "", false
+		}
+		return match[1] + ": " + inferredTypeNameFromLiteral(strings.TrimSpace(match[2])), true
+	})
+}
+
+func inferredTypeNameFromLiteral(literal string) string {
+	if strings.HasPrefix(literal, `"`) {
+		return "string"
+	}
+	if literal == "true" || literal == "false" {
+		return "boolean"
+	}
+	if strings.Contains(literal, ".") {
+		return "float"
+	}
+	if regexp.MustCompile(`^-?\d+$`).MatchString(literal) {
+		return "int"
+	}
+	if strings.HasPrefix(literal, "[") {
+		return "array<string>"
+	}
+	return "string"
+}
+
+func arrayTextCodeActions(text string, documentPath string) []analysisCodeActionCandidate {
+	if documentPath == "" {
+		return nil
+	}
+
+	uri := protocol.DocumentUri(fileURI(documentPath))
+	fullRange := fullDocumentRange(text)
+	targetRange := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+	actions := []analysisCodeActionCandidate{}
+	addTextAction := func(title string, newText string) {
+		actions = append(actions, textRefactorAction(title, targetRange, uri, fullRange, newText))
+	}
+	if updated, ok := wrapTypeInArrayText(text); ok {
+		addTextAction("Wrap type in array", updated)
+	}
+	if updated, ok := fixMixedArrayLiteralText(text); ok {
+		addTextAction("Fix mixed array literal", updated)
+	}
+	if updated, ok := changeArrayElementTypeText(text); ok {
+		addTextAction("Change array element type", updated)
+	}
+	if updated, ok := replaceInvalidArrayIndexText(text); ok {
+		addTextAction("Replace invalid array index", updated)
+	}
+	return actions
+}
+
+func wrapTypeInArrayText(text string) (string, bool) {
+	updated := regexp.MustCompile(`type\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(string|int|float|boolean);`).ReplaceAllString(text, `type ${1}: array<${2}>;`)
+	return updated, updated != text
+}
+
+func fixMixedArrayLiteralText(text string) (string, bool) {
+	pattern := regexp.MustCompile(`array<string>\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\["[^"]+",\s*\d+\];`)
+	matches := pattern.FindStringSubmatch(text)
+	if len(matches) == 0 {
+		return "", false
+	}
+	aliasName := strings.ToUpper(matches[1][:1]) + matches[1][1:] + "Item"
+	updated := strings.Replace(text, "|===|\n", "|===|\ntype "+aliasName+": variant[string, int];\n", 1)
+	updated = strings.Replace(updated, "array<string> "+matches[1], "array<"+aliasName+"> "+matches[1], 1)
+	return updated, updated != text
+}
+
+func changeArrayElementTypeText(text string) (string, bool) {
+	pattern := regexp.MustCompile(`array<string>\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\[\d+(?:,\s*\d+)*\];`)
+	matches := pattern.FindStringSubmatch(text)
+	if len(matches) == 0 {
+		return "", false
+	}
+	updated := strings.Replace(text, "array<string> "+matches[1], "array<int> "+matches[1], 1)
+	return updated, updated != text
+}
+
+func replaceInvalidArrayIndexText(text string) (string, bool) {
+	updated := regexp.MustCompile(`(\[[^\]]+\])\[\d+\]`).ReplaceAllString(text, `${1}[0]`)
+	return updated, updated != text
+}
+
+func typeAliasTextCodeActions(text string, documentPath string) []analysisCodeActionCandidate {
+	if documentPath == "" {
+		return nil
+	}
+
+	uri := protocol.DocumentUri(fileURI(documentPath))
+	fullRange := fullDocumentRange(text)
+	targetRange := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+	actions := []analysisCodeActionCandidate{}
+	addTextAction := func(title string, newText string) {
+		actions = append(actions, textRefactorAction(title, targetRange, uri, fullRange, newText))
+	}
+	if updated, ok := createTypeAliasFromSelectedTypeText(text); ok {
+		addTextAction("Create type alias from selected type", updated)
+	}
+	if updated, ok := inlineTypeAliasUsageText(text); ok {
+		addTextAction("Inline type alias usage", updated)
+	}
+	if updated, ok := renameTypeAliasText(text); ok {
+		addTextAction("Rename type alias", updated)
+	}
+	if updated, name, ok := replaceUnknownTypeText(text); ok {
+		addTextAction("Replace unknown type with "+name, updated)
+	}
+	if updated := strings.ReplaceAll(text, "Array<", "array<"); updated != text {
+		addTextAction("Convert Array<T> to array<T>", updated)
+	}
+	if updated, ok := nullableTypeToOptionalFieldText(text); ok {
+		addTextAction("Convert nullable type into optional field", updated)
+	}
+	return actions
+}
+
+func createTypeAliasFromSelectedTypeText(text string) (string, bool) {
+	pattern := regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(string|int|float|boolean|array<[^>]+>|[A-Za-z_][A-Za-z0-9_]*)`)
+	matches := pattern.FindStringSubmatch(text)
+	if len(matches) == 0 || strings.Contains(text, "type ExtractedType:") {
+		return "", false
+	}
+	updated := strings.Replace(text, "|===|\n", "|===|\ntype ExtractedType: "+matches[2]+";\n", 1)
+	updated = pattern.ReplaceAllString(updated, `${1}: ExtractedType`)
+	updated = strings.Replace(updated, "type ExtractedType: ExtractedType;", "type ExtractedType: "+matches[2]+";", 1)
+	return updated, updated != text
+}
+
+func inlineTypeAliasUsageText(text string) (string, bool) {
+	matches := regexp.MustCompile(`type\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^;]+);`).FindStringSubmatch(text)
+	if len(matches) == 0 {
+		return "", false
+	}
+	updated := strings.ReplaceAll(text, ": "+matches[1], ": "+matches[2])
+	updated = regexp.MustCompile(`(?m)^([ \t]*)`+regexp.QuoteMeta(matches[1])+`\s+`).ReplaceAllString(updated, `${1}`+matches[2]+` `)
+	return updated, updated != text
+}
+
+func renameTypeAliasText(text string) (string, bool) {
+	updated := regexp.MustCompile(`type\s+([A-Za-z_][A-Za-z0-9_]*)\s*:`).ReplaceAllString(text, "type RenamedName:")
+	return updated, updated != text
+}
+
+func replaceUnknownTypeText(text string) (string, string, bool) {
+	matches := regexp.MustCompile(`type\s+([A-Za-z_][A-Za-z0-9_]*)\s*:`).FindStringSubmatch(text)
+	if len(matches) == 0 {
+		return "", "", false
+	}
+	known := matches[1]
+	updated := regexp.MustCompile(`:\s*Nmae`).ReplaceAllString(text, ": "+known)
+	updated = regexp.MustCompile(`(?m)^([ \t]*)Nmae\s+`).ReplaceAllString(updated, `${1}`+known+` `)
+	return updated, known, updated != text
+}
+
+func nullableTypeToOptionalFieldText(text string) (string, bool) {
+	updated := regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^;{}]+)\?`).ReplaceAllString(text, `${1}?: ${2}`)
+	return updated, updated != text
+}
+
+func variableFixTextCodeActions(text string, documentPath string) []analysisCodeActionCandidate {
+	if documentPath == "" {
+		return nil
+	}
+
+	uri := protocol.DocumentUri(fileURI(documentPath))
+	fullRange := fullDocumentRange(text)
+	targetRange := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+	actions := []analysisCodeActionCandidate{}
+	addTextAction := func(title string, newText string) {
+		actions = append(actions, textRefactorAction(title, targetRange, uri, fullRange, newText))
+	}
+
+	if updated, ok := replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*)([A-Za-z_][A-Za-z0-9_]*)\s*=\s*("[^"]*");`), func(matches []string) string {
+		return matches[1] + "string " + matches[2] + " = " + matches[3] + ";"
+	}); ok {
+		addTextAction("Add missing type annotation", updated)
+	}
+	if updated, ok := replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*)(string)\s+([A-Za-z_][A-Za-z0-9_]*)\s*;`), func(matches []string) string {
+		return matches[1] + matches[2] + " " + matches[3] + ` = "";`
+	}); ok {
+		addTextAction("Add missing initializer", updated)
+	}
+	if updated, ok := replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*)([A-Za-z_][A-Za-z0-9_]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*;`), func(matches []string) string {
+		return matches[1] + "injectable " + matches[2] + " " + matches[3] + ";"
+	}); ok {
+		addTextAction("Mark variable as injectable", updated)
+	}
+	if updated, ok := replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*)(int)\s+([A-Za-z_][A-Za-z0-9_]*)\s*;`), func(matches []string) string {
+		return matches[1] + matches[2] + " " + matches[3] + " = 0;"
+	}); ok {
+		addTextAction("Add placeholder initializer", updated)
+	}
+	if updated, ok := replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*)int\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*("[^"]*");`), func(matches []string) string {
+		return matches[1] + "string " + matches[2] + " = " + matches[3] + ";"
+	}); ok {
+		addTextAction("Change variable type to inferred expression type", updated)
+	}
+	if updated, ok := replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*)int\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"[^"]*";`), func(matches []string) string {
+		return matches[1] + "int " + matches[2] + " = 0;"
+	}); ok {
+		addTextAction("Change initializer to match declared type", updated)
+	}
+	if updated, ok := renameDuplicateVariableText(text); ok {
+		addTextAction("Rename duplicate variable", updated)
+	}
+	if updated, ok := inlineVariableIntoOutputText(text); ok {
+		addTextAction("Inline variable into output field", updated)
+	}
+	if updated, ok := extractOutputExpressionText(text); ok {
+		addTextAction("Extract output expression into script variable", updated)
+	}
+	if updated, ok := convertVariableToInjectableText(text); ok {
+		addTextAction("Convert variable to injectable", updated)
+	}
+	if updated, ok := addDefaultInitializerToInjectableText(text); ok {
+		addTextAction("Add default initializer to injectable", updated)
+	}
+	if stub, ok := injectionConfigStubText(text); ok {
+		addTextAction("Generate injection config stub", text+"\n"+stub)
+	}
+	if names, ok := injectableVariableNames(text); ok {
+		actions = append(actions, analysisCodeActionCandidate{Range: targetRange, Action: protocol.CodeAction{Title: "Find all injectable variables", Kind: Ptr(protocol.CodeActionKindRefactor), Command: &protocol.Command{Title: "Find all injectable variables", Command: "mace.findInjectables", Arguments: []any{strings.Join(names, ", ")}}}})
+	}
+	return actions
+}
+
+func convertVariableToInjectableText(text string) (string, bool) {
+	return replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*)([A-Za-z_][A-Za-z0-9_]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*;`), func(matches []string) string {
+		return matches[1] + "injectable " + matches[2] + " " + matches[3] + ";"
+	})
+}
+
+func addDefaultInitializerToInjectableText(text string) (string, bool) {
+	return replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*injectable\s+)([A-Za-z_][A-Za-z0-9_]*(?:<[^>]+>)?)\s+([A-Za-z_][A-Za-z0-9_]*)\s*;`), func(matches []string) string {
+		return matches[1] + matches[2] + " " + matches[3] + " = " + defaultLiteralForTypeName(matches[2]) + ";"
+	})
+}
+
+func injectionConfigStubText(text string) (string, bool) {
+	names, ok := injectableVariableNames(text)
+	if !ok {
+		return "", false
+	}
+	pattern := regexp.MustCompile(`(?m)^\s*injectable\s+([A-Za-z_][A-Za-z0-9_]*(?:<[^>]+>)?)\s+([A-Za-z_][A-Za-z0-9_]*)`)
+	entries := lo.FilterMap(pattern.FindAllStringSubmatch(text, -1), func(matches []string, _ int) (string, bool) {
+		if len(matches) < 3 {
+			return "", false
+		}
+		return "  \"" + matches[2] + "\": " + defaultLiteralForTypeName(matches[1]), true
+	})
+	_ = names
+	return "/# injection config stub\n{\n" + strings.Join(entries, ",\n") + "\n}\n#/", true
+}
+
+func injectableVariableNames(text string) ([]string, bool) {
+	pattern := regexp.MustCompile(`(?m)^\s*injectable\s+[A-Za-z_][A-Za-z0-9_]*\s+([A-Za-z_][A-Za-z0-9_]*)`)
+	names := lo.FilterMap(pattern.FindAllStringSubmatch(text, -1), func(matches []string, _ int) (string, bool) {
+		if len(matches) < 2 {
+			return "", false
+		}
+		return matches[1], true
+	})
+	return names, len(names) > 0
+}
+
+func defaultLiteralForTypeName(name string) string {
+	if strings.HasPrefix(name, "array<") {
+		return "[]"
+	}
+
+	switch name {
+	case "int":
+		return "0"
+	case "float":
+		return "0.0"
+	case "boolean":
+		return "false"
+	default:
+		return `""`
+	}
+}
+
+func replaceVariableDeclaration(text string, pattern *regexp.Regexp, replacement func([]string) string) (string, bool) {
+	updated := pattern.ReplaceAllStringFunc(text, func(declaration string) string {
+		matches := pattern.FindStringSubmatch(declaration)
+		if len(matches) == 0 {
+			return declaration
+		}
+		return replacement(matches)
+	})
+	return updated, updated != text
+}
+
+func renameDuplicateVariableText(text string) (string, bool) {
+	pattern := regexp.MustCompile(`(?m)^([ \t]*[A-Za-z_][A-Za-z0-9_<>{};: ]*\s+)([A-Za-z_][A-Za-z0-9_]*)(\s*=\s*[^;]+;)`)
+	seen := map[string]struct{}{}
+	updated := pattern.ReplaceAllStringFunc(text, func(line string) string {
+		matches := pattern.FindStringSubmatch(line)
+		if len(matches) == 0 {
+			return line
+		}
+		name := matches[2]
+		if _, ok := seen[name]; ok {
+			return matches[1] + name + "_2" + matches[3]
+		}
+		seen[name] = struct{}{}
+		return line
+	})
+	return updated, updated != text
+}
+
+func inlineVariableIntoOutputText(text string) (string, bool) {
+	matches := regexp.MustCompile(`(?m)^\s*string\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*("[^"]*");`).FindStringSubmatch(text)
+	if len(matches) == 0 {
+		return "", false
+	}
+	updated := strings.Replace(text, ": "+matches[1], ": "+matches[2], 1)
+	return updated, updated != text
+}
+
+func extractOutputExpressionText(text string) (string, bool) {
+	pattern := regexp.MustCompile(`(?m)([A-Za-z_][A-Za-z0-9_]*)\s*:\s*("[^"]*")`)
+	matches := pattern.FindStringSubmatch(text)
+	if len(matches) == 0 || strings.Contains(text, "|===|") {
+		return "", false
+	}
+	name := matches[1]
+	value := matches[2]
+	updated := pattern.ReplaceAllString(text, name+": "+name)
+	return "|===|\nstring " + name + " = " + value + ";\n|===|\n" + updated, true
+}
+
+func parseErrorCodeActions(tokens []lexer.Token, documentPath string) []analysisCodeActionCandidate {
+	if documentPath == "" {
+		return nil
+	}
+
+	uri := protocol.DocumentUri(fileURI(documentPath))
+	for _, token := range tokens {
+		if token.Type != lexer.TokenStar {
+			continue
+		}
+
+		rangeValue := tokenProtocolRange(token)
+		return []analysisCodeActionCandidate{{
+			Range: rangeValue,
+			Action: protocol.CodeAction{
+				Title: "Convert wildcard import to named import",
+				Kind:  Ptr(protocol.CodeActionKindQuickFix),
+				Edit:  &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: {{Range: rangeValue, NewText: "Name"}}}},
+			},
+		}}
+	}
+
+	return nil
 }
 
 func semanticCodeActions(text string, file ast.File, tokens []lexer.Token, documentPath string, diagnostic protocol.Diagnostic, message string) []analysisCodeActionCandidate {
@@ -647,6 +1217,138 @@ func semanticCodeActions(text string, file ast.File, tokens []lexer.Token, docum
 	}
 
 	return actions
+}
+
+func importResolutionCodeActions(text string, file ast.File, tokens []lexer.Token, documentPath string) []analysisCodeActionCandidate {
+	if documentPath == "" {
+		return nil
+	}
+
+	uri := protocol.DocumentUri(fileURI(documentPath))
+	baseDir := filepath.Dir(documentPath)
+	fullRange := fullDocumentRange(text)
+	_ = fullRange
+	actions := []analysisCodeActionCandidate{}
+	for _, importDecl := range file.Imports {
+		pathValue, ok := stringLiteralValue(importDecl.Path)
+		if !ok {
+			continue
+		}
+
+		importedPath := filepath.Clean(filepath.Join(baseDir, pathValue))
+		importRange, _ := tokenRangeByType(tokens, lexer.TokenString, importDecl.Path.Lexeme)
+		if _, err := os.Stat(importedPath); os.IsNotExist(err) {
+			actions = append(actions, analysisCodeActionCandidate{
+				Range: protocol.Range{Start: protocol.Position{}, End: protocol.Position{}},
+				Action: protocol.CodeAction{
+					Title: "Create missing imported file",
+					Kind:  Ptr(protocol.CodeActionKindQuickFix),
+					Edit: &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{
+						protocol.DocumentUri(fileURI(importedPath)): {{Range: protocol.Range{}, NewText: "[output = schema]\n{}\n"}},
+					}},
+				},
+			})
+
+			if renamedPath, ok := existingMacePathWithSimilarName(importedPath); ok && importRange != (protocol.Range{}) {
+				relativePath, err := filepath.Rel(baseDir, renamedPath)
+				if err == nil {
+					relativePath = filepath.ToSlash(relativePath)
+					if !strings.HasPrefix(relativePath, ".") {
+						relativePath = "./" + relativePath
+					}
+					actions = append(actions, analysisCodeActionCandidate{
+						Range:  protocol.Range{Start: protocol.Position{}, End: protocol.Position{}},
+						Action: protocol.CodeAction{Title: "Update import path after file rename", Kind: Ptr(protocol.CodeActionKindQuickFix), Edit: &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: {{Range: importRange, NewText: strconv.Quote(relativePath)}}}}},
+					})
+				}
+			}
+			continue
+		}
+
+		_, importedFile, _, ok := parsedFile(importedPath)
+		if !ok {
+			continue
+		}
+		exportedNames := exportedOutputNames(importedFile)
+		if len(exportedNames) > 0 {
+			actions = append(actions, analysisCodeActionCandidate{Range: protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, Action: protocol.CodeAction{Title: "Open source output block", Kind: Ptr(protocol.CodeActionKindRefactor), Command: &protocol.Command{Title: "Open source output block", Command: "mace.openOutput", Arguments: []any{protocol.DocumentUri(fileURI(importedPath))}}}})
+			actions = append(actions, analysisCodeActionCandidate{Range: protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, Action: protocol.CodeAction{Title: "Explain why symbol is not importable", Kind: Ptr(protocol.CodeActionKindQuickFix), Command: &protocol.Command{Title: "Explain why symbol is not importable", Command: "mace.explainImport", Arguments: []any{"Only names surfaced through the imported file output block are importable."}}}})
+		}
+		for _, name := range importDecl.Identifiers {
+			if lo.Contains(exportedNames, name) {
+				continue
+			}
+			closest, ok := closestName(name, exportedNames)
+			if !ok {
+				continue
+			}
+			nameToken, ok := importIdentifierToken(tokens, importDecl, name)
+			if !ok {
+				continue
+			}
+			actions = append(actions, analysisCodeActionCandidate{Range: protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, Action: protocol.CodeAction{Title: "Replace unavailable imported symbol with " + closest, Kind: Ptr(protocol.CodeActionKindQuickFix), Edit: &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: {{Range: tokenProtocolRange(nameToken), NewText: closest}}}}}})
+		}
+	}
+	return actions
+}
+
+func existingMacePathWithSimilarName(path string) (string, bool) {
+	directory := filepath.Dir(path)
+	base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return "", false
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".mace" {
+			continue
+		}
+		candidate := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+		if strings.Contains(candidate, base) || strings.Contains(base, candidate) || levenshteinDistance(base, candidate) <= 4 {
+			return filepath.Join(directory, entry.Name()), true
+		}
+	}
+	return "", false
+}
+
+func exportedOutputNames(file ast.File) []string {
+	if file.Output.Mode == ast.OutputModeSchema {
+		return lo.Map(file.Output.SchemaFields, func(field ast.OutputSchemaField, _ int) string { return field.Name })
+	}
+	return lo.Map(file.Output.DataFields, func(field ast.OutputField, _ int) string { return field.Name })
+}
+
+func closestName(name string, names []string) (string, bool) {
+	closest := ""
+	closestDistance := 1000
+	for _, candidate := range names {
+		distance := levenshteinDistance(strings.ToLower(name), strings.ToLower(candidate))
+		if distance < closestDistance {
+			closest = candidate
+			closestDistance = distance
+		}
+	}
+	return closest, closest != "" && closestDistance <= 3
+}
+
+func levenshteinDistance(left string, right string) int {
+	previous := make([]int, len(right)+1)
+	for index := range previous {
+		previous[index] = index
+	}
+	for leftIndex, leftRune := range left {
+		current := make([]int, len(right)+1)
+		current[0] = leftIndex + 1
+		for rightIndex, rightRune := range right {
+			cost := 1
+			if leftRune == rightRune {
+				cost = 0
+			}
+			current[rightIndex+1] = min(current[rightIndex]+1, previous[rightIndex+1]+1, previous[rightIndex]+cost)
+		}
+		previous = current
+	}
+	return previous[len(right)]
 }
 
 func documentationCodeActions(text string, file ast.File, tokens []lexer.Token, documentPath string) []analysisCodeActionCandidate {
@@ -766,6 +1468,7 @@ func editorRefactorCodeActions(text string, file ast.File, documentPath string) 
 
 	addImportRefactorActions(file, addWholeFileAction)
 	addDocumentationRefactorActions(file, addWholeFileAction)
+	addDeclarationRefactorActions(file, addWholeFileAction)
 	addEnumRefactorActions(file, addWholeFileAction)
 	addStringRefactorActions(text, uri, fullRange, &actions)
 	addStyleRefactorActions(text, protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, addTextAction)
@@ -776,8 +1479,30 @@ func editorRefactorCodeActions(text string, file ast.File, documentPath string) 
 }
 
 func addImportRefactorActions(file ast.File, addWholeFileAction func(string, protocol.Range, ast.File)) {
+	if len(file.Imports) > 1 {
+		imports := append([]ast.ImportDeclaration{}, file.Imports...)
+		slices.SortFunc(imports, func(left ast.ImportDeclaration, right ast.ImportDeclaration) int {
+			return strings.Compare(left.Path.Lexeme, right.Path.Lexeme)
+		})
+		if !slices.EqualFunc(imports, file.Imports, func(left ast.ImportDeclaration, right ast.ImportDeclaration) bool {
+			return left.Path.Lexeme == right.Path.Lexeme && slices.Equal(left.Identifiers, right.Identifiers)
+		}) {
+			updated := file
+			updated.Imports = imports
+			addWholeFileAction("Sort imports", protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, updated)
+		}
+	}
+
 	for index, importDecl := range file.Imports {
 		targetRange := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+		if hasDuplicateImportIdentifiers(importDecl.Identifiers) {
+			updated := file
+			imports := append([]ast.ImportDeclaration{}, file.Imports...)
+			imports[index].Identifiers = uniqueImportIdentifiers(importDecl.Identifiers)
+			updated.Imports = imports
+			addWholeFileAction("Remove duplicate imported names", targetRange, updated)
+		}
+
 		pathValue, _ := stringLiteralValue(importDecl.Path)
 		if pathValue != "" && !strings.HasPrefix(pathValue, "./") && !strings.HasPrefix(pathValue, "../") && !filepath.IsAbs(pathValue) {
 			updated := file
@@ -811,6 +1536,30 @@ func addImportRefactorActions(file ast.File, addWholeFileAction func(string, pro
 	}
 }
 
+func hasDuplicateImportIdentifiers(identifiers []string) bool {
+	seen := map[string]struct{}{}
+	for _, identifier := range identifiers {
+		if _, ok := seen[identifier]; ok {
+			return true
+		}
+		seen[identifier] = struct{}{}
+	}
+	return false
+}
+
+func uniqueImportIdentifiers(identifiers []string) []string {
+	seen := map[string]struct{}{}
+	unique := []string{}
+	for _, identifier := range identifiers {
+		if _, ok := seen[identifier]; ok {
+			continue
+		}
+		seen[identifier] = struct{}{}
+		unique = append(unique, identifier)
+	}
+	return unique
+}
+
 func addDocumentationRefactorActions(file ast.File, addWholeFileAction func(string, protocol.Range, ast.File)) {
 	if file.Script == nil {
 		return
@@ -837,6 +1586,130 @@ func addDocumentationRefactorActions(file ast.File, addWholeFileAction func(stri
 			addWholeFileAction("Remove conflicting docs", targetRange, cleaned)
 		}
 	}
+}
+
+func addDeclarationRefactorActions(file ast.File, addWholeFileAction func(string, protocol.Range, ast.File)) {
+	if file.Script == nil {
+		return
+	}
+
+	addSchemaDeclarationRefactorActions(file, addWholeFileAction)
+	addVariableDeclarationRefactorActions(file, addWholeFileAction)
+}
+
+func addSchemaDeclarationRefactorActions(file ast.File, addWholeFileAction func(string, protocol.Range, ast.File)) {
+	for index, item := range file.Script.Items {
+		schema, ok := item.(ast.SchemaDeclaration)
+		if !ok {
+			continue
+		}
+
+		addRepeatedTypeAliasAction(file, index, schema, addWholeFileAction)
+		addInlineRecordSchemaAction(file, index, schema, addWholeFileAction)
+	}
+}
+
+func addRepeatedTypeAliasAction(file ast.File, index int, schema ast.SchemaDeclaration, addWholeFileAction func(string, protocol.Range, ast.File)) {
+	name, typed, ok := repeatedSchemaFieldType(schema)
+	if !ok {
+		return
+	}
+
+	aliasName := "ExtractedType"
+	updatedSchema := schema
+	updatedSchema.Type.Fields = lo.Map(schema.Type.Fields, func(field ast.SchemaField, _ int) ast.SchemaField {
+		if typeReferenceText(field.Type) == name {
+			field.Type = ast.NamedType{Name: aliasName}
+		}
+		return field
+	})
+	updated := replaceScriptItem(file, index, updatedSchema)
+	items := append([]ast.Declaration{ast.TypeDeclaration{Name: aliasName, Type: typed}}, updated.Script.Items...)
+	updated.Script = &ast.ScriptBlock{Imports: updated.Script.Imports, Items: items}
+	addWholeFileAction("Extract repeated type into alias", protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, updated)
+}
+
+func addInlineRecordSchemaAction(file ast.File, index int, schema ast.SchemaDeclaration, addWholeFileAction func(string, protocol.Range, ast.File)) {
+	field, fieldIndex, ok := lo.FindIndexOf(schema.Type.Fields, func(field ast.SchemaField) bool {
+		_, ok := field.Type.(ast.RecordType)
+		return ok
+	})
+	if !ok {
+		return
+	}
+
+	record := field.Type.(ast.RecordType)
+	schemaName := strings.ToUpper(field.Name[:1]) + field.Name[1:]
+	updatedSchema := schema
+	updatedSchema.Type.Fields = append([]ast.SchemaField{}, schema.Type.Fields...)
+	updatedSchema.Type.Fields[fieldIndex].Type = ast.NamedType{Name: schemaName}
+	updated := replaceScriptItem(file, index, updatedSchema)
+	items := append([]ast.Declaration{ast.SchemaDeclaration{Name: schemaName, Type: record}}, updated.Script.Items...)
+	updated.Script = &ast.ScriptBlock{Imports: updated.Script.Imports, Items: items}
+	addWholeFileAction("Extract inline record type into schema", protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, updated)
+}
+
+func addVariableDeclarationRefactorActions(file ast.File, addWholeFileAction func(string, protocol.Range, ast.File)) {
+	for index, item := range file.Script.Items {
+		variable, ok := item.(ast.VariableDeclaration)
+		if !ok {
+			continue
+		}
+		addRecordVariableSchemaAction(file, index, variable, addWholeFileAction)
+	}
+}
+
+func addRecordVariableSchemaAction(file ast.File, index int, variable ast.VariableDeclaration, addWholeFileAction func(string, protocol.Range, ast.File)) {
+	record, ok := variable.Value.(ast.RecordLiteral)
+	if !ok {
+		return
+	}
+	if _, ok := variable.Type.(ast.RecordType); !ok {
+		return
+	}
+
+	schemaName := strings.ToUpper(variable.Name[:1]) + variable.Name[1:]
+	variable.Type = ast.NamedType{Name: schemaName}
+	updated := replaceScriptItem(file, index, variable)
+	items := append([]ast.Declaration{ast.SchemaDeclaration{Name: schemaName, Type: recordTypeFromLiteral(record)}}, updated.Script.Items...)
+	updated.Script = &ast.ScriptBlock{Imports: updated.Script.Imports, Items: items}
+	addWholeFileAction("Convert record variable into schema-backed variable", protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, updated)
+}
+
+func repeatedSchemaFieldType(schema ast.SchemaDeclaration) (string, ast.TypeReference, bool) {
+	counts := map[string]int{}
+	types := map[string]ast.TypeReference{}
+	for _, field := range schema.Type.Fields {
+		text := typeReferenceText(field.Type)
+		if text == "" {
+			continue
+		}
+		counts[text]++
+		types[text] = field.Type
+	}
+	for name, count := range counts {
+		if count > 1 {
+			return name, types[name], true
+		}
+	}
+	return "", nil, false
+}
+
+func typeReferenceText(typeReference ast.TypeReference) string {
+	switch typed := typeReference.(type) {
+	case ast.PrimitiveType:
+		return typed.Name
+	case ast.NamedType:
+		return typed.Name
+	default:
+		return ""
+	}
+}
+
+func recordTypeFromLiteral(record ast.RecordLiteral) ast.RecordType {
+	return ast.RecordType{Fields: lo.Map(record.Fields, func(field ast.RecordField, _ int) ast.SchemaField {
+		return ast.SchemaField{Name: field.Name, Type: inferredTypeFromExpression(field.Value)}
+	})}
 }
 
 func addEnumRefactorActions(file ast.File, addWholeFileAction func(string, protocol.Range, ast.File)) {

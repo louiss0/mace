@@ -3,6 +3,7 @@ package analyzer
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/samber/lo"
@@ -395,6 +396,525 @@ from "shared.mace" import Role;
 		tAssert.Contains(splitAction.Edit.Changes[uri][0].NewText, `from "shared.mace" import User;`)
 		mergeAction := requireCodeAction(snapshot, uri, rangeValue, "Merge duplicate imports")
 		tAssert.Contains(mergeAction.Edit.Changes[uri][0].NewText, `from "shared.mace" import User, Profile, Role;`)
+	})
+
+	It("offers import resolution actions", func() {
+		workspace, err := os.MkdirTemp("", "mace-analysis-import-resolution-*")
+		tAssert.NoError(err)
+		defer func() {
+			tAssert.NoError(os.RemoveAll(workspace))
+		}()
+
+		sharedPath := writeAnalysisFile(workspace, "shared.mace", `[output = schema]
+{
+  User: string;
+  Role: string;
+}`)
+		documentPath := writeAnalysisFile(workspace, "document.mace", `from "./missing.mace" import User;
+from "./shared.mace" import Usre;
+from "./shared-old.mace" import Role;
+[output = schema]
+{}`)
+		contents, err := os.ReadFile(documentPath)
+		tAssert.NoError(err)
+		snapshot := analyzeDocumentAt(string(contents), documentPath)
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+
+		createAction := requireCodeAction(snapshot, uri, rangeValue, "Create missing imported file")
+		tAssert.Contains(createAction.Edit.Changes[protocol.DocumentUri(fileURI(filepath.Join(workspace, "missing.mace")))][0].NewText, "[output = schema]")
+
+		renameAction := requireCodeAction(snapshot, uri, rangeValue, "Update import path after file rename")
+		tAssert.Equal(`"./shared.mace"`, renameAction.Edit.Changes[uri][0].NewText)
+
+		replaceAction := requireCodeAction(snapshot, uri, rangeValue, "Replace unavailable imported symbol with User")
+		tAssert.Equal("User", replaceAction.Edit.Changes[uri][0].NewText)
+
+		openAction := requireCodeAction(snapshot, uri, rangeValue, "Open source output block")
+		tAssert.Equal(protocol.DocumentUri(fileURI(sharedPath)), openAction.Command.Arguments[0])
+
+		explainAction := requireCodeAction(snapshot, uri, rangeValue, "Explain why symbol is not importable")
+		tAssert.Contains(explainAction.Command.Arguments[0], "Only names surfaced through the imported file output block are importable")
+	})
+
+	It("offers remaining add and fix import actions", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+
+		snapshot := analyzeDocumentAt(`from "shared" import User;
+from "zeta.mace" import Zed;
+from "alpha.mace" import User;
+from "dupes.mace" import User, User, Role;
+[output = schema]
+{}`, documentPath)
+		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+
+		extensionAction := requireCodeAction(snapshot, uri, protocol.Range{Start: protocol.Position{Line: 0, Character: 5}, End: protocol.Position{Line: 0, Character: 13}}, "Append .mace to import path")
+		tAssert.Equal(`"shared.mace"`, extensionAction.Edit.Changes[uri][0].NewText)
+
+		sortAction := requireCodeAction(snapshot, uri, rangeValue, "Sort imports")
+		tAssert.Contains(sortAction.Edit.Changes[uri][0].NewText, "from \"alpha.mace\" import User;\nfrom \"dupes.mace\" import User, User, Role;")
+
+		duplicateAction := requireCodeAction(snapshot, uri, rangeValue, "Remove duplicate imported names")
+		tAssert.Contains(duplicateAction.Edit.Changes[uri][0].NewText, `from "dupes.mace" import User, Role;`)
+
+		wildcardSnapshot := analyzeDocumentAt(`from "shared.mace" import *;
+[output = schema]
+{}`, documentPath)
+		wildcardAction := requireCodeAction(wildcardSnapshot, uri, protocol.Range{Start: protocol.Position{Line: 0, Character: 26}, End: protocol.Position{Line: 0, Character: 27}}, "Convert wildcard import to named import")
+		tAssert.Equal("Name", wildcardAction.Edit.Changes[uri][0].NewText)
+	})
+
+	Describe("schema creation actions", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+
+		It("extracts output block shapes into schemas", func() {
+			snapshot := analyzeDocumentAt(`[output = data]
+{ name: "Ada"; age: 30; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Extract output block shape into schema")
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, "schema Output:")
+			tAssert.Contains(text, "name: string")
+			tAssert.Contains(text, "schema = Output")
+		})
+
+		It("extracts record literals into schemas", func() {
+			snapshot := analyzeDocumentAt(`|===|
+User user = { name: "Ada"; };
+|===|
+[output = data]
+{ value: user; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Extract record literal into schema")
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, "schema User:")
+			tAssert.Contains(text, `User user = { name: "Ada"; };`)
+		})
+
+		It("creates schemas from selected fields", func() {
+			snapshot := analyzeDocumentAt(`|===|
+schema User: { name: string; age: int; };
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Create schema from selected fields")
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, "schema Extracted:")
+			tAssert.Contains(text, "name: string")
+		})
+
+		It("creates schemas from validation errors", func() {
+			snapshot := analyzeDocumentAt(`[output = data, schema = User]
+{ name: "Ada"; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Create schema from validation error")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "schema User:")
+		})
+
+		It("generates sample data from schemas", func() {
+			snapshot := analyzeDocumentAt(`|===|
+schema User: { name: string; age: int; };
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Generate sample data from schema")
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, `[output = data, schema = User]`)
+			tAssert.Contains(text, `name: ""`)
+		})
+	})
+
+	Describe("array actions", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+
+		It("wraps types in arrays", func() {
+			snapshot := analyzeDocumentAt(`|===|
+type Name: string;
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Wrap type in array")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "type Name: array<string>;")
+		})
+
+		It("fixes mixed array literals with variants", func() {
+			snapshot := analyzeDocumentAt(`|===|
+array<string> values = ["Ada", 1];
+|===|
+[output = data]
+{ value: values; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Fix mixed array literal")
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, "type ValuesItem: variant[string, int];")
+			tAssert.Contains(text, "array<ValuesItem> values")
+		})
+
+		It("changes array element types to match literals", func() {
+			snapshot := analyzeDocumentAt(`|===|
+array<string> values = [1, 2];
+|===|
+[output = data]
+{ value: values; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Change array element type")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "array<int> values")
+		})
+
+		It("replaces invalid array indexes", func() {
+			snapshot := analyzeDocumentAt(`[output = data]
+{ value: ["Ada"][3]; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Replace invalid array index")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `value: ["Ada"][0]`)
+		})
+	})
+
+	Describe("type alias actions", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+
+		It("creates type aliases from selected schema field types", func() {
+			snapshot := analyzeDocumentAt(`|===|
+schema User: { name: string; };
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Create type alias from selected type")
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, "type ExtractedType: string;")
+			tAssert.Contains(text, "name: ExtractedType")
+		})
+
+		It("inlines type alias usage in schema fields", func() {
+			snapshot := analyzeDocumentAt(`|===|
+type Name: string;
+schema User: { name: Name; };
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Inline type alias usage")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "name: string")
+		})
+
+		It("renames type aliases", func() {
+			snapshot := analyzeDocumentAt(`|===|
+type Name: string;
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Rename type alias")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "type RenamedName: string;")
+		})
+
+		It("replaces unknown types with closest known types", func() {
+			snapshot := analyzeDocumentAt(`|===|
+type Name: string;
+schema User: { name: Nmae; };
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Replace unknown type with Name")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "name: Name")
+		})
+
+		It("converts Array casing to array", func() {
+			snapshot := analyzeDocumentAt(`|===|
+type Names: Array<string>;
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Convert Array<T> to array<T>")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "array<string>")
+		})
+
+		It("converts invalid nullable types into optional fields", func() {
+			snapshot := analyzeDocumentAt(`|===|
+schema User: { name: string?; };
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Convert nullable type into optional field")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "name?: string")
+		})
+	})
+
+	Describe("injectable variable actions", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+
+		It("converts variables to injectable", func() {
+			snapshot := analyzeDocumentAt(`|===|
+string name;
+|===|
+[output = data]
+{ value: name; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Convert variable to injectable")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `injectable string name;`)
+		})
+
+		DescribeTable("adds default initializers to injectables by type", func(typeName string, variableName string, literal string) {
+			snapshot := analyzeDocumentAt(`|===|
+injectable `+typeName+` `+variableName+`;
+|===|
+[output = data]
+{ value: `+variableName+`; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Add default initializer to injectable")
+
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `injectable `+typeName+` `+variableName+` = `+literal+`;`)
+		},
+			Entry("string", "string", "name", `""`),
+			Entry("int", "int", "count", "0"),
+			Entry("float", "float", "ratio", "0.0"),
+			Entry("boolean", "boolean", "enabled", "false"),
+			Entry("array", "array<string>", "names", "[]"),
+		)
+
+		It("generates injection config stubs", func() {
+			snapshot := analyzeDocumentAt(`|===|
+injectable string name;
+injectable int count;
+|===|
+[output = data]
+{ value: name; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Generate injection config stub")
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, `"name": ""`)
+			tAssert.Contains(text, `"count": 0`)
+		})
+
+		It("finds all injectable variables", func() {
+			snapshot := analyzeDocumentAt(`|===|
+injectable string name;
+injectable int count;
+|===|
+[output = data]
+{ value: name; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Find all injectable variables")
+			tAssert.Contains(action.Command.Arguments[0], "name, count")
+		})
+	})
+
+	Describe("variable fix actions", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+
+		It("adds missing type annotations", func() {
+			snapshot := analyzeDocumentAt(`|===|
+name = "Ada";
+title = "Engineer";
+|===|
+[output = data]
+{ value: name; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Add missing type annotation")
+			text := action.Edit.Changes[uri][0].NewText
+
+			tAssert.Contains(text, `string name = "Ada";`)
+			tAssert.Contains(text, `string title = "Engineer";`)
+		})
+
+		It("adds missing initializers", func() {
+			snapshot := analyzeDocumentAt(`|===|
+string name;
+|===|
+[output = data]
+{ value: name; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Add missing initializer")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `string name = "";`)
+		})
+
+		It("marks variables injectable", func() {
+			snapshot := analyzeDocumentAt(`|===|
+string name;
+|===|
+[output = data]
+{ value: name; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Mark variable as injectable")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `injectable string name;`)
+		})
+
+		It("adds placeholder initializers", func() {
+			snapshot := analyzeDocumentAt(`|===|
+int count;
+|===|
+[output = data]
+{ value: count; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Add placeholder initializer")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `int count = 0;`)
+		})
+
+		It("changes variable type to inferred expression type", func() {
+			snapshot := analyzeDocumentAt(`|===|
+int name = "Ada";
+|===|
+[output = data]
+{ value: name; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Change variable type to inferred expression type")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `string name = "Ada";`)
+		})
+
+		It("changes initializers to match declared types", func() {
+			snapshot := analyzeDocumentAt(`|===|
+int count = "Ada";
+|===|
+[output = data]
+{ value: count; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Change initializer to match declared type")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `int count = 0;`)
+		})
+
+		It("renames duplicate variables", func() {
+			snapshot := analyzeDocumentAt(`|===|
+string name = "Ada";
+string name = "Grace";
+|===|
+[output = data]
+{ value: name; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Rename duplicate variable")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `string name_2 = "Grace";`)
+		})
+
+		It("inlines variables into output fields", func() {
+			snapshot := analyzeDocumentAt(`|===|
+string name = "Ada";
+|===|
+[output = data]
+{ value: name; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Inline variable into output field")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `value: "Ada"`)
+		})
+
+		It("extracts output expressions into script variables", func() {
+			snapshot := analyzeDocumentAt(`[output = data]
+{ value: "Ada"; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Extract output expression into script variable")
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, `string value = "Ada";`)
+			tAssert.Contains(text, `value: value`)
+		})
+	})
+
+	Describe("declaration actions", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+
+		It("adds missing semicolons after script declarations", func() {
+			snapshot := analyzeDocumentAt(`|===|
+type Name: string
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Add missing semicolon")
+
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "type Name: string;")
+		})
+
+		It("extracts repeated type references into an alias", func() {
+			snapshot := analyzeDocumentAt(`|===|
+schema User: { name: string; email: string; };
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Extract repeated type into alias")
+
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, "type ExtractedType: string;")
+			tAssert.Contains(text, "name: ExtractedType")
+		})
+
+		It("extracts inline record types into schemas", func() {
+			snapshot := analyzeDocumentAt(`|===|
+schema User: { profile: { name: string; }; };
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Extract inline record type into schema")
+
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, "schema Profile:")
+			tAssert.Contains(text, "profile: Profile")
+		})
+
+		It("converts record variables into schema-backed variables", func() {
+			snapshot := analyzeDocumentAt(`|===|
+{ name: string; } user = { name: "Ada"; };
+|===|
+[output = data]
+{ value: user; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Convert record variable into schema-backed variable")
+
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, "schema User:")
+			tAssert.Contains(text, "User user =")
+		})
+	})
+
+	Describe("script block structure actions", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+
+		It("creates a script block above the output block", func() {
+			snapshot := analyzeDocumentAt(`[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Create script block")
+
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "|===|\n|===|\n[output = schema]")
+		})
+
+		It("wraps the document in a script block", func() {
+			snapshot := analyzeDocumentAt(`[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Wrap selection in script block")
+
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "|===|\n[output = schema]")
+		})
+
+		It("fixes mismatched script delimiter widths", func() {
+			snapshot := analyzeDocumentAt(`|====|
+type Name: string;
+|====|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Fix script delimiter length mismatch")
+
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "|===|\ntype Name: string;")
+		})
+
+		It("normalizes script fences", func() {
+			snapshot := analyzeDocumentAt(`|====|
+type Name: string;
+|====|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Normalize script fence")
+
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "|===|\ntype Name: string;")
+		})
+
+		It("removes empty script blocks", func() {
+			snapshot := analyzeDocumentAt(`|===|
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Remove empty script block")
+
+			tAssert.NotContains(action.Edit.Changes[uri][0].NewText, "|===|\n|===|")
+		})
+
+		It("moves script blocks before output blocks", func() {
+			snapshot := analyzeDocumentAt(`[output = schema]
+{}
+|===|
+type Name: string;
+|===|`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Move script block before output block")
+
+			tAssert.True(strings.HasPrefix(action.Edit.Changes[uri][0].NewText, "|===|\ntype Name: string;"))
+		})
 	})
 
 	It("offers documentation cleanup actions", func() {
