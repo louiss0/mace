@@ -928,15 +928,51 @@ func typeAliasTextCodeActions(text string, documentPath string) []analysisCodeAc
 }
 
 func createTypeAliasFromSelectedTypeText(text string) (string, bool) {
+	// 1. Schema / output-schema field:  name: string
 	pattern := regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(string|int|float|boolean|array<[^>]+>|[A-Za-z_][A-Za-z0-9_]*)`)
 	matches := pattern.FindStringSubmatch(text)
-	if len(matches) == 0 || strings.Contains(text, "type ExtractedType:") {
-		return "", false
+	if len(matches) > 0 && !strings.Contains(text, "type ExtractedType:") {
+		updated := strings.Replace(text, "|===|\n", "|===|\ntype ExtractedType: "+matches[2]+";\n", 1)
+		updated = pattern.ReplaceAllString(updated, `${1}: ExtractedType`)
+		updated = strings.Replace(updated, "type ExtractedType: ExtractedType;", "type ExtractedType: "+matches[2]+";", 1)
+		return updated, updated != text
 	}
-	updated := strings.Replace(text, "|===|\n", "|===|\ntype ExtractedType: "+matches[2]+";\n", 1)
-	updated = pattern.ReplaceAllString(updated, `${1}: ExtractedType`)
-	updated = strings.Replace(updated, "type ExtractedType: ExtractedType;", "type ExtractedType: "+matches[2]+";", 1)
-	return updated, updated != text
+
+	// 2. Variable declaration:  string name = "Ada";
+	varPattern := regexp.MustCompile(`(?m)^([ \t]*)(string|int|float|boolean|array<[^>]+>)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^;]+);`)
+	varMatches := varPattern.FindStringSubmatch(text)
+	if len(varMatches) > 0 && !strings.Contains(text, "type ExtractedType:") {
+		alias := strings.ToUpper(varMatches[3][:1]) + varMatches[3][1:]
+		updated := varPattern.ReplaceAllString(text, `${1}`+alias+` ${3} = ${4};`)
+		updated = strings.Replace(updated, "|===|\n", "|===|\ntype "+alias+": "+varMatches[2]+";\n", 1)
+		return updated, true
+	}
+
+	// 3. Output data field:  name: "Ada"  (infer primitive type from literal)
+	outputPattern := regexp.MustCompile(`(?m)^([ \t]*)([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^,{}\r\n]+)$`)
+	for _, m := range outputPattern.FindAllStringSubmatch(text, -1) {
+		if len(m) < 4 {
+			continue
+		}
+		value := strings.TrimSpace(m[3])
+		inferred := inferredTypeNameFromLiteral(value)
+		if inferred == "" || inferred == "string" && value == "" {
+			continue
+		}
+		alias := strings.ToUpper(m[2][:1]) + m[2][1:]
+		if strings.Contains(text, "type "+alias+":") {
+			continue
+		}
+		scriptBlock := "|===|\ntype " + alias + ": " + inferred + ";\n|===|\n"
+		if !strings.Contains(text, "|===|") {
+			updated := scriptBlock + text
+			return updated, true
+		}
+		updated := strings.Replace(text, "|===|\n", "|===|\ntype "+alias+": "+inferred+";\n", 1)
+		return updated, true
+	}
+
+	return "", false
 }
 
 func inlineTypeAliasUsageText(text string) (string, bool) {
@@ -1132,15 +1168,34 @@ func inlineVariableIntoOutputText(text string) (string, bool) {
 }
 
 func extractOutputExpressionText(text string) (string, bool) {
-	pattern := regexp.MustCompile(`(?m)([A-Za-z_][A-Za-z0-9_]*)\s*:\s*("[^"]*")`)
-	matches := pattern.FindStringSubmatch(text)
-	if len(matches) == 0 || strings.Contains(text, "|===|") {
+	if strings.Contains(text, "|===|") {
 		return "", false
 	}
-	name := matches[1]
-	value := matches[2]
-	updated := pattern.ReplaceAllString(text, name+": "+name)
-	return "|===|\nstring " + name + " = " + value + ";\n|===|\n" + updated, true
+
+	patterns := []struct {
+		pattern *regexp.Regexp
+		infer   func(string) string
+	}{
+		{regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)\s*:\s*("[^"]*")`), func(_ string) string { return "string" }},
+		{regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(\[[^\]]*\])`), func(_ string) string { return "array<string>" }},
+		{regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(\{[^}]*\})`), func(_ string) string { return "record" }},
+		{regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(-?\d+\.\d+)`), func(_ string) string { return "float" }},
+		{regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(-?\d+)`), func(_ string) string { return "int" }},
+		{regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(true|false)`), func(_ string) string { return "boolean" }},
+	}
+
+	for _, p := range patterns {
+		matches := p.pattern.FindStringSubmatch(text)
+		if len(matches) == 0 {
+			continue
+		}
+		name := matches[1]
+		value := matches[2]
+		updated := p.pattern.ReplaceAllString(text, name+": "+name)
+		return "|===|\n" + p.infer(value) + " " + name + " = " + value + ";\n|===|\n" + updated, true
+	}
+
+	return "", false
 }
 
 func parseErrorCodeActions(tokens []lexer.Token, documentPath string) []analysisCodeActionCandidate {
