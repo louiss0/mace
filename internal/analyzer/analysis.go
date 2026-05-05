@@ -433,6 +433,7 @@ func analyzeDocumentAt(text string, documentPath string) analysisSnapshot {
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, scriptBlockStructureCodeActions(text, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, variableFixTextCodeActions(text, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, typeAliasTextCodeActions(text, documentPath)...)
+		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, arrayTextCodeActions(text, documentPath)...)
 		return snapshot
 	}
 
@@ -600,6 +601,7 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 	actions = append(actions, scriptBlockStructureCodeActions(text, documentPath)...)
 	actions = append(actions, variableFixTextCodeActions(text, documentPath)...)
 	actions = append(actions, typeAliasTextCodeActions(text, documentPath)...)
+	actions = append(actions, arrayTextCodeActions(text, documentPath)...)
 	actions = append(actions, documentationCodeActions(text, file, tokens, documentPath)...)
 	actions = append(actions, editorRefactorCodeActions(text, file, documentPath)...)
 	diagnostics = append(diagnostics, schemaOutputVariableDiagnostics(file, tokens)...)
@@ -692,6 +694,65 @@ func moveScriptBlockBeforeOutputText(text string) (string, bool) {
 	script := strings.TrimSpace(text[firstScript:scriptEnd])
 	withoutScript := strings.TrimSpace(text[:firstScript] + text[scriptEnd:])
 	return script + "\n" + withoutScript, true
+}
+
+func arrayTextCodeActions(text string, documentPath string) []analysisCodeActionCandidate {
+	if documentPath == "" {
+		return nil
+	}
+
+	uri := protocol.DocumentUri(fileURI(documentPath))
+	fullRange := fullDocumentRange(text)
+	targetRange := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+	actions := []analysisCodeActionCandidate{}
+	addTextAction := func(title string, newText string) {
+		actions = append(actions, textRefactorAction(title, targetRange, uri, fullRange, newText))
+	}
+	if updated, ok := wrapTypeInArrayText(text); ok {
+		addTextAction("Wrap type in array", updated)
+	}
+	if updated, ok := fixMixedArrayLiteralText(text); ok {
+		addTextAction("Fix mixed array literal", updated)
+	}
+	if updated, ok := changeArrayElementTypeText(text); ok {
+		addTextAction("Change array element type", updated)
+	}
+	if updated, ok := replaceInvalidArrayIndexText(text); ok {
+		addTextAction("Replace invalid array index", updated)
+	}
+	return actions
+}
+
+func wrapTypeInArrayText(text string) (string, bool) {
+	updated := regexp.MustCompile(`type\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(string|int|float|boolean);`).ReplaceAllString(text, `type ${1}: array<${2}>;`)
+	return updated, updated != text
+}
+
+func fixMixedArrayLiteralText(text string) (string, bool) {
+	pattern := regexp.MustCompile(`array<string>\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\["[^"]+",\s*\d+\];`)
+	matches := pattern.FindStringSubmatch(text)
+	if len(matches) == 0 {
+		return "", false
+	}
+	aliasName := strings.ToUpper(matches[1][:1]) + matches[1][1:] + "Item"
+	updated := strings.Replace(text, "|===|\n", "|===|\ntype "+aliasName+": variant[string, int];\n", 1)
+	updated = strings.Replace(updated, "array<string> "+matches[1], "array<"+aliasName+"> "+matches[1], 1)
+	return updated, updated != text
+}
+
+func changeArrayElementTypeText(text string) (string, bool) {
+	pattern := regexp.MustCompile(`array<string>\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\[\d+(?:,\s*\d+)*\];`)
+	matches := pattern.FindStringSubmatch(text)
+	if len(matches) == 0 {
+		return "", false
+	}
+	updated := strings.Replace(text, "array<string> "+matches[1], "array<int> "+matches[1], 1)
+	return updated, updated != text
+}
+
+func replaceInvalidArrayIndexText(text string) (string, bool) {
+	updated := regexp.MustCompile(`(\[[^\]]+\])\[\d+\]`).ReplaceAllString(text, `${1}[0]`)
+	return updated, updated != text
 }
 
 func typeAliasTextCodeActions(text string, documentPath string) []analysisCodeActionCandidate {

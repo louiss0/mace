@@ -93,10 +93,10 @@ Absolutely. Mace has *great* Code Action potential because it has a lot of “st
 
 ### Arrays
 
-* [ ] **Wrap type in `array<...>`**.
-* [ ] **Fix mixed array literal** by converting values or splitting into `variant[...]`.
-* [ ] **Change array element type** to match literal values.
-* [ ] **Replace invalid array index** with valid index suggestions.
+* [x] **Wrap type in `array<...>`**.
+* [x] **Fix mixed array literal** by converting values or splitting into `variant[...]`.
+* [x] **Change array element type** to match literal values.
+* [x] **Replace invalid array index** with valid index suggestions.
 
 ---
 

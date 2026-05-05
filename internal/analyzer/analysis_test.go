@@ -463,6 +463,51 @@ from "dupes.mace" import User, User, Role;
 		tAssert.Equal("Name", wildcardAction.Edit.Changes[uri][0].NewText)
 	})
 
+	Describe("array actions", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
+
+		It("wraps types in arrays", func() {
+			snapshot := analyzeDocumentAt(`|===|
+type Name: string;
+|===|
+[output = schema]
+{}`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Wrap type in array")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "type Name: array<string>;")
+		})
+
+		It("fixes mixed array literals with variants", func() {
+			snapshot := analyzeDocumentAt(`|===|
+array<string> values = ["Ada", 1];
+|===|
+[output = data]
+{ value: values; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Fix mixed array literal")
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, "type ValuesItem: variant[string, int];")
+			tAssert.Contains(text, "array<ValuesItem> values")
+		})
+
+		It("changes array element types to match literals", func() {
+			snapshot := analyzeDocumentAt(`|===|
+array<string> values = [1, 2];
+|===|
+[output = data]
+{ value: values; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Change array element type")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "array<int> values")
+		})
+
+		It("replaces invalid array indexes", func() {
+			snapshot := analyzeDocumentAt(`[output = data]
+{ value: ["Ada"][3]; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, rangeValue, "Replace invalid array index")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `value: ["Ada"][0]`)
+		})
+	})
+
 	Describe("type alias actions", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))
