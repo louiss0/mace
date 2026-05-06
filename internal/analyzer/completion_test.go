@@ -321,8 +321,8 @@ enum InternalStatus: int {
   Status: InternalStatus;
 }`)
 
-		text := `from "./shared.mace" import Status;
-|===|
+		text := `|===|
+from "./shared.mace" import Status;
 Status current = Status.`
 
 		position := protocol.Position{
@@ -395,5 +395,77 @@ type Alias: string;
 
 		tAssert.Equal([]string{"name", "age"}, names)
 		tAssert.Equal([]protocol.CompletionItemKind{protocol.CompletionItemKindVariable, protocol.CompletionItemKindVariable}, kinds)
+	})
+
+	It("completes import identifiers from exported output keys", func() {
+		workspace, err := os.MkdirTemp("", "mace-completion-import-identifiers-*")
+		tAssert.NoError(err)
+
+		writeAnalysisFile(workspace, "shared.mace", `[output = data]
+{
+  name: "Ada";
+  age: 30;
+}`)
+
+		documentPath := filepath.Join(workspace, "consumer.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		line := `from "./shared.mace" import `
+		text := "|===|\n" + line + "\n|===|\n[output = data]\n{}"
+		position := protocol.Position{Line: 1, Character: protocol.UInteger(len(line))}
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, uri, position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string { return item.Label })
+
+		tAssert.Equal([]string{"age", "name"}, labels)
+	})
+
+	It("completes import identifiers after comma separators", func() {
+		workspace, err := os.MkdirTemp("", "mace-completion-import-comma-*")
+		tAssert.NoError(err)
+
+		writeAnalysisFile(workspace, "shared.mace", `[output = data]
+{
+  name: "Ada";
+  age: 30;
+}`)
+
+		documentPath := filepath.Join(workspace, "consumer.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		line := `from "./shared.mace" import name, `
+		text := "|===|\n" + line + "\n|===|\n[output = data]\n{}"
+		position := protocol.Position{Line: 1, Character: protocol.UInteger(len(line))}
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, uri, position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string { return item.Label })
+
+		tAssert.Equal([]string{"age", "name"}, labels)
+	})
+
+	It("completes script block import identifiers from exported output keys", func() {
+		workspace, err := os.MkdirTemp("", "mace-completion-script-import-identifiers-*")
+		tAssert.NoError(err)
+
+		writeAnalysisFile(workspace, "shared.mace", `[output = data]
+{
+  name: "Ada";
+  age: 30;
+}`)
+
+		documentPath := filepath.Join(workspace, "consumer.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		text := `|===|
+from "./shared.mace" import 
+|===|
+[output = data]
+{}`
+		position := protocol.Position{Line: 1, Character: protocol.UInteger(len(`from "./shared.mace" import `))}
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, uri, position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string { return item.Label })
+
+		tAssert.Equal([]string{"age", "name"}, labels)
 	})
 })

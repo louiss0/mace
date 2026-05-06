@@ -42,16 +42,8 @@ func (p *Parser) ParseFile() (ast.File, error) {
 		return ast.File{}, fmt.Errorf("parser: empty token stream")
 	}
 
-	imports := []ast.ImportDeclaration{}
-	for p.current().Type == lexer.TokenFrom {
-		importDecl, err := p.parseImportDeclaration()
-		if err != nil {
-			return ast.File{}, err
-		}
-		imports = append(imports, importDecl)
-	}
-
 	var script *ast.ScriptBlock
+	imports := []ast.ImportDeclaration{}
 	if p.current().Type == lexer.TokenScriptDelimiter {
 		scriptBlock, err := p.parseScriptBlock()
 		if err != nil {

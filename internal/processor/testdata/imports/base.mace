@@ -1,4 +1,3 @@
-
 |=====================================|
 from "./profile.mace" import Profile, Age;
 type Name: string;

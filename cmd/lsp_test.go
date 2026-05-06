@@ -328,7 +328,7 @@ var _ = Describe("LSP server", func() {
 		}
 	})
 
-	It("resolves top-level imports relative to the opened file", func() {
+	It("resolves script imports relative to the opened file", func() {
 		notifications := []capturedNotification{}
 
 		workspace, err := os.MkdirTemp("", "mace-lsp-import-diagnostics-*")
@@ -338,8 +338,8 @@ var _ = Describe("LSP server", func() {
 {
   Name: string;
 }`)
-		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `from "./shared.mace" import Name;
-|===|
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `|===|
+from "./shared.mace" import Name;
 Name user = "Ada";
 |===|
 [output = data]
@@ -347,8 +347,8 @@ Name user = "Ada";
   user: user;
 }`))
 
-		didOpen(server, uri, `from "./shared.mace" import Name;
-|===|
+		didOpen(server, uri, `|===|
+from "./shared.mace" import Name;
 Name user = "Ada";
 |===|
 [output = data]
@@ -768,16 +768,16 @@ schema Plot: { points: array<Point>; };
 		tAssert.Equal("schema", items[0].Label)
 	})
 
-	It("returns import completions only at file scope", func() {
+	It("returns import completions only in script scope", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, "fr", nil)
 
 		labels := completeLabels(server, uri, 0, 2)
-		tAssert.Equal([]string{"from"}, labels)
+		tAssert.Empty(labels)
 
 		didChange(server, uri, 3, "|===|\nfr", nil)
 		labels = completeLabels(server, uri, 1, 2)
-		tAssert.NotContains(labels, "from")
+		tAssert.Contains(labels, "from")
 	})
 
 	It("only suggests import after a valid from path", func() {
@@ -790,12 +790,14 @@ schema Plot: { points: array<Point>; };
   User: { name: string; };
   Config: string;
 }`)
-		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `from "./shared.mace" imp`))
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `|===|
+from "./shared.mace" imp`))
 
 		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `from "./shared.mace" imp`, nil)
+		didChange(server, uri, 2, `|===|
+from "./shared.mace" imp`, nil)
 
-		labels := completeLabels(server, uri, 0, uint32(len(`from "./shared.mace" imp`)))
+		labels := completeLabels(server, uri, 1, uint32(len(`from "./shared.mace" imp`)))
 		tAssert.Equal([]string{"import"}, labels)
 	})
 
@@ -809,9 +811,10 @@ schema Plot: { points: array<Point>; };
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
 		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `from "`, nil)
+		didChange(server, uri, 2, `|===|
+from "`, nil)
 
-		labels := completeLabels(server, uri, 0, uint32(len(`from "`)))
+		labels := completeLabels(server, uri, 1, uint32(len(`from "`)))
 		tAssert.Contains(labels, "./shared.mace")
 		tAssert.Contains(labels, "./nested/")
 	})
@@ -825,9 +828,10 @@ schema Plot: { points: array<Point>; };
 		consumerURI := protocol.DocumentUri(writeWorkspaceFile(workspace, "nested/consumer.mace", ``))
 
 		openEmptyDocument(server, consumerURI, nil)
-		didChange(server, consumerURI, 2, `from "../`, nil)
+		didChange(server, consumerURI, 2, `|===|
+from "../`, nil)
 
-		labels := completeLabels(server, consumerURI, 0, uint32(len(`from "../`)))
+		labels := completeLabels(server, consumerURI, 1, uint32(len(`from "../`)))
 		tAssert.Contains(labels, "../shared.mace")
 	})
 
@@ -843,9 +847,10 @@ schema Plot: { points: array<Point>; };
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
 		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `from "./shared.mace" `, nil)
+		didChange(server, uri, 2, `|===|
+from "./shared.mace" `, nil)
 
-		labels := completeLabels(server, uri, 0, uint32(len(`from "./shared.mace" `)))
+		labels := completeLabels(server, uri, 1, uint32(len(`from "./shared.mace" `)))
 		tAssert.Equal([]string{"import"}, labels)
 	})
 
@@ -859,12 +864,14 @@ schema Plot: { points: array<Point>; };
   User: { name: string; };
   Config: string;
 }`)
-		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `from "./shared.mace" import U`))
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `|===|
+from "./shared.mace" import U`))
 
 		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `from "./shared.mace" import U`, nil)
+		didChange(server, uri, 2, `|===|
+from "./shared.mace" import U`, nil)
 
-		labels := completeLabels(server, uri, 0, uint32(len(`from "./shared.mace" import U`)))
+		labels := completeLabels(server, uri, 1, uint32(len(`from "./shared.mace" import U`)))
 		tAssert.Equal([]string{"User"}, labels)
 	})
 
@@ -881,9 +888,10 @@ schema Plot: { points: array<Point>; };
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
 		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `from "./shared.mace" import `, nil)
+		didChange(server, uri, 2, `|===|
+from "./shared.mace" import `, nil)
 
-		labels := completeLabels(server, uri, 0, uint32(len(`from "./shared.mace" import `)))
+		labels := completeLabels(server, uri, 1, uint32(len(`from "./shared.mace" import `)))
 		tAssert.Equal([]string{"Config", "User"}, labels)
 	})
 
@@ -899,8 +907,8 @@ schema Plot: { points: array<Point>; };
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
 		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `from "./shared.mace" import User;
-|===|
+		didChange(server, uri, 2, `|===|
+from "./shared.mace" import User;
 Us
 |===|
 [output = data] {}`, nil)
@@ -1046,8 +1054,8 @@ string selected = names[
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
 		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `from "./shared.mace" import names;
-|===|
+		didChange(server, uri, 2, `|===|
+from "./shared.mace" import names;
 string selected = names[
 |===|
 [output = data] {}`, nil)
@@ -1241,8 +1249,8 @@ schema Basket: { favorite_fruit: Fruit; };
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
 		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `from "./shared.mace" import ImportedUser;
-|===|
+		didChange(server, uri, 2, `|===|
+from "./shared.mace" import ImportedUser;
 schema LocalUser: { id: int; };
 |===|
 [output = data, schema = `, nil)
@@ -1269,8 +1277,8 @@ enum Personality: string {
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
 		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `from "./shared.mace" import Personality;
-|===|
+		didChange(server, uri, 2, `|===|
+from "./shared.mace" import Personality;
 Personality value = Personality.
 |===|
 [output = data] {}`, nil)
@@ -1295,10 +1303,12 @@ Personality value = Personality.
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
 		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `from "./shared.mace" import ImportedUser;
+		didChange(server, uri, 2, `|===|
+from "./shared.mace" import ImportedUser;
+|===|
 [output = data, schema_file = "`, nil)
 
-		labels := completeLabels(server, uri, 1, uint32(len(`[output = data, schema_file = "`)))
+		labels := completeLabels(server, uri, 3, uint32(len(`[output = data, schema_file = "`)))
 		tAssert.NotContains(labels, "./shared.mace")
 		tAssert.Contains(labels, "./other.mace")
 	})
@@ -1761,14 +1771,14 @@ UserID current = "user_1";
 {
   User: { name: string; } /# Public user schema;
 }`)
-		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `from "./shared.mace" import User;
-|===|
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `|===|
+from "./shared.mace" import User;
 User current = { name: "Ada"; };
 |===|
 [output = data] { result: current; }`))
 
-		didOpen(server, uri, `from "./shared.mace" import User;
-|===|
+		didOpen(server, uri, `|===|
+from "./shared.mace" import User;
 User current = { name: "Ada"; };
 |===|
 [output = data] { result: current; }`, nil)
@@ -2062,14 +2072,14 @@ int default_age = 30;
 {
   User: { name: string; };
 }`)
-		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `from "./shared.mace" import User;
-|===|
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `|===|
+from "./shared.mace" import User;
 User current = { name: "Ada"; };
 |===|
 [output = data] { result: current; }`))
 
-		didOpen(server, uri, `from "./shared.mace" import User;
-|===|
+		didOpen(server, uri, `|===|
+from "./shared.mace" import User;
 User current = { name: "Ada"; };
 |===|
 [output = data] { result: current; }`, nil)
@@ -2106,14 +2116,14 @@ User current = { name: "Ada"; };
 {
   User: { name: string; };
 }`)
-		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `from "./shared.mace" import User;
-|===|
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `|===|
+from "./shared.mace" import User;
 User current = { name: "Ada"; };
 |===|
 [output = data] { result: current; }`))
 
-		didOpen(server, uri, `from "./shared.mace" import User;
-|===|
+		didOpen(server, uri, `|===|
+from "./shared.mace" import User;
 User current = { name: "Ada"; };
 |===|
 [output = data] { result: current; }`, nil)
@@ -2180,8 +2190,8 @@ schema User: { name: string; };
 
        qux: 1;
 }`)
-		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `from "./shared.mace" import qux;
-|===|
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `|===|
+from "./shared.mace" import qux;
 int qux = 2;
 |===|
 
@@ -2189,8 +2199,8 @@ int qux = 2;
   bar: qux;
 }`))
 
-		didOpen(server, uri, `from "./shared.mace" import qux;
-|===|
+		didOpen(server, uri, `|===|
+from "./shared.mace" import qux;
 int qux = 2;
 |===|
 
@@ -2226,13 +2236,17 @@ int qux = 2;
 		tAssert.NoError(err)
 
 		writeWorkspaceFile(workspace, "shared.mace", `[output = data] { name: "Ada"; }`)
-		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `from "./shared" import name;
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `|===|
+from "./shared" import name;
+|===|
 [output = data]
 {
   result: name;
 }`))
 
-		didOpen(server, uri, `from "./shared" import name;
+		didOpen(server, uri, `|===|
+from "./shared" import name;
+|===|
 [output = data]
 {
   result: name;
@@ -2241,8 +2255,8 @@ int qux = 2;
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentCodeAction, protocol.CodeActionParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
 			Range: protocol.Range{
-				Start: protocol.Position{Line: 0, Character: 0},
-				End:   protocol.Position{Line: 0, Character: 20},
+				Start: protocol.Position{Line: 1, Character: 0},
+				End:   protocol.Position{Line: 1, Character: 20},
 			},
 			Context: protocol.CodeActionContext{},
 		}, nil)
@@ -2264,8 +2278,8 @@ int qux = 2;
 		workspace, err := os.MkdirTemp("", "mace-lsp-schema-file-conflict-*")
 		tAssert.NoError(err)
 
-		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `from "./shared.mace" import User;
-|===|
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `|===|
+from "./shared.mace" import User;
 schema User: { name: string; };
 |===|
 [output = data, schema = User, schema_file = "./shared.mace"]
@@ -2273,8 +2287,8 @@ schema User: { name: string; };
   result: { name: "Ada"; };
 }`))
 
-		didOpen(server, uri, `from "./shared.mace" import User;
-|===|
+		didOpen(server, uri, `|===|
+from "./shared.mace" import User;
 schema User: { name: string; };
 |===|
 [output = data, schema = User, schema_file = "./shared.mace"]

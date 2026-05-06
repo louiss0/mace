@@ -17,18 +17,20 @@ object model, and exposes a CLI for JSON emission and source inspection.
 
 A Mace file has this shape:
 
-1. Zero or more import declarations.
-2. An optional script block.
-3. Exactly one output block.
+1. An optional script block.
+2. Exactly one output block.
 
-Imports must appear before the script block and output block.
+Imports, when present, must appear at the top of the script block before
+other script declarations.
 
 ## Imports
 
 Imports use this syntax:
 
 ```mace
+|===|
 from "./shared.mace" import Name, User;
+|===|
 ```
 
 Current import rules:
@@ -64,6 +66,7 @@ at least three on each delimiter, for example `|===|` and `|====|`.
 
 The script block can contain:
 
+- import declarations at the top of the block
 - `type` declarations
 - `enum` declarations
 - `schema` declarations
@@ -649,9 +652,9 @@ Example (vertical block comment):
 ## Example
 
 ```mace
+|===|
 from "./base.mace" import Name, User;
 
-|===|
 Name name = "Ada";
 User result = { name: name, age: 27 };
 |===|

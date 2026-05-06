@@ -381,9 +381,9 @@ var _ = Describe("Parser", func() {
 	)
 
 	Describe("parses a full file", func() {
-		It("parses imports, script block, and output block", func() {
-			input := `from "base.mace" import User, Config;
-|===|
+		It("parses script imports, declarations, and output block", func() {
+			input := `|===|
+from "base.mace" import User, Config;
 type Name: string;
 schema User: { name: string; age?: int; };
 string user = "Ada";
@@ -446,8 +446,8 @@ string user = "Ada";
 		})
 
 		It("ignores line and block comment content while parsing", func() {
-			input := `from "base.mace" import User; /= trailing import comment
-|===|
+			input := `|===|
+from "base.mace" import User; /= trailing import comment
 /= line comment before declarations
 schema Profile: {
   /= line comment before field
@@ -535,14 +535,16 @@ string visible = "ok";
 			}
 		})
 
-		It("ignores vertical block comments that wrap imports", func() {
+		It("ignores vertical block comments that wrap script imports", func() {
 			input := `/=
 from "./ignored.mace" import Ignored;
 =/
+|===|
 from "./base.mace" import User;
 /=
 from "./also_ignored.mace" import AlsoIgnored;
 =/
+|===|
 [output = data]
 {
   result: 1;
@@ -554,6 +556,15 @@ from "./also_ignored.mace" import AlsoIgnored;
 				tAssert.Equal("\"./base.mace\"", file.Imports[0].Path.Lexeme)
 				tAssert.Equal([]string{"User"}, file.Imports[0].Identifiers)
 			}
+		})
+
+		It("rejects top-level imports", func() {
+			_, err := parseFileInput(`from "./base.mace" import User;
+[output = data]
+{ result: 1; }`)
+
+			tAssert.Error(err)
+			tAssert.ErrorContains(err, "expected output directive")
 		})
 
 		It("ignores vertical block comments around type and schema declarations", func() {
@@ -924,8 +935,8 @@ schema User: {
 		})
 
 		It("parses comma separators across declarations", func() {
-			file, err := parseFileInput(`from "./shared.mace" import Name, User;
-|===|
+			file, err := parseFileInput(`|===|
+from "./shared.mace" import Name, User;
 type Alias: string;
 injectable string env;
 schema User: {

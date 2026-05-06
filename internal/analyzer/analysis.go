@@ -596,6 +596,7 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 		diagnostics = append(diagnostics, unusedImportDiagnostics...)
 		actions = append(actions, unusedImportActions...)
 	}
+	diagnostics = append(diagnostics, unavailableImportDiagnostics(file, tokens, documentPath)...)
 	actions = append(actions, importResolutionCodeActions(text, file, tokens, documentPath)...)
 	actions = append(actions, scriptBlockStructureCodeActions(text, documentPath)...)
 	actions = append(actions, variableFixTextCodeActions(text, documentPath)...)
@@ -1214,6 +1215,69 @@ func importResolutionCodeActions(text string, file ast.File, tokens []lexer.Toke
 	return actions
 }
 
+func unavailableImportDiagnostics(file ast.File, tokens []lexer.Token, documentPath string) []protocol.Diagnostic {
+	if documentPath == "" {
+		return nil
+	}
+
+	unavailableNames := unavailableImportNameSet(file, documentPath)
+	diagnostics := []protocol.Diagnostic{}
+	for _, importDecl := range file.Imports {
+		pathValue, ok := stringLiteralValue(importDecl.Path)
+		if !ok {
+			continue
+		}
+		for _, name := range importDecl.Identifiers {
+			if _, ok := unavailableNames[importNameKey(pathValue, name)]; !ok {
+				continue
+			}
+			nameToken, ok := importIdentifierToken(tokens, importDecl, name)
+			if !ok {
+				continue
+			}
+			message := fmt.Sprintf("imported key %q is not exported by %q", name, pathValue)
+			diagnostics = append(diagnostics, diagnosticWithCode(tokenProtocolRange(nameToken), protocol.DiagnosticSeverityError, diagnosticImportNameNotExposed, message))
+		}
+	}
+
+	return diagnostics
+}
+
+func unavailableImportNameSet(file ast.File, documentPath string) map[string]struct{} {
+	if documentPath == "" {
+		return nil
+	}
+
+	baseDir := filepath.Dir(documentPath)
+	names := map[string]struct{}{}
+	for _, importDecl := range file.Imports {
+		pathValue, ok := stringLiteralValue(importDecl.Path)
+		if !ok {
+			continue
+		}
+
+		importedPath := filepath.Clean(filepath.Join(baseDir, pathValue))
+		_, importedFile, _, ok := parsedFile(importedPath)
+		if !ok {
+			continue
+		}
+
+		exportedNames := exportedOutputNames(importedFile)
+		for _, name := range importDecl.Identifiers {
+			if lo.Contains(exportedNames, name) {
+				continue
+			}
+			names[importNameKey(pathValue, name)] = struct{}{}
+		}
+	}
+
+	return names
+}
+
+func importNameKey(pathValue string, name string) string {
+	return pathValue + "\x00" + name
+}
+
 func existingMacePathWithSimilarName(path string) (string, bool) {
 	directory := filepath.Dir(path)
 	base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
@@ -1401,61 +1465,72 @@ func editorRefactorCodeActions(text string, file ast.File, tokens []lexer.Token,
 }
 
 func addImportRefactorActions(file ast.File, addWholeFileAction func(string, protocol.Range, ast.File)) {
-	if len(file.Imports) > 1 {
-		imports := append([]ast.ImportDeclaration{}, file.Imports...)
-		slices.SortFunc(imports, func(left ast.ImportDeclaration, right ast.ImportDeclaration) int {
+	imports := file.Imports
+	if file.Script != nil {
+		imports = file.Script.Imports
+	}
+
+	if len(imports) > 1 {
+		sortedImports := append([]ast.ImportDeclaration{}, imports...)
+		slices.SortFunc(sortedImports, func(left ast.ImportDeclaration, right ast.ImportDeclaration) int {
 			return strings.Compare(left.Path.Lexeme, right.Path.Lexeme)
 		})
-		if !slices.EqualFunc(imports, file.Imports, func(left ast.ImportDeclaration, right ast.ImportDeclaration) bool {
+		if !slices.EqualFunc(sortedImports, imports, func(left ast.ImportDeclaration, right ast.ImportDeclaration) bool {
 			return left.Path.Lexeme == right.Path.Lexeme && slices.Equal(left.Identifiers, right.Identifiers)
 		}) {
-			updated := file
-			updated.Imports = imports
+			updated := replaceFileImports(file, sortedImports)
 			addWholeFileAction("Sort imports", protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, updated)
 		}
 	}
 
-	for index, importDecl := range file.Imports {
+	for index, importDecl := range imports {
 		targetRange := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
 		if hasDuplicateImportIdentifiers(importDecl.Identifiers) {
-			updated := file
-			imports := append([]ast.ImportDeclaration{}, file.Imports...)
-			imports[index].Identifiers = uniqueImportIdentifiers(importDecl.Identifiers)
-			updated.Imports = imports
+			updatedImports := append([]ast.ImportDeclaration{}, imports...)
+			updatedImports[index].Identifiers = uniqueImportIdentifiers(importDecl.Identifiers)
+			updated := replaceFileImports(file, updatedImports)
 			addWholeFileAction("Remove duplicate imported names", targetRange, updated)
 		}
 
 		pathValue, _ := stringLiteralValue(importDecl.Path)
 		if pathValue != "" && !strings.HasPrefix(pathValue, "./") && !strings.HasPrefix(pathValue, "../") && !filepath.IsAbs(pathValue) {
-			updated := file
-			imports := append([]ast.ImportDeclaration{}, file.Imports...)
-			imports[index].Path = ast.StringLiteral{Lexeme: strconv.Quote("./" + pathValue)}
-			updated.Imports = imports
+			updatedImports := append([]ast.ImportDeclaration{}, imports...)
+			updatedImports[index].Path = ast.StringLiteral{Lexeme: strconv.Quote("./" + pathValue)}
+			updated := replaceFileImports(file, updatedImports)
 			addWholeFileAction("Fix relative import path", targetRange, updated)
 		}
 		if len(importDecl.Identifiers) > 1 {
-			updated := file
-			imports := append([]ast.ImportDeclaration{}, file.Imports...)
-			imports = slices.Delete(imports, index, index+1)
+			updatedImports := append([]ast.ImportDeclaration{}, imports...)
+			updatedImports = slices.Delete(updatedImports, index, index+1)
 			for offset, identifier := range importDecl.Identifiers {
-				imports = slices.Insert(imports, index+offset, ast.ImportDeclaration{Path: importDecl.Path, Identifiers: []string{identifier}})
+				updatedImports = slices.Insert(updatedImports, index+offset, ast.ImportDeclaration{Path: importDecl.Path, Identifiers: []string{identifier}})
 			}
-			updated.Imports = imports
+			updated := replaceFileImports(file, updatedImports)
 			addWholeFileAction("Split import declaration", targetRange, updated)
 		}
-		for otherIndex := index + 1; otherIndex < len(file.Imports); otherIndex++ {
-			if file.Imports[otherIndex].Path.Lexeme != importDecl.Path.Lexeme {
+		for otherIndex := index + 1; otherIndex < len(imports); otherIndex++ {
+			if imports[otherIndex].Path.Lexeme != importDecl.Path.Lexeme {
 				continue
 			}
-			updated := file
-			imports := append([]ast.ImportDeclaration{}, file.Imports...)
-			imports[index].Identifiers = append(append([]string{}, importDecl.Identifiers...), file.Imports[otherIndex].Identifiers...)
-			imports = slices.Delete(imports, otherIndex, otherIndex+1)
-			updated.Imports = imports
+			updatedImports := append([]ast.ImportDeclaration{}, imports...)
+			updatedImports[index].Identifiers = append(append([]string{}, importDecl.Identifiers...), imports[otherIndex].Identifiers...)
+			updatedImports = slices.Delete(updatedImports, otherIndex, otherIndex+1)
+			updated := replaceFileImports(file, updatedImports)
 			addWholeFileAction("Merge duplicate imports", targetRange, updated)
 			break
 		}
 	}
+}
+
+func replaceFileImports(file ast.File, imports []ast.ImportDeclaration) ast.File {
+	updated := file
+	updated.Imports = append([]ast.ImportDeclaration{}, imports...)
+	if updated.Script != nil {
+		script := *updated.Script
+		script.Imports = append([]ast.ImportDeclaration{}, imports...)
+		updated.Script = &script
+	}
+	return updated
 }
 
 func hasDuplicateImportIdentifiers(identifiers []string) bool {
@@ -2335,10 +2410,15 @@ func unusedImportAnalysis(text string, file ast.File, tokens []lexer.Token, docu
 	}
 
 	referencedNames := referencedNames(file)
+	unavailableNames := unavailableImportNameSet(file, documentPath)
 	diagnostics := []protocol.Diagnostic{}
 	actions := []analysisCodeActionCandidate{}
 	for _, importDecl := range file.Imports {
+		pathValue, _ := stringLiteralValue(importDecl.Path)
 		for _, name := range importDecl.Identifiers {
+			if _, ok := unavailableNames[importNameKey(pathValue, name)]; ok {
+				continue
+			}
 			if _, ok := referencedNames[name]; ok {
 				continue
 			}

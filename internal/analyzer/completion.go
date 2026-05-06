@@ -23,7 +23,7 @@ import (
 var (
 	importPathPattern           = regexp.MustCompile(`^\s*from\s+"([^"]+)"\s*([A-Za-z_]*)$`)
 	importOpenPathPattern       = regexp.MustCompile(`^\s*from\s+"([^"]*)$`)
-	importIdentifiersPattern    = regexp.MustCompile(`^\s*from\s+"([^"]+)"\s+import\s*([A-Za-z_]*)$`)
+	importIdentifiersPattern    = regexp.MustCompile(`^\s*from\s+"([^"]+)"\s+import\s*(?:[A-Za-z_][A-Za-z0-9_]*\s*,\s*)*([A-Za-z_][A-Za-z0-9_]*)?$`)
 	directiveOutputValuePattern = regexp.MustCompile(`^\s*output\s*=\s*([A-Za-z_]*)$`)
 	directiveSchemaPattern      = regexp.MustCompile(`^\s*schema\s*=\s*([A-Za-z_]*)$`)
 	directiveSchemaFilePattern  = regexp.MustCompile(`^\s*schema_file\s*=\s*"([^"]*)$`)
@@ -31,15 +31,14 @@ var (
 
 const completionPlaceholderIdentifier = "mace_cursor_placeholder"
 
-var globalKeywordCompletions = []completionDefinition{
-	{Label: "from", Kind: protocol.CompletionItemKindKeyword, Detail: "import declaration"},
-}
+var globalKeywordCompletions = []completionDefinition{}
 
 var scriptKeywordCompletions = []completionDefinition{
 	{Label: "array", Kind: protocol.CompletionItemKindKeyword, Detail: "type constructor"},
 	{Label: "boolean", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
 	{Label: "enum", Kind: protocol.CompletionItemKindKeyword, Detail: "enum declaration"},
 	{Label: "float", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
+	{Label: "from", Kind: protocol.CompletionItemKindKeyword, Detail: "import declaration"},
 	{Label: "gen_doc", Kind: protocol.CompletionItemKindKeyword, Detail: "type or variable documentation declaration"},
 	{Label: "injectable", Kind: protocol.CompletionItemKindKeyword, Detail: "variable modifier"},
 	{Label: "int", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
@@ -56,7 +55,7 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 	scope := completionScopeAt(document.text, position)
 	declarations := completionDeclarations(document, uri, position, linePrefix, scope)
 
-	if scope == completionScopeFile {
+	if scope == completionScopeScript {
 		if items, handled := importCompletionItems(linePrefix, uri); handled {
 			return items
 		}

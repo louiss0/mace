@@ -319,8 +319,8 @@ Unknown value = 1;
 
 	Describe("output", func() {
 		It("prints canonical Mace source from the parsed file", func() {
-			path := writeMaceFile(`from "./base.mace" import User;
-|===|
+			path := writeMaceFile(`|===|
+from "./base.mace" import User;
 schema User: { name: string; age?: int; };
 |===|
 [output = data, schema = User]

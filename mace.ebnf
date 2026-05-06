@@ -47,7 +47,6 @@ interpolation      = "$" , "(" , expression , ")" ;
 
 mace_file
   = ws0 ,
-    { import_declaration , ws0 } ,
     [ script_block , ws0 ] ,
     output_block ,
     ws0 ;
@@ -71,6 +70,7 @@ import_list
 script_block
   = script_delimiter ,
     ws0 ,
+    { import_declaration , ws0 } ,
     { script_item , ws0 } ,
     script_delimiter ;
 

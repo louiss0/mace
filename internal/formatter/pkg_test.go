@@ -39,8 +39,8 @@ func parseMaceFile(input string) (ast.File, error) {
 
 var _ = Describe("FormatFile", func() {
 	It("formats imports, script declarations, and output", func() {
-		file, err := parseMaceFile(`from "./base.mace" import User, Config;
-|===|
+		file, err := parseMaceFile(`|===|
+from "./base.mace" import User, Config;
 type Name: string;
 schema User: { name: string; age?: int; };
 enum Fruit: string {
@@ -75,9 +75,8 @@ injectable string user = "Ada";
 }`, output)
 	})
 
-	It("keeps legacy top-level imports when script imports also exist", func() {
-		file, err := parseMaceFile(`from "./legacy.mace" import Config;
-|===|
+	It("formats script imports without duplicating flattened file imports", func() {
+		file, err := parseMaceFile(`|===|
 from "./shared.mace" import User;
 string name = "Ada";
 |===|
@@ -87,11 +86,10 @@ string name = "Ada";
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
-		tAssert.Equal(`|===================================|
-from "./legacy.mace" import Config;
+		tAssert.Equal(`|=================================|
 from "./shared.mace" import User;
 string name = "Ada";
-|===================================|
+|=================================|
 [output = data]
 {
   result: name
