@@ -755,6 +755,51 @@ schema User: { name: string; email: string; };
 			tAssert.Contains(text, "name: ExtractedType")
 		})
 
+		It("extracts variable type references into aliases", func() {
+			snapshot := analyzeDocumentAt(`|===|
+string name = "Ada";
+|===|
+[output = data]
+{ value: name; }`, documentPath)
+			targetRange := protocol.Range{Start: protocol.Position{Line: 1, Character: 1}, End: protocol.Position{Line: 1, Character: 1}}
+			action := requireCodeAction(snapshot, uri, targetRange, "Extract variable type into alias")
+
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, "type ExampleType: string;")
+			tAssert.Contains(text, "ExampleType name = \"Ada\";")
+		})
+
+		It("extracts individual schema field type references into aliases", func() {
+			snapshot := analyzeDocumentAt(`|===|
+schema User: { name: string; age: int; profile: string; };
+|===|
+[output = schema]
+{}`, documentPath)
+			targetRange := protocol.Range{Start: protocol.Position{Line: 1, Character: 22}, End: protocol.Position{Line: 1, Character: 22}}
+			action := requireCodeAction(snapshot, uri, targetRange, "Extract schema field name type into alias")
+
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, "type ExampleType: string;")
+			tAssert.Contains(text, "name: ExampleType")
+			tAssert.Contains(text, "age: int")
+			tAssert.Contains(text, "profile: string")
+		})
+
+		It("extracts nested schema field type references into aliases", func() {
+			snapshot := analyzeDocumentAt(`|===|
+schema User: { profile: { name: string; }; };
+|===|
+[output = schema]
+{}`, documentPath)
+			targetRange := protocol.Range{Start: protocol.Position{Line: 1, Character: 34}, End: protocol.Position{Line: 1, Character: 34}}
+			action := requireCodeAction(snapshot, uri, targetRange, "Extract schema field profile.name type into alias")
+
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, "type ExampleType: string;")
+			tAssert.Contains(text, "name: ExampleType")
+			tAssert.Contains(text, "profile: {")
+		})
+
 		It("extracts inline record types into schemas", func() {
 			snapshot := analyzeDocumentAt(`|===|
 schema User: { profile: { name: string; }; };

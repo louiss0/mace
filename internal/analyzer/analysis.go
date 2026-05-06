@@ -602,7 +602,7 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 	actions = append(actions, arrayTextCodeActions(text, documentPath)...)
 	actions = append(actions, schemaCreationTextCodeActions(text, documentPath)...)
 	actions = append(actions, documentationCodeActions(text, file, tokens, documentPath)...)
-	actions = append(actions, editorRefactorCodeActions(text, file, documentPath)...)
+	actions = append(actions, editorRefactorCodeActions(text, file, tokens, documentPath)...)
 	diagnostics = append(diagnostics, schemaOutputVariableDiagnostics(file, tokens)...)
 
 	return diagnostics, actions
@@ -1306,7 +1306,7 @@ func documentationCodeActions(text string, file ast.File, tokens []lexer.Token, 
 	return actions
 }
 
-func editorRefactorCodeActions(text string, file ast.File, documentPath string) []analysisCodeActionCandidate {
+func editorRefactorCodeActions(text string, file ast.File, tokens []lexer.Token, documentPath string) []analysisCodeActionCandidate {
 	if documentPath == "" {
 		return nil
 	}
@@ -1390,7 +1390,7 @@ func editorRefactorCodeActions(text string, file ast.File, documentPath string) 
 
 	addImportRefactorActions(file, addWholeFileAction)
 	addDocumentationRefactorActions(file, addWholeFileAction)
-	addDeclarationRefactorActions(file, addWholeFileAction)
+	addDeclarationRefactorActions(text, file, tokens, addWholeFileAction)
 	addEnumRefactorActions(file, addWholeFileAction)
 	addStringRefactorActions(text, uri, fullRange, &actions)
 	addStyleRefactorActions(text, protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, addTextAction)
@@ -1510,25 +1510,44 @@ func addDocumentationRefactorActions(file ast.File, addWholeFileAction func(stri
 	}
 }
 
-func addDeclarationRefactorActions(file ast.File, addWholeFileAction func(string, protocol.Range, ast.File)) {
+func addDeclarationRefactorActions(text string, file ast.File, tokens []lexer.Token, addWholeFileAction func(string, protocol.Range, ast.File)) {
 	if file.Script == nil {
 		return
 	}
 
-	addSchemaDeclarationRefactorActions(file, addWholeFileAction)
-	addVariableDeclarationRefactorActions(file, addWholeFileAction)
+	addSchemaDeclarationRefactorActions(text, file, tokens, addWholeFileAction)
+	addVariableDeclarationRefactorActions(text, file, tokens, addWholeFileAction)
 }
 
-func addSchemaDeclarationRefactorActions(file ast.File, addWholeFileAction func(string, protocol.Range, ast.File)) {
+func addSchemaDeclarationRefactorActions(text string, file ast.File, tokens []lexer.Token, addWholeFileAction func(string, protocol.Range, ast.File)) {
 	for index, item := range file.Script.Items {
 		schema, ok := item.(ast.SchemaDeclaration)
 		if !ok {
 			continue
 		}
 
+		declarationRange, ok := declarationEditRange(text, tokens, schema.NameToken)
+		if !ok {
+			declarationRange = tokenProtocolRange(schema.NameToken)
+		}
+		addSchemaFieldTypeAliasActions(file, index, schema, declarationRange, addWholeFileAction)
 		addRepeatedTypeAliasAction(file, index, schema, addWholeFileAction)
 		addInlineRecordSchemaAction(file, index, schema, addWholeFileAction)
 	}
+}
+
+func addSchemaFieldTypeAliasActions(file ast.File, index int, schema ast.SchemaDeclaration, targetRange protocol.Range, addWholeFileAction func(string, protocol.Range, ast.File)) {
+	addSchemaFieldAliasAction := func(path []string, typed ast.TypeReference) {
+		aliasName := nextExampleTypeAliasName(file)
+		updatedSchema := schema
+		updatedSchema.Type, _ = replaceSchemaFieldType(schema.Type, path, ast.NamedType{Name: aliasName})
+		updated := replaceScriptItem(file, index, updatedSchema)
+		updated.Script = prependScriptItem(updated.Script, ast.TypeDeclaration{Name: aliasName, Type: typed})
+		title := "Extract schema field " + strings.Join(path, ".") + " type into alias"
+		addWholeFileAction(title, targetRange, updated)
+	}
+
+	visitSchemaFieldTypes(schema.Type, nil, addSchemaFieldAliasAction)
 }
 
 func addRepeatedTypeAliasAction(file ast.File, index int, schema ast.SchemaDeclaration, addWholeFileAction func(string, protocol.Range, ast.File)) {
@@ -1571,14 +1590,32 @@ func addInlineRecordSchemaAction(file ast.File, index int, schema ast.SchemaDecl
 	addWholeFileAction("Extract inline record type into schema", protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, updated)
 }
 
-func addVariableDeclarationRefactorActions(file ast.File, addWholeFileAction func(string, protocol.Range, ast.File)) {
+func addVariableDeclarationRefactorActions(text string, file ast.File, tokens []lexer.Token, addWholeFileAction func(string, protocol.Range, ast.File)) {
 	for index, item := range file.Script.Items {
 		variable, ok := item.(ast.VariableDeclaration)
 		if !ok {
 			continue
 		}
+		declarationRange, ok := declarationEditRange(text, tokens, variable.NameToken)
+		if !ok {
+			declarationRange = tokenProtocolRange(variable.NameToken)
+		}
+		addVariableTypeAliasAction(file, index, variable, declarationRange, addWholeFileAction)
 		addRecordVariableSchemaAction(file, index, variable, addWholeFileAction)
 	}
+}
+
+func addVariableTypeAliasAction(file ast.File, index int, variable ast.VariableDeclaration, targetRange protocol.Range, addWholeFileAction func(string, protocol.Range, ast.File)) {
+	if _, ok := variable.Type.(ast.NamedType); ok {
+		return
+	}
+
+	aliasName := nextExampleTypeAliasName(file)
+	aliasType := variable.Type
+	variable.Type = ast.NamedType{Name: aliasName}
+	updated := replaceScriptItem(file, index, variable)
+	updated.Script = prependScriptItem(updated.Script, ast.TypeDeclaration{Name: aliasName, Type: aliasType})
+	addWholeFileAction("Extract variable type into alias", targetRange, updated)
 }
 
 func addRecordVariableSchemaAction(file ast.File, index int, variable ast.VariableDeclaration, addWholeFileAction func(string, protocol.Range, ast.File)) {
@@ -1625,6 +1662,78 @@ func typeReferenceText(typeReference ast.TypeReference) string {
 		return typed.Name
 	default:
 		return ""
+	}
+}
+
+func visitSchemaFieldTypes(record ast.RecordType, parentPath []string, visit func([]string, ast.TypeReference)) {
+	for _, field := range record.Fields {
+		path := append(append([]string{}, parentPath...), field.Name)
+		if _, ok := field.Type.(ast.NamedType); !ok {
+			visit(path, field.Type)
+		}
+		if nested, ok := field.Type.(ast.RecordType); ok {
+			visitSchemaFieldTypes(nested, path, visit)
+		}
+	}
+}
+
+func replaceSchemaFieldType(record ast.RecordType, path []string, replacement ast.TypeReference) (ast.RecordType, bool) {
+	if len(path) == 0 {
+		return record, false
+	}
+
+	updated := record
+	updated.Fields = append([]ast.SchemaField{}, record.Fields...)
+	for index, field := range updated.Fields {
+		if field.Name != path[0] {
+			continue
+		}
+		if len(path) == 1 {
+			updated.Fields[index].Type = replacement
+			return updated, true
+		}
+		nested, ok := field.Type.(ast.RecordType)
+		if !ok {
+			return record, false
+		}
+		nested, ok = replaceSchemaFieldType(nested, path[1:], replacement)
+		if !ok {
+			return record, false
+		}
+		updated.Fields[index].Type = nested
+		return updated, true
+	}
+
+	return record, false
+}
+
+func prependScriptItem(script *ast.ScriptBlock, item ast.Declaration) *ast.ScriptBlock {
+	if script == nil {
+		return &ast.ScriptBlock{Items: []ast.Declaration{item}}
+	}
+
+	return &ast.ScriptBlock{
+		Imports: append([]ast.ImportDeclaration{}, script.Imports...),
+		Items:   append([]ast.Declaration{item}, script.Items...),
+	}
+}
+
+func nextExampleTypeAliasName(file ast.File) string {
+	names := map[string]struct{}{}
+	for _, item := range lo.FromPtr(file.Script).Items {
+		if declaration, ok := item.(ast.TypeDeclaration); ok {
+			names[declaration.Name] = struct{}{}
+		}
+	}
+
+	for index := 1; ; index++ {
+		name := "ExampleType"
+		if index > 1 {
+			name = fmt.Sprintf("ExampleType%d", index)
+		}
+		if _, exists := names[name]; !exists {
+			return name
+		}
 	}
 }
 
