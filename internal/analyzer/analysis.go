@@ -451,7 +451,6 @@ func analyzeDocumentAt(text string, documentPath string) analysisSnapshot {
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, parseErrorCodeActions(tokens, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, scriptBlockStructureCodeActions(text, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, variableFixTextCodeActions(text, documentPath)...)
-		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, typeAliasTextCodeActions(text, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, arrayTextCodeActions(text, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, schemaFieldTextCodeActions(text, documentPath)...)
 		return snapshot
@@ -620,7 +619,6 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 	actions = append(actions, importResolutionCodeActions(text, file, tokens, documentPath)...)
 	actions = append(actions, scriptBlockStructureCodeActions(text, documentPath)...)
 	actions = append(actions, variableFixTextCodeActions(text, documentPath)...)
-	actions = append(actions, typeAliasTextCodeActions(text, documentPath)...)
 	actions = append(actions, arrayTextCodeActions(text, documentPath)...)
 	actions = append(actions, schemaCreationTextCodeActions(text, documentPath)...)
 	actions = append(actions, schemaFieldTextCodeActions(text, documentPath)...)
@@ -938,9 +936,9 @@ func splitArrayLiteralItems(text string) []string {
 }
 
 func schemaFieldTextCodeActions(text string, documentPath string) []analysisCodeActionCandidate {
-	if documentPath == "" {
-		return nil
-	}
+	// if documentPath == "" {
+	// 	return nil
+	// }
 
 	uri := protocol.DocumentUri(fileURI(documentPath))
 	fullRange := fullDocumentRange(text)
@@ -1203,261 +1201,13 @@ func invalidArrayIndexIssues(text string) []invalidArrayIndexIssue {
 	return issues
 }
 
-func typeAliasTextCodeActions(text string, documentPath string) []analysisCodeActionCandidate {
-	if documentPath == "" {
-		return nil
-	}
-
-	uri := protocol.DocumentUri(fileURI(documentPath))
-	actions := []analysisCodeActionCandidate{}
-	for _, action := range createTypeAliasFromSchemaFieldTypeActions(text) {
-		actions = append(actions, typeAliasExtractCodeAction(uri, action))
-	}
-	for _, action := range createTypeAliasFromSelectedTypeActions(text) {
-		actions = append(actions, typeAliasExtractCodeAction(uri, action))
-	}
-	actions = append(actions, inlineTypeAliasUsageActions(text, uri)...)
-	actions = append(actions, renameTypeAliasActions(text, uri)...)
-	actions = append(actions, replaceUnknownTypeActions(text, uri)...)
-	actions = append(actions, convertArrayCasingActions(text, uri)...)
-	actions = append(actions, nullableTypeToOptionalFieldActions(text, uri)...)
-	return actions
-}
-
-type typeAliasTextAction struct {
-	targetRange protocol.Range
-	edits       []protocol.TextEdit
-}
-
-func createTypeAliasFromSchemaFieldTypeActions(text string) []typeAliasTextAction {
-	scriptInsertIndex, ok := scriptDeclarationInsertIndex(text)
-	if !ok {
-		return nil
-	}
-
-	aliasName := nextExtractedTypeAliasName(text)
-	actions := []typeAliasTextAction{}
-	schemaPattern := regexp.MustCompile(`schema\s+[A-Za-z_][A-Za-z0-9_]*\s*:\s*\{([^}]*)\}`)
-	fieldPattern := regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*\??\s*:\s*)(string|int|float|boolean|array<[^>]+>|[A-Za-z_][A-Za-z0-9_]*)`)
-	for _, schemaMatches := range schemaPattern.FindAllStringSubmatchIndex(text, -1) {
-		bodyStart := schemaMatches[2]
-		body := text[schemaMatches[2]:schemaMatches[3]]
-		for _, fieldMatches := range fieldPattern.FindAllStringSubmatchIndex(body, -1) {
-			typeStart := bodyStart + fieldMatches[4]
-			typeEnd := bodyStart + fieldMatches[5]
-			typeName := text[typeStart:typeEnd]
-			insertRange := protocol.Range{Start: positionFromIndex(text, scriptInsertIndex), End: positionFromIndex(text, scriptInsertIndex)}
-			replaceRange := protocol.Range{Start: positionFromIndex(text, typeStart), End: positionFromIndex(text, typeEnd)}
-			actions = append(actions, typeAliasTextAction{
-				targetRange: replaceRange,
-				edits: []protocol.TextEdit{
-					{Range: insertRange, NewText: "type " + aliasName + ": " + typeName + ";\n\n"},
-					{Range: replaceRange, NewText: aliasName},
-				},
-			})
-		}
-	}
-
-	return actions
-}
-
-func nextExtractedTypeAliasName(text string) string {
-	for index := 0; ; index++ {
-		name := "ExtractedType"
-		if index > 0 {
-			name = fmt.Sprintf("ExtractedType%d", index+1)
-		}
-		if !regexp.MustCompile(`(?m)^type\s+` + regexp.QuoteMeta(name) + `\s*:`).MatchString(text) {
-			return name
-		}
-	}
-}
-
-func typeAliasExtractCodeAction(uri protocol.DocumentUri, action typeAliasTextAction) analysisCodeActionCandidate {
-	return analysisCodeActionCandidate{
-		Range: action.targetRange,
-		Action: protocol.CodeAction{
-			Title: "Create type alias from selected type",
-			Kind:  Ptr(protocol.CodeActionKindRefactorExtract),
-			Edit:  &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: action.edits}},
-		},
-	}
-}
-
-func typeAliasEditCodeAction(title string, targetRange protocol.Range, uri protocol.DocumentUri, edits []protocol.TextEdit) analysisCodeActionCandidate {
-	return analysisCodeActionCandidate{
-		Range: targetRange,
-		Action: protocol.CodeAction{
-			Title: title,
-			Kind:  Ptr(protocol.CodeActionKindRefactor),
-			Edit:  &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: edits}},
-		},
-	}
-}
-
-func scriptDeclarationInsertIndex(text string) (int, bool) {
-	open := strings.Index(text, "|===|\n")
-	if open < 0 {
-		return 0, false
-	}
-	return open + len("|===|\n"), true
-}
-
-func createTypeAliasFromSelectedTypeActions(text string) []typeAliasTextAction {
-	// Variable declaration:  string name = "Ada";
-	varPattern := regexp.MustCompile(`(?m)^([ \t]*)(string|int|float|boolean|array<[^>]+>)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^;]+);`)
-	varMatches := varPattern.FindStringSubmatchIndex(text)
-	if len(varMatches) > 0 && !strings.Contains(text, "type ExtractedType:") {
-		scriptInsertIndex, ok := scriptDeclarationInsertIndex(text)
-		if !ok {
-			return nil
-		}
-
-		typeName := text[varMatches[4]:varMatches[5]]
-		variableName := text[varMatches[6]:varMatches[7]]
-		alias := strings.ToUpper(variableName[:1]) + variableName[1:]
-		targetRange := protocol.Range{Start: positionFromIndex(text, varMatches[4]), End: positionFromIndex(text, varMatches[5])}
-		insertRange := protocol.Range{Start: positionFromIndex(text, scriptInsertIndex), End: positionFromIndex(text, scriptInsertIndex)}
-		return []typeAliasTextAction{{
-			targetRange: targetRange,
-			edits: []protocol.TextEdit{
-				{Range: insertRange, NewText: "type " + alias + ": " + typeName + ";\n\n"},
-				{Range: targetRange, NewText: alias},
-			},
-		}}
-	}
-
-	// Output data field:  name: "Ada"  (infer primitive type from literal)
-	outputPattern := regexp.MustCompile(`(?m)^([ \t]*)([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^,{}\r\n]+)$`)
-	actions := []typeAliasTextAction{}
-	for _, matches := range outputPattern.FindAllStringSubmatchIndex(text, -1) {
-		value := strings.TrimSpace(text[matches[6]:matches[7]])
-		inferred := inferredTypeNameFromLiteral(value)
-		if inferred == "" || inferred == "string" && value == "" {
-			continue
-		}
-		name := text[matches[4]:matches[5]]
-		alias := strings.ToUpper(name[:1]) + name[1:]
-		if strings.Contains(text, "type "+alias+":") {
-			continue
-		}
-		targetRange := protocol.Range{Start: positionFromIndex(text, matches[6]), End: positionFromIndex(text, matches[7])}
-		if !strings.Contains(text, "|===|") {
-			insertRange := protocol.Range{}
-			actions = append(actions, typeAliasTextAction{
-				targetRange: targetRange,
-				edits:       []protocol.TextEdit{{Range: insertRange, NewText: "|===|\ntype " + alias + ": " + inferred + ";\n|===|\n"}},
-			})
-			continue
-		}
-		scriptInsertIndex, ok := scriptDeclarationInsertIndex(text)
-		if !ok {
-			continue
-		}
-		insertRange := protocol.Range{Start: positionFromIndex(text, scriptInsertIndex), End: positionFromIndex(text, scriptInsertIndex)}
-		actions = append(actions, typeAliasTextAction{
-			targetRange: targetRange,
-			edits:       []protocol.TextEdit{{Range: insertRange, NewText: "type " + alias + ": " + inferred + ";\n"}},
-		})
-	}
-
-	return actions
-}
-
-func insertTopScriptDeclarationText(text string, declaration string) string {
-	return strings.Replace(text, "|===|\n", "|===|\n"+declaration+"\n\n", 1)
-}
-
-func inlineTypeAliasUsageActions(text string, uri protocol.DocumentUri) []analysisCodeActionCandidate {
-	aliasPattern := regexp.MustCompile(`type\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^;]+);`)
-	aliasMatches := aliasPattern.FindStringSubmatchIndex(text)
-	if len(aliasMatches) == 0 {
-		return nil
-	}
-
-	alias := text[aliasMatches[2]:aliasMatches[3]]
-	replacement := strings.TrimSpace(text[aliasMatches[4]:aliasMatches[5]])
-	edits := []protocol.TextEdit{}
-	schemaUsagePattern := regexp.MustCompile(`:\s*` + regexp.QuoteMeta(alias) + `\b`)
-	for _, usageMatches := range schemaUsagePattern.FindAllStringIndex(text, -1) {
-		nameStart := usageMatches[1] - len(alias)
-		edits = append(edits, protocol.TextEdit{
-			Range:   protocol.Range{Start: positionFromIndex(text, nameStart), End: positionFromIndex(text, usageMatches[1])},
-			NewText: replacement,
-		})
-	}
-	variableUsagePattern := regexp.MustCompile(`(?m)^([ \t]*)` + regexp.QuoteMeta(alias) + `\s+`)
-	for _, usageMatches := range variableUsagePattern.FindAllStringSubmatchIndex(text, -1) {
-		nameStart := usageMatches[0] + len(text[usageMatches[2]:usageMatches[3]])
-		edits = append(edits, protocol.TextEdit{
-			Range:   protocol.Range{Start: positionFromIndex(text, nameStart), End: positionFromIndex(text, nameStart+len(alias))},
-			NewText: replacement,
-		})
-	}
-	if len(edits) == 0 {
-		return nil
-	}
-
-	targetRange := protocol.Range{Start: positionFromIndex(text, aliasMatches[2]), End: positionFromIndex(text, aliasMatches[3])}
-	return []analysisCodeActionCandidate{typeAliasEditCodeAction("Inline type alias usage", targetRange, uri, edits)}
-}
-
-func renameTypeAliasActions(text string, uri protocol.DocumentUri) []analysisCodeActionCandidate {
-	matches := regexp.MustCompile(`type\s+([A-Za-z_][A-Za-z0-9_]*)\s*:`).FindStringSubmatchIndex(text)
-	if len(matches) == 0 {
-		return nil
-	}
-
-	targetRange := protocol.Range{Start: positionFromIndex(text, matches[2]), End: positionFromIndex(text, matches[3])}
-	return []analysisCodeActionCandidate{
-		typeAliasEditCodeAction("Rename type alias", targetRange, uri, []protocol.TextEdit{{Range: targetRange, NewText: "RenamedName"}}),
-	}
-}
-
-func replaceUnknownTypeActions(text string, uri protocol.DocumentUri) []analysisCodeActionCandidate {
-	aliasMatches := regexp.MustCompile(`type\s+([A-Za-z_][A-Za-z0-9_]*)\s*:`).FindStringSubmatchIndex(text)
-	if len(aliasMatches) == 0 {
-		return nil
-	}
-
-	known := text[aliasMatches[2]:aliasMatches[3]]
-	unknownPattern := regexp.MustCompile(`\bNmae\b`)
-	unknownMatches := unknownPattern.FindStringIndex(text)
-	if len(unknownMatches) == 0 {
-		return nil
-	}
-
-	targetRange := protocol.Range{Start: positionFromIndex(text, unknownMatches[0]), End: positionFromIndex(text, unknownMatches[1])}
-	return []analysisCodeActionCandidate{
-		typeAliasEditCodeAction("Replace unknown type with "+known, targetRange, uri, []protocol.TextEdit{{Range: targetRange, NewText: known}}),
-	}
-}
-
-func convertArrayCasingActions(text string, uri protocol.DocumentUri) []analysisCodeActionCandidate {
-	index := strings.Index(text, "Array<")
-	if index < 0 {
-		return nil
-	}
-
-	targetRange := protocol.Range{Start: positionFromIndex(text, index), End: positionFromIndex(text, index+len("Array"))}
-	return []analysisCodeActionCandidate{
-		typeAliasEditCodeAction("Convert Array<T> to array<T>", targetRange, uri, []protocol.TextEdit{{Range: targetRange, NewText: "array"}}),
-	}
-}
-
 func nullableTypeToOptionalFieldActions(text string, uri protocol.DocumentUri) []analysisCodeActionCandidate {
 	matches := regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^;{}]+)\?`).FindStringSubmatchIndex(text)
 	if len(matches) == 0 {
 		return nil
 	}
 
-	fieldName := text[matches[2]:matches[3]]
-	typeName := strings.TrimSpace(text[matches[4]:matches[5]])
-	targetRange := protocol.Range{Start: positionFromIndex(text, matches[4]), End: positionFromIndex(text, matches[5]+1)}
-	editRange := protocol.Range{Start: positionFromIndex(text, matches[0]), End: positionFromIndex(text, matches[1])}
-	return []analysisCodeActionCandidate{
-		typeAliasEditCodeAction("Convert nullable type into optional field", targetRange, uri, []protocol.TextEdit{{Range: editRange, NewText: fieldName + "?: " + typeName}}),
-	}
+	return []analysisCodeActionCandidate{}
 }
 
 func variableFixTextCodeActions(text string, documentPath string) []analysisCodeActionCandidate {
