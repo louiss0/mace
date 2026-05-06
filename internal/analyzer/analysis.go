@@ -596,13 +596,14 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 		diagnostics = append(diagnostics, unusedImportDiagnostics...)
 		actions = append(actions, unusedImportActions...)
 	}
+	diagnostics = append(diagnostics, unavailableImportDiagnostics(file, tokens, documentPath)...)
 	actions = append(actions, importResolutionCodeActions(text, file, tokens, documentPath)...)
 	actions = append(actions, scriptBlockStructureCodeActions(text, documentPath)...)
 	actions = append(actions, variableFixTextCodeActions(text, documentPath)...)
 	actions = append(actions, arrayTextCodeActions(text, documentPath)...)
 	actions = append(actions, schemaCreationTextCodeActions(text, documentPath)...)
 	actions = append(actions, documentationCodeActions(text, file, tokens, documentPath)...)
-	actions = append(actions, editorRefactorCodeActions(text, file, documentPath)...)
+	actions = append(actions, editorRefactorCodeActions(text, file, tokens, documentPath)...)
 	diagnostics = append(diagnostics, schemaOutputVariableDiagnostics(file, tokens)...)
 
 	return diagnostics, actions
@@ -1214,6 +1215,69 @@ func importResolutionCodeActions(text string, file ast.File, tokens []lexer.Toke
 	return actions
 }
 
+func unavailableImportDiagnostics(file ast.File, tokens []lexer.Token, documentPath string) []protocol.Diagnostic {
+	if documentPath == "" {
+		return nil
+	}
+
+	unavailableNames := unavailableImportNameSet(file, documentPath)
+	diagnostics := []protocol.Diagnostic{}
+	for _, importDecl := range file.Imports {
+		pathValue, ok := stringLiteralValue(importDecl.Path)
+		if !ok {
+			continue
+		}
+		for _, name := range importDecl.Identifiers {
+			if _, ok := unavailableNames[importNameKey(pathValue, name)]; !ok {
+				continue
+			}
+			nameToken, ok := importIdentifierToken(tokens, importDecl, name)
+			if !ok {
+				continue
+			}
+			message := fmt.Sprintf("imported key %q is not exported by %q", name, pathValue)
+			diagnostics = append(diagnostics, diagnosticWithCode(tokenProtocolRange(nameToken), protocol.DiagnosticSeverityError, diagnosticImportNameNotExposed, message))
+		}
+	}
+
+	return diagnostics
+}
+
+func unavailableImportNameSet(file ast.File, documentPath string) map[string]struct{} {
+	if documentPath == "" {
+		return nil
+	}
+
+	baseDir := filepath.Dir(documentPath)
+	names := map[string]struct{}{}
+	for _, importDecl := range file.Imports {
+		pathValue, ok := stringLiteralValue(importDecl.Path)
+		if !ok {
+			continue
+		}
+
+		importedPath := filepath.Clean(filepath.Join(baseDir, pathValue))
+		_, importedFile, _, ok := parsedFile(importedPath)
+		if !ok {
+			continue
+		}
+
+		exportedNames := exportedOutputNames(importedFile)
+		for _, name := range importDecl.Identifiers {
+			if lo.Contains(exportedNames, name) {
+				continue
+			}
+			names[importNameKey(pathValue, name)] = struct{}{}
+		}
+	}
+
+	return names
+}
+
+func importNameKey(pathValue string, name string) string {
+	return pathValue + "\x00" + name
+}
+
 func existingMacePathWithSimilarName(path string) (string, bool) {
 	directory := filepath.Dir(path)
 	base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
@@ -1306,7 +1370,7 @@ func documentationCodeActions(text string, file ast.File, tokens []lexer.Token, 
 	return actions
 }
 
-func editorRefactorCodeActions(text string, file ast.File, documentPath string) []analysisCodeActionCandidate {
+func editorRefactorCodeActions(text string, file ast.File, tokens []lexer.Token, documentPath string) []analysisCodeActionCandidate {
 	if documentPath == "" {
 		return nil
 	}
@@ -1390,7 +1454,7 @@ func editorRefactorCodeActions(text string, file ast.File, documentPath string) 
 
 	addImportRefactorActions(file, addWholeFileAction)
 	addDocumentationRefactorActions(file, addWholeFileAction)
-	addDeclarationRefactorActions(file, addWholeFileAction)
+	addDeclarationRefactorActions(text, file, tokens, addWholeFileAction)
 	addEnumRefactorActions(file, addWholeFileAction)
 	addStringRefactorActions(text, uri, fullRange, &actions)
 	addStyleRefactorActions(text, protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, addTextAction)
@@ -1401,61 +1465,72 @@ func editorRefactorCodeActions(text string, file ast.File, documentPath string) 
 }
 
 func addImportRefactorActions(file ast.File, addWholeFileAction func(string, protocol.Range, ast.File)) {
-	if len(file.Imports) > 1 {
-		imports := append([]ast.ImportDeclaration{}, file.Imports...)
-		slices.SortFunc(imports, func(left ast.ImportDeclaration, right ast.ImportDeclaration) int {
+	imports := file.Imports
+	if file.Script != nil {
+		imports = file.Script.Imports
+	}
+
+	if len(imports) > 1 {
+		sortedImports := append([]ast.ImportDeclaration{}, imports...)
+		slices.SortFunc(sortedImports, func(left ast.ImportDeclaration, right ast.ImportDeclaration) int {
 			return strings.Compare(left.Path.Lexeme, right.Path.Lexeme)
 		})
-		if !slices.EqualFunc(imports, file.Imports, func(left ast.ImportDeclaration, right ast.ImportDeclaration) bool {
+		if !slices.EqualFunc(sortedImports, imports, func(left ast.ImportDeclaration, right ast.ImportDeclaration) bool {
 			return left.Path.Lexeme == right.Path.Lexeme && slices.Equal(left.Identifiers, right.Identifiers)
 		}) {
-			updated := file
-			updated.Imports = imports
+			updated := replaceFileImports(file, sortedImports)
 			addWholeFileAction("Sort imports", protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, updated)
 		}
 	}
 
-	for index, importDecl := range file.Imports {
+	for index, importDecl := range imports {
 		targetRange := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
 		if hasDuplicateImportIdentifiers(importDecl.Identifiers) {
-			updated := file
-			imports := append([]ast.ImportDeclaration{}, file.Imports...)
-			imports[index].Identifiers = uniqueImportIdentifiers(importDecl.Identifiers)
-			updated.Imports = imports
+			updatedImports := append([]ast.ImportDeclaration{}, imports...)
+			updatedImports[index].Identifiers = uniqueImportIdentifiers(importDecl.Identifiers)
+			updated := replaceFileImports(file, updatedImports)
 			addWholeFileAction("Remove duplicate imported names", targetRange, updated)
 		}
 
 		pathValue, _ := stringLiteralValue(importDecl.Path)
 		if pathValue != "" && !strings.HasPrefix(pathValue, "./") && !strings.HasPrefix(pathValue, "../") && !filepath.IsAbs(pathValue) {
-			updated := file
-			imports := append([]ast.ImportDeclaration{}, file.Imports...)
-			imports[index].Path = ast.StringLiteral{Lexeme: strconv.Quote("./" + pathValue)}
-			updated.Imports = imports
+			updatedImports := append([]ast.ImportDeclaration{}, imports...)
+			updatedImports[index].Path = ast.StringLiteral{Lexeme: strconv.Quote("./" + pathValue)}
+			updated := replaceFileImports(file, updatedImports)
 			addWholeFileAction("Fix relative import path", targetRange, updated)
 		}
 		if len(importDecl.Identifiers) > 1 {
-			updated := file
-			imports := append([]ast.ImportDeclaration{}, file.Imports...)
-			imports = slices.Delete(imports, index, index+1)
+			updatedImports := append([]ast.ImportDeclaration{}, imports...)
+			updatedImports = slices.Delete(updatedImports, index, index+1)
 			for offset, identifier := range importDecl.Identifiers {
-				imports = slices.Insert(imports, index+offset, ast.ImportDeclaration{Path: importDecl.Path, Identifiers: []string{identifier}})
+				updatedImports = slices.Insert(updatedImports, index+offset, ast.ImportDeclaration{Path: importDecl.Path, Identifiers: []string{identifier}})
 			}
-			updated.Imports = imports
+			updated := replaceFileImports(file, updatedImports)
 			addWholeFileAction("Split import declaration", targetRange, updated)
 		}
-		for otherIndex := index + 1; otherIndex < len(file.Imports); otherIndex++ {
-			if file.Imports[otherIndex].Path.Lexeme != importDecl.Path.Lexeme {
+		for otherIndex := index + 1; otherIndex < len(imports); otherIndex++ {
+			if imports[otherIndex].Path.Lexeme != importDecl.Path.Lexeme {
 				continue
 			}
-			updated := file
-			imports := append([]ast.ImportDeclaration{}, file.Imports...)
-			imports[index].Identifiers = append(append([]string{}, importDecl.Identifiers...), file.Imports[otherIndex].Identifiers...)
-			imports = slices.Delete(imports, otherIndex, otherIndex+1)
-			updated.Imports = imports
+			updatedImports := append([]ast.ImportDeclaration{}, imports...)
+			updatedImports[index].Identifiers = append(append([]string{}, importDecl.Identifiers...), imports[otherIndex].Identifiers...)
+			updatedImports = slices.Delete(updatedImports, otherIndex, otherIndex+1)
+			updated := replaceFileImports(file, updatedImports)
 			addWholeFileAction("Merge duplicate imports", targetRange, updated)
 			break
 		}
 	}
+}
+
+func replaceFileImports(file ast.File, imports []ast.ImportDeclaration) ast.File {
+	updated := file
+	updated.Imports = append([]ast.ImportDeclaration{}, imports...)
+	if updated.Script != nil {
+		script := *updated.Script
+		script.Imports = append([]ast.ImportDeclaration{}, imports...)
+		updated.Script = &script
+	}
+	return updated
 }
 
 func hasDuplicateImportIdentifiers(identifiers []string) bool {
@@ -1510,25 +1585,44 @@ func addDocumentationRefactorActions(file ast.File, addWholeFileAction func(stri
 	}
 }
 
-func addDeclarationRefactorActions(file ast.File, addWholeFileAction func(string, protocol.Range, ast.File)) {
+func addDeclarationRefactorActions(text string, file ast.File, tokens []lexer.Token, addWholeFileAction func(string, protocol.Range, ast.File)) {
 	if file.Script == nil {
 		return
 	}
 
-	addSchemaDeclarationRefactorActions(file, addWholeFileAction)
-	addVariableDeclarationRefactorActions(file, addWholeFileAction)
+	addSchemaDeclarationRefactorActions(text, file, tokens, addWholeFileAction)
+	addVariableDeclarationRefactorActions(text, file, tokens, addWholeFileAction)
 }
 
-func addSchemaDeclarationRefactorActions(file ast.File, addWholeFileAction func(string, protocol.Range, ast.File)) {
+func addSchemaDeclarationRefactorActions(text string, file ast.File, tokens []lexer.Token, addWholeFileAction func(string, protocol.Range, ast.File)) {
 	for index, item := range file.Script.Items {
 		schema, ok := item.(ast.SchemaDeclaration)
 		if !ok {
 			continue
 		}
 
+		declarationRange, ok := declarationEditRange(text, tokens, schema.NameToken)
+		if !ok {
+			declarationRange = tokenProtocolRange(schema.NameToken)
+		}
+		addSchemaFieldTypeAliasActions(file, index, schema, declarationRange, addWholeFileAction)
 		addRepeatedTypeAliasAction(file, index, schema, addWholeFileAction)
 		addInlineRecordSchemaAction(file, index, schema, addWholeFileAction)
 	}
+}
+
+func addSchemaFieldTypeAliasActions(file ast.File, index int, schema ast.SchemaDeclaration, targetRange protocol.Range, addWholeFileAction func(string, protocol.Range, ast.File)) {
+	addSchemaFieldAliasAction := func(path []string, typed ast.TypeReference) {
+		aliasName := nextExampleTypeAliasName(file)
+		updatedSchema := schema
+		updatedSchema.Type, _ = replaceSchemaFieldType(schema.Type, path, ast.NamedType{Name: aliasName})
+		updated := replaceScriptItem(file, index, updatedSchema)
+		updated.Script = prependScriptItem(updated.Script, ast.TypeDeclaration{Name: aliasName, Type: typed})
+		title := "Extract schema field " + strings.Join(path, ".") + " type into alias"
+		addWholeFileAction(title, targetRange, updated)
+	}
+
+	visitSchemaFieldTypes(schema.Type, nil, addSchemaFieldAliasAction)
 }
 
 func addRepeatedTypeAliasAction(file ast.File, index int, schema ast.SchemaDeclaration, addWholeFileAction func(string, protocol.Range, ast.File)) {
@@ -1571,14 +1665,32 @@ func addInlineRecordSchemaAction(file ast.File, index int, schema ast.SchemaDecl
 	addWholeFileAction("Extract inline record type into schema", protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, updated)
 }
 
-func addVariableDeclarationRefactorActions(file ast.File, addWholeFileAction func(string, protocol.Range, ast.File)) {
+func addVariableDeclarationRefactorActions(text string, file ast.File, tokens []lexer.Token, addWholeFileAction func(string, protocol.Range, ast.File)) {
 	for index, item := range file.Script.Items {
 		variable, ok := item.(ast.VariableDeclaration)
 		if !ok {
 			continue
 		}
+		declarationRange, ok := declarationEditRange(text, tokens, variable.NameToken)
+		if !ok {
+			declarationRange = tokenProtocolRange(variable.NameToken)
+		}
+		addVariableTypeAliasAction(file, index, variable, declarationRange, addWholeFileAction)
 		addRecordVariableSchemaAction(file, index, variable, addWholeFileAction)
 	}
+}
+
+func addVariableTypeAliasAction(file ast.File, index int, variable ast.VariableDeclaration, targetRange protocol.Range, addWholeFileAction func(string, protocol.Range, ast.File)) {
+	if _, ok := variable.Type.(ast.NamedType); ok {
+		return
+	}
+
+	aliasName := nextExampleTypeAliasName(file)
+	aliasType := variable.Type
+	variable.Type = ast.NamedType{Name: aliasName}
+	updated := replaceScriptItem(file, index, variable)
+	updated.Script = prependScriptItem(updated.Script, ast.TypeDeclaration{Name: aliasName, Type: aliasType})
+	addWholeFileAction("Extract variable type into alias", targetRange, updated)
 }
 
 func addRecordVariableSchemaAction(file ast.File, index int, variable ast.VariableDeclaration, addWholeFileAction func(string, protocol.Range, ast.File)) {
@@ -1625,6 +1737,78 @@ func typeReferenceText(typeReference ast.TypeReference) string {
 		return typed.Name
 	default:
 		return ""
+	}
+}
+
+func visitSchemaFieldTypes(record ast.RecordType, parentPath []string, visit func([]string, ast.TypeReference)) {
+	for _, field := range record.Fields {
+		path := append(append([]string{}, parentPath...), field.Name)
+		if _, ok := field.Type.(ast.NamedType); !ok {
+			visit(path, field.Type)
+		}
+		if nested, ok := field.Type.(ast.RecordType); ok {
+			visitSchemaFieldTypes(nested, path, visit)
+		}
+	}
+}
+
+func replaceSchemaFieldType(record ast.RecordType, path []string, replacement ast.TypeReference) (ast.RecordType, bool) {
+	if len(path) == 0 {
+		return record, false
+	}
+
+	updated := record
+	updated.Fields = append([]ast.SchemaField{}, record.Fields...)
+	for index, field := range updated.Fields {
+		if field.Name != path[0] {
+			continue
+		}
+		if len(path) == 1 {
+			updated.Fields[index].Type = replacement
+			return updated, true
+		}
+		nested, ok := field.Type.(ast.RecordType)
+		if !ok {
+			return record, false
+		}
+		nested, ok = replaceSchemaFieldType(nested, path[1:], replacement)
+		if !ok {
+			return record, false
+		}
+		updated.Fields[index].Type = nested
+		return updated, true
+	}
+
+	return record, false
+}
+
+func prependScriptItem(script *ast.ScriptBlock, item ast.Declaration) *ast.ScriptBlock {
+	if script == nil {
+		return &ast.ScriptBlock{Items: []ast.Declaration{item}}
+	}
+
+	return &ast.ScriptBlock{
+		Imports: append([]ast.ImportDeclaration{}, script.Imports...),
+		Items:   append([]ast.Declaration{item}, script.Items...),
+	}
+}
+
+func nextExampleTypeAliasName(file ast.File) string {
+	names := map[string]struct{}{}
+	for _, item := range lo.FromPtr(file.Script).Items {
+		if declaration, ok := item.(ast.TypeDeclaration); ok {
+			names[declaration.Name] = struct{}{}
+		}
+	}
+
+	for index := 1; ; index++ {
+		name := "ExampleType"
+		if index > 1 {
+			name = fmt.Sprintf("ExampleType%d", index)
+		}
+		if _, exists := names[name]; !exists {
+			return name
+		}
 	}
 }
 
@@ -2226,10 +2410,15 @@ func unusedImportAnalysis(text string, file ast.File, tokens []lexer.Token, docu
 	}
 
 	referencedNames := referencedNames(file)
+	unavailableNames := unavailableImportNameSet(file, documentPath)
 	diagnostics := []protocol.Diagnostic{}
 	actions := []analysisCodeActionCandidate{}
 	for _, importDecl := range file.Imports {
+		pathValue, _ := stringLiteralValue(importDecl.Path)
 		for _, name := range importDecl.Identifiers {
+			if _, ok := unavailableNames[importNameKey(pathValue, name)]; ok {
+				continue
+			}
 			if _, ok := referencedNames[name]; ok {
 				continue
 			}

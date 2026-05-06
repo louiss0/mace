@@ -242,8 +242,8 @@ World""";
 		Entry("injectable without initializer when unused", wrapScriptWithOutput(`|===|
 injectable string env;
 |===|`)),
-		Entry("imports and script block", `from "testdata/imports/base.mace" import Name;
-|===|
+		Entry("imports and script block", `|===|
+from "testdata/imports/base.mace" import Name;
 Name user = "Ada";
 |===|
 [output = data]
@@ -281,8 +281,8 @@ gen_doc greeting {
   summary: "Rendered greeting.",
 };
 |===|`)),
-		Entry("line and block comments are ignored", `from "testdata/imports/base.mace" import Name; /= trailing import comment
-|===|
+		Entry("line and block comments are ignored", `|===|
+from "testdata/imports/base.mace" import Name; /= trailing import comment
 /= line comment before declaration
 schema Profile: {
   /= line comment before field
@@ -341,7 +341,9 @@ int total = 1.5;
 type User: string;
 schema User: { name: string; };
 |===|`), "duplicate declaration"),
-		Entry("duplicate imports", `from "testdata/imports/base.mace" import User, User;
+		Entry("duplicate imports", `|===|
+from "testdata/imports/base.mace" import User, User;
+|===|
 [output = data] {}`, "duplicate import"),
 		Entry("interpolation rejects type references", wrapScriptWithOutput(`|===|
 type UserName: string;
@@ -840,8 +842,8 @@ var _ = Describe("Imports", func() {
 			actual := requireOutputValue(result, "result")
 			assertExpectedValue(actual, expected)
 		},
-		Entry("imports types and schemas", `from "testdata/imports/base.mace" import Name, User;
-|===|
+		Entry("imports types and schemas", `|===|
+from "testdata/imports/base.mace" import Name, User;
 Name name = "Ada";
 User result = { name: name; age: 30; };
 |===|
@@ -850,11 +852,13 @@ User result = { name: name; age: 30; };
 			"name": {kind: ValueString, string: "Ada"},
 			"age":  {kind: ValueInt, int64: 30},
 		}}),
-		Entry("imports values surfaced through output", `from "testdata/imports/values.mace" import count;
+		Entry("imports values surfaced through output", `|===|
+from "testdata/imports/values.mace" import count;
+|===|
 [output = data]
 { result: count + 2; }`, expectedValue{kind: ValueInt, int64: 5}),
-		Entry("imports schemas and aliases from a public contract fixture", `from "testdata/imports/contracts.mace" import ID, Team;
-|===|
+		Entry("imports schemas and aliases from a public contract fixture", `|===|
+from "testdata/imports/contracts.mace" import ID, Team;
 ID team_name = "core";
 Team result = { name: team_name; members: [{ id: "u1"; role: "owner"; }]; };
 |===|
@@ -882,8 +886,8 @@ type Identity: variant[string, int];
   Identity: Identity;
 }`)
 		processor := New()
-		result, err := processor.ProcessFile(writeFixtureFile(workspace, "consumer.mace", `from "./shared.mace" import Identity;
-|===|
+		result, err := processor.ProcessFile(writeFixtureFile(workspace, "consumer.mace", `|===|
+from "./shared.mace" import Identity;
 Identity first = "Ada";
 Identity second = 42;
 |===|
@@ -910,15 +914,25 @@ Identity second = 42;
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, message)
 		},
-		Entry("hidden type is not importable", `from "testdata/imports/base.mace" import Internal;
+		Entry("hidden type is not importable", `|===|
+from "testdata/imports/base.mace" import Internal;
+|===|
 [output = data] {}`, "imported identifier"),
-		Entry("hidden schema is not importable", `from "testdata/imports/base.mace" import Secret;
+		Entry("hidden schema is not importable", `|===|
+from "testdata/imports/base.mace" import Secret;
+|===|
 [output = data] {}`, "imported identifier"),
-		Entry("hidden variable is not importable", `from "testdata/imports/base.mace" import local;
+		Entry("hidden variable is not importable", `|===|
+from "testdata/imports/base.mace" import local;
+|===|
 [output = data] {}`, "imported identifier"),
-		Entry("hidden value is not importable", `from "testdata/imports/values.mace" import hidden;
+		Entry("hidden value is not importable", `|===|
+from "testdata/imports/values.mace" import hidden;
+|===|
 [output = data] {}`, "imported identifier"),
-		Entry("hidden schema in a data fixture is not importable", `from "testdata/imports/metrics.mace" import Hidden;
+		Entry("hidden schema in a data fixture is not importable", `|===|
+from "testdata/imports/metrics.mace" import Hidden;
+|===|
 [output = data] {}`, "imported identifier"),
 	)
 
@@ -970,15 +984,21 @@ Identity second = 42;
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, message)
 		},
-		Entry("unknown imported identifier", `from "testdata/imports/base.mace" import Missing;
-[output = data] {}`, "imported identifier"),
-		Entry("duplicate import across declarations", `from "testdata/imports/base.mace" import Name;
-from "testdata/imports/other.mace" import Name;
-[output = data] {}`, "duplicate import"),
-		Entry("import file missing", `from "testdata/imports/missing.mace" import Name;
-[output = data] {}`, "unable to read import file"),
-		Entry("import collides with local declaration", `from "testdata/imports/base.mace" import Name;
+		Entry("unknown imported identifier", `|===|
+from "testdata/imports/base.mace" import Missing;
 |===|
+[output = data] {}`, "imported identifier"),
+		Entry("duplicate import across declarations", `|===|
+from "testdata/imports/base.mace" import Name;
+from "testdata/imports/other.mace" import Name;
+|===|
+[output = data] {}`, "duplicate import"),
+		Entry("import file missing", `|===|
+from "testdata/imports/missing.mace" import Name;
+|===|
+[output = data] {}`, "unable to read import file"),
+		Entry("import collides with local declaration", `|===|
+from "testdata/imports/base.mace" import Name;
 type Name: string;
 |===|
 [output = data] {}`, "duplicate declaration"),
@@ -998,8 +1018,8 @@ enum Fruit: string {
 {
   Fruit: Fruit;
 }`)
-		consumerPath := writeFixtureFile(workspace, "consumer.mace", `from "./shared.mace" import Fruit;
-|===|
+		consumerPath := writeFixtureFile(workspace, "consumer.mace", `|===|
+from "./shared.mace" import Fruit;
 Fruit result = Fruit.Apple;
 |===|
 [output = data]

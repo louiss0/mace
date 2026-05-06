@@ -33,16 +33,18 @@ is documented in [`mace-spec.md`](./mace-spec.md).
 
 A Mace file can contain:
 
-- zero or more `from ... import ...;` declarations
 - an optional script block
 - exactly one output block
+
+Imports use `from ... import ...;` and must appear at the top of the script
+block before other declarations.
 
 Example:
 
 ```mace
+|===|
 from "./shared.mace" import User;
 
-|===|
 enum Environment: string {
   Dev,
   Prod

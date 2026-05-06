@@ -78,8 +78,8 @@ string local = "Ada";
   exported_name: string;
 }`)
 
-		snapshot := analyzeDocumentAt(`from "./shared.mace" import User;
-|===|
+		snapshot := analyzeDocumentAt(`|===|
+from "./shared.mace" import User;
 schema Local: { id: int; };
 User current = { name: "Ada"; };
 |===|
@@ -107,8 +107,8 @@ User current = { name: "Ada"; };
 }`)
 		documentPath := filepath.Join(workspace, "consumer.mace")
 
-		snapshot := analyzeDocumentAt(`from "./shared.mace" import User;
-|===|
+		snapshot := analyzeDocumentAt(`|===|
+from "./shared.mace" import User;
 User current = { name: "Ada"; };
 |===|
 [output = data]
@@ -157,8 +157,8 @@ schema User: { name: string; };
 }`)
 		documentPath := filepath.Join(workspace, "consumer.mace")
 
-		snapshot := analyzeDocumentAt(`from "./shared.mace" import qux;
-|===|
+		snapshot := analyzeDocumentAt(`|===|
+from "./shared.mace" import qux;
 int qux = 2;
 |===|
 
@@ -203,7 +203,9 @@ Fruit selected = Fruit.Apple;
 		writeAnalysisFile(workspace, "shared.mace", `[output = data] { name: "Ada"; }`)
 		documentPath := filepath.Join(workspace, "consumer.mace")
 
-		snapshot := analyzeDocumentAt(`from "./shared" import name;
+		snapshot := analyzeDocumentAt(`|===|
+from "./shared" import name;
+|===|
 [output = data]
 {
   result: name;
@@ -216,8 +218,8 @@ Fruit selected = Fruit.Apple;
 		}
 
 		action := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), protocol.Range{
-			Start: protocol.Position{Line: 0, Character: 0},
-			End:   protocol.Position{Line: 0, Character: 21},
+			Start: protocol.Position{Line: 1, Character: 0},
+			End:   protocol.Position{Line: 1, Character: 21},
 		}, "Append .mace to import path")
 
 		edits := action.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
@@ -383,8 +385,10 @@ schema User: { name: string; };
 
 	It("offers import refactor actions", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
-		snapshot := analyzeDocumentAt(`from "shared.mace" import User, Profile;
+		snapshot := analyzeDocumentAt(`|===|
+from "shared.mace" import User, Profile;
 from "shared.mace" import Role;
+|===|
 [output = schema]
 {}`, documentPath)
 
@@ -410,9 +414,11 @@ from "shared.mace" import Role;
   User: string;
   Role: string;
 }`)
-		documentPath := writeAnalysisFile(workspace, "document.mace", `from "./missing.mace" import User;
+		documentPath := writeAnalysisFile(workspace, "document.mace", `|===|
+from "./missing.mace" import User;
 from "./shared.mace" import Usre;
 from "./shared-old.mace" import Role;
+|===|
 [output = schema]
 {}`)
 		contents, err := os.ReadFile(documentPath)
@@ -437,19 +443,52 @@ from "./shared-old.mace" import Role;
 		tAssert.Contains(explainAction.Command.Arguments[0], "Only names surfaced through the imported file output block are importable")
 	})
 
+	It("reports unavailable imported output keys", func() {
+		workspace, err := os.MkdirTemp("", "mace-analysis-import-unavailable-*")
+		tAssert.NoError(err)
+		defer func() {
+			tAssert.NoError(os.RemoveAll(workspace))
+		}()
+
+		writeAnalysisFile(workspace, "shared.mace", `[output = data]
+{
+  name: "Ada";
+}`)
+		documentPath := writeAnalysisFile(workspace, "document.mace", `|===|
+from "./shared.mace" import age;
+|===|
+[output = data]
+{
+  result: "ok";
+}`)
+		contents, err := os.ReadFile(documentPath)
+		tAssert.NoError(err)
+		snapshot := analyzeDocumentAt(string(contents), documentPath)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			diagnostic := snapshot.diagnostics[0]
+			tAssert.Equal("mace.import.name-not-exposed", diagnostic.Code.Value)
+			tAssert.Contains(diagnostic.Message, `imported key "age" is not exported by "./shared.mace"`)
+			tAssert.Equal(protocol.Position{Line: 1, Character: 28}, diagnostic.Range.Start)
+			tAssert.Equal(protocol.Position{Line: 1, Character: 31}, diagnostic.Range.End)
+		}
+	})
+
 	It("offers remaining add and fix import actions", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))
 
-		snapshot := analyzeDocumentAt(`from "shared" import User;
+		snapshot := analyzeDocumentAt(`|===|
+from "shared" import User;
 from "zeta.mace" import Zed;
 from "alpha.mace" import User;
 from "dupes.mace" import User, User, Role;
+|===|
 [output = schema]
 {}`, documentPath)
 		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
 
-		extensionAction := requireCodeAction(snapshot, uri, protocol.Range{Start: protocol.Position{Line: 0, Character: 5}, End: protocol.Position{Line: 0, Character: 13}}, "Append .mace to import path")
+		extensionAction := requireCodeAction(snapshot, uri, protocol.Range{Start: protocol.Position{Line: 1, Character: 5}, End: protocol.Position{Line: 1, Character: 13}}, "Append .mace to import path")
 		tAssert.Equal(`"shared.mace"`, extensionAction.Edit.Changes[uri][0].NewText)
 
 		sortAction := requireCodeAction(snapshot, uri, rangeValue, "Sort imports")
@@ -458,10 +497,12 @@ from "dupes.mace" import User, User, Role;
 		duplicateAction := requireCodeAction(snapshot, uri, rangeValue, "Remove duplicate imported names")
 		tAssert.Contains(duplicateAction.Edit.Changes[uri][0].NewText, `from "dupes.mace" import User, Role;`)
 
-		wildcardSnapshot := analyzeDocumentAt(`from "shared.mace" import *;
+		wildcardSnapshot := analyzeDocumentAt(`|===|
+from "shared.mace" import *;
+|===|
 [output = schema]
 {}`, documentPath)
-		wildcardAction := requireCodeAction(wildcardSnapshot, uri, protocol.Range{Start: protocol.Position{Line: 0, Character: 26}, End: protocol.Position{Line: 0, Character: 27}}, "Convert wildcard import to named import")
+		wildcardAction := requireCodeAction(wildcardSnapshot, uri, protocol.Range{Start: protocol.Position{Line: 1, Character: 26}, End: protocol.Position{Line: 1, Character: 27}}, "Convert wildcard import to named import")
 		tAssert.Equal("Name", wildcardAction.Edit.Changes[uri][0].NewText)
 	})
 
@@ -753,6 +794,51 @@ schema User: { name: string; email: string; };
 			text := action.Edit.Changes[uri][0].NewText
 			tAssert.Contains(text, "type ExtractedType: string;")
 			tAssert.Contains(text, "name: ExtractedType")
+		})
+
+		It("extracts variable type references into aliases", func() {
+			snapshot := analyzeDocumentAt(`|===|
+string name = "Ada";
+|===|
+[output = data]
+{ value: name; }`, documentPath)
+			targetRange := protocol.Range{Start: protocol.Position{Line: 1, Character: 1}, End: protocol.Position{Line: 1, Character: 1}}
+			action := requireCodeAction(snapshot, uri, targetRange, "Extract variable type into alias")
+
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, "type ExampleType: string;")
+			tAssert.Contains(text, "ExampleType name = \"Ada\";")
+		})
+
+		It("extracts individual schema field type references into aliases", func() {
+			snapshot := analyzeDocumentAt(`|===|
+schema User: { name: string; age: int; profile: string; };
+|===|
+[output = schema]
+{}`, documentPath)
+			targetRange := protocol.Range{Start: protocol.Position{Line: 1, Character: 22}, End: protocol.Position{Line: 1, Character: 22}}
+			action := requireCodeAction(snapshot, uri, targetRange, "Extract schema field name type into alias")
+
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, "type ExampleType: string;")
+			tAssert.Contains(text, "name: ExampleType")
+			tAssert.Contains(text, "age: int")
+			tAssert.Contains(text, "profile: string")
+		})
+
+		It("extracts nested schema field type references into aliases", func() {
+			snapshot := analyzeDocumentAt(`|===|
+schema User: { profile: { name: string; }; };
+|===|
+[output = schema]
+{}`, documentPath)
+			targetRange := protocol.Range{Start: protocol.Position{Line: 1, Character: 34}, End: protocol.Position{Line: 1, Character: 34}}
+			action := requireCodeAction(snapshot, uri, targetRange, "Extract schema field profile.name type into alias")
+
+			text := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(text, "type ExampleType: string;")
+			tAssert.Contains(text, "name: ExampleType")
+			tAssert.Contains(text, "profile: {")
 		})
 
 		It("extracts inline record types into schemas", func() {
@@ -1171,8 +1257,8 @@ schema Plot: { points: array<Point>; };
 		tAssert.NoError(err)
 
 		documentPath := filepath.Join(workspace, "consumer.mace")
-		snapshot := analyzeDocumentAt(`from "./shared.mace" import User;
-|===|
+		snapshot := analyzeDocumentAt(`|===|
+from "./shared.mace" import User;
 schema User: { name: string; };
 |===|
 [output = data, schema = User, schema_file = "./shared.mace"]
