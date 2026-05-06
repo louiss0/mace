@@ -788,6 +788,35 @@ schema Avatar: { name: ExtractedType, image_path: string, age: int };
 			tAssert.Equal("ExtractedType2", edits[1].NewText)
 		})
 
+		It("creates type aliases from selected variable types with direct edits", func() {
+			snapshot := analyzeDocumentAt(`|===|
+string name = "Ada";
+|===|
+[output = data]
+{ name: name; }`, documentPath)
+			action := requireCodeAction(snapshot, uri, protocol.Range{Start: protocol.Position{Line: 1, Character: 0}, End: protocol.Position{Line: 1, Character: 6}}, "Create type alias from selected type")
+			edits := action.Edit.Changes[uri]
+			if tAssert.Len(edits, 2) {
+				tAssert.Equal(protocol.Range{Start: protocol.Position{Line: 1, Character: 0}, End: protocol.Position{Line: 1, Character: 0}}, edits[0].Range)
+				tAssert.Equal("type Name: string;\n\n", edits[0].NewText)
+				tAssert.Equal(protocol.Range{Start: protocol.Position{Line: 1, Character: 0}, End: protocol.Position{Line: 1, Character: 6}}, edits[1].Range)
+				tAssert.Equal("Name", edits[1].NewText)
+			}
+		})
+
+		It("creates type aliases from selected output values with direct edits", func() {
+			snapshot := analyzeDocumentAt(`[output = data]
+{
+  name: "Ada"
+}`, documentPath)
+			action := requireCodeAction(snapshot, uri, protocol.Range{Start: protocol.Position{Line: 2, Character: 8}, End: protocol.Position{Line: 2, Character: 13}}, "Create type alias from selected type")
+			edits := action.Edit.Changes[uri]
+			if tAssert.Len(edits, 1) {
+				tAssert.Equal(protocol.Range{}, edits[0].Range)
+				tAssert.Equal("|===|\ntype Name: string;\n|===|\n", edits[0].NewText)
+			}
+		})
+
 		It("inlines type alias usage in schema fields", func() {
 			snapshot := analyzeDocumentAt(`|===|
 type Name: string;

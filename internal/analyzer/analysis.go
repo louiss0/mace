@@ -1217,8 +1217,8 @@ func typeAliasTextCodeActions(text string, documentPath string) []analysisCodeAc
 	for _, action := range createTypeAliasFromSchemaFieldTypeActions(text) {
 		actions = append(actions, typeAliasExtractCodeAction(uri, action))
 	}
-	if updated, targetRange, ok := createTypeAliasFromSelectedTypeText(text); ok {
-		addTextAction("Create type alias from selected type", targetRange, updated)
+	for _, action := range createTypeAliasFromSelectedTypeActions(text) {
+		actions = append(actions, typeAliasExtractCodeAction(uri, action))
 	}
 	if updated, ok := inlineTypeAliasUsageText(text); ok {
 		addTextAction("Inline type alias usage", rangeForText(text, "Name"), updated)
@@ -1239,11 +1239,8 @@ func typeAliasTextCodeActions(text string, documentPath string) []analysisCodeAc
 }
 
 type typeAliasTextAction struct {
-	targetRange  protocol.Range
-	insertRange  protocol.Range
-	replaceRange protocol.Range
-	declaration  string
-	aliasName    string
+	targetRange protocol.Range
+	edits       []protocol.TextEdit
 }
 
 func createTypeAliasFromSchemaFieldTypeActions(text string) []typeAliasTextAction {
@@ -1263,12 +1260,14 @@ func createTypeAliasFromSchemaFieldTypeActions(text string) []typeAliasTextActio
 			typeStart := bodyStart + fieldMatches[4]
 			typeEnd := bodyStart + fieldMatches[5]
 			typeName := text[typeStart:typeEnd]
+			insertRange := protocol.Range{Start: positionFromIndex(text, scriptInsertIndex), End: positionFromIndex(text, scriptInsertIndex)}
+			replaceRange := protocol.Range{Start: positionFromIndex(text, typeStart), End: positionFromIndex(text, typeEnd)}
 			actions = append(actions, typeAliasTextAction{
-				targetRange:  protocol.Range{Start: positionFromIndex(text, typeStart), End: positionFromIndex(text, typeEnd)},
-				insertRange:  protocol.Range{Start: positionFromIndex(text, scriptInsertIndex), End: positionFromIndex(text, scriptInsertIndex)},
-				replaceRange: protocol.Range{Start: positionFromIndex(text, typeStart), End: positionFromIndex(text, typeEnd)},
-				declaration:  "type " + aliasName + ": " + typeName + ";\n\n",
-				aliasName:    aliasName,
+				targetRange: replaceRange,
+				edits: []protocol.TextEdit{
+					{Range: insertRange, NewText: "type " + aliasName + ": " + typeName + ";\n\n"},
+					{Range: replaceRange, NewText: aliasName},
+				},
 			})
 		}
 	}
@@ -1294,10 +1293,7 @@ func typeAliasExtractCodeAction(uri protocol.DocumentUri, action typeAliasTextAc
 		Action: protocol.CodeAction{
 			Title: "Create type alias from selected type",
 			Kind:  Ptr(protocol.CodeActionKindRefactorExtract),
-			Edit: &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: {
-				{Range: action.insertRange, NewText: action.declaration},
-				{Range: action.replaceRange, NewText: action.aliasName},
-			}}},
+			Edit:  &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: action.edits}},
 		},
 	}
 }
@@ -1310,22 +1306,33 @@ func scriptDeclarationInsertIndex(text string) (int, bool) {
 	return open + len("|===|\n"), true
 }
 
-func createTypeAliasFromSelectedTypeText(text string) (string, protocol.Range, bool) {
+func createTypeAliasFromSelectedTypeActions(text string) []typeAliasTextAction {
 	// Variable declaration:  string name = "Ada";
 	varPattern := regexp.MustCompile(`(?m)^([ \t]*)(string|int|float|boolean|array<[^>]+>)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^;]+);`)
 	varMatches := varPattern.FindStringSubmatchIndex(text)
 	if len(varMatches) > 0 && !strings.Contains(text, "type ExtractedType:") {
+		scriptInsertIndex, ok := scriptDeclarationInsertIndex(text)
+		if !ok {
+			return nil
+		}
+
 		typeName := text[varMatches[4]:varMatches[5]]
 		variableName := text[varMatches[6]:varMatches[7]]
 		alias := strings.ToUpper(variableName[:1]) + variableName[1:]
-		updated := varPattern.ReplaceAllString(text, `${1}`+alias+` ${3} = ${4};`)
-		updated = insertTopScriptDeclarationText(updated, "type "+alias+": "+typeName+";")
 		targetRange := protocol.Range{Start: positionFromIndex(text, varMatches[4]), End: positionFromIndex(text, varMatches[5])}
-		return updated, targetRange, true
+		insertRange := protocol.Range{Start: positionFromIndex(text, scriptInsertIndex), End: positionFromIndex(text, scriptInsertIndex)}
+		return []typeAliasTextAction{{
+			targetRange: targetRange,
+			edits: []protocol.TextEdit{
+				{Range: insertRange, NewText: "type " + alias + ": " + typeName + ";\n\n"},
+				{Range: targetRange, NewText: alias},
+			},
+		}}
 	}
 
 	// Output data field:  name: "Ada"  (infer primitive type from literal)
 	outputPattern := regexp.MustCompile(`(?m)^([ \t]*)([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^,{}\r\n]+)$`)
+	actions := []typeAliasTextAction{}
 	for _, matches := range outputPattern.FindAllStringSubmatchIndex(text, -1) {
 		value := strings.TrimSpace(text[matches[6]:matches[7]])
 		inferred := inferredTypeNameFromLiteral(value)
@@ -1337,16 +1344,27 @@ func createTypeAliasFromSelectedTypeText(text string) (string, protocol.Range, b
 		if strings.Contains(text, "type "+alias+":") {
 			continue
 		}
-		scriptBlock := "|===|\ntype " + alias + ": " + inferred + ";\n|===|\n"
+		targetRange := protocol.Range{Start: positionFromIndex(text, matches[6]), End: positionFromIndex(text, matches[7])}
 		if !strings.Contains(text, "|===|") {
-			updated := scriptBlock + text
-			return updated, protocol.Range{Start: positionFromIndex(text, matches[6]), End: positionFromIndex(text, matches[7])}, true
+			insertRange := protocol.Range{}
+			actions = append(actions, typeAliasTextAction{
+				targetRange: targetRange,
+				edits:       []protocol.TextEdit{{Range: insertRange, NewText: "|===|\ntype " + alias + ": " + inferred + ";\n|===|\n"}},
+			})
+			continue
 		}
-		updated := strings.Replace(text, "|===|\n", "|===|\ntype "+alias+": "+inferred+";\n", 1)
-		return updated, protocol.Range{Start: positionFromIndex(text, matches[6]), End: positionFromIndex(text, matches[7])}, true
+		scriptInsertIndex, ok := scriptDeclarationInsertIndex(text)
+		if !ok {
+			continue
+		}
+		insertRange := protocol.Range{Start: positionFromIndex(text, scriptInsertIndex), End: positionFromIndex(text, scriptInsertIndex)}
+		actions = append(actions, typeAliasTextAction{
+			targetRange: targetRange,
+			edits:       []protocol.TextEdit{{Range: insertRange, NewText: "type " + alias + ": " + inferred + ";\n"}},
+		})
 	}
 
-	return "", protocol.Range{}, false
+	return actions
 }
 
 func insertTopScriptDeclarationText(text string, declaration string) string {
