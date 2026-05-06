@@ -825,7 +825,11 @@ schema User: { name: Name };
 [output = schema]
 {}`, documentPath)
 			action := requireCodeAction(snapshot, uri, protocol.Range{Start: protocol.Position{Line: 1, Character: 5}, End: protocol.Position{Line: 1, Character: 9}}, "Inline type alias usage")
-			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "name: string")
+			edits := action.Edit.Changes[uri]
+			if tAssert.Len(edits, 1) {
+				tAssert.Equal(protocol.Range{Start: protocol.Position{Line: 2, Character: 21}, End: protocol.Position{Line: 2, Character: 25}}, edits[0].Range)
+				tAssert.Equal("string", edits[0].NewText)
+			}
 		})
 
 		It("renames type aliases", func() {
@@ -835,7 +839,11 @@ type Name: string;
 [output = schema]
 {}`, documentPath)
 			action := requireCodeAction(snapshot, uri, protocol.Range{Start: protocol.Position{Line: 1, Character: 5}, End: protocol.Position{Line: 1, Character: 9}}, "Rename type alias")
-			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "type RenamedName: string;")
+			edits := action.Edit.Changes[uri]
+			if tAssert.Len(edits, 1) {
+				tAssert.Equal(protocol.Range{Start: protocol.Position{Line: 1, Character: 5}, End: protocol.Position{Line: 1, Character: 9}}, edits[0].Range)
+				tAssert.Equal("RenamedName", edits[0].NewText)
+			}
 		})
 
 		It("replaces unknown types with closest known types", func() {
@@ -846,7 +854,11 @@ schema User: { name: Nmae };
 [output = schema]
 {}`, documentPath)
 			action := requireCodeAction(snapshot, uri, protocol.Range{Start: protocol.Position{Line: 2, Character: 21}, End: protocol.Position{Line: 2, Character: 25}}, "Replace unknown type with Name")
-			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "name: Name")
+			edits := action.Edit.Changes[uri]
+			if tAssert.Len(edits, 1) {
+				tAssert.Equal(protocol.Range{Start: protocol.Position{Line: 2, Character: 21}, End: protocol.Position{Line: 2, Character: 25}}, edits[0].Range)
+				tAssert.Equal("Name", edits[0].NewText)
+			}
 		})
 
 		It("converts Array casing to array", func() {
@@ -856,7 +868,11 @@ type Names: Array<string>;
 [output = schema]
 {}`, documentPath)
 			action := requireCodeAction(snapshot, uri, protocol.Range{Start: protocol.Position{Line: 1, Character: 12}, End: protocol.Position{Line: 1, Character: 17}}, "Convert Array<T> to array<T>")
-			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "array<string>")
+			edits := action.Edit.Changes[uri]
+			if tAssert.Len(edits, 1) {
+				tAssert.Equal(protocol.Range{Start: protocol.Position{Line: 1, Character: 12}, End: protocol.Position{Line: 1, Character: 17}}, edits[0].Range)
+				tAssert.Equal("array", edits[0].NewText)
+			}
 		})
 
 		It("converts invalid nullable types into optional fields", func() {
@@ -866,7 +882,11 @@ schema User: { name: string? };
 [output = schema]
 {}`, documentPath)
 			action := requireCodeAction(snapshot, uri, protocol.Range{Start: protocol.Position{Line: 1, Character: 21}, End: protocol.Position{Line: 1, Character: 28}}, "Convert nullable type into optional field")
-			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "name?: string")
+			edits := action.Edit.Changes[uri]
+			if tAssert.Len(edits, 1) {
+				tAssert.Equal(protocol.Range{Start: protocol.Position{Line: 1, Character: 15}, End: protocol.Position{Line: 1, Character: 28}}, edits[0].Range)
+				tAssert.Equal("name?: string", edits[0].NewText)
+			}
 		})
 	})
 

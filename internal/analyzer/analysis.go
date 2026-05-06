@@ -1209,32 +1209,18 @@ func typeAliasTextCodeActions(text string, documentPath string) []analysisCodeAc
 	}
 
 	uri := protocol.DocumentUri(fileURI(documentPath))
-	fullRange := fullDocumentRange(text)
 	actions := []analysisCodeActionCandidate{}
-	addTextAction := func(title string, targetRange protocol.Range, newText string) {
-		actions = append(actions, textRefactorAction(title, targetRange, uri, fullRange, newText))
-	}
 	for _, action := range createTypeAliasFromSchemaFieldTypeActions(text) {
 		actions = append(actions, typeAliasExtractCodeAction(uri, action))
 	}
 	for _, action := range createTypeAliasFromSelectedTypeActions(text) {
 		actions = append(actions, typeAliasExtractCodeAction(uri, action))
 	}
-	if updated, ok := inlineTypeAliasUsageText(text); ok {
-		addTextAction("Inline type alias usage", rangeForText(text, "Name"), updated)
-	}
-	if updated, ok := renameTypeAliasText(text); ok {
-		addTextAction("Rename type alias", rangeForText(text, "Name"), updated)
-	}
-	if updated, name, ok := replaceUnknownTypeText(text); ok {
-		addTextAction("Replace unknown type with "+name, rangeForText(text, "Nmae"), updated)
-	}
-	if updated := strings.ReplaceAll(text, "Array<", "array<"); updated != text {
-		addTextAction("Convert Array<T> to array<T>", rangeForText(text, "Array"), updated)
-	}
-	if updated, ok := nullableTypeToOptionalFieldText(text); ok {
-		addTextAction("Convert nullable type into optional field", rangeForText(text, "string?"), updated)
-	}
+	actions = append(actions, inlineTypeAliasUsageActions(text, uri)...)
+	actions = append(actions, renameTypeAliasActions(text, uri)...)
+	actions = append(actions, replaceUnknownTypeActions(text, uri)...)
+	actions = append(actions, convertArrayCasingActions(text, uri)...)
+	actions = append(actions, nullableTypeToOptionalFieldActions(text, uri)...)
 	return actions
 }
 
@@ -1294,6 +1280,17 @@ func typeAliasExtractCodeAction(uri protocol.DocumentUri, action typeAliasTextAc
 			Title: "Create type alias from selected type",
 			Kind:  Ptr(protocol.CodeActionKindRefactorExtract),
 			Edit:  &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: action.edits}},
+		},
+	}
+}
+
+func typeAliasEditCodeAction(title string, targetRange protocol.Range, uri protocol.DocumentUri, edits []protocol.TextEdit) analysisCodeActionCandidate {
+	return analysisCodeActionCandidate{
+		Range: targetRange,
+		Action: protocol.CodeAction{
+			Title: title,
+			Kind:  Ptr(protocol.CodeActionKindRefactor),
+			Edit:  &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: edits}},
 		},
 	}
 }
@@ -1371,35 +1368,96 @@ func insertTopScriptDeclarationText(text string, declaration string) string {
 	return strings.Replace(text, "|===|\n", "|===|\n"+declaration+"\n\n", 1)
 }
 
-func inlineTypeAliasUsageText(text string) (string, bool) {
-	matches := regexp.MustCompile(`type\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^;]+);`).FindStringSubmatch(text)
-	if len(matches) == 0 {
-		return "", false
+func inlineTypeAliasUsageActions(text string, uri protocol.DocumentUri) []analysisCodeActionCandidate {
+	aliasPattern := regexp.MustCompile(`type\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^;]+);`)
+	aliasMatches := aliasPattern.FindStringSubmatchIndex(text)
+	if len(aliasMatches) == 0 {
+		return nil
 	}
-	updated := strings.ReplaceAll(text, ": "+matches[1], ": "+matches[2])
-	updated = regexp.MustCompile(`(?m)^([ \t]*)`+regexp.QuoteMeta(matches[1])+`\s+`).ReplaceAllString(updated, `${1}`+matches[2]+` `)
-	return updated, updated != text
-}
 
-func renameTypeAliasText(text string) (string, bool) {
-	updated := regexp.MustCompile(`type\s+([A-Za-z_][A-Za-z0-9_]*)\s*:`).ReplaceAllString(text, "type RenamedName:")
-	return updated, updated != text
-}
-
-func replaceUnknownTypeText(text string) (string, string, bool) {
-	matches := regexp.MustCompile(`type\s+([A-Za-z_][A-Za-z0-9_]*)\s*:`).FindStringSubmatch(text)
-	if len(matches) == 0 {
-		return "", "", false
+	alias := text[aliasMatches[2]:aliasMatches[3]]
+	replacement := strings.TrimSpace(text[aliasMatches[4]:aliasMatches[5]])
+	edits := []protocol.TextEdit{}
+	schemaUsagePattern := regexp.MustCompile(`:\s*` + regexp.QuoteMeta(alias) + `\b`)
+	for _, usageMatches := range schemaUsagePattern.FindAllStringIndex(text, -1) {
+		nameStart := usageMatches[1] - len(alias)
+		edits = append(edits, protocol.TextEdit{
+			Range:   protocol.Range{Start: positionFromIndex(text, nameStart), End: positionFromIndex(text, usageMatches[1])},
+			NewText: replacement,
+		})
 	}
-	known := matches[1]
-	updated := regexp.MustCompile(`:\s*Nmae`).ReplaceAllString(text, ": "+known)
-	updated = regexp.MustCompile(`(?m)^([ \t]*)Nmae\s+`).ReplaceAllString(updated, `${1}`+known+` `)
-	return updated, known, updated != text
+	variableUsagePattern := regexp.MustCompile(`(?m)^([ \t]*)` + regexp.QuoteMeta(alias) + `\s+`)
+	for _, usageMatches := range variableUsagePattern.FindAllStringSubmatchIndex(text, -1) {
+		nameStart := usageMatches[0] + len(text[usageMatches[2]:usageMatches[3]])
+		edits = append(edits, protocol.TextEdit{
+			Range:   protocol.Range{Start: positionFromIndex(text, nameStart), End: positionFromIndex(text, nameStart+len(alias))},
+			NewText: replacement,
+		})
+	}
+	if len(edits) == 0 {
+		return nil
+	}
+
+	targetRange := protocol.Range{Start: positionFromIndex(text, aliasMatches[2]), End: positionFromIndex(text, aliasMatches[3])}
+	return []analysisCodeActionCandidate{typeAliasEditCodeAction("Inline type alias usage", targetRange, uri, edits)}
 }
 
-func nullableTypeToOptionalFieldText(text string) (string, bool) {
-	updated := regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^;{}]+)\?`).ReplaceAllString(text, `${1}?: ${2}`)
-	return updated, updated != text
+func renameTypeAliasActions(text string, uri protocol.DocumentUri) []analysisCodeActionCandidate {
+	matches := regexp.MustCompile(`type\s+([A-Za-z_][A-Za-z0-9_]*)\s*:`).FindStringSubmatchIndex(text)
+	if len(matches) == 0 {
+		return nil
+	}
+
+	targetRange := protocol.Range{Start: positionFromIndex(text, matches[2]), End: positionFromIndex(text, matches[3])}
+	return []analysisCodeActionCandidate{
+		typeAliasEditCodeAction("Rename type alias", targetRange, uri, []protocol.TextEdit{{Range: targetRange, NewText: "RenamedName"}}),
+	}
+}
+
+func replaceUnknownTypeActions(text string, uri protocol.DocumentUri) []analysisCodeActionCandidate {
+	aliasMatches := regexp.MustCompile(`type\s+([A-Za-z_][A-Za-z0-9_]*)\s*:`).FindStringSubmatchIndex(text)
+	if len(aliasMatches) == 0 {
+		return nil
+	}
+
+	known := text[aliasMatches[2]:aliasMatches[3]]
+	unknownPattern := regexp.MustCompile(`\bNmae\b`)
+	unknownMatches := unknownPattern.FindStringIndex(text)
+	if len(unknownMatches) == 0 {
+		return nil
+	}
+
+	targetRange := protocol.Range{Start: positionFromIndex(text, unknownMatches[0]), End: positionFromIndex(text, unknownMatches[1])}
+	return []analysisCodeActionCandidate{
+		typeAliasEditCodeAction("Replace unknown type with "+known, targetRange, uri, []protocol.TextEdit{{Range: targetRange, NewText: known}}),
+	}
+}
+
+func convertArrayCasingActions(text string, uri protocol.DocumentUri) []analysisCodeActionCandidate {
+	index := strings.Index(text, "Array<")
+	if index < 0 {
+		return nil
+	}
+
+	targetRange := protocol.Range{Start: positionFromIndex(text, index), End: positionFromIndex(text, index+len("Array"))}
+	return []analysisCodeActionCandidate{
+		typeAliasEditCodeAction("Convert Array<T> to array<T>", targetRange, uri, []protocol.TextEdit{{Range: targetRange, NewText: "array"}}),
+	}
+}
+
+func nullableTypeToOptionalFieldActions(text string, uri protocol.DocumentUri) []analysisCodeActionCandidate {
+	matches := regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^;{}]+)\?`).FindStringSubmatchIndex(text)
+	if len(matches) == 0 {
+		return nil
+	}
+
+	fieldName := text[matches[2]:matches[3]]
+	typeName := strings.TrimSpace(text[matches[4]:matches[5]])
+	targetRange := protocol.Range{Start: positionFromIndex(text, matches[4]), End: positionFromIndex(text, matches[5]+1)}
+	editRange := protocol.Range{Start: positionFromIndex(text, matches[0]), End: positionFromIndex(text, matches[1])}
+	return []analysisCodeActionCandidate{
+		typeAliasEditCodeAction("Convert nullable type into optional field", targetRange, uri, []protocol.TextEdit{{Range: editRange, NewText: fieldName + "?: " + typeName}}),
+	}
 }
 
 func variableFixTextCodeActions(text string, documentPath string) []analysisCodeActionCandidate {
