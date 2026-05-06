@@ -1,9 +1,9 @@
-|===|
+|============================================|
 type Age: int;
-schema Profile: { age: Age; bio?: string; };
-|===|
+schema Profile: { age: Age, bio?: string, };
+|============================================|
 [output = schema]
 {
-  Age: Age;
-  Profile: Profile;
+  Age: Age,
+  Profile: Profile,
 }

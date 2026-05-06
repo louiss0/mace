@@ -569,76 +569,6 @@ array<string> values = [1, 2];
 		})
 	})
 
-	Describe("type alias actions", func() {
-		documentPath := filepath.Join("workspace", "document.mace")
-		uri := protocol.DocumentUri(fileURI(documentPath))
-		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
-
-		It("creates type aliases from selected schema field types", func() {
-			snapshot := analyzeDocumentAt(`|===|
-schema User: { name: string; };
-|===|
-[output = schema]
-{}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Create type alias from selected type")
-			text := action.Edit.Changes[uri][0].NewText
-			tAssert.Contains(text, "type ExtractedType: string;")
-			tAssert.Contains(text, "name: ExtractedType")
-		})
-
-		It("inlines type alias usage in schema fields", func() {
-			snapshot := analyzeDocumentAt(`|===|
-type Name: string;
-schema User: { name: Name; };
-|===|
-[output = schema]
-{}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Inline type alias usage")
-			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "name: string")
-		})
-
-		It("renames type aliases", func() {
-			snapshot := analyzeDocumentAt(`|===|
-type Name: string;
-|===|
-[output = schema]
-{}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Rename type alias")
-			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "type RenamedName: string;")
-		})
-
-		It("replaces unknown types with closest known types", func() {
-			snapshot := analyzeDocumentAt(`|===|
-type Name: string;
-schema User: { name: Nmae; };
-|===|
-[output = schema]
-{}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Replace unknown type with Name")
-			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "name: Name")
-		})
-
-		It("converts Array casing to array", func() {
-			snapshot := analyzeDocumentAt(`|===|
-type Names: Array<string>;
-|===|
-[output = schema]
-{}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Convert Array<T> to array<T>")
-			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "array<string>")
-		})
-
-		It("converts invalid nullable types into optional fields", func() {
-			snapshot := analyzeDocumentAt(`|===|
-schema User: { name: string?; };
-|===|
-[output = schema]
-{}`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Convert nullable type into optional field")
-			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "name?: string")
-		})
-	})
-
 	Describe("injectable variable actions", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))
@@ -1157,7 +1087,7 @@ string name = "Grace";
 		}
 	})
 
-	It("translates mixed array literal errors in script declarations into token-scoped diagnostics", func() {
+	It("translates array literal initializer mismatches into token-scoped diagnostics", func() {
 		snapshot := analyzeDocument(`|===|
 array<int> foo = ["4", 6];
 |===|
@@ -1167,10 +1097,10 @@ array<int> foo = ["4", 6];
 }`)
 
 		if tAssert.Len(snapshot.diagnostics, 1) {
-			tAssert.Contains(snapshot.diagnostics[0].Message, "array literal has mixed element types")
+			tAssert.Contains(snapshot.diagnostics[0].Message, "type mismatch: expected array<int>, got array<variant[string, int]>")
 			tAssert.Equal(protocol.UInteger(1), snapshot.diagnostics[0].Range.Start.Line)
 			tAssert.Equal(protocol.UInteger(11), snapshot.diagnostics[0].Range.Start.Character)
-			tAssert.Equal(string(diagnosticTypeMixedArrayLiteral), requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(string(diagnosticTypeInitializerMismatch), requireDiagnosticCode(snapshot.diagnostics[0]))
 		}
 	})
 

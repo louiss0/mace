@@ -758,15 +758,15 @@ func importCompletionItems(linePrefix string, uri protocol.DocumentUri) ([]proto
 	if matches := importIdentifiersPattern.FindStringSubmatch(linePrefix); len(matches) == 3 {
 		path := matches[1]
 		prefix := matches[2]
-		names, ok := importableIdentifiers(uri, path)
+		symbols, ok := importableSymbols(uri, path)
 		if !ok {
 			return []protocol.CompletionItem{}, true
 		}
 
-		items := lo.Map(names, func(name string, _ int) protocol.CompletionItem {
+		items := lo.Map(symbols, func(symbol importableSymbol, _ int) protocol.CompletionItem {
 			return protocol.CompletionItem{
-				Label: name,
-				Kind:  Ptr(protocol.CompletionItemKindVariable),
+				Label: symbol.Name,
+				Kind:  Ptr(symbol.Kind),
 			}
 		})
 		items = lo.Filter(items, func(item protocol.CompletionItem, _ int) bool {
@@ -968,7 +968,12 @@ func completionPlaceholderPosition(text string, position protocol.Position, oper
 	return positionFromIndex(text, index+whitespaceWidth+1), true
 }
 
-func importableIdentifiers(uri protocol.DocumentUri, importPath string) ([]string, bool) {
+type importableSymbol struct {
+	Name string
+	Kind protocol.CompletionItemKind
+}
+
+func importableSymbols(uri protocol.DocumentUri, importPath string) ([]importableSymbol, bool) {
 	documentPath, ok := documentPathFromURI(uri)
 	if !ok {
 		return nil, false
@@ -985,13 +990,30 @@ func importableIdentifiers(uri protocol.DocumentUri, importPath string) ([]strin
 		return nil, false
 	}
 
-	names := lo.Map(file.Output.DataFields, func(field ast.OutputField, _ int) string {
-		return field.Name
-	})
-	names = append(names, lo.Map(file.Output.SchemaFields, func(field ast.OutputSchemaField, _ int) string {
-		return field.Name
-	})...)
-	return names, true
+	symbols := []importableSymbol{}
+	for _, field := range file.Output.DataFields {
+		symbols = append(symbols, importableSymbol{Name: field.Name, Kind: protocol.CompletionItemKindVariable})
+	}
+	for _, field := range file.Output.SchemaFields {
+		kind := protocol.CompletionItemKindClass
+		resolved := resolveCompletionType(field.Type, buildCompletionModel(file, filepath.Dir(resolvedPath), map[string]completionModel{}), map[string]struct{}{})
+		switch resolved.kind {
+		case completionTypeSchema:
+			kind = protocol.CompletionItemKindStruct
+		case completionTypeEnum:
+			kind = protocol.CompletionItemKindEnum
+		}
+		symbols = append(symbols, importableSymbol{Name: field.Name, Kind: kind})
+	}
+	return symbols, true
+}
+
+func importableIdentifiers(uri protocol.DocumentUri, importPath string) ([]string, bool) {
+	symbols, ok := importableSymbols(uri, importPath)
+	if !ok {
+		return nil, false
+	}
+	return lo.Map(symbols, func(symbol importableSymbol, _ int) string { return symbol.Name }), true
 }
 
 func documentPathFromURI(uri protocol.DocumentUri) (string, bool) {

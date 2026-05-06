@@ -2,27 +2,27 @@
 type UserID: string;
 
 gen_doc UserID {
-  summary: "A stable user identifier.";
+  summary: "A stable user identifier.",
 };
 
 schema User: {
-  id: UserID;
-  name: string;
-  age?: int;
+  id: UserID,
+  name: string,
+  age?: int,
 };
 
 schema_doc User {
-  summary: "Represents a user";
+  summary: "Represents a user",
   description: """
 # User
 
 A reusable schema exposed to imports.
-""";
+""",
   props: {
-    id: "Stable user identifier";
-    name: "The user's display name";
-    age: "Optional age in years";
-  };
+    id: "Stable user identifier",
+    name: "The user's display name",
+    age: "Optional age in years",
+  },
 };
 |=======================================|
 [output = schema]
@@ -30,6 +30,6 @@ A reusable schema exposed to imports.
 # Public User Contract
 """
 {
-  user: User /# Public user schema;
-  user_id: UserID /# Public user identifier type;
+  user: User /# Public user schema,
+  user_id: UserID /# Public user identifier type,
 }

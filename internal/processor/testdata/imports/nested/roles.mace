@@ -1,10 +1,10 @@
 |=============================================|
 schema Role: {
-  name: string;
-  level: int;
+  name: string,
+  level: int,
 };
 
-Role default_role = { name: "1"; level: 0; };
+Role default_role = { name: "1", level: 0, };
 
 int name = 4;
 int nice = 4;
@@ -16,5 +16,5 @@ array<int> foo = [6];
 |=============================================|
 
 [output = data] {
-  Role:4;
+  Role:4 ,
 }

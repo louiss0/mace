@@ -107,7 +107,6 @@ func (server *Server) initialize(context *glsp.Context, params *protocol.Initial
 	if capabilities.CompletionProvider != nil {
 		capabilities.CompletionProvider.TriggerCharacters = []string{".", ":", "=", "$"}
 	}
-
 	return protocol.InitializeResult{
 		Capabilities: capabilities,
 		ServerInfo: &protocol.InitializeResultServerInfo{

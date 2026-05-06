@@ -1,8 +1,8 @@
 |===|
 type Name: int;
-schema Admin: { level: int; };
+schema Admin: { level: int, };
 |===|
 [output = schema]
 {
-  Name: Name;
+  Name: Name,
 }

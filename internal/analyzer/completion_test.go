@@ -341,4 +341,59 @@ Status current = Status.`
 		tAssert.Equal("enum member Status.Pending = 0", lo.FromPtr(items[0].Detail))
 		tAssert.Equal("enum member Status.Running = 1", lo.FromPtr(items[1].Detail))
 	})
+
+	It("returns correct importable symbol kinds from an exported output block", func() {
+		workspace, err := os.MkdirTemp("", "mace-completion-importable-symbols-*")
+		tAssert.NoError(err)
+
+		writeAnalysisFile(workspace, "shared.mace", `|===|
+enum Role: string { Admin };
+schema User: { name: string };
+type Alias: string;
+|===|
+[output = schema]
+{
+  user: User;
+  role: Role;
+  label: Alias;
+  count: int;
+}`)
+
+		documentPath := filepath.Join(workspace, "consumer.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		symbols, ok := importableSymbols(uri, "./shared.mace")
+		tAssert.True(ok)
+
+		kinds := map[string]protocol.CompletionItemKind{}
+		for _, s := range symbols {
+			kinds[s.Name] = s.Kind
+		}
+
+		tAssert.Equal(protocol.CompletionItemKindStruct, kinds["user"])
+		tAssert.Equal(protocol.CompletionItemKindEnum, kinds["role"])
+		tAssert.Equal(protocol.CompletionItemKindClass, kinds["label"])
+		tAssert.Equal(protocol.CompletionItemKindClass, kinds["count"])
+	})
+
+	It("returns data fields as variables from a data output block", func() {
+		workspace, err := os.MkdirTemp("", "mace-completion-importable-data-*")
+		tAssert.NoError(err)
+
+		writeAnalysisFile(workspace, "shared.mace", `[output = data]
+{
+  name: "Ada";
+  age: 30;
+}`)
+
+		documentPath := filepath.Join(workspace, "consumer.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		symbols, ok := importableSymbols(uri, "./shared.mace")
+		tAssert.True(ok)
+
+		names := lo.Map(symbols, func(s importableSymbol, _ int) string { return s.Name })
+		kinds := lo.Map(symbols, func(s importableSymbol, _ int) protocol.CompletionItemKind { return s.Kind })
+
+		tAssert.Equal([]string{"name", "age"}, names)
+		tAssert.Equal([]protocol.CompletionItemKind{protocol.CompletionItemKindVariable, protocol.CompletionItemKindVariable}, kinds)
+	})
 })
