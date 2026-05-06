@@ -2,7 +2,7 @@
 |===============================|
 from "./base.mace" import User;
 
-int name = "Ada";
+string name = "Ada";
 
 User result = {
   name: name,

@@ -13,6 +13,4 @@ string foo = "bar";
   ID: ID,
   Member: Member,
   Team: Team,
-  foo: "bar",
-  bar: foo,
 }

@@ -1,6 +1,6 @@
 
 |=====================================|
-from "./profile.mace" import Profile;
+from "./profile.mace" import Profile, Age;
 type Name: string;
 
 schema User: {

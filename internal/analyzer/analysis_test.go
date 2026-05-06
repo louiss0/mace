@@ -1087,7 +1087,7 @@ string name = "Grace";
 		}
 	})
 
-	It("translates mixed array literal errors in script declarations into token-scoped diagnostics", func() {
+	It("translates array literal initializer mismatches into token-scoped diagnostics", func() {
 		snapshot := analyzeDocument(`|===|
 array<int> foo = ["4", 6];
 |===|
@@ -1097,10 +1097,10 @@ array<int> foo = ["4", 6];
 }`)
 
 		if tAssert.Len(snapshot.diagnostics, 1) {
-			tAssert.Contains(snapshot.diagnostics[0].Message, "array literal has mixed element types")
+			tAssert.Contains(snapshot.diagnostics[0].Message, "type mismatch: expected array<int>, got array<variant[string, int]>")
 			tAssert.Equal(protocol.UInteger(1), snapshot.diagnostics[0].Range.Start.Line)
 			tAssert.Equal(protocol.UInteger(11), snapshot.diagnostics[0].Range.Start.Character)
-			tAssert.Equal(string(diagnosticTypeMixedArrayLiteral), requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(string(diagnosticTypeInitializerMismatch), requireDiagnosticCode(snapshot.diagnostics[0]))
 		}
 	})
 
