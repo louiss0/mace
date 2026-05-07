@@ -2591,7 +2591,7 @@ Fruit selected = "Pear";
 		}
 	})
 
-	It("publishes warnings for script variables ignored by schema output mode", func() {
+	It("publishes errors for script variables in schema output mode", func() {
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `|===|
@@ -2606,7 +2606,7 @@ string value = "Ada";
 		if tAssert.Len(notifications, 1) {
 			params := requireDiagnostics(notifications[0])
 			tAssert.Len(params.Diagnostics, 1)
-			tAssert.Equal(protocol.DiagnosticSeverityWarning, *params.Diagnostics[0].Severity)
+			tAssert.Equal(protocol.DiagnosticSeverityError, *params.Diagnostics[0].Severity)
 			tAssert.Equal("mace.directive.schema-output-variable-ignored", params.Diagnostics[0].Code.Value)
 		}
 	})

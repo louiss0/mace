@@ -468,7 +468,7 @@ func analyzeDocumentAt(text string, documentPath string) analysisSnapshot {
 	snapshot.declarations = declarationsFromSymbols(snapshot.symbols)
 	snapshot.diagnostics = append(snapshot.diagnostics, fileDiagnostics...)
 
-	unusedDiagnostics, unusedActions := unusedVariableAnalysis(text, file, tokens, documentPath)
+	unusedDiagnostics, unusedActions := unusedDeclarationAnalysis(text, file, tokens, documentPath)
 	snapshot.diagnostics = append(snapshot.diagnostics, unusedDiagnostics...)
 	snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, unusedActions...)
 
@@ -2584,52 +2584,60 @@ func referencedNames(file ast.File) map[string]struct{} {
 	return names
 }
 
-func unusedVariableAnalysis(text string, file ast.File, tokens []lexer.Token, documentPath string) ([]protocol.Diagnostic, []analysisCodeActionCandidate) {
-	if file.Script == nil || file.Output.Mode == ast.OutputModeSchema {
+func unusedDeclarationAnalysis(text string, file ast.File, tokens []lexer.Token, documentPath string) ([]protocol.Diagnostic, []analysisCodeActionCandidate) {
+	if file.Script == nil {
 		return nil, nil
 	}
 
-	usedNames := usedVariableNames(file)
+	usedVariables := usedVariableNames(file)
+	usedDeclarations := referencedNames(file)
 	diagnostics := []protocol.Diagnostic{}
 	actions := []analysisCodeActionCandidate{}
 	for _, item := range file.Script.Items {
-		declaration, ok := item.(ast.VariableDeclaration)
-		if !ok {
-			continue
-		}
-		if declaration.Injectable && !declaration.HasValue {
-			continue
-		}
-		if _, used := usedNames[declaration.Name]; used {
-			continue
-		}
+		switch declaration := item.(type) {
+		case ast.VariableDeclaration:
+			if file.Output.Mode == ast.OutputModeSchema || declaration.Injectable && !declaration.HasValue {
+				continue
+			}
+			if _, used := usedVariables[declaration.Name]; used {
+				continue
+			}
 
-		rangeValue := tokenProtocolRange(declaration.NameToken)
-		message := fmt.Sprintf("script variable %q is never used", declaration.Name)
-		diagnostics = append(diagnostics, diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityWarning, diagnosticDeclarationUnusedVariable, message))
+			rangeValue := tokenProtocolRange(declaration.NameToken)
+			message := fmt.Sprintf("script variable %q is never used", declaration.Name)
+			diagnostics = append(diagnostics, diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityWarning, diagnosticDeclarationUnusedVariable, message))
+			actions = append(actions, removeDeclarationAction(text, tokens, documentPath, rangeValue, declaration.NameToken, "Remove unused variable")...)
+		case ast.TypeDeclaration:
+			if _, used := usedDeclarations[declaration.Name]; used {
+				continue
+			}
 
-		if documentPath == "" {
-			continue
+			rangeValue := tokenProtocolRange(declaration.NameToken)
+			message := fmt.Sprintf("type %q is never used", declaration.Name)
+			diagnostics = append(diagnostics, diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityWarning, diagnosticDeclarationUnusedType, message))
+			actions = append(actions, removeDeclarationAction(text, tokens, documentPath, rangeValue, declaration.NameToken, "Remove unused type")...)
 		}
-		editRange, ok := declarationEditRange(text, tokens, declaration.NameToken)
-		if !ok {
-			continue
-		}
-		actions = append(actions, analysisCodeActionCandidate{
-			Range: rangeValue,
-			Action: protocol.CodeAction{
-				Title: "Remove unused variable",
-				Kind:  Ptr(protocol.CodeActionKindQuickFix),
-				Edit: &protocol.WorkspaceEdit{
-					Changes: map[protocol.DocumentUri][]protocol.TextEdit{
-						pathURI(documentPath): {{Range: editRange, NewText: ""}},
-					},
-				},
-			},
-		})
 	}
 
 	return diagnostics, actions
+}
+
+func removeDeclarationAction(text string, tokens []lexer.Token, documentPath string, rangeValue protocol.Range, nameToken lexer.Token, title string) []analysisCodeActionCandidate {
+	if documentPath == "" {
+		return nil
+	}
+	editRange, ok := declarationEditRange(text, tokens, nameToken)
+	if !ok {
+		return nil
+	}
+	return []analysisCodeActionCandidate{{
+		Range: rangeValue,
+		Action: protocol.CodeAction{
+			Title: title,
+			Kind:  Ptr(protocol.CodeActionKindQuickFix),
+			Edit:  &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{pathURI(documentPath): {{Range: editRange, NewText: ""}}}},
+		},
+	}}
 }
 
 func usedVariableNames(file ast.File) map[string]struct{} {
@@ -2732,9 +2740,9 @@ func schemaOutputVariableDiagnostics(file ast.File, tokens []lexer.Token) []prot
 
 		return diagnosticWithCode(
 			rangeValue,
-			protocol.DiagnosticSeverityWarning,
+			protocol.DiagnosticSeverityError,
 			diagnosticDirectiveSchemaOutputVariableIgnored,
-			fmt.Sprintf("script variable %q is ignored when output = schema; only type and schema declarations affect schema output", declaration.Name),
+			fmt.Sprintf("script variable %q is not allowed when output = schema; only type and schema declarations affect schema output", declaration.Name),
 		), true
 	})
 }

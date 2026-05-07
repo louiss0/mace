@@ -1339,7 +1339,7 @@ int local = 1;
   Name: Name;
   User: User;
   foo: local;
-}`, "invalid field type"),
+}`, `script variable "local" is not allowed when output = schema`),
 		Entry("data output cannot export type declarations as values", `|===|
 type Name: string;
 schema User: { name: string; };
