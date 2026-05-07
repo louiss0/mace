@@ -1044,6 +1044,11 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 		if err := validateTypeReference(decl.Type, symbols, types, schemas, enums); err != nil {
 			return err
 		}
+		if enumDef, ok, err := resolveUnionEnumDefinition(decl.Name, decl.Type, types, enums); err != nil {
+			return err
+		} else if ok {
+			enums.Add(decl.Name, enumDef)
+		}
 		if decl.Description != "" {
 			if _, ok := docsByTarget[decl.Name]; ok {
 				return validationErrorf("type %q is already documented by a documentation declaration", decl.Name)
@@ -1108,7 +1113,16 @@ func validateTypeReference(typeRef ast.TypeReference, symbols *symbolTable, type
 	case ast.ArrayType:
 		return validateTypeReference(ref.Element, symbols, types, schemas, enums)
 	case ast.UnionType:
+		if members, ok, err := resolveUnionEnumValueTypes(ref, types, enums, false); err != nil || ok {
+			if err != nil {
+				return err
+			}
+			return validateVariantValueTypes(members)
+		}
 		_, err := resolveUnionRecordType(ref, symbols, types, schemas)
+		if err != nil && strings.Contains(err.Error(), "union members must be schemas") {
+			return validationErrorf("union members must be schemas or enums")
+		}
 		return err
 	case ast.VariantType:
 		for _, member := range ref.Members {
@@ -1691,6 +1705,13 @@ func validateEvaluatedValueAgainstType(value Value, expectedType valueType, symb
 }
 
 func validateEvaluatedValueAgainstVariantMembers(value Value, members []valueType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) error {
+	if variantMembersAreEnums(members) {
+		if value.Kind == members[0].kind {
+			return nil
+		}
+		return validationErrorf("type mismatch: expected %s, got %s", valueType{members: members}.name(), value.kindName())
+	}
+
 	matchCount := 0
 	for _, member := range members {
 		if err := validateEvaluatedValueAgainstType(value, member, symbols, types, schemas, enums); err == nil {
@@ -1706,6 +1727,18 @@ func validateEvaluatedValueAgainstVariantMembers(value Value, members []valueTyp
 	}
 
 	return validationErrorf("type mismatch: expected exactly one variant member for %s", valueType{members: members}.name())
+}
+
+func variantMembersAreEnums(members []valueType) bool {
+	if len(members) == 0 {
+		return false
+	}
+	for _, member := range members {
+		if member.enumName == "" {
+			return false
+		}
+	}
+	return true
 }
 
 func schemaFieldMap(schema ast.RecordType) map[string]ast.SchemaField {
@@ -1847,6 +1880,10 @@ func evaluateScript(items []ast.Declaration, environment *valueEnvironment, inje
 		if err != nil {
 			return err
 		}
+		value, err = coerceEvaluatedValueAgainstType(variable.Value, value, expectedType, environment, Value{}, symbols, types, schemas, enums)
+		if err != nil {
+			return err
+		}
 		if err := validateEvaluatedValueAgainstType(value, expectedType, symbols, types, schemas, enums); err != nil {
 			return err
 		}
@@ -1869,6 +1906,73 @@ func evaluateOutputFields(items []ast.OutputField, environment *valueEnvironment
 	}
 
 	return fields, nil
+}
+
+func coerceEvaluatedValueAgainstType(expression ast.Expression, value Value, expectedType valueType, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) (Value, error) {
+	if expectedType.kind == ValueArray && expectedType.element != nil {
+		arrayLiteral, ok := expression.(ast.ArrayLiteral)
+		if !ok || value.Kind != ValueArray {
+			return value, nil
+		}
+
+		values := make([]Value, 0, len(value.Array))
+		for index, element := range arrayLiteral.Elements {
+			coerced, err := coerceEvaluatedValueAgainstType(element, value.Array[index], *expectedType.element, environment, self, symbols, types, schemas, enums)
+			if err != nil {
+				return Value{}, err
+			}
+			values = append(values, coerced)
+		}
+		return Value{Kind: ValueArray, Array: values}, nil
+	}
+
+	if !variantMembersAreEnums(expectedType.members) {
+		return value, nil
+	}
+
+	memberAccess, ok := expression.(ast.MemberAccess)
+	if !ok {
+		return value, nil
+	}
+	identifier, ok := memberAccess.Target.(ast.Identifier)
+	if !ok {
+		return value, nil
+	}
+	merged, ok, err := mergedEnumFromValueTypes("", expectedType.members, enums)
+	if err != nil || !ok {
+		return value, err
+	}
+	for _, member := range expectedType.members {
+		if member.enumName != identifier.Name {
+			continue
+		}
+		if _, exists := enums.Get(member.enumName); !exists {
+			continue
+		}
+		mergedMember, exists := merged.Member(memberAccess.Name)
+		if !exists {
+			return Value{}, validationErrorf("unknown enum member %q in enum union", memberAccess.Name)
+		}
+		return mergedMember.Value, nil
+	}
+
+	return value, nil
+}
+
+func mergedEnumFromValueTypes(name string, members []valueType, enums *enumRegistry) (enumDefinition, bool, error) {
+	definitions := make([]enumDefinition, 0, len(members))
+	for _, member := range members {
+		if member.enumName == "" {
+			return enumDefinition{}, false, nil
+		}
+		definition, exists := enums.Get(member.enumName)
+		if !exists {
+			return enumDefinition{}, false, nil
+		}
+		definitions = append(definitions, definition)
+	}
+	definition, err := mergeEnumDefinitions(name, definitions)
+	return definition, true, err
 }
 
 func evaluateExpression(expression ast.Expression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) (Value, error) {
@@ -2603,12 +2707,22 @@ func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *ty
 		}
 		return valueType{kind: ValueArray, element: &element}, nil
 	case ast.UnionType:
+		if members, ok, err := resolveUnionEnumValueTypes(ref, types, enums, false); err != nil {
+			return valueType{}, err
+		} else if ok {
+			return valueType{members: members}, nil
+		}
 		record, err := resolveUnionRecordType(ref, symbols, types, schemas)
 		if err != nil {
 			return valueType{}, err
 		}
 		return valueType{kind: ValueRecord, record: &record}, nil
 	case ast.VariantType:
+		if _, ok, err := resolveUnionEnumValueTypes(ast.UnionType(ref), types, enums, true); err != nil || ok {
+			if err != nil {
+				return valueType{}, err
+			}
+		}
 		members := make([]valueType, 0, len(ref.Members))
 		for _, member := range ref.Members {
 			resolved, err := resolveValueType(member, symbols, types, schemas, enums)
@@ -2624,15 +2738,15 @@ func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *ty
 	case ast.RecordType:
 		return valueType{kind: ValueRecord, record: &ref}, nil
 	case ast.NamedType:
+		if enumDef, ok := enums.Get(ref.Name); ok {
+			return valueType{kind: enumDef.BackingType.kind, enumName: ref.Name}, nil
+		}
 		resolved, resolvedByAlias, err := types.Resolve(ref.Name)
 		if err != nil {
 			return valueType{}, err
 		}
 		if resolvedByAlias {
 			return resolveValueType(resolved, symbols, types, schemas, enums)
-		}
-		if enumDef, ok := enums.Get(ref.Name); ok {
-			return valueType{kind: enumDef.BackingType.kind, enumName: ref.Name}, nil
 		}
 		if symbols.IsSchema(ref.Name) || symbols.IsImport(ref.Name) {
 			record, ok := schemas.Get(ref.Name)
@@ -2694,6 +2808,71 @@ func flattenVariantValueTypes(members []valueType) []valueType {
 	}
 
 	return flattened
+}
+
+func resolveUnionEnumDefinition(name string, typeRef ast.TypeReference, types *typeRegistry, enums *enumRegistry) (enumDefinition, bool, error) {
+	ref, ok := typeRef.(ast.UnionType)
+	if !ok {
+		return enumDefinition{}, false, nil
+	}
+
+	definitions := make([]enumDefinition, 0, len(ref.Members))
+	for _, member := range ref.Members {
+		definition, ok, err := resolveUnionEnumMember(member, types, enums)
+		if err != nil || !ok {
+			return enumDefinition{}, false, err
+		}
+		definitions = append(definitions, definition)
+	}
+
+	definition, err := mergeEnumDefinitions(name, definitions)
+	return definition, true, err
+}
+
+func resolveUnionEnumValueTypes(typeRef ast.TypeReference, types *typeRegistry, enums *enumRegistry, requireUniqueKeys bool) ([]valueType, bool, error) {
+	ref, ok := typeRef.(ast.UnionType)
+	if !ok {
+		return nil, false, nil
+	}
+
+	members := make([]valueType, 0, len(ref.Members))
+	memberNames := map[string]struct{}{}
+	for _, member := range ref.Members {
+		definition, ok, err := resolveUnionEnumMember(member, types, enums)
+		if err != nil || !ok {
+			return nil, false, err
+		}
+		if requireUniqueKeys {
+			for _, enumMember := range definition.Members {
+				if _, exists := memberNames[enumMember.Name]; exists {
+					return nil, false, validationErrorf("duplicate enum member %q in enum variant", enumMember.Name)
+				}
+				memberNames[enumMember.Name] = struct{}{}
+			}
+		}
+		members = append(members, valueType{kind: definition.BackingType.kind, enumName: definition.Name})
+	}
+
+	return members, true, nil
+}
+
+func resolveUnionEnumMember(typeRef ast.TypeReference, types *typeRegistry, enums *enumRegistry) (enumDefinition, bool, error) {
+	switch ref := typeRef.(type) {
+	case ast.NamedType:
+		if enumDef, ok := enums.Get(ref.Name); ok {
+			return enumDef, true, nil
+		}
+
+		resolved, resolvedByAlias, err := types.Resolve(ref.Name)
+		if err != nil {
+			return enumDefinition{}, false, err
+		}
+		if resolvedByAlias {
+			return resolveUnionEnumMember(resolved, types, enums)
+		}
+	}
+
+	return enumDefinition{}, false, nil
 }
 
 func resolveUnionRecordType(typeRef ast.TypeReference, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry) (ast.RecordType, error) {

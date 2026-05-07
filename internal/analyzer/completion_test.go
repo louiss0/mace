@@ -281,6 +281,34 @@ schema Response: { payload: Envelope; };
 		tAssert.Equal(`enum member Personality.has_defaults = "has_defaults"`, lo.FromPtr(items[0].Detail))
 	})
 
+	It("suggests enum members after a dot for union enum aliases", func() {
+		text := `|===|
+	enum Access: int {
+	  Read,
+	  Write,
+	};
+	enum Feature: int {
+	  Write,
+	  Execute,
+	};
+	type Permission: union[Access, Feature];
+	Permission value = Permission.`
+
+		position := protocol.Position{
+			Line:      10,
+			Character: uint32(len(`	Permission value = Permission.`)),
+		}
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+			return item.Label
+		})
+
+		tAssert.Equal([]string{"Execute", "Read", "Write"}, labels)
+	})
+
 	It("shows implicit int enum values in completion details", func() {
 		text := `|===|
 	enum Status: int {

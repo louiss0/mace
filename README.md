@@ -100,8 +100,8 @@ Identity fallback = 42;
 }
 ```
 
-Mace treats unions as schema composition: all member schemas are combined into
-one closed record shape.
+Mace treats unions as composition: schema members are combined into one closed
+record shape, and enum members are combined into one enum alias.
 
 ```mace
 |===|
@@ -112,6 +112,29 @@ User value = {
   name: "Ada",
   created_at: "2026-04-08"
 };
+|===|
+[output = data]
+{
+  value: value
+}
+```
+
+Enum unions create merged same-backing enums. Inline enum unions rewrite source
+enum values through an anonymous merged enum in expected-type contexts, while
+named enum union aliases merge under the alias name. Later enum members replace
+earlier members with the same name; duplicate `int` values are reassigned to the
+next available integer, duplicate `float` values are reassigned by `0.1`, and
+duplicate `string` values on different keys are rewritten to the member key
+value. Enum variants remain source alternatives, but
+all keys must be unique and same-backing enum values are shifted through an
+anonymous enum so conflicting values do not collide.
+
+```mace
+|===|
+enum Access: int { Read, Write };
+enum Feature: int { Write, Execute };
+type Permission: union[Access, Feature];
+Permission value = Permission.Execute;
 |===|
 [output = data]
 {

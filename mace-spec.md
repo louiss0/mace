@@ -308,18 +308,21 @@ enum Status: int {
 
 Current enum rules:
 
-- Supported backing types are `string` and `int`.
+- Supported backing types are `string`, `int`, and `float`.
 - Enum member names must be unique within the enum.
 - Enum values must be unique within the enum.
 - Enum members may include inline `/#` descriptions.
 - Non-final enum members must be separated with `,`.
 - A trailing comma on the final enum member is optional.
-- `string` and `int` enums may use all-implicit members or all-explicit members.
+- `string`, `int`, and `float` enums may use all-implicit members or all-explicit members.
 - An implicit `string` member uses its member name exactly as written.
 - An implicit `int` member uses its zero-based declaration index.
+- An implicit `float` member uses its zero-based declaration index divided by
+  ten, starting at `0.0` and incrementing by `0.1`.
 - Mixing implicit and explicit members in the same enum is invalid.
 - Explicit `string` enum values must be string literals.
 - Explicit `int` enum values must be integer literals.
+- Explicit `float` enum values must be float literals.
 
 Enums are named types. They may be used anywhere a named non-schema type can
 be used, including variable declarations, schema fields, output schema
@@ -366,19 +369,41 @@ schema ValueBox: {
 };
 ```
 
-Mace unions use schema-composition semantics.
+Mace unions use composition semantics for schemas and enums.
 
-- Union members must be schemas.
-- A union combines all member schema fields into one closed record shape.
+- Union members must be all schemas or all enums.
+- A schema union combines all member schema fields into one closed record shape.
 - Conflicting fields across member schemas are invalid.
 - Required fields stay required unless every member marks the field optional.
+- An inline enum union accepts values from one of its source enums, so values
+  must use source member access such as `Access.Read` or `Feature.Execute`.
+  In expected-type contexts, those values are evaluated through an anonymous
+  merged enum and conflicting `int` values are rewritten just like a named
+  union alias.
+- A named enum union alias combines enum members into one merged enum name.
+- Enum union members must all use the same backing type.
+- In enum unions, if enum member names conflict, the later enum member replaces
+  the earlier one with the latest value from the created enum.
+- In named `int` enum union aliases, conflicting values are reassigned to the
+  next available integer value.
+- In named `float` enum union aliases, conflicting values are reassigned to the
+  next available tenth-step value, starting at `0.0` and incrementing by `0.1`.
+- In string enum unions, conflicting values on different keys are rewritten to
+  the member key value.
 
 Mace variants use closed alternative semantics.
 
 - A variant value must match exactly one member.
+- Enum variant members remain source alternatives, so values use source member
+  access such as `Access.Read` or `Feature.Execute`.
+- Enum variant members must not repeat keys across source enums.
+- Same-backing enum variant values are evaluated through an anonymous shifted
+  enum, so conflicting `int` and `float` values are reassigned to the next
+  available value.
 - Record members are closed: unknown fields are rejected.
 - Record values may not mix fields that belong to different variant members.
-- If a value matches zero members or more than one member, validation fails.
+- If a non-enum value matches zero members or more than one member, validation
+  fails.
 
 This means Mace maps JSON Schema `allOf` into `union[...]`, and maps JSON
 Schema `anyOf` and `oneOf` into the stricter Mace `variant[...]` behavior.

@@ -493,6 +493,35 @@ Value second = State.Active;
 		tAssert.NoError(err)
 	})
 
+	It("shifts same-backing int enum variant alternatives", func() {
+		processor := New()
+		result, err := processor.Process(`|===|
+enum Access: int {
+  Read,
+  Write,
+};
+enum Feature: int {
+  Share,
+  Execute,
+};
+type Value: variant[Access, Feature];
+Value read = Access.Read;
+Value share = Feature.Share;
+Value execute = Feature.Execute;
+|===|
+[output = data]
+{
+  read: read,
+  share: share,
+  execute: execute
+}`)
+		tAssert.NoError(err)
+
+		assertExpectedValue(requireOutputValue(result, "read"), expectedValue{kind: ValueInt, int64: 0})
+		assertExpectedValue(requireOutputValue(result, "share"), expectedValue{kind: ValueInt, int64: 2})
+		assertExpectedValue(requireOutputValue(result, "execute"), expectedValue{kind: ValueInt, int64: 3})
+	})
+
 	It("accepts nested variant aliases", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
@@ -529,12 +558,126 @@ User value = {
 		}})
 	})
 
+	It("accepts float enum declarations and composition", func() {
+		processor := New()
+		result, err := processor.Process(`|===|
+ enum Primary: float {
+   Low,
+   Medium,
+ };
+ enum Secondary: float {
+   Medium,
+   High,
+ };
+ type Rating: union[Primary, Secondary];
+ Rating low = Rating.Low;
+ Rating medium = Rating.Medium;
+ Rating high = Rating.High;
+ |===|
+ [output = data]
+ {
+   low: low,
+   medium: medium,
+   high: high
+ }`)
+		tAssert.NoError(err)
+
+		assertExpectedValue(requireOutputValue(result, "low"), expectedValue{kind: ValueFloat, float: 0.0})
+		assertExpectedValue(requireOutputValue(result, "medium"), expectedValue{kind: ValueFloat, float: 0.2})
+		assertExpectedValue(requireOutputValue(result, "high"), expectedValue{kind: ValueFloat, float: 0.3})
+	})
+
+	It("accepts union enum composition aliases", func() {
+		processor := New()
+		result, err := processor.Process(`|===|
+enum Access: int {
+  Read,
+  Write,
+};
+enum Feature: int {
+  Write,
+  Execute,
+};
+type Permission: union[Access, Feature];
+Permission read = Permission.Read;
+Permission write = Permission.Write;
+Permission execute = Permission.Execute;
+|===|
+[output = data]
+{
+  read: read,
+  write: write,
+  execute: execute
+}`)
+		tAssert.NoError(err)
+
+		assertExpectedValue(requireOutputValue(result, "read"), expectedValue{kind: ValueInt, int64: 0})
+		assertExpectedValue(requireOutputValue(result, "write"), expectedValue{kind: ValueInt, int64: 2})
+		assertExpectedValue(requireOutputValue(result, "execute"), expectedValue{kind: ValueInt, int64: 3})
+	})
+
+	It("allows string enum union duplicate keys", func() {
+		processor := New()
+		result, err := processor.Process(`|===|
+ enum Primary: string {
+   Admin = "admin",
+ };
+ enum Secondary: string {
+   Admin = "owner",
+ };
+ type Role: union[Primary, Secondary];
+ Role role = Role.Admin;
+ |===|
+ [output = data]
+ {
+   role: role
+ }`)
+		tAssert.NoError(err)
+
+		assertExpectedValue(requireOutputValue(result, "role"), expectedValue{kind: ValueString, string: "owner"})
+	})
+
+	It("rewrites string enum union duplicate labels by key", func() {
+		processor := New()
+		result, err := processor.Process(`|===|
+ enum Primary: string {
+   Admin = "admin",
+ };
+ enum Secondary: string {
+   Owner = "admin",
+ };
+ type Role: union[Primary, Secondary];
+ Role role = Role.Owner;
+ |===|
+ [output = data]
+ {
+   role: role
+ }`)
+		tAssert.NoError(err)
+
+		assertExpectedValue(requireOutputValue(result, "role"), expectedValue{kind: ValueString, string: "Owner"})
+	})
+
+	It("rejects enum variant duplicate keys", func() {
+		processor := New()
+		_, err := processor.Process(wrapScriptWithOutput(`|===|
+ enum Primary: string {
+   Admin = "admin",
+ };
+ enum Secondary: string {
+   Admin = "owner",
+ };
+ type Role: variant[Primary, Secondary];
+ |===|`))
+		tAssert.ErrorContains(err, "duplicate enum member")
+	})
+
 	It("rejects union schema composition with non-schema members", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
 type Broken: union[string, int];
 |===|`))
-		tAssert.ErrorContains(err, "union members must be schemas")
+		tAssert.ErrorContains(err, "union members must be schemas or enums")
 	})
 
 	It("rejects union schema composition with conflicting fields", func() {
@@ -1417,6 +1560,41 @@ boolean value = 1 == true;
 		Entry("ternary branch mismatch", wrapScriptWithOutputFields(`|===|
 int value = true ? 1 : 2.0;
 |===|`, "value: value;")),
+	)
+
+	DescribeTable("accepts inline enum union arrays with source enum members",
+		func(typeRef string, expected []expectedValue) {
+			processor := New()
+			result, err := processor.Process(wrapScriptWithOutputFields(fmt.Sprintf(`|===|
+ enum Access: int {
+   Read,
+   Write,
+ };
+ enum Feature: int {
+   Write,
+   Execute,
+ };
+ array<%s> result = [
+   Access.Read,
+   Feature.Write,
+   Feature.Execute
+ ];
+ |===|`, typeRef), "result: result;"))
+			tAssert.NoError(err)
+
+			actual := requireOutputValue(result, "result")
+			assertExpectedValue(actual, expectedValue{kind: ValueArray, array: expected})
+		},
+		Entry("A before B", "union[Access, Feature]", []expectedValue{
+			{kind: ValueInt, int64: 0},
+			{kind: ValueInt, int64: 2},
+			{kind: ValueInt, int64: 3},
+		}),
+		Entry("B before A", "union[Feature, Access]", []expectedValue{
+			{kind: ValueInt, int64: 2},
+			{kind: ValueInt, int64: 3},
+			{kind: ValueInt, int64: 1},
+		}),
 	)
 
 	DescribeTable("returns array and record results",

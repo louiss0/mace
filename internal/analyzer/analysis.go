@@ -3681,6 +3681,14 @@ func enumMemberDetail(declaration ast.EnumDeclaration, member ast.EnumMember) st
 		}
 	}
 
+	if declaration.BackingType.Name == "float" {
+		for index, declarationMember := range declaration.Members {
+			if declarationMember.Name == member.Name {
+				return fmt.Sprintf("enum member %s.%s = %.1f", declaration.Name, member.Name, float64(index)/10)
+			}
+		}
+	}
+
 	return fmt.Sprintf("enum member %s.%s", declaration.Name, member.Name)
 }
 
