@@ -1603,6 +1603,16 @@ func buildCompletionModel(file ast.File, baseDir string, cache map[string]comple
 		}
 	}
 
+	for _, item := range fileScriptItems(file) {
+		declaration, ok := item.(ast.TypeDeclaration)
+		if !ok {
+			continue
+		}
+		if enumValue, ok := completionUnionEnum(declaration.Name, declaration.Type, model, map[string]struct{}{}); ok {
+			model.enums[declaration.Name] = enumValue
+		}
+	}
+
 	for _, importDecl := range file.Imports {
 		importPath, ok := stringLiteralValue(importDecl.Path)
 		if !ok {
@@ -1666,6 +1676,9 @@ func resolveCompletionType(typeReference ast.TypeReference, model completionMode
 	case ast.ArrayType:
 		return completionType{kind: completionTypeArray}
 	case ast.UnionType:
+		if enumValue, ok := completionUnionEnum("", typed, model, seen); ok {
+			return completionType{kind: completionTypeEnum, enum: enumValue}
+		}
 		record, ok := completionUnionRecord(typed.Members, model, seen)
 		if !ok {
 			return completionType{}
@@ -1699,6 +1712,32 @@ func resolveCompletionType(typeReference ast.TypeReference, model completionMode
 	default:
 		return completionType{}
 	}
+}
+
+func completionUnionEnum(name string, typeReference ast.TypeReference, model completionModel, seen map[string]struct{}) (completionEnum, bool) {
+	typed, ok := typeReference.(ast.UnionType)
+	if !ok {
+		return completionEnum{}, false
+	}
+
+	members := []completionEnumMember{}
+	memberIndexes := map[string]int{}
+	for _, member := range typed.Members {
+		resolved := resolveCompletionType(member, model, seen)
+		if resolved.kind != completionTypeEnum {
+			return completionEnum{}, false
+		}
+		for _, enumMember := range resolved.enum.members {
+			if index, exists := memberIndexes[enumMember.Name]; exists {
+				members[index] = enumMember
+				continue
+			}
+			memberIndexes[enumMember.Name] = len(members)
+			members = append(members, enumMember)
+		}
+	}
+
+	return completionEnum{name: name, members: members}, true
 }
 
 func completionUnionRecord(members []ast.TypeReference, model completionModel, seen map[string]struct{}) (ast.RecordType, bool) {
@@ -1752,6 +1791,10 @@ func completionEnumMemberDetail(declaration ast.EnumDeclaration, member ast.Enum
 
 	if declaration.BackingType.Name == "int" {
 		return fmt.Sprintf("enum member %s.%s = %d", declaration.Name, member.Name, index)
+	}
+
+	if declaration.BackingType.Name == "float" {
+		return fmt.Sprintf("enum member %s.%s = %.1f", declaration.Name, member.Name, float64(index)/10)
 	}
 
 	return fmt.Sprintf("enum member %s.%s", declaration.Name, member.Name)

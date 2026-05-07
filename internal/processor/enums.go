@@ -22,7 +22,7 @@ type enumMember struct {
 
 func enumDefinitionFromDeclaration(declaration ast.EnumDeclaration) (enumDefinition, error) {
 	backingType, err := primitiveValueType(declaration.BackingType.Name)
-	if err != nil || (backingType.kind != ValueString && backingType.kind != ValueInt) {
+	if err != nil || (backingType.kind != ValueString && backingType.kind != ValueInt && backingType.kind != ValueFloat) {
 		return enumDefinition{}, validationErrorf("invalid enum backing type %q for enum %q", declaration.BackingType.Name, declaration.Name)
 	}
 
@@ -80,6 +80,8 @@ func enumMemberValue(declaration ast.EnumDeclaration, member ast.EnumMember, bac
 			return Value{Kind: ValueString, String: member.Name}, nil
 		case ValueInt:
 			return Value{Kind: ValueInt, Int: int64(index)}, nil
+		case ValueFloat:
+			return Value{Kind: ValueFloat, Float: float64(index) / 10}, nil
 		default:
 			return Value{}, validationErrorf("invalid enum backing type %q for enum %q", declaration.BackingType.Name, declaration.Name)
 		}
@@ -98,9 +100,19 @@ func enumMemberValue(declaration ast.EnumDeclaration, member ast.EnumMember, bac
 			return Value{}, validationErrorf("enum member %q in enum %q must use an int literal", member.Name, declaration.Name)
 		}
 		return parseInt(literal.Lexeme)
+	case ValueFloat:
+		literal, ok := member.Value.(ast.FloatLiteral)
+		if !ok {
+			return Value{}, validationErrorf("enum member %q in enum %q must use a float literal", member.Name, declaration.Name)
+		}
+		return parseFloat(literal.Lexeme)
 	default:
 		return Value{}, validationErrorf("invalid enum backing type %q for enum %q", declaration.BackingType.Name, declaration.Name)
 	}
+}
+
+func enumFloatStep(value float64) int64 {
+	return int64(value*10 + 0.5)
 }
 
 func enumValueKey(value Value) (string, bool) {
@@ -109,6 +121,8 @@ func enumValueKey(value Value) (string, bool) {
 		return "string:" + value.String, true
 	case ValueInt:
 		return "int:" + strconv.FormatInt(value.Int, 10), true
+	case ValueFloat:
+		return "float:" + strconv.FormatFloat(value.Float, 'f', 1, 64), true
 	default:
 		return "", false
 	}
@@ -120,6 +134,8 @@ func enumValueDisplay(value Value) string {
 		return fmt.Sprintf("%q", value.String)
 	case ValueInt:
 		return strconv.FormatInt(value.Int, 10)
+	case ValueFloat:
+		return strconv.FormatFloat(value.Float, 'f', 1, 64)
 	default:
 		return "unknown"
 	}
@@ -164,6 +180,87 @@ func (definition enumDefinition) Member(name string) (enumMember, bool) {
 	}
 
 	return enumMember{}, false
+}
+
+func mergeEnumDefinitions(name string, definitions []enumDefinition) (enumDefinition, error) {
+	if len(definitions) == 0 {
+		return enumDefinition{}, validationErrorf("union members must be schemas or enums")
+	}
+
+	backingType := definitions[0].BackingType
+	members := []enumMember{}
+	memberIndexes := map[string]int{}
+	valuesByKey := map[string]Value{}
+	usedIntValues := map[int64]struct{}{}
+	usedFloatValues := map[int64]struct{}{}
+	nextIntValue := int64(0)
+	nextFloatStep := int64(0)
+
+	for _, definition := range definitions {
+		if definition.BackingType.kind != backingType.kind {
+			return enumDefinition{}, validationErrorf("enum unions require the same backing type")
+		}
+
+		for _, member := range definition.Members {
+			value := member.Value
+			if index, exists := memberIndexes[member.Name]; exists {
+				oldValueKey, ok := enumValueKey(members[index].Value)
+				if ok {
+					delete(valuesByKey, oldValueKey)
+				}
+			}
+			if backingType.kind == ValueInt {
+				for {
+					if _, exists := usedIntValues[value.Int]; !exists {
+						break
+					}
+					value = Value{Kind: ValueInt, Int: nextIntValue}
+					nextIntValue++
+				}
+				usedIntValues[value.Int] = struct{}{}
+				if value.Int >= nextIntValue {
+					nextIntValue = value.Int + 1
+				}
+			} else if backingType.kind == ValueFloat {
+				step := enumFloatStep(value.Float)
+				for {
+					if _, exists := usedFloatValues[step]; !exists {
+						break
+					}
+					step = nextFloatStep
+					nextFloatStep++
+				}
+				value = Value{Kind: ValueFloat, Float: float64(step) / 10}
+				usedFloatValues[step] = struct{}{}
+				if step >= nextFloatStep {
+					nextFloatStep = step + 1
+				}
+			} else {
+				key, ok := enumValueKey(value)
+				if !ok {
+					return enumDefinition{}, validationErrorf("invalid enum value for enum %q", definition.Name)
+				}
+				if _, exists := valuesByKey[key]; exists {
+					value = Value{Kind: ValueString, String: member.Name}
+				}
+			}
+
+			if index, exists := memberIndexes[member.Name]; exists {
+				members[index] = enumMember{Name: member.Name, Value: value}
+			} else {
+				memberIndexes[member.Name] = len(members)
+				members = append(members, enumMember{Name: member.Name, Value: value})
+			}
+
+			key, ok := enumValueKey(value)
+			if !ok {
+				return enumDefinition{}, validationErrorf("invalid enum value for enum %q", definition.Name)
+			}
+			valuesByKey[key] = value
+		}
+	}
+
+	return enumDefinition{Name: name, BackingType: backingType, Members: members, values: valuesByKey}, nil
 }
 
 type enumRegistry struct {
