@@ -1793,6 +1793,7 @@ type Value struct {
 	String  string
 	Array   []Value
 	Record  map[string]Value
+	Type    *valueType
 }
 
 type valueEnvironment struct {
@@ -1880,6 +1881,7 @@ func evaluateScript(items []ast.Declaration, environment *valueEnvironment, inje
 				if err := validateEvaluatedValueAgainstType(injectedValue, expectedType, symbols, types, schemas, enums); err != nil {
 					return err
 				}
+				injectedValue.Type = &expectedType
 				environment.Add(variable.Name, injectedValue)
 				continue
 			}
@@ -1910,6 +1912,7 @@ func evaluateScript(items []ast.Declaration, environment *valueEnvironment, inje
 		if err := validateEvaluatedValueAgainstType(value, expectedType, symbols, types, schemas, enums); err != nil {
 			return err
 		}
+		value.Type = &expectedType
 
 		environment.Add(variable.Name, value)
 	}
@@ -2338,21 +2341,25 @@ func evaluateMerge(left, right Value) (Value, error) {
 
 	switch left.Kind {
 	case ValueRecord:
-		return Value{Kind: ValueRecord, Record: mergeRecords(left.Record, right.Record)}, nil
+		return Value{Kind: ValueRecord, Record: mergeRecords(left.Record, right.Record), Type: mergeValueType(left, right)}, nil
 	case ValueArray:
-		if !arrayValuesHaveSameElementType(left, right) {
+		if !arrayMergeTypesMatch(left, right) {
 			return Value{}, validationErrorf("type mismatch: merge operands must have the same type")
 		}
 		merged := make([]Value, 0, len(left.Array)+len(right.Array))
 		merged = append(merged, left.Array...)
 		merged = append(merged, right.Array...)
-		return Value{Kind: ValueArray, Array: merged}, nil
+		return Value{Kind: ValueArray, Array: merged, Type: mergeValueType(left, right)}, nil
 	default:
 		return Value{}, validationErrorf("type mismatch: merge operands must be records or arrays")
 	}
 }
 
-func arrayValuesHaveSameElementType(left, right Value) bool {
+func arrayMergeTypesMatch(left, right Value) bool {
+	if left.Type != nil && right.Type != nil {
+		return typesEqual(*left.Type, *right.Type)
+	}
+
 	leftType := valueTypeFromValue(left)
 	rightType := valueTypeFromValue(right)
 	if leftType.element == nil || rightType.element == nil {
@@ -2362,6 +2369,13 @@ func arrayValuesHaveSameElementType(left, right Value) bool {
 		return true
 	}
 	return typesEqual(*leftType.element, *rightType.element)
+}
+
+func mergeValueType(left, right Value) *valueType {
+	if left.Type != nil && right.Type != nil && typesEqual(*left.Type, *right.Type) {
+		return left.Type
+	}
+	return nil
 }
 
 func mergeRecords(left, right map[string]Value) map[string]Value {
