@@ -2,10 +2,6 @@
 type ID: string;
 schema Member: { id: ID, role: string, };
 schema Team: { name: string, members: array<Member>, };
-string hidden_name = "ops";
-
-string foo = "bar";
-
 |=======================================================|
 
 [output = schema]

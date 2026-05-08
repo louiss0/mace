@@ -317,7 +317,7 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 }
 
 func validateSchemaOutputScriptVariables(file ast.File) error {
-	if file.Script == nil {
+	if file.Output.Mode != ast.OutputModeSchema || file.Script == nil {
 		return nil
 	}
 
@@ -544,6 +544,10 @@ func loadImportExports(path string, cache map[string]map[string]importedDeclarat
 		stack,
 	)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := validateSchemaOutputScriptVariables(file); err != nil {
 		return nil, err
 	}
 
