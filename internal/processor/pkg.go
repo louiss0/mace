@@ -278,6 +278,9 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 	}
 
 	if outputBlock.Mode == ast.OutputModeSchema {
+		if err := validateSchemaOutputScriptVariables(file); err != nil {
+			return Result{}, err
+		}
 		if err := validateSchemaOutputFields(outputBlock.SchemaFields, outputContext.symbols, outputContext.types, outputContext.schemas, outputContext.enums); err != nil {
 			return Result{}, err
 		}
@@ -311,6 +314,22 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 	}
 
 	return Result{File: file, Output: output, Schema: map[SchemaField]SchemaType{}}, nil
+}
+
+func validateSchemaOutputScriptVariables(file ast.File) error {
+	if file.Output.Mode != ast.OutputModeSchema || file.Script == nil {
+		return nil
+	}
+
+	for _, item := range file.Script.Items {
+		declaration, ok := item.(ast.VariableDeclaration)
+		if !ok {
+			continue
+		}
+		return validationErrorf("script variable %q is not allowed when output = schema", declaration.Name)
+	}
+
+	return nil
 }
 
 func lex(input string) ([]lexer.Token, error) {
@@ -525,6 +544,10 @@ func loadImportExports(path string, cache map[string]map[string]importedDeclarat
 		stack,
 	)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := validateSchemaOutputScriptVariables(file); err != nil {
 		return nil, err
 	}
 

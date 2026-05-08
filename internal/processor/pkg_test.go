@@ -1050,6 +1050,32 @@ Identity second = 42;
 		}})
 	})
 
+	It("rejects imported schema output files that declare script variables", func() {
+		workspace, err := os.MkdirTemp("", "mace-import-schema-output-variable-*")
+		tAssert.NoError(err)
+
+		writeFixtureFile(workspace, "producer.mace", `|===|
+schema User: { name: string; };
+string local = "Ada";
+|===|
+[output = schema]
+{
+  User: User;
+}`)
+		consumer := writeFixtureFile(workspace, "consumer.mace", `|===|
+from "./producer.mace" import User;
+|===|
+[output = data]
+{
+  result: { name: "Ada"; };
+}`)
+
+		processor := New()
+		_, err = processor.ProcessFile(consumer)
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, `script variable "local" is not allowed when output = schema`)
+	})
+
 	DescribeTable("keeps hidden declarations internal",
 		func(file string, message string) {
 			processor := New()
@@ -1063,10 +1089,6 @@ from "testdata/imports/base.mace" import Internal;
 [output = data] {}`, "imported identifier"),
 		Entry("hidden schema is not importable", `|===|
 from "testdata/imports/base.mace" import Secret;
-|===|
-[output = data] {}`, "imported identifier"),
-		Entry("hidden variable is not importable", `|===|
-from "testdata/imports/base.mace" import local;
 |===|
 [output = data] {}`, "imported identifier"),
 		Entry("hidden value is not importable", `|===|
@@ -1339,7 +1361,7 @@ int local = 1;
   Name: Name;
   User: User;
   foo: local;
-}`, "invalid field type"),
+}`, `script variable "local" is not allowed when output = schema`),
 		Entry("data output cannot export type declarations as values", `|===|
 type Name: string;
 schema User: { name: string; };

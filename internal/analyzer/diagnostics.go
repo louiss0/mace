@@ -54,6 +54,7 @@ const (
 	diagnosticDeclarationVariableMissingType        diagnosticCode = "mace.declaration.variable-missing-type"
 	diagnosticDeclarationVariableMissingInitializer diagnosticCode = "mace.declaration.variable-missing-initializer"
 	diagnosticDeclarationUnusedVariable             diagnosticCode = "mace.declaration.unused-variable"
+	diagnosticDeclarationUnusedType                 diagnosticCode = "mace.declaration.unused-type"
 	diagnosticTypeInitializerMismatch               diagnosticCode = "mace.type.initializer-type-mismatch"
 	diagnosticTypeInvalidUnaryOperator              diagnosticCode = "mace.type.invalid-unary-operator"
 	diagnosticTypeInvalidBinaryOperator             diagnosticCode = "mace.type.invalid-binary-operator"
@@ -107,6 +108,8 @@ func classifyParseDiagnostic(message string) diagnosticCode {
 		return diagnosticSyntaxMalformedSchema
 	case strings.Contains(message, "integer index in array access") || strings.Contains(message, "after array access index"):
 		return diagnosticSyntaxInvalidArrayAccessIndex
+	case strings.Contains(message, "not allowed when output = schema"):
+		return diagnosticDirectiveSchemaOutputVariableIgnored
 	case strings.Contains(message, "variable declaration"):
 		return diagnosticSyntaxMalformedVariableDeclaration
 	case strings.Contains(message, "output field"):
@@ -156,6 +159,8 @@ func classifyProcessorDiagnostic(message string) diagnosticCode {
 		return diagnosticDeclarationEnumMemberValueType
 	case strings.Contains(message, "unknown type ") || strings.Contains(message, "unknown type reference"):
 		return diagnosticDeclarationUnknownTypeReference
+	case strings.Contains(message, "not allowed when output = schema"):
+		return diagnosticDirectiveSchemaOutputVariableIgnored
 	case strings.Contains(message, "requires an initializer") || strings.Contains(message, "requires a runtime value"):
 		return diagnosticDeclarationVariableMissingInitializer
 	case strings.Contains(message, "duplicate declaration"):
