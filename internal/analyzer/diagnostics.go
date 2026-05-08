@@ -187,7 +187,7 @@ func classifyProcessorDiagnostic(message string) diagnosticCode {
 		return diagnosticTypeUnknownIdentifier
 	case strings.Contains(message, "expected boolean after '!'") || strings.Contains(message, "expected int after '~'") || strings.Contains(message, "expected numeric after unary operator"):
 		return diagnosticTypeInvalidUnaryOperator
-	case strings.Contains(message, "expected numeric operands") || strings.Contains(message, "expected int operands") || strings.Contains(message, "expected boolean operands") || strings.Contains(message, "incompatible equality comparison") || strings.Contains(message, "expected ") && strings.Contains(message, " operands"):
+	case strings.Contains(message, "expected numeric operands") || strings.Contains(message, "expected int operands") || strings.Contains(message, "expected boolean operands") || strings.Contains(message, "incompatible equality comparison") || strings.Contains(message, "merge operands") || strings.Contains(message, "expected ") && strings.Contains(message, " operands"):
 		return diagnosticTypeInvalidBinaryOperator
 	case strings.Contains(message, "type mismatch"):
 		return diagnosticTypeInitializerMismatch
