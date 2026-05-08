@@ -1406,6 +1406,25 @@ string value = "Ada";
 		Entry("logical and", `[output = data] { result: true && false; }`, expectedValue{kind: ValueBoolean, bool: false}),
 		Entry("logical or", `[output = data] { result: true || false; }`, expectedValue{kind: ValueBoolean, bool: true}),
 		Entry("ternary", `[output = data] { result: true ? 1 : 2; }`, expectedValue{kind: ValueInt, int64: 1}),
+		Entry("array merge", `[output = data] { result: [1, 2] <> [3, 4]; }`, expectedValue{kind: ValueArray, array: []expectedValue{
+			{kind: ValueInt, int64: 1},
+			{kind: ValueInt, int64: 2},
+			{kind: ValueInt, int64: 3},
+			{kind: ValueInt, int64: 4},
+		}}),
+		Entry("record merge", `[output = data] { result: { name: "Ada"; nested: { left: 1; shared: 1; }; tags: [1]; } <> { age: 30; nested: { shared: 2; right: 3; }; tags: [2]; }; }`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+			"name": {kind: ValueString, string: "Ada"},
+			"age":  {kind: ValueInt, int64: 30},
+			"nested": {kind: ValueRecord, record: map[string]expectedValue{
+				"left":   {kind: ValueInt, int64: 1},
+				"shared": {kind: ValueInt, int64: 2},
+				"right":  {kind: ValueInt, int64: 3},
+			}},
+			"tags": {kind: ValueArray, array: []expectedValue{
+				{kind: ValueInt, int64: 1},
+				{kind: ValueInt, int64: 2},
+			}},
+		}}),
 	)
 
 	DescribeTable("returns mixed operator results",
@@ -1417,6 +1436,22 @@ string value = "Ada";
 		Entry("bitwise precedence", `[output = data] { result: 7 & 3 ^ 1 | 8; }`, expectedValue{kind: ValueInt, int64: 10}),
 		Entry("comparison and logic precedence", `[output = data] { result: 1 < 2 && 3 > 2 || false; }`, expectedValue{kind: ValueBoolean, bool: true}),
 		Entry("conditional with logical expression", `[output = data] { result: false || true ? 5 : 2; }`, expectedValue{kind: ValueInt, int64: 5}),
+	)
+
+	DescribeTable("rejects invalid merge expressions",
+		func(input string, expected string) {
+			processor := New()
+			_, err := processor.Process(input)
+			tAssert.Error(err)
+			tAssert.Contains(err.Error(), expected)
+		},
+		Entry("different kinds", `[output = data] { result: { name: "Ada"; } <> [1]; }`, "merge operands must have the same type"),
+		Entry("primitive operands", `[output = data] { result: 1 <> 2; }`, "merge operands must be records or arrays"),
+		Entry("different array element types", `|===|
+array<int> left = [1];
+array<string> right = ["two"];
+|===|
+[output = data] { result: left <> right; }`, "merge operands must have the same type"),
 	)
 
 	DescribeTable("returns math results",

@@ -76,12 +76,25 @@ Mace supports:
 - schemas
 - enums backed by `string` or `int`, with implicit or explicit member values
 - enum member access with `EnumName.MemberName`
-- record, array, arithmetic, logical, and conditional expressions
+- record, array, arithmetic, logical, merge, and conditional expressions
 - `$self` references inside output evaluation
 
 Union and variant types are first-class across the language, including named
 aliases, output schema validation, imports, formatter output, and editor
 tooling.
+
+The merge operator `<>` combines two values of the same mergeable type. Records
+merge deeply, colliding scalar fields use the right-hand value, and colliding
+nested records or arrays merge recursively. Arrays concatenate in left-to-right
+order.
+
+```mace
+[output = data]
+{
+  result: { profile: { name: "Ada" }; tags: ["base"]; }
+    <> { profile: { active: true }; tags: ["override"]; }
+}
+```
 
 Mace treats variants as closed alternatives: values must match exactly one
 member, record members reject unknown fields, and record values may not
