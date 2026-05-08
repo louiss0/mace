@@ -110,6 +110,9 @@ func (l *Lexer) NextToken() (Token, error) {
 		if l.match('=') {
 			return l.makeToken(TokenLessEqual, startPosition, startLine, startColumn), nil
 		}
+		if l.match('>') {
+			return l.makeToken(TokenMerge, startPosition, startLine, startColumn), nil
+		}
 		if l.match('<') {
 			return l.makeToken(TokenShiftLeft, startPosition, startLine, startColumn), nil
 		}

@@ -1793,6 +1793,7 @@ type Value struct {
 	String  string
 	Array   []Value
 	Record  map[string]Value
+	Type    *valueType
 }
 
 type valueEnvironment struct {
@@ -1880,6 +1881,7 @@ func evaluateScript(items []ast.Declaration, environment *valueEnvironment, inje
 				if err := validateEvaluatedValueAgainstType(injectedValue, expectedType, symbols, types, schemas, enums); err != nil {
 					return err
 				}
+				injectedValue.Type = &expectedType
 				environment.Add(variable.Name, injectedValue)
 				continue
 			}
@@ -1910,6 +1912,7 @@ func evaluateScript(items []ast.Declaration, environment *valueEnvironment, inje
 		if err := validateEvaluatedValueAgainstType(value, expectedType, symbols, types, schemas, enums); err != nil {
 			return err
 		}
+		value.Type = &expectedType
 
 		environment.Add(variable.Name, value)
 	}
@@ -2314,6 +2317,8 @@ func evaluateInfix(expr ast.InfixExpression, environment *valueEnvironment, self
 	switch expr.Operator {
 	case lexer.TokenPlus, lexer.TokenMinus, lexer.TokenStar, lexer.TokenSlash, lexer.TokenDoubleStar:
 		return evaluateNumeric(expr.Operator, left, right)
+	case lexer.TokenMerge:
+		return evaluateMerge(left, right)
 	case lexer.TokenPercent:
 		return evaluateModulo(left, right)
 	case lexer.TokenShiftLeft, lexer.TokenShiftRight, lexer.TokenShiftRightUnsigned:
@@ -2327,6 +2332,74 @@ func evaluateInfix(expr ast.InfixExpression, environment *valueEnvironment, self
 	default:
 		return Value{}, validationErrorf("unknown infix operator")
 	}
+}
+
+func evaluateMerge(left, right Value) (Value, error) {
+	if left.Kind != right.Kind {
+		return Value{}, validationErrorf("type mismatch: merge operands must have the same type")
+	}
+
+	switch left.Kind {
+	case ValueRecord:
+		return Value{Kind: ValueRecord, Record: mergeRecords(left.Record, right.Record), Type: mergeValueType(left, right)}, nil
+	case ValueArray:
+		if !arrayMergeTypesMatch(left, right) {
+			return Value{}, validationErrorf("type mismatch: merge operands must have the same type")
+		}
+		merged := make([]Value, 0, len(left.Array)+len(right.Array))
+		merged = append(merged, left.Array...)
+		merged = append(merged, right.Array...)
+		return Value{Kind: ValueArray, Array: merged, Type: mergeValueType(left, right)}, nil
+	default:
+		return Value{}, validationErrorf("type mismatch: merge operands must be records or arrays")
+	}
+}
+
+func arrayMergeTypesMatch(left, right Value) bool {
+	if left.Type != nil && right.Type != nil {
+		return typesEqual(*left.Type, *right.Type)
+	}
+
+	leftType := valueTypeFromValue(left)
+	rightType := valueTypeFromValue(right)
+	if leftType.element == nil || rightType.element == nil {
+		return true
+	}
+	if leftType.element.kind == ValueUnknown || rightType.element.kind == ValueUnknown {
+		return true
+	}
+	return typesEqual(*leftType.element, *rightType.element)
+}
+
+func mergeValueType(left, right Value) *valueType {
+	if left.Type != nil && right.Type != nil && typesEqual(*left.Type, *right.Type) {
+		return left.Type
+	}
+	return nil
+}
+
+func mergeRecords(left, right map[string]Value) map[string]Value {
+	merged := make(map[string]Value, len(left)+len(right))
+	for name, value := range left {
+		merged[name] = value
+	}
+	for name, value := range right {
+		if leftValue, exists := merged[name]; exists && leftValue.Kind == value.Kind {
+			switch value.Kind {
+			case ValueRecord:
+				merged[name] = Value{Kind: ValueRecord, Record: mergeRecords(leftValue.Record, value.Record)}
+				continue
+			case ValueArray:
+				array := make([]Value, 0, len(leftValue.Array)+len(value.Array))
+				array = append(array, leftValue.Array...)
+				array = append(array, value.Array...)
+				merged[name] = Value{Kind: ValueArray, Array: array}
+				continue
+			}
+		}
+		merged[name] = value
+	}
+	return merged
 }
 
 func evaluateNumeric(operator lexer.TokenType, left, right Value) (Value, error) {
@@ -3196,6 +3269,8 @@ func inferInfixType(expr ast.InfixExpression, variables *variableRegistry, symbo
 	switch expr.Operator {
 	case lexer.TokenPlus, lexer.TokenMinus, lexer.TokenStar, lexer.TokenSlash, lexer.TokenDoubleStar:
 		return inferNumericBinary(expr.Operator, leftType, rightType)
+	case lexer.TokenMerge:
+		return inferMergeType(leftType, rightType)
 	case lexer.TokenPercent:
 		if !leftType.isNumeric() || !rightType.isNumeric() {
 			return valueType{}, validationErrorf("type mismatch: expected numeric operands for '%%'")
@@ -3232,6 +3307,16 @@ func inferInfixType(expr ast.InfixExpression, variables *variableRegistry, symbo
 	default:
 		return valueType{}, validationErrorf("unknown infix operator")
 	}
+}
+
+func inferMergeType(leftType, rightType valueType) (valueType, error) {
+	if leftType.kind != ValueRecord && leftType.kind != ValueArray {
+		return valueType{}, validationErrorf("type mismatch: merge operands must be records or arrays")
+	}
+	if !typesEqual(leftType, rightType) {
+		return valueType{}, validationErrorf("type mismatch: merge operands must have the same type")
+	}
+	return leftType, nil
 }
 
 func inferNumericBinary(operator lexer.TokenType, leftType, rightType valueType) (valueType, error) {

@@ -324,6 +324,18 @@ var _ = Describe("Parser", func() {
 		Entry("add with multiply", "1 + 2 * 3"),
 	)
 
+	DescribeTable("parses merge expressions",
+		func(input string) {
+			expression, err := parseExpressionInput(input)
+			tAssert.NoError(err)
+
+			root := requireInfix(expression, lexer.TokenMerge)
+			requireIdentifier(root.Left, "base")
+			requireIdentifier(root.Right, "override")
+		},
+		Entry("merge operator", "base <> override"),
+	)
+
 	DescribeTable("parses grouped expressions",
 		func(input string) {
 			expression, err := parseExpressionInput(input)

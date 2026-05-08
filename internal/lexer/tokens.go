@@ -49,6 +49,7 @@ const (
 
 	TokenLess
 	TokenLessEqual
+	TokenMerge
 	TokenGreater
 	TokenGreaterEqual
 	TokenEqualEqual
