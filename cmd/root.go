@@ -265,9 +265,9 @@ func importSourceFromPath(path string) (string, error) {
 
 	switch inputFormat {
 	case "yaml":
-		return codec.ImportYAML(string(contents))
+		return importYAMLSource(path, string(contents))
 	case "toml":
-		return codec.ImportTOML(string(contents))
+		return importTOMLSource(path, string(contents))
 	default:
 		return "", fmt.Errorf("unsupported import format %q", inputFormat)
 	}

@@ -232,7 +232,7 @@ func dataFixtures() []importFixture {
 	}
 }
 
-var _ = PDescribe("import conversion", func() {
+var _ = Describe("import conversion", func() {
 	It("imports YAML data fixtures into equivalent Mace output", func() {
 		for _, fixture := range dataFixtures() {
 			expected := expectedOutput(fixture.mace)
