@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,17 +20,7 @@ import (
 )
 
 var (
-	missingRequiredFieldPattern = regexp.MustCompile(`missing required field "([^"]+)" for schema "([^"]+)"`)
-	typeMismatchPattern         = regexp.MustCompile(`type mismatch: expected (.+), got (.+)$`)
-	selfReferencePattern        = regexp.MustCompile(`unknown self reference "([^"]+)"`)
-	schemaOutputFieldPattern    = regexp.MustCompile(`invalid field type "([^"]+)" in output = schema`)
-	dataOutputValuePattern      = regexp.MustCompile(`output value "([^"]+)" cannot reference type or schema declaration`)
-	missingInjectablePattern    = regexp.MustCompile(`injectable "([^"]+)" requires a runtime value`)
-	enumNamePattern             = regexp.MustCompile(`enum "([^"]+)"`)
-	enumMemberPattern           = regexp.MustCompile(`enum member "([^"]+)"`)
-	arrayAccessLevelPattern     = regexp.MustCompile(`at level (\d+)`)
-	arrayAccessIndexPattern     = regexp.MustCompile(`array index (-?\d+) is out of range`)
-	emptyScriptBlockPattern     = regexp.MustCompile(`(?s)^\s*\|===\|\s*\|===\|\s*`)
+	emptyScriptBlockPattern = regexp.MustCompile(`(?s)^\s*\|===\|\s*\|===\|\s*`)
 )
 
 type symbolOrigin string
@@ -2833,57 +2824,76 @@ func schemaFileConflictAnalysis(text string, file ast.File, documentPath string)
 
 func semanticDiagnosticFromError(file ast.File, tokens []lexer.Token, err error) (protocol.Diagnostic, bool) {
 	message := err.Error()
+	var diagnosticError processor.DiagnosticError
+	hasDiagnosticError := errors.As(err, &diagnosticError)
 
-	if diagnostic, ok := variableTypeMismatchDiagnostic(file, tokens, message); ok {
-		return diagnostic, true
+	if hasDiagnosticError {
+		if diagnostic, ok := variableTypeMismatchDiagnostic(file, tokens, diagnosticError); ok {
+			return diagnostic, true
+		}
 	}
 
-	if diagnostic, ok := missingInjectableDiagnostic(file, tokens, message); ok {
-		return diagnostic, true
+	if hasDiagnosticError {
+		if diagnostic, ok := missingInjectableDiagnostic(file, tokens, diagnosticError); ok {
+			return diagnostic, true
+		}
 	}
 
 	if diagnostic, ok := mixedArrayLiteralDiagnostic(file, tokens, message); ok {
 		return diagnostic, true
 	}
 
-	if diagnostic, ok := arrayAccessDiagnostic(tokens, message); ok {
-		return diagnostic, true
+	if hasDiagnosticError {
+		if diagnostic, ok := arrayAccessDiagnostic(tokens, diagnosticError, message); ok {
+			return diagnostic, true
+		}
 	}
 
-	if diagnostic, ok := schemaDiagnostic(tokens, message); ok {
-		return diagnostic, true
+	if hasDiagnosticError {
+		if diagnostic, ok := schemaDiagnostic(tokens, diagnosticError, message); ok {
+			return diagnostic, true
+		}
 	}
 
 	if diagnostic, ok := unknownSchemaDiagnostic(tokens, message); ok {
 		return diagnostic, true
 	}
 
-	if diagnostic, ok := selfReferenceDiagnostic(file, tokens, message); ok {
-		return diagnostic, true
+	if hasDiagnosticError {
+		if diagnostic, ok := selfReferenceDiagnostic(file, tokens, diagnosticError, message); ok {
+			return diagnostic, true
+		}
 	}
 
-	if diagnostic, ok := schemaOutputFieldDiagnostic(tokens, message); ok {
-		return diagnostic, true
+	if hasDiagnosticError {
+		if diagnostic, ok := schemaOutputFieldDiagnostic(tokens, diagnosticError, message); ok {
+			return diagnostic, true
+		}
 	}
 
-	if diagnostic, ok := dataOutputValueDiagnostic(tokens, message); ok {
-		return diagnostic, true
+	if hasDiagnosticError {
+		if diagnostic, ok := dataOutputValueDiagnostic(tokens, diagnosticError, message); ok {
+			return diagnostic, true
+		}
 	}
 
-	if diagnostic, ok := enumDiagnostic(tokens, message); ok {
-		return diagnostic, true
+	if hasDiagnosticError {
+		if diagnostic, ok := enumDiagnostic(tokens, diagnosticError, message); ok {
+			return diagnostic, true
+		}
 	}
 
 	return protocol.Diagnostic{}, false
 }
 
-func variableTypeMismatchDiagnostic(file ast.File, tokens []lexer.Token, message string) (protocol.Diagnostic, bool) {
-	if file.Script == nil {
+func variableTypeMismatchDiagnostic(file ast.File, tokens []lexer.Token, diagnosticError processor.DiagnosticError) (protocol.Diagnostic, bool) {
+	if file.Script == nil || diagnosticError.Code != processor.CodeTypeMismatch {
 		return protocol.Diagnostic{}, false
 	}
 
-	expectedType, actualType, ok := parseExpectedAndActualType(message)
-	if !ok {
+	expectedType := diagnosticError.Fields.Expected
+	actualType := diagnosticError.Fields.Actual
+	if expectedType == "" || actualType == "" {
 		return protocol.Diagnostic{}, false
 	}
 
@@ -2912,28 +2922,23 @@ func variableTypeMismatchDiagnostic(file ast.File, tokens []lexer.Token, message
 			continue
 		}
 
-		return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticTypeInitializerMismatch, message), true
+		return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticTypeInitializerMismatch, diagnosticError.Message), true
 	}
 
 	return protocol.Diagnostic{}, false
 }
 
-func missingInjectableDiagnostic(file ast.File, tokens []lexer.Token, message string) (protocol.Diagnostic, bool) {
-	if file.Script == nil {
+func missingInjectableDiagnostic(file ast.File, tokens []lexer.Token, diagnosticError processor.DiagnosticError) (protocol.Diagnostic, bool) {
+	if file.Script == nil || diagnosticError.Code != processor.CodeMissingInjectable {
 		return protocol.Diagnostic{}, false
 	}
 
-	matches := missingInjectablePattern.FindStringSubmatch(message)
-	if len(matches) != 2 {
-		return protocol.Diagnostic{}, false
-	}
-
-	rangeValue, found := tokenRange(tokens, matches[1])
+	rangeValue, found := tokenRange(tokens, diagnosticError.Fields.Name)
 	if !found {
 		return protocol.Diagnostic{}, false
 	}
 
-	return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticDeclarationVariableMissingInitializer, message), true
+	return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticDeclarationVariableMissingInitializer, diagnosticError.Message), true
 }
 
 func mixedArrayLiteralDiagnostic(file ast.File, tokens []lexer.Token, message string) (protocol.Diagnostic, bool) {
@@ -2965,21 +2970,19 @@ func mixedArrayLiteralDiagnostic(file ast.File, tokens []lexer.Token, message st
 	return protocol.Diagnostic{}, false
 }
 
-func arrayAccessDiagnostic(tokens []lexer.Token, message string) (protocol.Diagnostic, bool) {
-	hasArrayAccessError := strings.Contains(message, "array access requires an array value")
-	hasOutOfRangeError := strings.Contains(message, "array index ") && strings.Contains(message, "out of range")
-	if !hasArrayAccessError && !hasOutOfRangeError {
+func arrayAccessDiagnostic(tokens []lexer.Token, diagnosticError processor.DiagnosticError, message string) (protocol.Diagnostic, bool) {
+	if diagnosticError.Code != processor.CodeArrayValueRequired && diagnosticError.Code != processor.CodeArrayIndexOutOfRange {
 		return protocol.Diagnostic{}, false
 	}
 
 	candidates := arrayAccessCandidates(tokens)
-	if hasOutOfRangeError {
-		if token, ok := outOfRangeArrayAccessToken(candidates, message); ok {
+	if diagnosticError.Code == processor.CodeArrayIndexOutOfRange {
+		if token, ok := outOfRangeArrayAccessToken(candidates, diagnosticError); ok {
 			return diagnosticWithCode(tokenProtocolRange(token), protocol.DiagnosticSeverityError, diagnosticTypeInvalidArrayAccess, message), true
 		}
 	}
 
-	if token, ok := invalidArrayAccessToken(candidates, message); ok {
+	if token, ok := invalidArrayAccessToken(candidates, diagnosticError); ok {
 		return diagnosticWithCode(tokenProtocolRange(token), protocol.DiagnosticSeverityError, diagnosticTypeInvalidArrayAccess, message), true
 	}
 
@@ -3039,14 +3042,9 @@ func isArrayAccessOpen(tokens []lexer.Token, index int) bool {
 	}
 }
 
-func invalidArrayAccessToken(candidates []arrayAccessCandidate, message string) (lexer.Token, bool) {
-	level, ok := arrayAccessLevelFromMessage(message)
-	if !ok {
-		return lexer.Token{}, false
-	}
-
+func invalidArrayAccessToken(candidates []arrayAccessCandidate, diagnosticError processor.DiagnosticError) (lexer.Token, bool) {
 	for _, candidate := range candidates {
-		if candidate.Level == level {
+		if candidate.Level == diagnosticError.Fields.Level {
 			return candidate.Bracket, true
 		}
 	}
@@ -3054,18 +3052,9 @@ func invalidArrayAccessToken(candidates []arrayAccessCandidate, message string) 
 	return lexer.Token{}, false
 }
 
-func outOfRangeArrayAccessToken(candidates []arrayAccessCandidate, message string) (lexer.Token, bool) {
-	level, ok := arrayAccessLevelFromMessage(message)
-	if !ok {
-		return lexer.Token{}, false
-	}
-	index, ok := arrayAccessIndexFromMessage(message)
-	if !ok {
-		return lexer.Token{}, false
-	}
-
+func outOfRangeArrayAccessToken(candidates []arrayAccessCandidate, diagnosticError processor.DiagnosticError) (lexer.Token, bool) {
 	for _, candidate := range candidates {
-		if candidate.Level != level || candidate.Index == nil || candidate.Index.Lexeme != index {
+		if candidate.Level != diagnosticError.Fields.Level || candidate.Index == nil || candidate.Index.Lexeme != diagnosticError.Fields.Index {
 			continue
 		}
 		return *candidate.Index, true
@@ -3074,34 +3063,120 @@ func outOfRangeArrayAccessToken(candidates []arrayAccessCandidate, message strin
 	return lexer.Token{}, false
 }
 
-func arrayAccessLevelFromMessage(message string) (int, bool) {
-	matches := arrayAccessLevelPattern.FindStringSubmatch(message)
-	if len(matches) != 2 {
-		return 0, false
-	}
-
-	level, err := strconv.Atoi(matches[1])
-	if err != nil {
-		return 0, false
-	}
-	return level, true
-}
-
-func arrayAccessIndexFromMessage(message string) (string, bool) {
-	matches := arrayAccessIndexPattern.FindStringSubmatch(message)
-	if len(matches) != 2 {
-		return "", false
-	}
-	return matches[1], true
-}
-
 func parseExpectedAndActualType(message string) (string, string, bool) {
-	matches := typeMismatchPattern.FindStringSubmatch(message)
-	if len(matches) != 3 {
+	prefix := "processor: type mismatch: expected "
+	if !strings.HasPrefix(message, prefix) {
 		return "", "", false
 	}
 
-	return strings.TrimSpace(matches[1]), strings.TrimSpace(matches[2]), true
+	expected, actual, found := strings.Cut(strings.TrimPrefix(message, prefix), ", got ")
+	if !found {
+		return "", "", false
+	}
+
+	return strings.TrimSpace(expected), strings.TrimSpace(actual), true
+}
+
+func schemaDiagnostic(tokens []lexer.Token, diagnosticError processor.DiagnosticError, message string) (protocol.Diagnostic, bool) {
+	if diagnosticError.Code != processor.CodeMissingRequiredField || diagnosticError.Fields.Schema == "" {
+		return protocol.Diagnostic{}, false
+	}
+
+	rangeValue, found := tokenRange(tokens, diagnosticError.Fields.Schema)
+	if !found {
+		return protocol.Diagnostic{}, false
+	}
+
+	return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticTypeRecordDoesNotMatchSchema, message), true
+}
+
+func unknownSchemaDiagnostic(tokens []lexer.Token, message string) (protocol.Diagnostic, bool) {
+	if !strings.Contains(message, `unknown schema "`) {
+		return protocol.Diagnostic{}, false
+	}
+
+	schemaName := quotedName(message)
+	if schemaName == "" {
+		return protocol.Diagnostic{}, false
+	}
+
+	rangeValue, found := tokenRange(tokens, schemaName)
+	if !found {
+		return protocol.Diagnostic{}, false
+	}
+
+	return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticDirectiveUnknownSchemaName, message), true
+}
+
+func selfReferenceDiagnostic(file ast.File, tokens []lexer.Token, diagnosticError processor.DiagnosticError, message string) (protocol.Diagnostic, bool) {
+	if diagnosticError.Code != processor.CodeSelfReferenceUnknown {
+		return protocol.Diagnostic{}, false
+	}
+
+	name := diagnosticError.Fields.Name
+	rangeValue, found := tokenRange(tokens, name)
+	if !found {
+		return protocol.Diagnostic{}, false
+	}
+
+	return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, classifySelfReferenceCode(file, name), message), true
+}
+
+func schemaOutputFieldDiagnostic(tokens []lexer.Token, diagnosticError processor.DiagnosticError, message string) (protocol.Diagnostic, bool) {
+	if diagnosticError.Code != processor.CodeInvalidOutputSchemaField {
+		return protocol.Diagnostic{}, false
+	}
+
+	rangeValue, found := tokenRangeFromEnd(tokens, diagnosticError.Fields.Name)
+	if !found {
+		return protocol.Diagnostic{}, false
+	}
+
+	return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticTypeInvalidOutputSchemaField, message), true
+}
+
+func dataOutputValueDiagnostic(tokens []lexer.Token, diagnosticError processor.DiagnosticError, message string) (protocol.Diagnostic, bool) {
+	if diagnosticError.Code != processor.CodeOutputValueDeclaration {
+		return protocol.Diagnostic{}, false
+	}
+
+	rangeValue, found := tokenRangeFromEnd(tokens, diagnosticError.Fields.Name)
+	if !found {
+		return protocol.Diagnostic{}, false
+	}
+
+	return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticTypeUnknownIdentifier, message), true
+}
+
+func enumDiagnostic(tokens []lexer.Token, diagnosticError processor.DiagnosticError, message string) (protocol.Diagnostic, bool) {
+	name := diagnosticError.Fields.Name
+	if name == "" {
+		name = diagnosticError.Fields.Schema
+	}
+	if name == "" {
+		return protocol.Diagnostic{}, false
+	}
+
+	switch diagnosticError.Code {
+	case processor.CodeDuplicateEnumMember,
+		processor.CodeDuplicateEnumValue,
+		processor.CodeEnumMemberValueType,
+		processor.CodeEnumMixedValues,
+		processor.CodeEnumRequiresExplicitValues,
+		processor.CodeInvalidEnumBackingType,
+		processor.CodeInvalidEnumValue,
+		processor.CodeUnknownEnum,
+		processor.CodeUnknownEnumMember:
+	default:
+		return protocol.Diagnostic{}, false
+	}
+
+	rangeValue, found := tokenRange(tokens, name)
+	if !found {
+		return protocol.Diagnostic{}, false
+	}
+
+	return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, classifyProcessorDiagnostic(message), message), true
 }
 
 func expressionTypeSummary(expression ast.Expression, knownTypes map[string]string) (string, bool) {
@@ -3149,102 +3224,6 @@ func arrayExpressionTypeSummary(expression ast.ArrayLiteral, knownTypes map[stri
 	}
 
 	return "array<variant[" + strings.Join(elementTypes, ", ") + "]>", true
-}
-
-func schemaDiagnostic(tokens []lexer.Token, message string) (protocol.Diagnostic, bool) {
-	if matches := missingRequiredFieldPattern.FindStringSubmatch(message); len(matches) == 3 {
-		schemaName := matches[2]
-		rangeValue, found := tokenRange(tokens, schemaName)
-		if !found {
-			return protocol.Diagnostic{}, false
-		}
-
-		return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticTypeRecordDoesNotMatchSchema, message), true
-	}
-
-	return protocol.Diagnostic{}, false
-}
-
-func unknownSchemaDiagnostic(tokens []lexer.Token, message string) (protocol.Diagnostic, bool) {
-	if !strings.Contains(message, `unknown schema "`) {
-		return protocol.Diagnostic{}, false
-	}
-
-	schemaName := quotedName(message)
-	if schemaName == "" {
-		return protocol.Diagnostic{}, false
-	}
-
-	rangeValue, found := tokenRange(tokens, schemaName)
-	if !found {
-		return protocol.Diagnostic{}, false
-	}
-
-	return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticDirectiveUnknownSchemaName, message), true
-}
-
-func selfReferenceDiagnostic(file ast.File, tokens []lexer.Token, message string) (protocol.Diagnostic, bool) {
-	matches := selfReferencePattern.FindStringSubmatch(message)
-	if len(matches) != 2 {
-		return protocol.Diagnostic{}, false
-	}
-
-	rangeValue, found := tokenRange(tokens, matches[1])
-	if !found {
-		return protocol.Diagnostic{}, false
-	}
-
-	return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, classifySelfReferenceCode(file, matches[1]), message), true
-}
-
-func schemaOutputFieldDiagnostic(tokens []lexer.Token, message string) (protocol.Diagnostic, bool) {
-	matches := schemaOutputFieldPattern.FindStringSubmatch(message)
-	if len(matches) != 2 {
-		return protocol.Diagnostic{}, false
-	}
-
-	rangeValue, found := tokenRangeFromEnd(tokens, matches[1])
-	if !found {
-		return protocol.Diagnostic{}, false
-	}
-
-	return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticTypeInvalidOutputSchemaField, message), true
-}
-
-func dataOutputValueDiagnostic(tokens []lexer.Token, message string) (protocol.Diagnostic, bool) {
-	matches := dataOutputValuePattern.FindStringSubmatch(message)
-	if len(matches) != 2 {
-		return protocol.Diagnostic{}, false
-	}
-
-	rangeValue, found := tokenRangeFromEnd(tokens, matches[1])
-	if !found {
-		return protocol.Diagnostic{}, false
-	}
-
-	return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticTypeUnknownIdentifier, message), true
-}
-
-func enumDiagnostic(tokens []lexer.Token, message string) (protocol.Diagnostic, bool) {
-	if matches := enumMemberPattern.FindStringSubmatch(message); len(matches) == 2 {
-		rangeValue, found := tokenRange(tokens, matches[1])
-		if !found {
-			return protocol.Diagnostic{}, false
-		}
-
-		return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, classifyProcessorDiagnostic(message), message), true
-	}
-
-	if matches := enumNamePattern.FindStringSubmatch(message); len(matches) == 2 {
-		rangeValue, found := tokenRange(tokens, matches[1])
-		if !found {
-			return protocol.Diagnostic{}, false
-		}
-
-		return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, classifyProcessorDiagnostic(message), message), true
-	}
-
-	return protocol.Diagnostic{}, false
 }
 
 func tokenRange(tokens []lexer.Token, lexeme string) (protocol.Range, bool) {

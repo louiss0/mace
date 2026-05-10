@@ -6,6 +6,7 @@ import (
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
 	"github.com/louiss0/mace/internal/parser/ast"
+	"github.com/louiss0/mace/internal/processor"
 )
 
 type diagnosticCode string
@@ -206,6 +207,60 @@ func classifyDiagnosticCode(message string) diagnosticCode {
 		return classifyProcessorDiagnostic(message)
 	default:
 		return diagnosticSyntaxUnexpectedToken
+	}
+}
+
+func diagnosticCodeFromProcessorError(err processor.DiagnosticError) diagnosticCode {
+	switch err.Code {
+	case processor.CodeArrayIndexOutOfRange, processor.CodeArrayValueRequired:
+		return diagnosticTypeInvalidArrayAccess
+	case processor.CodeDuplicateEnumMember:
+		return diagnosticDeclarationDuplicateEnumMember
+	case processor.CodeDuplicateEnumValue:
+		return diagnosticDeclarationDuplicateEnumValue
+	case processor.CodeEnumMemberValueType:
+		return diagnosticDeclarationEnumMemberValueType
+	case processor.CodeEnumMixedValues:
+		return diagnosticDeclarationMixedEnumValues
+	case processor.CodeEnumRequiresExplicitValues:
+		return diagnosticDeclarationEnumRequiresExplicitValues
+	case processor.CodeInvalidEnumBackingType:
+		return diagnosticDeclarationInvalidEnumBackingType
+	case processor.CodeInvalidEnumValue:
+		return diagnosticTypeInvalidEnumValue
+	case processor.CodeInvalidOutputSchemaField:
+		return diagnosticTypeInvalidOutputSchemaField
+	case processor.CodeMissingInjectable:
+		return diagnosticDeclarationVariableMissingInitializer
+	case processor.CodeMissingRequiredField:
+		return diagnosticTypeRecordDoesNotMatchSchema
+	case processor.CodeOutputValueDeclaration:
+		return diagnosticTypeUnknownIdentifier
+	case processor.CodeSelfReferenceUnknown:
+		return diagnosticTypeUnknownSelfField
+	case processor.CodeTypeMismatch:
+		return diagnosticTypeInitializerMismatch
+	case processor.CodeUnknownEnum, processor.CodeUnknownEnumMember:
+		return diagnosticTypeInvalidEnumValue
+	}
+
+	switch err.Kind {
+	case processor.ErrorImport:
+		return diagnosticImportFileFailedParse
+	case processor.ErrorDirective:
+		return diagnosticDirectiveUnknownKey
+	case processor.ErrorDeclaration:
+		return diagnosticDeclarationDuplicateVariable
+	case processor.ErrorType:
+		return diagnosticTypeInitializerMismatch
+	case processor.ErrorValue:
+		return diagnosticTypeUnknownIdentifier
+	case processor.ErrorOperator:
+		return diagnosticTypeInvalidBinaryOperator
+	case processor.ErrorSchema:
+		return diagnosticTypeRecordDoesNotMatchSchema
+	default:
+		return classifyProcessorDiagnostic(err.Message)
 	}
 }
 
