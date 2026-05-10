@@ -1412,6 +1412,15 @@ string value = "Ada";
 			{kind: ValueInt, int64: 3},
 			{kind: ValueInt, int64: 4},
 		}}),
+		Entry("variant array merge", `|===|
+type Scalar: variant[string, int];
+array<Scalar> left = [1];
+array<Scalar> right = ["x"];
+|===|
+[output = data] { result: left <> right; }`, expectedValue{kind: ValueArray, array: []expectedValue{
+			{kind: ValueInt, int64: 1},
+			{kind: ValueString, string: "x"},
+		}}),
 		Entry("record merge", `[output = data] { result: { name: "Ada"; nested: { left: 1; shared: 1; }; tags: [1]; } <> { age: 30; nested: { shared: 2; right: 3; }; tags: [2]; }; }`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{
 			"name": {kind: ValueString, string: "Ada"},
 			"age":  {kind: ValueInt, int64: 30},
