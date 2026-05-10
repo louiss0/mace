@@ -185,6 +185,27 @@ func (l *Lexer) NextToken() (Token, error) {
 	}
 
 	if isDigit(current) {
+		if current == '0' && (l.peek() == 'x' || l.peek() == 'X') {
+			l.advance()
+			if !isHexDigit(l.peek()) {
+				return Token{}, fmt.Errorf("lexer: expected hexadecimal digit after 0x at %d:%d", startLine, startColumn)
+			}
+			for isHexDigit(l.peek()) {
+				l.advance()
+			}
+			if l.peek() == '.' {
+				l.advance()
+				if !isHexDigit(l.peek()) {
+					return Token{}, fmt.Errorf("lexer: expected hexadecimal digit after hexadecimal point at %d:%d", startLine, startColumn)
+				}
+				for isHexDigit(l.peek()) {
+					l.advance()
+				}
+				return l.makeToken(TokenHexFloat, startPosition, startLine, startColumn), nil
+			}
+			return l.makeToken(TokenHexInt, startPosition, startLine, startColumn), nil
+		}
+
 		for isDigit(l.peek()) {
 			l.advance()
 		}
@@ -473,6 +494,10 @@ func keywordToken(lexeme string) (TokenType, bool) {
 		return TokenIntType, true
 	case "float":
 		return TokenFloatType, true
+	case "hex_int":
+		return TokenHexIntType, true
+	case "hex_float":
+		return TokenHexFloatType, true
 	case "boolean":
 		return TokenBooleanType, true
 	case "output":
@@ -496,4 +521,8 @@ func isLetter(value byte) bool {
 
 func isDigit(value byte) bool {
 	return value >= '0' && value <= '9'
+}
+
+func isHexDigit(value byte) bool {
+	return isDigit(value) || (value >= 'a' && value <= 'f') || (value >= 'A' && value <= 'F')
 }

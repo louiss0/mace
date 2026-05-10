@@ -38,6 +38,8 @@ var scriptKeywordCompletions = []completionDefinition{
 	{Label: "boolean", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
 	{Label: "enum", Kind: protocol.CompletionItemKindKeyword, Detail: "enum declaration"},
 	{Label: "float", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
+	{Label: "hex_float", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
+	{Label: "hex_int", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
 	{Label: "from", Kind: protocol.CompletionItemKindKeyword, Detail: "import declaration"},
 	{Label: "gen_doc", Kind: protocol.CompletionItemKindKeyword, Detail: "type or variable documentation declaration"},
 	{Label: "injectable", Kind: protocol.CompletionItemKindKeyword, Detail: "variable modifier"},
@@ -1823,6 +1825,10 @@ func defaultLiteralForType(typeReference ast.TypeReference, model completionMode
 			return "0"
 		case "float":
 			return "0.0"
+		case "hex_int":
+			return "0x0"
+		case "hex_float":
+			return "0x0.0"
 		case "boolean":
 			return "false"
 		default:

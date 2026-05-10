@@ -466,7 +466,7 @@ func (p *Parser) parseEnumDeclaration() (ast.Declaration, error) {
 
 func (p *Parser) parseEnumBackingType() (ast.PrimitiveType, error) {
 	switch p.current().Type {
-	case lexer.TokenStringType, lexer.TokenIntType, lexer.TokenFloatType, lexer.TokenBooleanType:
+	case lexer.TokenStringType, lexer.TokenIntType, lexer.TokenFloatType, lexer.TokenHexIntType, lexer.TokenHexFloatType, lexer.TokenBooleanType:
 		token := p.current()
 		p.advance()
 		return ast.PrimitiveType{Name: token.Lexeme}, nil
@@ -513,6 +513,12 @@ func (p *Parser) parseEnumMemberValue() (ast.Expression, error) {
 	case lexer.TokenFloat:
 		p.advance()
 		return ast.FloatLiteral{Lexeme: token.Lexeme}, nil
+	case lexer.TokenHexInt:
+		p.advance()
+		return ast.HexIntLiteral{Lexeme: token.Lexeme}, nil
+	case lexer.TokenHexFloat:
+		p.advance()
+		return ast.HexFloatLiteral{Lexeme: token.Lexeme}, nil
 	case lexer.TokenBoolean:
 		p.advance()
 		return ast.BooleanLiteral{Value: token.Lexeme == "true"}, nil
@@ -816,7 +822,7 @@ func (p *Parser) parseFieldHeader(context string) (lexer.Token, string, bool, er
 
 func (p *Parser) parseTypeReference() (ast.TypeReference, error) {
 	switch p.current().Type {
-	case lexer.TokenStringType, lexer.TokenIntType, lexer.TokenFloatType, lexer.TokenBooleanType:
+	case lexer.TokenStringType, lexer.TokenIntType, lexer.TokenFloatType, lexer.TokenHexIntType, lexer.TokenHexFloatType, lexer.TokenBooleanType:
 		token := p.current()
 		p.advance()
 		return ast.PrimitiveType{Name: token.Lexeme}, nil
@@ -949,6 +955,12 @@ func (p *Parser) parsePrefix(token lexer.Token) (ast.Expression, error) {
 	case lexer.TokenFloat:
 		p.advance()
 		return ast.FloatLiteral{Lexeme: token.Lexeme}, nil
+	case lexer.TokenHexInt:
+		p.advance()
+		return ast.HexIntLiteral{Lexeme: token.Lexeme}, nil
+	case lexer.TokenHexFloat:
+		p.advance()
+		return ast.HexFloatLiteral{Lexeme: token.Lexeme}, nil
 	case lexer.TokenBoolean:
 		p.advance()
 		return ast.BooleanLiteral{Value: token.Lexeme == "true"}, nil

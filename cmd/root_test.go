@@ -61,6 +61,32 @@ int base = 2 + 2;
 }`, stdout.String())
 		})
 
+		It("prints hexadecimal outputs as JSON strings", func() {
+			path := writeMaceFile(`|===|
+hex_int mask = 0xFF;
+hex_float ratio = 0x2.8;
+|===|
+[output = data]
+{
+  mask: mask;
+  ratio: ratio;
+}`)
+
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			command := newRootCommand(&stdout, &stderr)
+			command.SetArgs([]string{"json", path})
+
+			err := command.Execute()
+			tAssert.NoError(err)
+			tAssert.Equal("", stderr.String())
+			tAssert.JSONEq(`{
+  "mask": "0xFF",
+  "ratio": "0x2.8"
+}`, stdout.String())
+		})
+
 		It("accepts injectable values as a Mace record literal", func() {
 			path := writeMaceFile(`|===|
 injectable string env = "dev";

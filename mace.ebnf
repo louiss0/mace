@@ -32,7 +32,11 @@ double_string      = '"' , { double_part } , '"' ;
 block_string       = '"""' , { block_part } , '"""' ;
 int_literal        = digit , { digit } ;
 float_literal      = digit , { digit } , "." , digit , { digit } ;
+hex_int_literal    = ( "0x" | "0X" ) , hex_digit , { hex_digit } ;
+hex_float_literal  = ( "0x" | "0X" ) , hex_digit , { hex_digit } , "." , hex_digit , { hex_digit } ;
 boolean_literal    = "true" | "false" ;
+
+hex_digit          = digit | "a"…"f" | "A"…"F" ;
 
 character          = ? any Unicode scalar value ? ;
 single_character   = ? any character except ' or newline or backslash ? | escape_sequence ;
@@ -175,6 +179,8 @@ enum_member_value
   = string_literal
   | int_literal
   | float_literal
+  | hex_int_literal
+  | hex_float_literal
   | boolean_literal ;
 
 (* The current implementation accepts primitive backing-type syntax but
@@ -222,7 +228,7 @@ type_reference
   | identifier ;
 
 primitive_type
-  = "string" | "int" | "float" | "boolean" ;
+  = "string" | "int" | "float" | "hex_int" | "hex_float" | "boolean" ;
 
 array_type
   = "array" , ws0 , "<" , ws0 ,

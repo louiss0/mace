@@ -410,6 +410,10 @@ func formatExpressionNode(expression ast.Expression, depth int) (string, int, er
 		return typedExpression.Lexeme, precedencePrimary, nil
 	case ast.FloatLiteral:
 		return typedExpression.Lexeme, precedencePrimary, nil
+	case ast.HexIntLiteral:
+		return typedExpression.Lexeme, precedencePrimary, nil
+	case ast.HexFloatLiteral:
+		return typedExpression.Lexeme, precedencePrimary, nil
 	case ast.BooleanLiteral:
 		if typedExpression.Value {
 			return "true", precedencePrimary, nil

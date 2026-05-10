@@ -44,6 +44,18 @@ type FloatLiteral struct {
 
 func (FloatLiteral) expressionNode() {}
 
+type HexIntLiteral struct {
+	Lexeme string
+}
+
+func (HexIntLiteral) expressionNode() {}
+
+type HexFloatLiteral struct {
+	Lexeme string
+}
+
+func (HexFloatLiteral) expressionNode() {}
+
 type BooleanLiteral struct {
 	Value bool
 }
@@ -110,7 +122,7 @@ type ImportDeclaration struct {
 
 type ScriptBlock struct {
 	Imports []ImportDeclaration
-	Items    []Declaration
+	Items   []Declaration
 }
 
 type Documentation struct {

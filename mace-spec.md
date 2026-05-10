@@ -12,6 +12,8 @@ Mace is a typed configuration language for producing deterministic object
 data. The current implementation parses Mace source, validates declarations
 and output against schemas, evaluates expressions, returns an in-memory
 object model, and exposes a CLI for JSON emission and source inspection.
+Hexadecimal runtime values are emitted to JSON as canonical strings so their
+hexadecimal spelling is preserved.
 
 ## File Structure
 
@@ -308,13 +310,16 @@ enum Status: int {
 
 Current enum rules:
 
-- Supported backing types are `string`, `int`, and `float`.
+- Supported backing types are `string`, `int`, `float`, `hex_int`, and
+  `hex_float`.
 - Enum member names must be unique within the enum.
 - Enum values must be unique within the enum.
 - Enum members may include inline `/#` descriptions.
 - Non-final enum members must be separated with `,`.
 - A trailing comma on the final enum member is optional.
-- `string`, `int`, and `float` enums may use all-implicit members or all-explicit members.
+- `string`, `int`, and `float` enums may use all-implicit members or
+  all-explicit members.
+- `hex_int` and `hex_float` enums require explicit member values.
 - An implicit `string` member uses its member name exactly as written.
 - An implicit `int` member uses its zero-based declaration index.
 - An implicit `float` member uses its zero-based declaration index divided by
@@ -323,6 +328,8 @@ Current enum rules:
 - Explicit `string` enum values must be string literals.
 - Explicit `int` enum values must be integer literals.
 - Explicit `float` enum values must be float literals.
+- Explicit `hex_int` enum values must be hexadecimal integer literals.
+- Explicit `hex_float` enum values must be hexadecimal float literals.
 
 Enums are named types. They may be used anywhere a named non-schema type can
 be used, including variable declarations, schema fields, output schema
@@ -347,6 +354,8 @@ The current type system supports:
 - `string`
 - `int`
 - `float`
+- `hex_int`
+- `hex_float`
 - `boolean`
 - `array<T>`
 - `union[T1, T2, ...]`
@@ -548,7 +557,7 @@ Expressions are pure and deterministic. The implementation supports:
 - identifiers
 - member access with `value.member`
 - array access with `value[0]`
-- string, int, float, and boolean literals
+- string, int, float, hex_int, hex_float, and boolean literals
 - array literals
 - record literals using comma-separated fields
 - `$self` references
@@ -563,14 +572,29 @@ Expressions are pure and deterministic. The implementation supports:
 
 Numeric operator semantics:
 
-- `+`, `-`, `*`, `/`, `%`, and `**` accept `int` and `float` operands.
-- When both operands are `int`, the result is `int`.
-- When either operand is `float`, the result is `float`.
+- `+`, `-`, `*`, `/`, `%`, and `**` accept decimal numeric operands
+  (`int` and `float`) or hexadecimal numeric operands (`hex_int` and
+  `hex_float`).
+- Decimal numeric operands and hexadecimal numeric operands must not be mixed.
+- When both decimal operands are `int`, the result is `int`.
+- When either decimal operand is `float`, the result is `float`.
+- When both hexadecimal operands are `hex_int`, `+`, `-`, `*`, `%`, and `**`
+  produce `hex_int`.
+- When both hexadecimal operands are `hex_int`, `/` produces `hex_float`.
+- When either hexadecimal operand is `hex_float`, arithmetic produces
+  `hex_float`.
 - `<`, `<=`, `>`, and `>=` accept mixed `int` and `float` operands and return
   `boolean`.
+- `<`, `<=`, `>`, and `>=` also accept mixed `hex_int` and `hex_float`
+  operands and return `boolean`.
 - `%` uses integer remainder for `int`/`int` and floating-point remainder when
-  either operand is `float`.
+  either decimal operand is `float`.
+- `%` requires `hex_int` operands for hexadecimal arithmetic.
 - `&`, `|`, `^`, `~`, `<<`, `>>`, and `>>>` require `int` operands.
+- `&`, `|`, `^`, `<<`, `>>`, and `>>>` also accept `hex_int` operands.
+- `~` is not defined for hexadecimal operands.
+- Equality comparisons accept same-type operands and also accept mixed
+  `hex_int` and `hex_float` operands.
 
 Operator precedence is implemented in the parser and matches the repository
 tests.

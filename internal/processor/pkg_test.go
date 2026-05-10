@@ -78,6 +78,10 @@ func assertExpectedValue(actual Value, expected expectedValue) {
 		tAssert.Equal(expected.int64, actual.Int)
 	case ValueFloat:
 		tAssert.InDelta(expected.float, actual.Float, 0.000001)
+	case ValueHexInt, ValueHexFloat:
+		formatted, err := FormatScalarValue(actual)
+		tAssert.NoError(err)
+		tAssert.Equal(expected.string, formatted)
 	case ValueBoolean:
 		tAssert.Equal(expected.bool, actual.Boolean)
 	case ValueString:
@@ -225,6 +229,8 @@ schema User: { name: string; };
 string name = "Ada";
 int age = 30;
 float rate = 1.25;
+hex_int mask = 0xFF;
+hex_float ratio = 0x2.8;
 boolean active = true;
 |===|`)),
 		Entry("string interpolation expressions", wrapScriptWithOutput(`|===|
@@ -1382,17 +1388,23 @@ string value = "Ada";
 		Entry("unary minus", `[output = data] { result: -5; }`, expectedValue{kind: ValueInt, int64: -5}),
 		Entry("logical not", `[output = data] { result: !false; }`, expectedValue{kind: ValueBoolean, bool: true}),
 		Entry("bitwise not", `[output = data] { result: ~1; }`, expectedValue{kind: ValueInt, int64: ^int64(1)}),
+		Entry("hex unary minus", `[output = data] { result: -0xA; }`, expectedValue{kind: ValueHexInt, string: "-0xA"}),
 		Entry("addition", `[output = data] { result: 1 + 2; }`, expectedValue{kind: ValueInt, int64: 3}),
+		Entry("hex addition", `[output = data] { result: 0x0F + 0x01; }`, expectedValue{kind: ValueHexInt, string: "0x10"}),
 		Entry("subtraction", `[output = data] { result: 5 - 3; }`, expectedValue{kind: ValueInt, int64: 2}),
 		Entry("multiplication", `[output = data] { result: 2 * 3; }`, expectedValue{kind: ValueInt, int64: 6}),
 		Entry("division", `[output = data] { result: 8 / 2; }`, expectedValue{kind: ValueInt, int64: 4}),
+		Entry("hex division", `[output = data] { result: 0x05 / 0x02; }`, expectedValue{kind: ValueHexFloat, string: "0x2.8"}),
 		Entry("modulo", `[output = data] { result: 9 % 4; }`, expectedValue{kind: ValueInt, int64: 1}),
+		Entry("hex modulo", `[output = data] { result: 0x05 % 0x02; }`, expectedValue{kind: ValueHexInt, string: "0x1"}),
 		Entry("mixed modulo", `[output = data] { result: 9 % 2.5; }`, expectedValue{kind: ValueFloat, float: 1.5}),
 		Entry("exponentiation", `[output = data] { result: 2 ** 3; }`, expectedValue{kind: ValueInt, int64: 8}),
 		Entry("shift left", `[output = data] { result: 1 << 3; }`, expectedValue{kind: ValueInt, int64: 8}),
 		Entry("shift right", `[output = data] { result: 8 >> 1; }`, expectedValue{kind: ValueInt, int64: 4}),
 		Entry("unsigned shift right", `[output = data] { result: 8 >>> 1; }`, expectedValue{kind: ValueInt, int64: 4}),
+		Entry("hex shift left", `[output = data] { result: 0x01 << 0x04; }`, expectedValue{kind: ValueHexInt, string: "0x10"}),
 		Entry("less than", `[output = data] { result: 1 < 2; }`, expectedValue{kind: ValueBoolean, bool: true}),
+		Entry("hex greater than", `[output = data] { result: 0x10 > 0x0F; }`, expectedValue{kind: ValueBoolean, bool: true}),
 		Entry("less than or equal", `[output = data] { result: 2 <= 2; }`, expectedValue{kind: ValueBoolean, bool: true}),
 		Entry("greater than", `[output = data] { result: 3 > 2; }`, expectedValue{kind: ValueBoolean, bool: true}),
 		Entry("greater than or equal", `[output = data] { result: 2 >= 2; }`, expectedValue{kind: ValueBoolean, bool: true}),
@@ -1403,6 +1415,7 @@ string value = "Ada";
 		Entry("bitwise and", `[output = data] { result: 6 & 3; }`, expectedValue{kind: ValueInt, int64: 2}),
 		Entry("bitwise xor", `[output = data] { result: 5 ^ 3; }`, expectedValue{kind: ValueInt, int64: 6}),
 		Entry("bitwise or", `[output = data] { result: 5 | 2; }`, expectedValue{kind: ValueInt, int64: 7}),
+		Entry("hex bitwise or", `[output = data] { result: 0x0F | 0x10; }`, expectedValue{kind: ValueHexInt, string: "0x1F"}),
 		Entry("logical and", `[output = data] { result: true && false; }`, expectedValue{kind: ValueBoolean, bool: false}),
 		Entry("logical or", `[output = data] { result: true || false; }`, expectedValue{kind: ValueBoolean, bool: true}),
 		Entry("ternary", `[output = data] { result: true ? 1 : 2; }`, expectedValue{kind: ValueInt, int64: 1}),
@@ -1445,6 +1458,27 @@ array<Scalar> right = ["x"];
 		Entry("bitwise precedence", `[output = data] { result: 7 & 3 ^ 1 | 8; }`, expectedValue{kind: ValueInt, int64: 10}),
 		Entry("comparison and logic precedence", `[output = data] { result: 1 < 2 && 3 > 2 || false; }`, expectedValue{kind: ValueBoolean, bool: true}),
 		Entry("conditional with logical expression", `[output = data] { result: false || true ? 5 : 2; }`, expectedValue{kind: ValueInt, int64: 5}),
+	)
+
+	DescribeTable("rejects invalid hexadecimal expressions",
+		func(input string, expected string) {
+			processor := New()
+			_, err := processor.Process(input)
+			tAssert.Error(err)
+			tAssert.Contains(err.Error(), expected)
+		},
+		Entry("mixed decimal and hex arithmetic", wrapScriptWithOutput(`|===|
+hex_int a = 0x10;
+int b = 2;
+hex_int c = a + b;
+|===|`), "expected hexadecimal operands for operator"),
+		Entry("hex float modulo", wrapScriptWithOutput(`|===|
+hex_float a = 0x2.8;
+hex_float b = 0x0.8;
+hex_float c = a % b;
+|===|`), "requires hex_int operands"),
+		Entry("hex and decimal comparison", `[output = data] { result: 0x10 > 16; }`, "expected operands from the same numeric family"),
+		Entry("hex bitwise not", `[output = data] { result: ~0x0F; }`, "expected int after '~'"),
 	)
 
 	DescribeTable("rejects invalid merge expressions",

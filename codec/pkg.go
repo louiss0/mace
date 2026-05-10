@@ -299,6 +299,12 @@ func valueToAny(value processor.Value) any {
 		return value.Int
 	case processor.ValueFloat:
 		return value.Float
+	case processor.ValueHexInt, processor.ValueHexFloat:
+		formatted, err := processor.FormatScalarValue(value)
+		if err != nil {
+			return nil
+		}
+		return formatted
 	case processor.ValueBoolean:
 		return value.Boolean
 	case processor.ValueArray:
@@ -1560,6 +1566,12 @@ func decodeValue(value processor.Value, targetType reflect.Type) (reflect.Value,
 		return decodeInt(value.Int, targetType)
 	case processor.ValueFloat:
 		return decodeFloat(value.Float, targetType)
+	case processor.ValueHexInt, processor.ValueHexFloat:
+		formatted, err := processor.FormatScalarValue(value)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		return decodeString(formatted, targetType)
 	case processor.ValueBoolean:
 		return decodeBool(value.Boolean, targetType)
 	case processor.ValueArray:

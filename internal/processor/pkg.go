@@ -1472,7 +1472,7 @@ func validateExpressionAgainstType(expression ast.Expression, expectedType value
 	}
 
 	switch expectedType.kind {
-	case ValueString, ValueInt, ValueFloat, ValueBoolean:
+	case ValueString, ValueInt, ValueFloat, ValueHexInt, ValueHexFloat, ValueBoolean:
 		actualType, err := inferExpressionType(expression, variables, symbols, types, schemas, enums)
 		if err != nil {
 			return err
@@ -1662,7 +1662,7 @@ func validateEvaluatedValueAgainstType(value Value, expectedType valueType, symb
 	}
 
 	switch expectedType.kind {
-	case ValueString, ValueInt, ValueFloat, ValueBoolean:
+	case ValueString, ValueInt, ValueFloat, ValueHexInt, ValueHexFloat, ValueBoolean:
 		if value.Kind != expectedType.kind {
 			return validationErrorf("type mismatch: expected %s, got %s", expectedType.name(), value.kindName())
 		}
@@ -2025,6 +2025,10 @@ func evaluateExpression(expression ast.Expression, environment *valueEnvironment
 		return parseInt(expr.Lexeme)
 	case ast.FloatLiteral:
 		return parseFloat(expr.Lexeme)
+	case ast.HexIntLiteral:
+		return parseHexInt(expr.Lexeme)
+	case ast.HexFloatLiteral:
+		return parseHexFloat(expr.Lexeme)
 	case ast.StringLiteral:
 		return parseInterpolatedString(expr.Lexeme, environment, self, symbols, types, schemas, enums)
 	case ast.BooleanLiteral:
@@ -2060,6 +2064,39 @@ func parseFloat(lexeme string) (Value, error) {
 		return Value{}, validationErrorf("invalid float literal %q", lexeme)
 	}
 	return Value{Kind: ValueFloat, Float: value}, nil
+}
+
+func parseHexInt(lexeme string) (Value, error) {
+	trimmed := strings.TrimPrefix(strings.TrimPrefix(lexeme, "0x"), "0X")
+	value, err := strconv.ParseInt(trimmed, 16, 64)
+	if err != nil {
+		return Value{}, validationErrorf("invalid hex_int literal %q", lexeme)
+	}
+	return Value{Kind: ValueHexInt, Int: value}, nil
+}
+
+func parseHexFloat(lexeme string) (Value, error) {
+	trimmed := strings.TrimPrefix(strings.TrimPrefix(lexeme, "0x"), "0X")
+	parts := strings.Split(trimmed, ".")
+	if len(parts) != 2 {
+		return Value{}, validationErrorf("invalid hex_float literal %q", lexeme)
+	}
+
+	whole, err := strconv.ParseInt(parts[0], 16, 64)
+	if err != nil {
+		return Value{}, validationErrorf("invalid hex_float literal %q", lexeme)
+	}
+
+	fraction := 0.0
+	for index, r := range parts[1] {
+		digit, err := strconv.ParseInt(string(r), 16, 64)
+		if err != nil {
+			return Value{}, validationErrorf("invalid hex_float literal %q", lexeme)
+		}
+		fraction += float64(digit) / math.Pow(16, float64(index+1))
+	}
+
+	return Value{Kind: ValueHexFloat, Float: float64(whole) + fraction}, nil
 }
 
 func parseStaticString(lexeme string) (Value, error) {
@@ -2202,6 +2239,10 @@ func interpolationContent(content string, start int) (int, string, error) {
 	return 0, "", validationErrorf("unterminated interpolation")
 }
 
+func FormatScalarValue(value Value) (string, error) {
+	return stringifyValue(value)
+}
+
 func stringifyValue(value Value) (string, error) {
 	switch value.Kind {
 	case ValueString:
@@ -2210,11 +2251,83 @@ func stringifyValue(value Value) (string, error) {
 		return strconv.FormatInt(value.Int, 10), nil
 	case ValueFloat:
 		return strconv.FormatFloat(value.Float, 'f', -1, 64), nil
+	case ValueHexInt:
+		return formatHexInt(value.Int), nil
+	case ValueHexFloat:
+		return formatHexFloat(value.Float), nil
 	case ValueBoolean:
 		return strconv.FormatBool(value.Boolean), nil
 	default:
 		return "", validationErrorf("interpolation requires a scalar value")
 	}
+}
+
+func formatHexInt(value int64) string {
+	if value < 0 {
+		return "-0x" + strings.ToUpper(strconv.FormatInt(-value, 16))
+	}
+	return "0x" + strings.ToUpper(strconv.FormatInt(value, 16))
+}
+
+func formatHexFloat(value float64) string {
+	if value == 0 {
+		return "0x0"
+	}
+
+	sign := ""
+	if value < 0 {
+		sign = "-"
+		value = -value
+	}
+
+	whole := int64(value)
+	fraction := value - float64(whole)
+	wholeText := strings.ToUpper(strconv.FormatInt(whole, 16))
+	if fraction == 0 {
+		return sign + "0x" + wholeText
+	}
+
+	digits := make([]byte, 0, 10)
+	for range 10 {
+		fraction *= 16
+		digit := int(fraction)
+		fraction -= float64(digit)
+		if digit < 10 {
+			digits = append(digits, byte('0'+digit))
+		} else {
+			digits = append(digits, byte('A'+digit-10))
+		}
+	}
+
+	if len(digits) == 10 {
+		roundDigit := digits[9]
+		digits = digits[:9]
+		if roundDigit >= '8' {
+			for index := len(digits) - 1; index >= 0; index-- {
+				if digits[index] == 'F' {
+					digits[index] = '0'
+					continue
+				}
+				if digits[index] == '9' {
+					digits[index] = 'A'
+				} else {
+					digits[index]++
+				}
+				goto trim
+			}
+			whole++
+			wholeText = strings.ToUpper(strconv.FormatInt(whole, 16))
+		}
+	}
+
+trim:
+	for len(digits) > 0 && digits[len(digits)-1] == '0' {
+		digits = digits[:len(digits)-1]
+	}
+	if len(digits) == 0 {
+		return sign + "0x" + wholeText
+	}
+	return sign + "0x" + wholeText + "." + string(digits)
 }
 
 func evaluateMemberAccess(expr ast.MemberAccess, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) (Value, error) {
@@ -2279,16 +2392,16 @@ func evaluatePrefix(expr ast.PrefixExpression, environment *valueEnvironment, se
 		}
 		return Value{Kind: ValueInt, Int: ^right.Int}, nil
 	case lexer.TokenPlus:
-		if right.Kind != ValueInt && right.Kind != ValueFloat {
+		if !isNumericValue(right) {
 			return Value{}, validationErrorf("type mismatch: expected numeric after unary operator")
 		}
 		return right, nil
 	case lexer.TokenMinus:
 		switch right.Kind {
-		case ValueInt:
-			return Value{Kind: ValueInt, Int: -right.Int}, nil
-		case ValueFloat:
-			return Value{Kind: ValueFloat, Float: -right.Float}, nil
+		case ValueInt, ValueHexInt:
+			return Value{Kind: right.Kind, Int: -right.Int}, nil
+		case ValueFloat, ValueHexFloat:
+			return Value{Kind: right.Kind, Float: -right.Float}, nil
 		default:
 			return Value{}, validationErrorf("type mismatch: expected numeric after unary operator")
 		}
@@ -2406,10 +2519,56 @@ func evaluateNumeric(operator lexer.TokenType, left, right Value) (Value, error)
 	if !isNumericValue(left) || !isNumericValue(right) {
 		return Value{}, validationErrorf("type mismatch: expected numeric operands for operator")
 	}
+	if isHexValue(left) || isHexValue(right) {
+		if !isHexValue(left) || !isHexValue(right) {
+			return Value{}, validationErrorf("type mismatch: expected hexadecimal operands for operator")
+		}
+		return evaluateHexNumeric(operator, left, right)
+	}
 	if left.Kind == ValueInt && right.Kind == ValueInt {
 		return evaluateIntNumeric(operator, left.Int, right.Int)
 	}
 	return evaluateFloatNumeric(operator, numericValue(left), numericValue(right))
+}
+
+func evaluateHexNumeric(operator lexer.TokenType, left, right Value) (Value, error) {
+	leftNumber := hexNumericValue(left)
+	rightNumber := hexNumericValue(right)
+
+	switch operator {
+	case lexer.TokenPlus:
+		if left.Kind == ValueHexInt && right.Kind == ValueHexInt {
+			return Value{Kind: ValueHexInt, Int: left.Int + right.Int}, nil
+		}
+		return Value{Kind: ValueHexFloat, Float: leftNumber + rightNumber}, nil
+	case lexer.TokenMinus:
+		if left.Kind == ValueHexInt && right.Kind == ValueHexInt {
+			return Value{Kind: ValueHexInt, Int: left.Int - right.Int}, nil
+		}
+		return Value{Kind: ValueHexFloat, Float: leftNumber - rightNumber}, nil
+	case lexer.TokenStar:
+		if left.Kind == ValueHexInt && right.Kind == ValueHexInt {
+			return Value{Kind: ValueHexInt, Int: left.Int * right.Int}, nil
+		}
+		return Value{Kind: ValueHexFloat, Float: leftNumber * rightNumber}, nil
+	case lexer.TokenSlash:
+		if rightNumber == 0 {
+			return Value{}, validationErrorf("division by zero")
+		}
+		return Value{Kind: ValueHexFloat, Float: leftNumber / rightNumber}, nil
+	case lexer.TokenDoubleStar:
+		if left.Kind == ValueHexInt && right.Kind == ValueHexInt && right.Int >= 0 {
+			result, err := evaluateIntPower(left.Int, right.Int)
+			if err != nil {
+				return Value{}, err
+			}
+			result.Kind = ValueHexInt
+			return result, nil
+		}
+		return Value{Kind: ValueHexFloat, Float: math.Pow(leftNumber, rightNumber)}, nil
+	default:
+		return Value{}, validationErrorf("unknown numeric operator")
+	}
 }
 
 func evaluateIntNumeric(operator lexer.TokenType, left, right int64) (Value, error) {
@@ -2471,6 +2630,15 @@ func evaluateModulo(left, right Value) (Value, error) {
 	if !isNumericValue(left) || !isNumericValue(right) {
 		return Value{}, validationErrorf("type mismatch: expected numeric operands for '%%'")
 	}
+	if isHexValue(left) || isHexValue(right) {
+		if left.Kind != ValueHexInt || right.Kind != ValueHexInt {
+			return Value{}, validationErrorf("type mismatch: modulo requires hex_int operands")
+		}
+		if right.Int == 0 {
+			return Value{}, validationErrorf("division by zero")
+		}
+		return Value{Kind: ValueHexInt, Int: left.Int % right.Int}, nil
+	}
 	if left.Kind == ValueInt && right.Kind == ValueInt {
 		if right.Int == 0 {
 			return Value{}, validationErrorf("division by zero")
@@ -2487,6 +2655,25 @@ func evaluateModulo(left, right Value) (Value, error) {
 }
 
 func evaluateShift(operator lexer.TokenType, left, right Value) (Value, error) {
+	if isHexValue(left) || isHexValue(right) {
+		if left.Kind != ValueHexInt || right.Kind != ValueHexInt {
+			return Value{}, validationErrorf("type mismatch: shift requires hex_int operands")
+		}
+		if right.Int < 0 {
+			return Value{}, validationErrorf("negative shift count")
+		}
+		shift := uint(right.Int)
+		switch operator {
+		case lexer.TokenShiftLeft:
+			return Value{Kind: ValueHexInt, Int: left.Int << shift}, nil
+		case lexer.TokenShiftRight:
+			return Value{Kind: ValueHexInt, Int: left.Int >> shift}, nil
+		case lexer.TokenShiftRightUnsigned:
+			return Value{Kind: ValueHexInt, Int: int64(uint64(left.Int) >> shift)}, nil
+		default:
+			return Value{}, validationErrorf("unknown shift operator")
+		}
+	}
 	if left.Kind != ValueInt || right.Kind != ValueInt {
 		return Value{}, validationErrorf("type mismatch: expected int operands for shift")
 	}
@@ -2508,6 +2695,21 @@ func evaluateShift(operator lexer.TokenType, left, right Value) (Value, error) {
 }
 
 func evaluateBitwise(operator lexer.TokenType, left, right Value) (Value, error) {
+	if isHexValue(left) || isHexValue(right) {
+		if left.Kind != ValueHexInt || right.Kind != ValueHexInt {
+			return Value{}, validationErrorf("type mismatch: bitwise operator requires hex_int operands")
+		}
+		switch operator {
+		case lexer.TokenAmpersand:
+			return Value{Kind: ValueHexInt, Int: left.Int & right.Int}, nil
+		case lexer.TokenPipe:
+			return Value{Kind: ValueHexInt, Int: left.Int | right.Int}, nil
+		case lexer.TokenCaret:
+			return Value{Kind: ValueHexInt, Int: left.Int ^ right.Int}, nil
+		default:
+			return Value{}, validationErrorf("unknown bitwise operator")
+		}
+	}
 	if left.Kind != ValueInt || right.Kind != ValueInt {
 		return Value{}, validationErrorf("type mismatch: expected int operands for bitwise operator")
 	}
@@ -2526,7 +2728,9 @@ func evaluateBitwise(operator lexer.TokenType, left, right Value) (Value, error)
 
 func evaluateEquality(operator lexer.TokenType, left, right Value) (Value, error) {
 	if left.Kind != right.Kind {
-		return Value{}, validationErrorf("type mismatch: incompatible equality comparison")
+		if !(isHexValue(left) && isHexValue(right)) {
+			return Value{}, validationErrorf("type mismatch: incompatible equality comparison")
+		}
 	}
 
 	equal, err := valuesEqual(left, right)
@@ -2547,6 +2751,16 @@ func valuesEqual(left, right Value) (bool, error) {
 		return left.Int == right.Int, nil
 	case ValueFloat:
 		return left.Float == right.Float, nil
+	case ValueHexInt:
+		if right.Kind == ValueHexFloat {
+			return float64(left.Int) == right.Float, nil
+		}
+		return left.Int == right.Int, nil
+	case ValueHexFloat:
+		if right.Kind == ValueHexInt {
+			return left.Float == float64(right.Int), nil
+		}
+		return left.Float == right.Float, nil
 	case ValueBoolean:
 		return left.Boolean == right.Boolean, nil
 	case ValueString:
@@ -2560,15 +2774,32 @@ func evaluateComparison(operator lexer.TokenType, left, right Value) (Value, err
 	if !isNumericValue(left) || !isNumericValue(right) {
 		return Value{}, validationErrorf("type mismatch: expected numeric operands for comparison")
 	}
+	if isHexValue(left) || isHexValue(right) {
+		if !isHexValue(left) || !isHexValue(right) {
+			return Value{}, validationErrorf("type mismatch: expected operands from the same numeric family")
+		}
+		return compareNumbers(operator, hexNumericValue(left), hexNumericValue(right))
+	}
 	return compareNumbers(operator, numericValue(left), numericValue(right))
 }
 
 func isNumericValue(value Value) bool {
-	return value.Kind == ValueInt || value.Kind == ValueFloat
+	return value.Kind == ValueInt || value.Kind == ValueFloat || value.Kind == ValueHexInt || value.Kind == ValueHexFloat
+}
+
+func isHexValue(value Value) bool {
+	return value.Kind == ValueHexInt || value.Kind == ValueHexFloat
 }
 
 func numericValue(value Value) float64 {
 	if value.Kind == ValueFloat {
+		return value.Float
+	}
+	return float64(value.Int)
+}
+
+func hexNumericValue(value Value) float64 {
+	if value.Kind == ValueHexFloat {
 		return value.Float
 	}
 	return float64(value.Int)
@@ -2719,6 +2950,10 @@ func (value Value) kindName() string {
 		return "int"
 	case ValueFloat:
 		return "float"
+	case ValueHexInt:
+		return "hex_int"
+	case ValueHexFloat:
+		return "hex_float"
 	case ValueBoolean:
 		return "boolean"
 	case ValueRecord:
@@ -2737,6 +2972,8 @@ const (
 	ValueString
 	ValueInt
 	ValueFloat
+	ValueHexInt
+	ValueHexFloat
 	ValueBoolean
 	ValueArray
 	ValueRecord
@@ -2751,8 +2988,12 @@ type valueType struct {
 	members    []valueType
 }
 
+func isHexValueType(valueType valueType) bool {
+	return valueType.kind == ValueHexInt || valueType.kind == ValueHexFloat
+}
+
 func (t valueType) isNumeric() bool {
-	return t.kind == ValueInt || t.kind == ValueFloat
+	return t.kind == ValueInt || t.kind == ValueFloat || t.kind == ValueHexInt || t.kind == ValueHexFloat
 }
 
 func (t valueType) name() string {
@@ -2768,7 +3009,20 @@ func (t valueType) name() string {
 		}
 		return "int"
 	case ValueFloat:
+		if t.enumName != "" {
+			return t.enumName
+		}
 		return "float"
+	case ValueHexInt:
+		if t.enumName != "" {
+			return t.enumName
+		}
+		return "hex_int"
+	case ValueHexFloat:
+		if t.enumName != "" {
+			return t.enumName
+		}
+		return "hex_float"
 	case ValueBoolean:
 		return "boolean"
 	case ValueArray:
@@ -2878,7 +3132,7 @@ func validateVariantValueTypes(members []valueType) error {
 			}
 		case member.kind == ValueRecord:
 			hasSchema = true
-		case member.kind == ValueString || member.kind == ValueInt || member.kind == ValueFloat || member.kind == ValueBoolean:
+		case member.kind == ValueString || member.kind == ValueInt || member.kind == ValueFloat || member.kind == ValueHexInt || member.kind == ValueHexFloat || member.kind == ValueBoolean:
 			hasPrimitive = true
 		default:
 			return validationErrorf("variant members must be primitives, schemas, or enums")
@@ -3047,6 +3301,10 @@ func primitiveValueType(name string) (valueType, error) {
 		return valueType{kind: ValueInt}, nil
 	case "float":
 		return valueType{kind: ValueFloat}, nil
+	case "hex_int":
+		return valueType{kind: ValueHexInt}, nil
+	case "hex_float":
+		return valueType{kind: ValueHexFloat}, nil
 	case "boolean":
 		return valueType{kind: ValueBoolean}, nil
 	default:
@@ -3173,6 +3431,10 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 		return valueType{kind: ValueInt}, nil
 	case ast.FloatLiteral:
 		return valueType{kind: ValueFloat}, nil
+	case ast.HexIntLiteral:
+		return valueType{kind: ValueHexInt}, nil
+	case ast.HexFloatLiteral:
+		return valueType{kind: ValueHexFloat}, nil
 	case ast.StringLiteral:
 		return valueType{kind: ValueString}, nil
 	case ast.BooleanLiteral:
@@ -3275,28 +3537,51 @@ func inferInfixType(expr ast.InfixExpression, variables *variableRegistry, symbo
 		if !leftType.isNumeric() || !rightType.isNumeric() {
 			return valueType{}, validationErrorf("type mismatch: expected numeric operands for '%%'")
 		}
+		if leftType.kind == ValueHexInt && rightType.kind == ValueHexInt {
+			return valueType{kind: ValueHexInt}, nil
+		}
+		if leftType.kind == ValueHexInt || leftType.kind == ValueHexFloat || rightType.kind == ValueHexInt || rightType.kind == ValueHexFloat {
+			return valueType{}, validationErrorf("type mismatch: modulo requires hex_int operands")
+		}
 		if leftType.kind == ValueInt && rightType.kind == ValueInt {
 			return valueType{kind: ValueInt}, nil
 		}
 		return valueType{kind: ValueFloat}, nil
 	case lexer.TokenShiftLeft, lexer.TokenShiftRight, lexer.TokenShiftRightUnsigned:
+		if leftType.kind == ValueHexInt && rightType.kind == ValueHexInt {
+			return valueType{kind: ValueHexInt}, nil
+		}
+		if leftType.kind == ValueHexInt || leftType.kind == ValueHexFloat || rightType.kind == ValueHexInt || rightType.kind == ValueHexFloat {
+			return valueType{}, validationErrorf("type mismatch: shift requires hex_int operands")
+		}
 		if leftType.kind != ValueInt || rightType.kind != ValueInt {
 			return valueType{}, validationErrorf("type mismatch: expected int operands for shift")
 		}
 		return valueType{kind: ValueInt}, nil
 	case lexer.TokenAmpersand, lexer.TokenPipe, lexer.TokenCaret:
+		if leftType.kind == ValueHexInt && rightType.kind == ValueHexInt {
+			return valueType{kind: ValueHexInt}, nil
+		}
+		if leftType.kind == ValueHexInt || leftType.kind == ValueHexFloat || rightType.kind == ValueHexInt || rightType.kind == ValueHexFloat {
+			return valueType{}, validationErrorf("type mismatch: bitwise operator requires hex_int operands")
+		}
 		if leftType.kind != ValueInt || rightType.kind != ValueInt {
 			return valueType{}, validationErrorf("type mismatch: expected int operands for bitwise operator")
 		}
 		return valueType{kind: ValueInt}, nil
 	case lexer.TokenEqualEqual, lexer.TokenNotEqual, lexer.TokenStrictEqual, lexer.TokenStrictNotEqual:
 		if leftType.kind != ValueUnknown && rightType.kind != ValueUnknown && !typesEqual(leftType, rightType) {
-			return valueType{}, validationErrorf("type mismatch: incompatible equality comparison")
+			if !(isHexValueType(leftType) && isHexValueType(rightType)) {
+				return valueType{}, validationErrorf("type mismatch: incompatible equality comparison")
+			}
 		}
 		return valueType{kind: ValueBoolean}, nil
 	case lexer.TokenLess, lexer.TokenLessEqual, lexer.TokenGreater, lexer.TokenGreaterEqual:
 		if !leftType.isNumeric() || !rightType.isNumeric() {
 			return valueType{}, validationErrorf("type mismatch: expected numeric operands for comparison")
+		}
+		if isHexValueType(leftType) != isHexValueType(rightType) {
+			return valueType{}, validationErrorf("type mismatch: expected operands from the same numeric family")
 		}
 		return valueType{kind: ValueBoolean}, nil
 	case lexer.TokenAndAnd, lexer.TokenOrOr:
@@ -3322,6 +3607,18 @@ func inferMergeType(leftType, rightType valueType) (valueType, error) {
 func inferNumericBinary(operator lexer.TokenType, leftType, rightType valueType) (valueType, error) {
 	if !leftType.isNumeric() || !rightType.isNumeric() {
 		return valueType{}, validationErrorf("type mismatch: expected numeric operands for operator")
+	}
+	if isHexValueType(leftType) || isHexValueType(rightType) {
+		if !isHexValueType(leftType) || !isHexValueType(rightType) {
+			return valueType{}, validationErrorf("type mismatch: expected hexadecimal operands for operator")
+		}
+		if operator == lexer.TokenSlash {
+			return valueType{kind: ValueHexFloat}, nil
+		}
+		if leftType.kind == ValueHexInt && rightType.kind == ValueHexInt {
+			return valueType{kind: ValueHexInt}, nil
+		}
+		return valueType{kind: ValueHexFloat}, nil
 	}
 	if leftType.kind == ValueInt && rightType.kind == ValueInt {
 		return valueType{kind: ValueInt}, nil

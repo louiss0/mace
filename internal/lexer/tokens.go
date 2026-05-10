@@ -20,6 +20,8 @@ const (
 	TokenStringType
 	TokenIntType
 	TokenFloatType
+	TokenHexIntType
+	TokenHexFloatType
 	TokenBooleanType
 	TokenOutput
 	TokenSchemaFile
@@ -29,6 +31,8 @@ const (
 	TokenString
 	TokenInt
 	TokenFloat
+	TokenHexInt
+	TokenHexFloat
 	TokenBoolean
 
 	TokenAssign

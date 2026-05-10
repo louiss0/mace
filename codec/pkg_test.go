@@ -168,6 +168,23 @@ schema Audit: { created_at: string; };
 		tAssert.Equal(map[string]any{"value": int64(4)}, result.Data)
 	})
 
+	It("returns hexadecimal values as strings in public output maps", func() {
+		result, err := Parse(`|===|
+hex_int mask = 0xFF;
+hex_float ratio = 0x2.8;
+|===|
+[output = data]
+{
+  mask: mask;
+  ratio: ratio;
+}`)
+		tAssert.NoError(err)
+		tAssert.Equal(map[string]any{
+			"mask":  "0xFF",
+			"ratio": "0x2.8",
+		}, result.Data)
+	})
+
 	It("applies injectable values from a Go map", func() {
 		result, err := ParseWithInjections(`|===|
 injectable string env = "dev";

@@ -22,7 +22,7 @@ type enumMember struct {
 
 func enumDefinitionFromDeclaration(declaration ast.EnumDeclaration) (enumDefinition, error) {
 	backingType, err := primitiveValueType(declaration.BackingType.Name)
-	if err != nil || (backingType.kind != ValueString && backingType.kind != ValueInt && backingType.kind != ValueFloat) {
+	if err != nil || (backingType.kind != ValueString && backingType.kind != ValueInt && backingType.kind != ValueFloat && backingType.kind != ValueHexInt && backingType.kind != ValueHexFloat) {
 		return enumDefinition{}, validationErrorf("invalid enum backing type %q for enum %q", declaration.BackingType.Name, declaration.Name)
 	}
 
@@ -82,6 +82,8 @@ func enumMemberValue(declaration ast.EnumDeclaration, member ast.EnumMember, bac
 			return Value{Kind: ValueInt, Int: int64(index)}, nil
 		case ValueFloat:
 			return Value{Kind: ValueFloat, Float: float64(index) / 10}, nil
+		case ValueHexInt, ValueHexFloat:
+			return Value{}, validationErrorf("enum %q requires explicit member values for %s backing", declaration.Name, declaration.BackingType.Name)
 		default:
 			return Value{}, validationErrorf("invalid enum backing type %q for enum %q", declaration.BackingType.Name, declaration.Name)
 		}
@@ -106,6 +108,18 @@ func enumMemberValue(declaration ast.EnumDeclaration, member ast.EnumMember, bac
 			return Value{}, validationErrorf("enum member %q in enum %q must use a float literal", member.Name, declaration.Name)
 		}
 		return parseFloat(literal.Lexeme)
+	case ValueHexInt:
+		literal, ok := member.Value.(ast.HexIntLiteral)
+		if !ok {
+			return Value{}, validationErrorf("enum member %q in enum %q must use a hex_int literal", member.Name, declaration.Name)
+		}
+		return parseHexInt(literal.Lexeme)
+	case ValueHexFloat:
+		literal, ok := member.Value.(ast.HexFloatLiteral)
+		if !ok {
+			return Value{}, validationErrorf("enum member %q in enum %q must use a hex_float literal", member.Name, declaration.Name)
+		}
+		return parseHexFloat(literal.Lexeme)
 	default:
 		return Value{}, validationErrorf("invalid enum backing type %q for enum %q", declaration.BackingType.Name, declaration.Name)
 	}
@@ -123,6 +137,10 @@ func enumValueKey(value Value) (string, bool) {
 		return "int:" + strconv.FormatInt(value.Int, 10), true
 	case ValueFloat:
 		return "float:" + strconv.FormatFloat(value.Float, 'f', 1, 64), true
+	case ValueHexInt:
+		return "hex_int:" + formatHexInt(value.Int), true
+	case ValueHexFloat:
+		return "hex_float:" + formatHexFloat(value.Float), true
 	default:
 		return "", false
 	}
@@ -136,6 +154,10 @@ func enumValueDisplay(value Value) string {
 		return strconv.FormatInt(value.Int, 10)
 	case ValueFloat:
 		return strconv.FormatFloat(value.Float, 'f', 1, 64)
+	case ValueHexInt:
+		return formatHexInt(value.Int)
+	case ValueHexFloat:
+		return formatHexFloat(value.Float)
 	default:
 		return "unknown"
 	}
@@ -209,7 +231,7 @@ func mergeEnumDefinitions(name string, definitions []enumDefinition) (enumDefini
 					delete(valuesByKey, oldValueKey)
 				}
 			}
-			if backingType.kind == ValueInt {
+			if backingType.kind == ValueInt || backingType.kind == ValueHexInt {
 				for {
 					if _, exists := usedIntValues[value.Int]; !exists {
 						break
@@ -221,7 +243,10 @@ func mergeEnumDefinitions(name string, definitions []enumDefinition) (enumDefini
 				if value.Int >= nextIntValue {
 					nextIntValue = value.Int + 1
 				}
-			} else if backingType.kind == ValueFloat {
+				if backingType.kind == ValueHexInt {
+					value.Kind = ValueHexInt
+				}
+			} else if backingType.kind == ValueFloat || backingType.kind == ValueHexFloat {
 				step := enumFloatStep(value.Float)
 				for {
 					if _, exists := usedFloatValues[step]; !exists {
@@ -231,6 +256,9 @@ func mergeEnumDefinitions(name string, definitions []enumDefinition) (enumDefini
 					nextFloatStep++
 				}
 				value = Value{Kind: ValueFloat, Float: float64(step) / 10}
+				if backingType.kind == ValueHexFloat {
+					value.Kind = ValueHexFloat
+				}
 				usedFloatValues[step] = struct{}{}
 				if step >= nextFloatStep {
 					nextFloatStep = step + 1
