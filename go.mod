@@ -3,6 +3,8 @@ module github.com/louiss0/mace
 go 1.25.5
 
 require (
+	github.com/BurntSushi/toml v1.6.0
+	github.com/goccy/go-yaml v1.19.2
 	github.com/onsi/ginkgo/v2 v2.27.3
 	github.com/pelletier/go-toml/v2 v2.3.0
 	github.com/samber/lo v1.53.0
