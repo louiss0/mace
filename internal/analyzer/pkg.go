@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"github.com/louiss0/mace/internal/lexer"
 	"github.com/louiss0/mace/internal/parser"
 	"github.com/louiss0/mace/internal/parser/ast"
+	"github.com/louiss0/mace/internal/processor"
 )
 
 const serverName = "mace"
@@ -315,10 +317,17 @@ func DiagnosticFromError(err error) protocol.Diagnostic {
 	end := position
 	end.Character++
 
+	code := classifyDiagnosticCode(err.Error())
+	message := err.Error()
+	if diagnosticError, ok := processorDiagnosticError(err); ok {
+		code = diagnosticCodeFromProcessorError(diagnosticError)
+		message = diagnosticError.Message
+	}
+
 	return diagnosticWithCode(protocol.Range{
 		Start: position,
 		End:   end,
-	}, protocol.DiagnosticSeverityError, classifyDiagnosticCode(err.Error()), err.Error())
+	}, protocol.DiagnosticSeverityError, code, message)
 }
 
 func DocumentPath(uri protocol.DocumentUri) string {
@@ -332,6 +341,15 @@ func DocumentPath(uri protocol.DocumentUri) string {
 
 func diagnosticFromError(err error) protocol.Diagnostic {
 	return DiagnosticFromError(err)
+}
+
+func processorDiagnosticError(err error) (processor.DiagnosticError, bool) {
+	var diagnosticError processor.DiagnosticError
+	if !errors.As(err, &diagnosticError) {
+		return processor.DiagnosticError{}, false
+	}
+
+	return diagnosticError, true
 }
 
 func documentPath(uri protocol.DocumentUri) string {

@@ -1351,7 +1351,7 @@ func validateSchemaOutputFieldType(typeRef ast.TypeReference, symbols *symbolTab
 		return nil
 	case ast.NamedType:
 		if symbols.IsVariable(ref.Name) {
-			return validationErrorf("invalid field type %q in output = schema", ref.Name)
+			return diagnosticErrorf(ErrorType, CodeInvalidOutputSchemaField, DiagnosticFields{Name: ref.Name}, "invalid field type %q in output = schema", ref.Name)
 		}
 	}
 
@@ -1381,7 +1381,7 @@ func validateDataOutputExpression(expression ast.Expression, symbols *symbolTabl
 	switch expr := expression.(type) {
 	case ast.Identifier:
 		if symbols.IsType(expr.Name) || symbols.IsSchema(expr.Name) || symbols.IsEnum(expr.Name) {
-			return validationErrorf("output value %q cannot reference type or schema declaration", expr.Name)
+			return diagnosticErrorf(ErrorValue, CodeOutputValueDeclaration, DiagnosticFields{Name: expr.Name}, "output value %q cannot reference type or schema declaration", expr.Name)
 		}
 	case ast.ArrayLiteral:
 		for _, element := range expr.Elements {
@@ -1436,7 +1436,7 @@ func validateOutputSchema(schemaName string, items []ast.OutputField, variables 
 			if field.Optional {
 				continue
 			}
-			return validationErrorf("missing required field %q for schema %q", field.Name, schemaName)
+			return missingRequiredFieldError(field.Name, schemaName)
 		}
 		if item.Optional && !field.Optional {
 			return validationErrorf("field %q is not optional in schema %q", field.Name, schemaName)
@@ -1542,7 +1542,7 @@ func validateExpressionAgainstVariantMembers(expression ast.Expression, members 
 		return nil
 	}
 	if matchCount == 0 {
-		return validationErrorf("type mismatch: expected %s, got %s", valueType{members: members}.name(), actualType.name())
+		return typeMismatchError(valueType{members: members}.name(), actualType.name())
 	}
 
 	return validationErrorf("type mismatch: expected exactly one variant member for %s", valueType{members: members}.name())
@@ -1574,9 +1574,9 @@ func validateRecordLiteralAgainstRecordType(expr ast.RecordLiteral, recordType a
 				continue
 			}
 			if schemaName != "" {
-				return validationErrorf("missing required field %q for schema %q", field.Name, schemaName)
+				return missingRequiredFieldError(field.Name, schemaName)
 			}
-			return validationErrorf("missing required field %q", field.Name)
+			return missingRequiredFieldError(field.Name, "")
 		}
 		if recordField.Optional && !field.Optional {
 			if schemaName != "" {
@@ -1625,7 +1625,7 @@ func validateEvaluatedOutputSchema(schemaName string, fields map[string]Value, s
 			if field.Optional {
 				continue
 			}
-			return validationErrorf("missing required field %q for schema %q", field.Name, schemaName)
+			return missingRequiredFieldError(field.Name, schemaName)
 		}
 
 		expectedType, err := resolveValueType(field.Type, symbols, types, schemas, enums)
@@ -1653,10 +1653,10 @@ func validateEvaluatedValueAgainstType(value Value, expectedType valueType, symb
 	if expectedType.enumName != "" {
 		enumDef, ok := enums.Get(expectedType.enumName)
 		if !ok {
-			return validationErrorf("unknown enum %q", expectedType.enumName)
+			return enumError(CodeUnknownEnum, DiagnosticFields{Name: expectedType.enumName}, "unknown enum %q", expectedType.enumName)
 		}
 		if !enumDef.ContainsValue(value) {
-			return validationErrorf("invalid enum value %s for enum %q", enumValueDisplay(value), expectedType.enumName)
+			return enumError(CodeInvalidEnumValue, DiagnosticFields{Schema: expectedType.enumName}, "invalid enum value %s for enum %q", enumValueDisplay(value), expectedType.enumName)
 		}
 		return nil
 	}
@@ -1664,11 +1664,11 @@ func validateEvaluatedValueAgainstType(value Value, expectedType valueType, symb
 	switch expectedType.kind {
 	case ValueString, ValueInt, ValueFloat, ValueHexInt, ValueHexFloat, ValueBoolean:
 		if value.Kind != expectedType.kind {
-			return validationErrorf("type mismatch: expected %s, got %s", expectedType.name(), value.kindName())
+			return typeMismatchError(expectedType.name(), value.kindName())
 		}
 	case ValueArray:
 		if value.Kind != ValueArray {
-			return validationErrorf("type mismatch: expected %s, got %s", expectedType.name(), value.kindName())
+			return typeMismatchError(expectedType.name(), value.kindName())
 		}
 		if expectedType.element == nil {
 			return nil
@@ -1683,7 +1683,7 @@ func validateEvaluatedValueAgainstType(value Value, expectedType valueType, symb
 			return nil
 		}
 		if value.Kind != ValueRecord {
-			return validationErrorf("type mismatch: expected %s, got %s", expectedType.name(), value.kindName())
+			return typeMismatchError(expectedType.name(), value.kindName())
 		}
 
 		recordType := expectedType.record
@@ -1705,7 +1705,7 @@ func validateEvaluatedValueAgainstType(value Value, expectedType valueType, symb
 				if field.Optional {
 					continue
 				}
-				return validationErrorf("missing required field %q for schema %q", field.Name, expectedType.schemaName)
+				return missingRequiredFieldError(field.Name, expectedType.schemaName)
 			}
 
 			fieldType, err := resolveValueType(field.Type, symbols, types, schemas, enums)
@@ -1732,7 +1732,7 @@ func validateEvaluatedValueAgainstVariantMembers(value Value, members []valueTyp
 		if value.Kind == members[0].kind {
 			return nil
 		}
-		return validationErrorf("type mismatch: expected %s, got %s", valueType{members: members}.name(), value.kindName())
+		return typeMismatchError(valueType{members: members}.name(), value.kindName())
 	}
 
 	matchCount := 0
@@ -1746,7 +1746,7 @@ func validateEvaluatedValueAgainstVariantMembers(value Value, members []valueTyp
 		return nil
 	}
 	if matchCount == 0 {
-		return validationErrorf("type mismatch: expected %s, got %s", valueType{members: members}.name(), value.kindName())
+		return typeMismatchError(valueType{members: members}.name(), value.kindName())
 	}
 
 	return validationErrorf("type mismatch: expected exactly one variant member for %s", valueType{members: members}.name())
@@ -1977,7 +1977,7 @@ func coerceEvaluatedValueAgainstType(expression ast.Expression, value Value, exp
 		}
 		mergedMember, exists := merged.Member(memberAccess.Name)
 		if !exists {
-			return Value{}, validationErrorf("unknown enum member %q in enum union", memberAccess.Name)
+			return Value{}, enumError(CodeUnknownEnumMember, DiagnosticFields{Name: memberAccess.Name}, "unknown enum member %q in enum union", memberAccess.Name)
 		}
 		return mergedMember.Value, nil
 	}
@@ -2007,7 +2007,7 @@ func evaluateExpression(expression ast.Expression, environment *valueEnvironment
 		value, ok := environment.Get(expr.Name)
 		if !ok {
 			if environment.IsMissingInjectable(expr.Name) {
-				return Value{}, validationErrorf("injectable %q requires a runtime value", expr.Name)
+				return Value{}, diagnosticErrorf(ErrorDeclaration, CodeMissingInjectable, DiagnosticFields{Name: expr.Name}, "injectable %q requires a runtime value", expr.Name)
 			}
 			if symbols != nil {
 				if kind, exists := symbols.Get(expr.Name); exists && kind != symbolKindVariable {
@@ -2264,9 +2264,11 @@ func stringifyValue(value Value) (string, error) {
 
 func formatHexInt(value int64) string {
 	if value < 0 {
-		return "-0x" + strings.ToUpper(strconv.FormatInt(-value, 16))
+		magnitude := uint64(-(value + 1))
+		magnitude++
+		return "-0x" + strings.ToUpper(strconv.FormatUint(magnitude, 16))
 	}
-	return "0x" + strings.ToUpper(strconv.FormatInt(value, 16))
+	return "0x" + strings.ToUpper(strconv.FormatUint(uint64(value), 16))
 }
 
 func formatHexFloat(value float64) string {
@@ -2335,7 +2337,7 @@ func evaluateMemberAccess(expr ast.MemberAccess, environment *valueEnvironment, 
 		if enumDef, exists := enums.Get(identifier.Name); exists {
 			member, exists := enumDef.Member(expr.Name)
 			if !exists {
-				return Value{}, validationErrorf("unknown enum member %q in enum %q", expr.Name, identifier.Name)
+				return Value{}, enumError(CodeUnknownEnumMember, DiagnosticFields{Name: expr.Name, Schema: identifier.Name}, "unknown enum member %q in enum %q", expr.Name, identifier.Name)
 			}
 			return member.Value, nil
 		}
@@ -2361,7 +2363,8 @@ func evaluateArrayAccess(expr ast.ArrayAccess, environment *valueEnvironment, se
 		return Value{}, err
 	}
 	if target.Kind != ValueArray {
-		return Value{}, validationErrorf("array access requires an array value at level %d", arrayAccessLevel(expr))
+		level := arrayAccessLevel(expr)
+		return Value{}, diagnosticErrorf(ErrorValue, CodeArrayValueRequired, DiagnosticFields{Level: level}, "array access requires an array value at level %d", level)
 	}
 
 	index, err := strconv.Atoi(expr.Index.Lexeme)
@@ -2369,7 +2372,8 @@ func evaluateArrayAccess(expr ast.ArrayAccess, environment *valueEnvironment, se
 		return Value{}, validationErrorf("array access requires a valid integer index")
 	}
 	if index < 0 || index >= len(target.Array) {
-		return Value{}, validationErrorf("array index %d is out of range at level %d", index, arrayAccessLevel(expr))
+		level := arrayAccessLevel(expr)
+		return Value{}, diagnosticErrorf(ErrorValue, CodeArrayIndexOutOfRange, DiagnosticFields{Index: strconv.Itoa(index), Level: level}, "array index %d is out of range at level %d", index, level)
 	}
 	return target.Array[index], nil
 }
@@ -2919,7 +2923,7 @@ func evaluateSelfReference(expr ast.SelfReference, self Value) (Value, error) {
 		}
 		next, ok := current.Record[name]
 		if !ok {
-			return Value{}, validationErrorf("unknown self reference %q", name)
+			return Value{}, diagnosticErrorf(ErrorValue, CodeSelfReferenceUnknown, DiagnosticFields{Name: name}, "unknown self reference %q", name)
 		}
 		current = next
 	}
@@ -3195,7 +3199,7 @@ func resolveUnionEnumValueTypes(typeRef ast.TypeReference, types *typeRegistry, 
 		if requireUniqueKeys {
 			for _, enumMember := range definition.Members {
 				if _, exists := memberNames[enumMember.Name]; exists {
-					return nil, false, validationErrorf("duplicate enum member %q in enum variant", enumMember.Name)
+					return nil, false, enumError(CodeDuplicateEnumMember, DiagnosticFields{Name: enumMember.Name}, "duplicate enum member %q in enum variant", enumMember.Name)
 				}
 				memberNames[enumMember.Name] = struct{}{}
 			}
@@ -3379,7 +3383,7 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 			enumDef, exists := enums.Get(identifier.Name)
 			if exists {
 				if _, exists := enumDef.Member(expr.Name); !exists {
-					return valueType{}, validationErrorf("unknown enum member %q in enum %q", expr.Name, identifier.Name)
+					return valueType{}, enumError(CodeUnknownEnumMember, DiagnosticFields{Name: expr.Name, Schema: identifier.Name}, "unknown enum member %q in enum %q", expr.Name, identifier.Name)
 				}
 				return valueType{kind: enumDef.BackingType.kind, enumName: identifier.Name}, nil
 			}
@@ -3421,7 +3425,8 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 			return valueType{kind: ValueUnknown}, nil
 		}
 		if targetType.kind != ValueArray {
-			return valueType{}, validationErrorf("array access requires an array value at level %d", arrayAccessLevel(expr))
+			level := arrayAccessLevel(expr)
+			return valueType{}, diagnosticErrorf(ErrorValue, CodeArrayValueRequired, DiagnosticFields{Level: level}, "array access requires an array value at level %d", level)
 		}
 		if targetType.element == nil {
 			return valueType{kind: ValueUnknown}, nil
@@ -3706,10 +3711,10 @@ func ensureAssignable(expectedType, actualType valueType) error {
 				return nil
 			}
 		}
-		return validationErrorf("type mismatch: expected %s, got %s", expectedType.name(), actualType.name())
+		return typeMismatchError(expectedType.name(), actualType.name())
 	}
 	if len(actualType.members) > 0 {
-		return validationErrorf("type mismatch: expected %s, got %s", expectedType.name(), actualType.name())
+		return typeMismatchError(expectedType.name(), actualType.name())
 	}
 	if expectedType.kind == ValueUnknown {
 		return nil
@@ -3718,25 +3723,25 @@ func ensureAssignable(expectedType, actualType valueType) error {
 		return validationErrorf("type mismatch: expected %s, got unknown", expectedType.name())
 	}
 	if expectedType.kind != actualType.kind {
-		return validationErrorf("type mismatch: expected %s, got %s", expectedType.name(), actualType.name())
+		return typeMismatchError(expectedType.name(), actualType.name())
 	}
 	if (expectedType.enumName == "") != (actualType.enumName == "") {
-		return validationErrorf("type mismatch: expected %s, got %s", expectedType.name(), actualType.name())
+		return typeMismatchError(expectedType.name(), actualType.name())
 	}
 	if expectedType.enumName != "" && actualType.enumName != "" && expectedType.enumName != actualType.enumName {
-		return validationErrorf("type mismatch: expected %s, got %s", expectedType.name(), actualType.name())
+		return typeMismatchError(expectedType.name(), actualType.name())
 	}
 	if expectedType.kind == ValueRecord {
 		if expectedType.schemaName != "" && actualType.schemaName != "" && expectedType.schemaName != actualType.schemaName {
-			return validationErrorf("type mismatch: expected %s, got %s", expectedType.name(), actualType.name())
+			return typeMismatchError(expectedType.name(), actualType.name())
 		}
 	}
 	if expectedType.kind == ValueArray {
 		if expectedType.element == nil || actualType.element == nil {
-			return validationErrorf("type mismatch: expected %s, got %s", expectedType.name(), actualType.name())
+			return typeMismatchError(expectedType.name(), actualType.name())
 		}
 		if err := ensureAssignable(*expectedType.element, *actualType.element); err != nil {
-			return validationErrorf("type mismatch: expected %s, got %s", expectedType.name(), actualType.name())
+			return typeMismatchError(expectedType.name(), actualType.name())
 		}
 		return nil
 	}
@@ -3932,16 +3937,4 @@ func (v *variableRegistry) Add(name string, valueType valueType) {
 func (v *variableRegistry) Get(name string) (valueType, bool) {
 	valueType, exists := v.variables[name]
 	return valueType, exists
-}
-
-type validationError struct {
-	message string
-}
-
-func (err validationError) Error() string {
-	return err.message
-}
-
-func validationErrorf(format string, args ...any) error {
-	return validationError{message: fmt.Sprintf("processor: %s", fmt.Sprintf(format, args...))}
 }

@@ -23,7 +23,7 @@ type enumMember struct {
 func enumDefinitionFromDeclaration(declaration ast.EnumDeclaration) (enumDefinition, error) {
 	backingType, err := primitiveValueType(declaration.BackingType.Name)
 	if err != nil || (backingType.kind != ValueString && backingType.kind != ValueInt && backingType.kind != ValueFloat && backingType.kind != ValueHexInt && backingType.kind != ValueHexFloat) {
-		return enumDefinition{}, validationErrorf("invalid enum backing type %q for enum %q", declaration.BackingType.Name, declaration.Name)
+		return enumDefinition{}, enumError(CodeInvalidEnumBackingType, DiagnosticFields{Name: declaration.Name, Actual: declaration.BackingType.Name}, "invalid enum backing type %q for enum %q", declaration.BackingType.Name, declaration.Name)
 	}
 
 	valuesByKey := map[string]Value{}
@@ -34,7 +34,7 @@ func enumDefinitionFromDeclaration(declaration ast.EnumDeclaration) (enumDefinit
 
 	for index, member := range declaration.Members {
 		if _, exists := memberNames[member.Name]; exists {
-			return enumDefinition{}, validationErrorf("duplicate enum member %q in enum %q", member.Name, declaration.Name)
+			return enumDefinition{}, enumError(CodeDuplicateEnumMember, DiagnosticFields{Name: member.Name, Schema: declaration.Name}, "duplicate enum member %q in enum %q", member.Name, declaration.Name)
 		}
 		memberNames[member.Name] = struct{}{}
 
@@ -51,10 +51,10 @@ func enumDefinitionFromDeclaration(declaration ast.EnumDeclaration) (enumDefinit
 
 		key, ok := enumValueKey(value)
 		if !ok {
-			return enumDefinition{}, validationErrorf("invalid enum value for enum %q", declaration.Name)
+			return enumDefinition{}, enumError(CodeInvalidEnumValue, DiagnosticFields{Schema: declaration.Name}, "invalid enum value for enum %q", declaration.Name)
 		}
 		if _, exists := valuesByKey[key]; exists {
-			return enumDefinition{}, validationErrorf("duplicate enum value %s in enum %q", enumValueDisplay(value), declaration.Name)
+			return enumDefinition{}, enumError(CodeDuplicateEnumValue, DiagnosticFields{Schema: declaration.Name}, "duplicate enum value %s in enum %q", enumValueDisplay(value), declaration.Name)
 		}
 		valuesByKey[key] = value
 
@@ -62,7 +62,7 @@ func enumDefinitionFromDeclaration(declaration ast.EnumDeclaration) (enumDefinit
 	}
 
 	if hasExplicitValues && hasImplicitValues {
-		return enumDefinition{}, validationErrorf("enum %q mixes implicit and explicit member values", declaration.Name)
+		return enumDefinition{}, enumError(CodeEnumMixedValues, DiagnosticFields{Name: declaration.Name}, "enum %q mixes implicit and explicit member values", declaration.Name)
 	}
 
 	return enumDefinition{
@@ -83,9 +83,9 @@ func enumMemberValue(declaration ast.EnumDeclaration, member ast.EnumMember, bac
 		case ValueFloat:
 			return Value{Kind: ValueFloat, Float: float64(index) / 10}, nil
 		case ValueHexInt, ValueHexFloat:
-			return Value{}, validationErrorf("enum %q requires explicit member values for %s backing", declaration.Name, declaration.BackingType.Name)
+			return Value{}, enumError(CodeEnumRequiresExplicitValues, DiagnosticFields{Name: declaration.Name, Expected: declaration.BackingType.Name}, "enum %q requires explicit member values for %s backing", declaration.Name, declaration.BackingType.Name)
 		default:
-			return Value{}, validationErrorf("invalid enum backing type %q for enum %q", declaration.BackingType.Name, declaration.Name)
+			return Value{}, enumError(CodeInvalidEnumBackingType, DiagnosticFields{Name: declaration.Name, Actual: declaration.BackingType.Name}, "invalid enum backing type %q for enum %q", declaration.BackingType.Name, declaration.Name)
 		}
 	}
 
@@ -93,35 +93,35 @@ func enumMemberValue(declaration ast.EnumDeclaration, member ast.EnumMember, bac
 	case ValueString:
 		literal, ok := member.Value.(ast.StringLiteral)
 		if !ok {
-			return Value{}, validationErrorf("enum member %q in enum %q must use a string literal", member.Name, declaration.Name)
+			return Value{}, enumError(CodeEnumMemberValueType, DiagnosticFields{Name: member.Name, Schema: declaration.Name, Expected: "string"}, "enum member %q in enum %q must use a string literal", member.Name, declaration.Name)
 		}
 		return parseStaticString(literal.Lexeme)
 	case ValueInt:
 		literal, ok := member.Value.(ast.IntLiteral)
 		if !ok {
-			return Value{}, validationErrorf("enum member %q in enum %q must use an int literal", member.Name, declaration.Name)
+			return Value{}, enumError(CodeEnumMemberValueType, DiagnosticFields{Name: member.Name, Schema: declaration.Name, Expected: "int"}, "enum member %q in enum %q must use an int literal", member.Name, declaration.Name)
 		}
 		return parseInt(literal.Lexeme)
 	case ValueFloat:
 		literal, ok := member.Value.(ast.FloatLiteral)
 		if !ok {
-			return Value{}, validationErrorf("enum member %q in enum %q must use a float literal", member.Name, declaration.Name)
+			return Value{}, enumError(CodeEnumMemberValueType, DiagnosticFields{Name: member.Name, Schema: declaration.Name, Expected: "float"}, "enum member %q in enum %q must use a float literal", member.Name, declaration.Name)
 		}
 		return parseFloat(literal.Lexeme)
 	case ValueHexInt:
 		literal, ok := member.Value.(ast.HexIntLiteral)
 		if !ok {
-			return Value{}, validationErrorf("enum member %q in enum %q must use a hex_int literal", member.Name, declaration.Name)
+			return Value{}, enumError(CodeEnumMemberValueType, DiagnosticFields{Name: member.Name, Schema: declaration.Name, Expected: "hex_int"}, "enum member %q in enum %q must use a hex_int literal", member.Name, declaration.Name)
 		}
 		return parseHexInt(literal.Lexeme)
 	case ValueHexFloat:
 		literal, ok := member.Value.(ast.HexFloatLiteral)
 		if !ok {
-			return Value{}, validationErrorf("enum member %q in enum %q must use a hex_float literal", member.Name, declaration.Name)
+			return Value{}, enumError(CodeEnumMemberValueType, DiagnosticFields{Name: member.Name, Schema: declaration.Name, Expected: "hex_float"}, "enum member %q in enum %q must use a hex_float literal", member.Name, declaration.Name)
 		}
 		return parseHexFloat(literal.Lexeme)
 	default:
-		return Value{}, validationErrorf("invalid enum backing type %q for enum %q", declaration.BackingType.Name, declaration.Name)
+		return Value{}, enumError(CodeInvalidEnumBackingType, DiagnosticFields{Name: declaration.Name, Actual: declaration.BackingType.Name}, "invalid enum backing type %q for enum %q", declaration.BackingType.Name, declaration.Name)
 	}
 }
 
@@ -266,7 +266,7 @@ func mergeEnumDefinitions(name string, definitions []enumDefinition) (enumDefini
 			} else {
 				key, ok := enumValueKey(value)
 				if !ok {
-					return enumDefinition{}, validationErrorf("invalid enum value for enum %q", definition.Name)
+					return enumDefinition{}, enumError(CodeInvalidEnumValue, DiagnosticFields{Schema: definition.Name}, "invalid enum value for enum %q", definition.Name)
 				}
 				if _, exists := valuesByKey[key]; exists {
 					value = Value{Kind: ValueString, String: member.Name}
@@ -282,7 +282,7 @@ func mergeEnumDefinitions(name string, definitions []enumDefinition) (enumDefini
 
 			key, ok := enumValueKey(value)
 			if !ok {
-				return enumDefinition{}, validationErrorf("invalid enum value for enum %q", definition.Name)
+				return enumDefinition{}, enumError(CodeInvalidEnumValue, DiagnosticFields{Schema: definition.Name}, "invalid enum value for enum %q", definition.Name)
 			}
 			valuesByKey[key] = value
 		}

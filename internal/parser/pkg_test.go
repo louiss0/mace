@@ -419,6 +419,14 @@ var _ = Describe("Parser", func() {
 	)
 
 	Describe("parses a full file", func() {
+		It("returns an error for an empty script block", func() {
+			_, err := parseFileInput(`|===|
+|===|
+[output = data]
+{}`)
+			tAssert.Error(err)
+			tAssert.Contains(err.Error(), "empty script block")
+		})
 		It("parses script imports, declarations, and output block", func() {
 			input := `|===|
 from "base.mace" import User, Config;

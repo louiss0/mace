@@ -6,6 +6,7 @@ import (
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
 	"github.com/louiss0/mace/internal/parser/ast"
+	"github.com/louiss0/mace/internal/processor"
 )
 
 type diagnosticCode string
@@ -13,6 +14,7 @@ type diagnosticCode string
 const (
 	diagnosticSyntaxUnterminatedScriptBlock         diagnosticCode = "mace.syntax.unterminated-script-block"
 	diagnosticSyntaxInconsistentScriptDelimiters    diagnosticCode = "mace.syntax.inconsistent-script-delimiters"
+	diagnosticSyntaxEmptyScriptBlock                diagnosticCode = "mace.syntax.empty-script-block"
 	diagnosticSyntaxMalformedImport                 diagnosticCode = "mace.syntax.malformed-import"
 	diagnosticSyntaxMalformedDirectiveList          diagnosticCode = "mace.syntax.malformed-directive-list"
 	diagnosticSyntaxMalformedEnum                   diagnosticCode = "mace.syntax.malformed-enum"
@@ -94,6 +96,8 @@ func diagnosticWithCode(rangeValue protocol.Range, severity protocol.DiagnosticS
 
 func classifyParseDiagnostic(message string) diagnosticCode {
 	switch {
+	case strings.Contains(message, "empty script block"):
+		return diagnosticSyntaxEmptyScriptBlock
 	case strings.Contains(message, "expected closing script delimiter") && strings.Contains(message, "EOF"):
 		return diagnosticSyntaxUnterminatedScriptBlock
 	case strings.Contains(message, "script delimiter"):
@@ -206,6 +210,60 @@ func classifyDiagnosticCode(message string) diagnosticCode {
 		return classifyProcessorDiagnostic(message)
 	default:
 		return diagnosticSyntaxUnexpectedToken
+	}
+}
+
+func diagnosticCodeFromProcessorError(err processor.DiagnosticError) diagnosticCode {
+	switch err.Code {
+	case processor.CodeArrayIndexOutOfRange, processor.CodeArrayValueRequired:
+		return diagnosticTypeInvalidArrayAccess
+	case processor.CodeDuplicateEnumMember:
+		return diagnosticDeclarationDuplicateEnumMember
+	case processor.CodeDuplicateEnumValue:
+		return diagnosticDeclarationDuplicateEnumValue
+	case processor.CodeEnumMemberValueType:
+		return diagnosticDeclarationEnumMemberValueType
+	case processor.CodeEnumMixedValues:
+		return diagnosticDeclarationMixedEnumValues
+	case processor.CodeEnumRequiresExplicitValues:
+		return diagnosticDeclarationEnumRequiresExplicitValues
+	case processor.CodeInvalidEnumBackingType:
+		return diagnosticDeclarationInvalidEnumBackingType
+	case processor.CodeInvalidEnumValue:
+		return diagnosticTypeInvalidEnumValue
+	case processor.CodeInvalidOutputSchemaField:
+		return diagnosticTypeInvalidOutputSchemaField
+	case processor.CodeMissingInjectable:
+		return diagnosticDeclarationVariableMissingInitializer
+	case processor.CodeMissingRequiredField:
+		return diagnosticTypeRecordDoesNotMatchSchema
+	case processor.CodeOutputValueDeclaration:
+		return diagnosticTypeUnknownIdentifier
+	case processor.CodeSelfReferenceUnknown:
+		return diagnosticTypeUnknownSelfField
+	case processor.CodeTypeMismatch:
+		return diagnosticTypeInitializerMismatch
+	case processor.CodeUnknownEnum, processor.CodeUnknownEnumMember:
+		return diagnosticTypeInvalidEnumValue
+	}
+
+	switch err.Kind {
+	case processor.ErrorImport:
+		return diagnosticImportFileFailedParse
+	case processor.ErrorDirective:
+		return diagnosticDirectiveUnknownKey
+	case processor.ErrorDeclaration:
+		return diagnosticDeclarationDuplicateVariable
+	case processor.ErrorType:
+		return diagnosticTypeInitializerMismatch
+	case processor.ErrorValue:
+		return diagnosticTypeUnknownIdentifier
+	case processor.ErrorOperator:
+		return diagnosticTypeInvalidBinaryOperator
+	case processor.ErrorSchema:
+		return diagnosticTypeRecordDoesNotMatchSchema
+	default:
+		return classifyProcessorDiagnostic(err.Message)
 	}
 }
 

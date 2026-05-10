@@ -1393,6 +1393,7 @@ string value = "Ada";
 		Entry("hex addition", `[output = data] { result: 0x0F + 0x01; }`, expectedValue{kind: ValueHexInt, string: "0x10"}),
 		Entry("subtraction", `[output = data] { result: 5 - 3; }`, expectedValue{kind: ValueInt, int64: 2}),
 		Entry("multiplication", `[output = data] { result: 2 * 3; }`, expectedValue{kind: ValueInt, int64: 6}),
+		Entry("hex multiplication overflow", `[output = data] { result: 0x4000000000000000 * 0x2; }`, expectedValue{kind: ValueHexInt, string: "-0x8000000000000000"}),
 		Entry("division", `[output = data] { result: 8 / 2; }`, expectedValue{kind: ValueInt, int64: 4}),
 		Entry("hex division", `[output = data] { result: 0x05 / 0x02; }`, expectedValue{kind: ValueHexFloat, string: "0x2.8"}),
 		Entry("modulo", `[output = data] { result: 9 % 4; }`, expectedValue{kind: ValueInt, int64: 1}),
