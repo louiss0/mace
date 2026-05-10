@@ -2264,9 +2264,11 @@ func stringifyValue(value Value) (string, error) {
 
 func formatHexInt(value int64) string {
 	if value < 0 {
-		return "-0x" + strings.ToUpper(strconv.FormatInt(-value, 16))
+		magnitude := uint64(-(value + 1))
+		magnitude++
+		return "-0x" + strings.ToUpper(strconv.FormatUint(magnitude, 16))
 	}
-	return "0x" + strings.ToUpper(strconv.FormatInt(value, 16))
+	return "0x" + strings.ToUpper(strconv.FormatUint(uint64(value), 16))
 }
 
 func formatHexFloat(value float64) string {
