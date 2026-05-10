@@ -50,9 +50,17 @@ type mergeExpression struct {
 	parts []importExpression
 }
 
+type omittedExpression struct{}
+
+type yamlAnchor struct {
+	path  string
+	value importExpression
+}
+
 type yamlImportState struct {
-	anchors map[string]string
-	hoists  map[string]importExpression
+	anchors    map[string]yamlAnchor
+	hoists     map[string]importExpression
+	hoistOrder []string
 }
 
 type tomlImportConfig struct {
@@ -60,7 +68,11 @@ type tomlImportConfig struct {
 }
 
 func importYAMLSource(path string, input string) (string, error) {
-	schemaPath := adjustedSchemaPath(path, input, yamlSchemaPattern)
+	return importYAMLSourceToPath(path, defaultImportOutputPath(path), input)
+}
+
+func importYAMLSourceToPath(sourcePath string, outputPath string, input string) (string, error) {
+	schemaPath := adjustedSchemaPath(sourcePath, outputPath, input, yamlSchemaPattern)
 
 	file, err := yamlparser.Parse(yamllexer.Tokenize(input), 0)
 	if err != nil {
@@ -76,7 +88,11 @@ func importYAMLSource(path string, input string) (string, error) {
 }
 
 func importTOMLSource(path string, input string) (string, error) {
-	schemaPath := adjustedSchemaPath(path, input, tomlSchemaPattern)
+	return importTOMLSourceToPath(path, defaultImportOutputPath(path), input)
+}
+
+func importTOMLSourceToPath(sourcePath string, outputPath string, input string) (string, error) {
+	schemaPath := adjustedSchemaPath(sourcePath, outputPath, input, tomlSchemaPattern)
 
 	var value map[string]any
 	metadata, err := burnttoml.Decode(input, &value)
@@ -103,12 +119,18 @@ func yamlRootExpression(file *yamlast.File) (recordExpression, error) {
 	}
 
 	if len(file.Docs) == 1 {
-		state := yamlImportState{anchors: map[string]string{}, hoists: map[string]importExpression{}}
+		state := yamlImportState{
+			anchors: map[string]yamlAnchor{},
+			hoists:  map[string]importExpression{},
+		}
 		expression, err := yamlNodeExpression(file.Docs[0].Body, "", &state)
 		if err != nil {
 			return recordExpression{}, err
 		}
-		record, ok := expression.(recordExpression)
+		record, ok, err := yamlDocumentRecord(expression, &state)
+		if err != nil {
+			return recordExpression{}, err
+		}
 		if !ok {
 			return recordExpression{fields: []recordField{{name: "document_1", value: expression}}}, nil
 		}
@@ -118,12 +140,18 @@ func yamlRootExpression(file *yamlast.File) (recordExpression, error) {
 	fields := make([]recordField, 0, len(file.Docs))
 	for index, document := range file.Docs {
 		name := fmt.Sprintf("document_%d", index+1)
-		state := yamlImportState{anchors: map[string]string{}, hoists: map[string]importExpression{}}
+		state := yamlImportState{
+			anchors: map[string]yamlAnchor{},
+			hoists:  map[string]importExpression{},
+		}
 		expression, err := yamlNodeExpression(document.Body, "", &state)
 		if err != nil {
 			return recordExpression{}, err
 		}
-		record, ok := expression.(recordExpression)
+		record, ok, err := yamlDocumentRecord(expression, &state)
+		if err != nil {
+			return recordExpression{}, err
+		}
 		if !ok {
 			fields = append(fields, recordField{name: name, value: expression})
 			continue
@@ -143,32 +171,42 @@ func yamlRecordWithHoists(record recordExpression, state *yamlImportState) (reco
 		return record, nil
 	}
 
-	rootNames := map[string]struct{}{}
+	fieldByName := map[string]recordField{}
+	fieldOrder := make([]string, 0, len(record.fields)+len(state.hoists))
 	for _, field := range record.fields {
-		rootNames[field.name] = struct{}{}
+		fieldByName[field.name] = field
+		fieldOrder = append(fieldOrder, field.name)
 	}
 
-	hoistedNames := make([]string, 0, len(state.hoists))
-	for name := range state.hoists {
-		if _, exists := rootNames[name]; exists {
+	for _, name := range state.hoistOrder {
+		if _, exists := fieldByName[name]; exists {
 			continue
 		}
-		hoistedNames = append(hoistedNames, name)
+		value, ok := state.hoists[name]
+		if !ok || isOmittedImportExpression(value) {
+			continue
+		}
+		fieldByName[name] = recordField{name: name, value: value}
+		fieldOrder = append(fieldOrder, name)
 	}
-	slices.Sort(hoistedNames)
 
-	fields := make([]recordField, 0, len(hoistedNames)+len(record.fields))
-	for _, name := range hoistedNames {
-		fields = append(fields, recordField{name: name, value: state.hoists[name]})
+	orderedNames, err := yamlOrderedFieldNames(fieldOrder, fieldByName)
+	if err != nil {
+		return recordExpression{}, err
 	}
-	fields = append(fields, record.fields...)
+
+	fields := make([]recordField, 0, len(orderedNames))
+	for _, name := range orderedNames {
+		fields = append(fields, fieldByName[name])
+	}
+
 	return recordExpression{fields: fields}, nil
 }
 
 func yamlNodeExpression(node yamlast.Node, selfPath string, state *yamlImportState) (importExpression, error) {
 	switch typed := node.(type) {
 	case nil:
-		return rawExpression{text: `""`}, nil
+		return omittedExpression{}, nil
 	case *yamlast.DocumentNode:
 		return yamlNodeExpression(typed.Body, selfPath, state)
 	case *yamlast.AnchorNode:
@@ -180,26 +218,34 @@ func yamlNodeExpression(node yamlast.Node, selfPath string, state *yamlImportSta
 			return nil, fmt.Errorf("import yaml: anchor %q must be attached to a named value", name)
 		}
 		targetPath := "$self." + name
-		state.anchors[name] = targetPath
+		state.anchors[name] = yamlAnchor{path: targetPath}
 		value, err := yamlNodeExpression(typed.Value, selfPath, state)
 		if err != nil {
 			return nil, err
 		}
+		anchor := state.anchors[name]
+		anchor.value = value
+		state.anchors[name] = anchor
 		if selfPath == targetPath {
 			return value, nil
 		}
-		state.hoists[name] = value
+		if !isOmittedImportExpression(value) {
+			yamlRememberHoist(state, name, value)
+		}
 		return rawExpression{text: targetPath}, nil
 	case *yamlast.AliasNode:
 		name, err := yamlAliasName(typed.Value)
 		if err != nil {
 			return nil, err
 		}
-		targetPath, ok := state.anchors[name]
+		anchor, ok := state.anchors[name]
 		if !ok {
 			return nil, fmt.Errorf("import yaml: unknown alias %q", name)
 		}
-		return rawExpression{text: targetPath}, nil
+		if isOmittedImportExpression(anchor.value) {
+			return omittedExpression{}, nil
+		}
+		return rawExpression{text: anchor.path}, nil
 	case *yamlast.TagNode:
 		return yamlNodeExpression(typed.Value, selfPath, state)
 	case *yamlast.MappingNode:
@@ -213,6 +259,9 @@ func yamlNodeExpression(node yamlast.Node, selfPath string, state *yamlImportSta
 			if err != nil {
 				return nil, err
 			}
+			if isOmittedImportExpression(expression) {
+				continue
+			}
 			items = append(items, expression)
 		}
 		return arrayExpression{items: items}, nil
@@ -221,17 +270,20 @@ func yamlNodeExpression(node yamlast.Node, selfPath string, state *yamlImportSta
 	case *yamlast.LiteralNode:
 		return rawExpression{text: tripleQuotedString(typed.Value.Value)}, nil
 	case *yamlast.BoolNode:
-		return rawExpression{text: typed.GetToken().Value}, nil
+		if typed.Value {
+			return rawExpression{text: "true"}, nil
+		}
+		return rawExpression{text: "false"}, nil
 	case *yamlast.IntegerNode:
 		return rawExpression{text: fmt.Sprint(typed.Value)}, nil
 	case *yamlast.FloatNode:
-		return rawExpression{text: typed.GetToken().Value}, nil
+		return rawExpression{text: yamlFloatLiteral(typed.Value)}, nil
 	case *yamlast.InfinityNode:
 		return rawExpression{text: strconv.Quote(typed.GetToken().Value)}, nil
 	case *yamlast.NanNode:
 		return rawExpression{text: strconv.Quote(typed.GetToken().Value)}, nil
 	case *yamlast.NullNode:
-		return rawExpression{text: `""`}, nil
+		return omittedExpression{}, nil
 	default:
 		return nil, fmt.Errorf("import yaml: unsupported node %T", node)
 	}
@@ -262,6 +314,9 @@ func yamlMappingExpression(iter *yamlast.MapNodeIter, selfPath string, state *ya
 		expression, err := yamlNodeExpression(iter.Value(), selfFieldPath(selfPath, name), state)
 		if err != nil {
 			return nil, err
+		}
+		if isOmittedImportExpression(expression) {
+			continue
 		}
 		fields = append(fields, recordField{name: name, value: expression})
 	}
@@ -490,12 +545,12 @@ func orderedRecordNames(record map[string]any, path []string, fieldOrder map[str
 	return append(ordered, remaining...)
 }
 
-func adjustedSchemaPath(_ string, input string, pattern *regexp.Regexp) string {
+func adjustedSchemaPath(sourcePath string, outputPath string, input string, pattern *regexp.Regexp) string {
 	matches := pattern.FindStringSubmatch(input)
 	if len(matches) != 2 {
 		return ""
 	}
-	return schemaReferenceToMace(matches[1])
+	return adjustedSchemaReferenceToMace(matches[1], sourcePath, outputPath)
 }
 
 func schemaReferenceToMace(reference string) string {
@@ -515,6 +570,58 @@ func schemaReferenceToMace(reference string) string {
 		separator = "/"
 	}
 	return schemaPathToMace(trimmed, separator)
+}
+
+func adjustedSchemaReferenceToMace(reference string, sourcePath string, outputPath string) string {
+	trimmed := strings.TrimSpace(reference)
+	if trimmed == "" {
+		return ""
+	}
+	if strings.Contains(trimmed, "://") {
+		return schemaReferenceToMace(trimmed)
+	}
+
+	basePath, suffix := schemaReferenceParts(trimmed)
+	if basePath == "" {
+		return schemaReferenceToMace(trimmed)
+	}
+
+	if filepath.IsAbs(basePath) {
+		return filepath.ToSlash(schemaPathToMace(basePath, string(filepath.Separator))) + suffix
+	}
+
+	resolvedPath := filepath.Clean(filepath.Join(filepath.Dir(sourcePath), filepath.FromSlash(basePath)))
+	rebasedPath := resolvedPath
+	if outputPath != "" {
+		relativePath, err := filepath.Rel(filepath.Dir(outputPath), resolvedPath)
+		if err == nil {
+			rebasedPath = relativePath
+		}
+	}
+
+	return explicitRelativeSchemaPath(filepath.ToSlash(schemaPathToMace(rebasedPath, string(filepath.Separator)))) + suffix
+}
+
+func schemaReferenceParts(reference string) (string, string) {
+	for index, character := range reference {
+		if character == '?' || character == '#' {
+			return reference[:index], reference[index:]
+		}
+	}
+	return reference, ""
+}
+
+func explicitRelativeSchemaPath(path string) string {
+	if path == "" {
+		return ""
+	}
+	if strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../") {
+		return path
+	}
+	if filepath.IsAbs(path) {
+		return path
+	}
+	return "./" + path
 }
 
 func schemaPathToMace(path string, separator string) string {
@@ -570,6 +677,10 @@ func formatImportedSource(source string) (string, error) {
 	return formatted, nil
 }
 
+func defaultImportOutputPath(sourcePath string) string {
+	return strings.TrimSuffix(sourcePath, filepath.Ext(sourcePath)) + ".mace"
+}
+
 func validateImportFieldName(name string) error {
 	if importFieldPattern.MatchString(name) {
 		return nil
@@ -601,6 +712,182 @@ func pathKey(path []string) string {
 
 func tripleQuotedString(value string) string {
 	return `"""` + value + `"""`
+}
+
+func isOmittedImportExpression(expression importExpression) bool {
+	_, isOmitted := expression.(omittedExpression)
+	return isOmitted
+}
+
+func yamlRememberHoist(state *yamlImportState, name string, value importExpression) {
+	if _, exists := state.hoists[name]; !exists {
+		state.hoistOrder = append(state.hoistOrder, name)
+	}
+	state.hoists[name] = value
+}
+
+func yamlDocumentRecord(expression importExpression, state *yamlImportState) (recordExpression, bool, error) {
+	switch typed := expression.(type) {
+	case recordExpression:
+		return typed, true, nil
+	case mergeExpression:
+		record, err := yamlResolvedRecord(typed, state)
+		return record, err == nil, err
+	default:
+		return recordExpression{}, false, nil
+	}
+}
+
+func yamlResolvedRecord(expression importExpression, state *yamlImportState) (recordExpression, error) {
+	switch typed := expression.(type) {
+	case recordExpression:
+		return typed, nil
+	case mergeExpression:
+		fields := []recordField{}
+		indexByName := map[string]int{}
+		for _, part := range typed.parts {
+			record, err := yamlResolvedRecord(part, state)
+			if err != nil {
+				return recordExpression{}, err
+			}
+			for _, field := range record.fields {
+				if index, exists := indexByName[field.name]; exists {
+					fields[index] = field
+					continue
+				}
+				indexByName[field.name] = len(fields)
+				fields = append(fields, field)
+			}
+		}
+		return recordExpression{fields: fields}, nil
+	case rawExpression:
+		name, ok := yamlTopLevelReferenceName(typed.text)
+		if !ok {
+			return recordExpression{}, fmt.Errorf("import yaml: merge source %q is not a record", typed.text)
+		}
+		anchor, exists := state.anchors[name]
+		if !exists {
+			return recordExpression{}, fmt.Errorf("import yaml: unknown merge source %q", typed.text)
+		}
+		return yamlResolvedRecord(anchor.value, state)
+	default:
+		return recordExpression{}, fmt.Errorf("import yaml: merge source %T is not a record", expression)
+	}
+}
+
+func yamlOrderedFieldNames(initialOrder []string, fieldByName map[string]recordField) ([]string, error) {
+	orderIndex := map[string]int{}
+	for index, name := range initialOrder {
+		orderIndex[name] = index
+	}
+
+	dependenciesByName := map[string]map[string]struct{}{}
+	dependentsByName := map[string][]string{}
+	for name, field := range fieldByName {
+		dependencies := yamlExpressionDependencies(field.value, fieldByName)
+		dependenciesByName[name] = dependencies
+		for dependency := range dependencies {
+			dependentsByName[dependency] = append(dependentsByName[dependency], name)
+		}
+	}
+
+	ready := []string{}
+	for _, name := range initialOrder {
+		if len(dependenciesByName[name]) == 0 {
+			ready = append(ready, name)
+		}
+	}
+
+	sortReady := func() {
+		slices.SortFunc(ready, func(left string, right string) int {
+			return orderIndex[left] - orderIndex[right]
+		})
+	}
+	sortReady()
+
+	ordered := make([]string, 0, len(fieldByName))
+	queued := map[string]struct{}{}
+	for _, name := range ready {
+		queued[name] = struct{}{}
+	}
+
+	for len(ready) > 0 {
+		name := ready[0]
+		ready = ready[1:]
+		ordered = append(ordered, name)
+
+		for _, dependent := range dependentsByName[name] {
+			dependencies := dependenciesByName[dependent]
+			delete(dependencies, name)
+			if len(dependencies) != 0 {
+				continue
+			}
+			if _, exists := queued[dependent]; exists {
+				continue
+			}
+			ready = append(ready, dependent)
+			queued[dependent] = struct{}{}
+			sortReady()
+		}
+	}
+
+	if len(ordered) != len(fieldByName) {
+		return nil, fmt.Errorf("import yaml: top-level anchor references are cyclic")
+	}
+	return ordered, nil
+}
+
+func yamlExpressionDependencies(expression importExpression, fieldByName map[string]recordField) map[string]struct{} {
+	dependencies := map[string]struct{}{}
+
+	var visit func(importExpression)
+	visit = func(expression importExpression) {
+		switch typed := expression.(type) {
+		case rawExpression:
+			name, ok := yamlTopLevelReferenceName(typed.text)
+			if !ok {
+				return
+			}
+			if _, exists := fieldByName[name]; exists {
+				dependencies[name] = struct{}{}
+			}
+		case arrayExpression:
+			for _, item := range typed.items {
+				visit(item)
+			}
+		case recordExpression:
+			for _, field := range typed.fields {
+				visit(field.value)
+			}
+		case mergeExpression:
+			for _, part := range typed.parts {
+				visit(part)
+			}
+		}
+	}
+
+	visit(expression)
+	return dependencies
+}
+
+func yamlTopLevelReferenceName(path string) (string, bool) {
+	if !strings.HasPrefix(path, "$self.") {
+		return "", false
+	}
+
+	name := strings.TrimPrefix(path, "$self.")
+	if name == "" || strings.ContainsAny(name, ".[") {
+		return "", false
+	}
+	return name, true
+}
+
+func yamlFloatLiteral(value float64) string {
+	literal := strconv.FormatFloat(value, 'f', -1, 64)
+	if strings.ContainsAny(literal, ".") {
+		return literal
+	}
+	return literal + ".0"
 }
 
 func (expression rawExpression) render(int) string {
@@ -651,4 +938,8 @@ func (expression mergeExpression) render(depth int) string {
 		parts = append(parts, part.render(depth))
 	}
 	return strings.Join(parts, " <> ")
+}
+
+func (expression omittedExpression) render(int) string {
+	return ""
 }

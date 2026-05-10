@@ -679,6 +679,94 @@ primary_user:
 		tAssert.Equal(int64(1), document2["total_users"])
 	})
 
+	It("keeps root YAML merge mappings at the top level", func() {
+		input := `defaults: &defaults
+  enabled: true
+  retries: 3
+<<: *defaults
+name: api
+`
+
+		source, err := importYAMLSource(filepath.Join("workspace", "root_merge.yaml"), input)
+		tAssert.NoError(err)
+		tAssert.NotContains(source, "document_1")
+		tAssert.Contains(source, "enabled: true")
+		tAssert.Contains(source, "retries: 3")
+		tAssert.Contains(source, "defaults: {")
+
+		output := importedOutput(source)
+		tAssert.Equal(true, output["enabled"])
+		tAssert.Equal(int64(3), output["retries"])
+		tAssert.Equal("api", output["name"])
+	})
+
+	It("orders hoisted YAML anchors before fields that depend on them", func() {
+		input := `service:
+  value_holder: &z
+    host: db.internal
+  alias_holder: &a
+    target: *z
+copy_a: *a
+`
+
+		source, err := importYAMLSource(filepath.Join("workspace", "anchor_dependency.yaml"), input)
+		tAssert.NoError(err)
+		tAssert.Equal(`[output = data]
+{
+  z: {
+    host: "db.internal"
+  },
+  a: {
+    target: $self.z
+  },
+  service: {
+    value_holder: $self.z,
+    alias_holder: $self.a
+  },
+  copy_a: $self.a
+}`, source)
+
+		output := importedOutput(source)
+		copyA := output["copy_a"].(map[string]any)
+		tAssert.Equal("db.internal", copyA["target"].(map[string]any)["host"])
+	})
+
+	It("normalizes YAML booleans and floats to valid Mace literals", func() {
+		input := `enabled: TRUE
+threshold: .5
+`
+
+		source, err := importYAMLSource(filepath.Join("workspace", "normalized_scalars.yaml"), input)
+		tAssert.NoError(err)
+		tAssert.Contains(source, "enabled: true")
+		tAssert.Contains(source, "threshold: 0.5")
+
+		output := importedOutput(source)
+		tAssert.Equal(true, output["enabled"])
+		tAssert.Equal(0.5, output["threshold"])
+	})
+
+	It("omits YAML null values instead of converting them to empty strings", func() {
+		input := `name: Ada
+nickname: null
+tags:
+  - alpha
+  - null
+  - beta
+`
+
+		source, err := importYAMLSource(filepath.Join("workspace", "null_omission.yaml"), input)
+		tAssert.NoError(err)
+		tAssert.NotContains(source, "nickname:")
+		tAssert.NotContains(source, "\"\"")
+
+		output := importedOutput(source)
+		tAssert.Equal("Ada", output["name"])
+		_, hasNickname := output["nickname"]
+		tAssert.False(hasNickname)
+		tAssert.Equal([]any{"alpha", "beta"}, output["tags"])
+	})
+
 	It("imports TOML schema directives, tables, inline tables, arrays of tables, dotted keys, and multiline strings", func() {
 		input := `#:schema ./schemas/vehicle_telemetry.schema.json
 name = "orbital-array"
@@ -730,5 +818,19 @@ updated_at = 2026-05-08T09:00:00Z
 		location := output["location"].(map[string]any)
 		tAssert.Equal(map[string]any{"lat": 51.5, "lon": -0.1}, location["point"])
 		tAssert.Equal(time.Date(2026, 5, 8, 9, 0, 0, 0, time.UTC).Format(time.RFC3339Nano), location["updated_at"])
+	})
+
+	It("rebases schema directives when imports are written to an output directory", func() {
+		input := `#:schema ./schemas/vehicle_telemetry.schema.json
+name = "orbital-array"
+`
+
+		source, err := importTOMLSourceToPath(
+			filepath.Join("workspace", "config.toml"),
+			filepath.Join("out", "config.mace"),
+			input,
+		)
+		tAssert.NoError(err)
+		tAssert.Contains(source, `[output = data, schema_file = "../workspace/schemas/vehicle_telemetry.schema.mace"]`)
 	})
 })
