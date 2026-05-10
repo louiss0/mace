@@ -95,13 +95,6 @@ func newImportCommand() *cobra.Command {
 			targetsByPath := map[string]string{}
 			failedPaths := 0
 			for _, path := range args {
-				source, err := importSourceFromPath(path)
-				if err != nil {
-					_, _ = fmt.Fprintf(command.ErrOrStderr(), "%s: %v\n", path, err)
-					failedPaths++
-					continue
-				}
-
 				targetPath, err := importOutputPath(path, outputDir)
 				if err != nil {
 					_, _ = fmt.Fprintf(command.ErrOrStderr(), "%s: %v\n", path, err)
@@ -110,6 +103,13 @@ func newImportCommand() *cobra.Command {
 				}
 				if priorPath, exists := targetsByPath[targetPath]; exists {
 					_, _ = fmt.Fprintf(command.ErrOrStderr(), "%s: would overwrite generated file for %s\n", path, priorPath)
+					failedPaths++
+					continue
+				}
+
+				source, err := importSourceFromPath(path, targetPath)
+				if err != nil {
+					_, _ = fmt.Fprintf(command.ErrOrStderr(), "%s: %v\n", path, err)
 					failedPaths++
 					continue
 				}
@@ -254,7 +254,7 @@ func importFormat(path string) (string, error) {
 	}
 }
 
-func importSourceFromPath(path string) (string, error) {
+func importSourceFromPath(path string, outputPath string) (string, error) {
 	inputFormat, err := importFormat(path)
 	if err != nil {
 		return "", err
@@ -271,9 +271,9 @@ func importSourceFromPath(path string) (string, error) {
 
 	switch inputFormat {
 	case "yaml":
-		return codec.ImportYAML(string(contents))
+		return importYAMLSourceToPath(path, outputPath, string(contents))
 	case "toml":
-		return codec.ImportTOML(string(contents))
+		return importTOMLSourceToPath(path, outputPath, string(contents))
 	default:
 		return "", fmt.Errorf("unsupported import format %q", inputFormat)
 	}

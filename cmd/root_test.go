@@ -65,11 +65,13 @@ int base = 2 + 2;
 			path := writeMaceFile(`|===|
 hex_int mask = 0xFF;
 hex_float ratio = 0x2.8;
+hex_float whole = 0x2.0;
 |===|
 [output = data]
 {
   mask: mask;
   ratio: ratio;
+  whole: whole;
 }`)
 
 			var stdout bytes.Buffer
@@ -83,7 +85,8 @@ hex_float ratio = 0x2.8;
 			tAssert.Equal("", stderr.String())
 			tAssert.JSONEq(`{
   "mask": "0xFF",
-  "ratio": "0x2.8"
+  "ratio": "0x2.8",
+  "whole": "0x2.0"
 }`, stdout.String())
 		})
 

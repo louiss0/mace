@@ -172,16 +172,19 @@ schema Audit: { created_at: string; };
 		result, err := Parse(`|===|
 hex_int mask = 0xFF;
 hex_float ratio = 0x2.8;
+hex_float whole = 0x2.0;
 |===|
 [output = data]
 {
   mask: mask;
   ratio: ratio;
+  whole: whole;
 }`)
 		tAssert.NoError(err)
 		tAssert.Equal(map[string]any{
 			"mask":  "0xFF",
 			"ratio": "0x2.8",
+			"whole": "0x2.0",
 		}, result.Data)
 	})
 

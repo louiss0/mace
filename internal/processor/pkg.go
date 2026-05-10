@@ -2271,7 +2271,7 @@ func formatHexInt(value int64) string {
 
 func formatHexFloat(value float64) string {
 	if value == 0 {
-		return "0x0"
+		return "0x0.0"
 	}
 
 	sign := ""
@@ -2284,7 +2284,7 @@ func formatHexFloat(value float64) string {
 	fraction := value - float64(whole)
 	wholeText := strings.ToUpper(strconv.FormatInt(whole, 16))
 	if fraction == 0 {
-		return sign + "0x" + wholeText
+		return sign + "0x" + wholeText + ".0"
 	}
 
 	digits := make([]byte, 0, 10)
@@ -2325,7 +2325,7 @@ trim:
 		digits = digits[:len(digits)-1]
 	}
 	if len(digits) == 0 {
-		return sign + "0x" + wholeText
+		return sign + "0x" + wholeText + ".0"
 	}
 	return sign + "0x" + wholeText + "." + string(digits)
 }
