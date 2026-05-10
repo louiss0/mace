@@ -234,6 +234,31 @@ type Value: variant[string, int];
 }`, output)
 	})
 
+	It("formats hexadecimal literals and primitive types", func() {
+		file, err := parseMaceFile(`|===|
+hex_int mask = 0x00ff;
+hex_float ratio = 0x02.80;
+|===|
+[output = data]
+{
+  mask: mask;
+  ratio: ratio;
+}`)
+		tAssert.NoError(err)
+
+		output, err := FormatFile(file)
+		tAssert.NoError(err)
+		tAssert.Equal(`|==========================|
+hex_int mask = 0x00ff;
+hex_float ratio = 0x02.80;
+|==========================|
+[output = data]
+{
+  mask: mask,
+  ratio: ratio
+}`, output)
+	})
+
 	It("formats union type references", func() {
 		file, err := parseMaceFile(`|===|
 type Value: union[Profile, Audit];

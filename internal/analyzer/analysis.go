@@ -1009,6 +1009,10 @@ func defaultLiteralForTypeName(name string) string {
 		return "0"
 	case "float":
 		return "0.0"
+	case "hex_int":
+		return "0x0"
+	case "hex_float":
+		return "0x0.0"
 	case "boolean":
 		return "false"
 	default:
@@ -2023,6 +2027,10 @@ func defaultExpressionForType(typeReference ast.TypeReference) ast.Expression {
 			return ast.IntLiteral{Lexeme: "0"}
 		case "float":
 			return ast.FloatLiteral{Lexeme: "0.0"}
+		case "hex_int":
+			return ast.HexIntLiteral{Lexeme: "0x0"}
+		case "hex_float":
+			return ast.HexFloatLiteral{Lexeme: "0x0.0"}
 		case "boolean":
 			return ast.BooleanLiteral{}
 		default:
@@ -2043,6 +2051,10 @@ func inferredTypeFromExpression(expression ast.Expression) ast.TypeReference {
 		return ast.PrimitiveType{Name: "int"}
 	case ast.FloatLiteral:
 		return ast.PrimitiveType{Name: "float"}
+	case ast.HexIntLiteral:
+		return ast.PrimitiveType{Name: "hex_int"}
+	case ast.HexFloatLiteral:
+		return ast.PrimitiveType{Name: "hex_float"}
 	case ast.BooleanLiteral:
 		return ast.PrimitiveType{Name: "boolean"}
 	case ast.ArrayLiteral:
@@ -2303,6 +2315,10 @@ func placeholderForType(file ast.File, name string) string {
 		return "0"
 	case "float":
 		return "0.0"
+	case "hex_int":
+		return "0x0"
+	case "hex_float":
+		return "0x0.0"
 	case "boolean":
 		return "false"
 	}
@@ -3015,7 +3031,7 @@ func isArrayAccessOpen(tokens []lexer.Token, index int) bool {
 
 	switch tokens[index-1].Type {
 	case lexer.TokenIdentifier, lexer.TokenSelf,
-		lexer.TokenString, lexer.TokenInt, lexer.TokenFloat, lexer.TokenBoolean,
+		lexer.TokenString, lexer.TokenInt, lexer.TokenFloat, lexer.TokenHexInt, lexer.TokenHexFloat, lexer.TokenBoolean,
 		lexer.TokenRParen, lexer.TokenRBracket, lexer.TokenRBrace:
 		return true
 	default:
@@ -3096,6 +3112,10 @@ func expressionTypeSummary(expression ast.Expression, knownTypes map[string]stri
 		return "int", true
 	case ast.FloatLiteral:
 		return "float", true
+	case ast.HexIntLiteral:
+		return "hex_int", true
+	case ast.HexFloatLiteral:
+		return "hex_float", true
 	case ast.BooleanLiteral:
 		return "boolean", true
 	case ast.Identifier:
@@ -3563,6 +3583,12 @@ func summarizeValue(value processor.Value) string {
 		return fmt.Sprintf("%d", value.Int)
 	case processor.ValueFloat:
 		return fmt.Sprintf("%g", value.Float)
+	case processor.ValueHexInt, processor.ValueHexFloat:
+		formatted, err := processor.FormatScalarValue(value)
+		if err != nil {
+			return "unknown"
+		}
+		return formatted
 	case processor.ValueBoolean:
 		if value.Boolean {
 			return "true"
@@ -3593,6 +3619,10 @@ func valueTypeSummary(value processor.Value) string {
 		return "int"
 	case processor.ValueFloat:
 		return "float"
+	case processor.ValueHexInt:
+		return "hex_int"
+	case processor.ValueHexFloat:
+		return "hex_float"
 	case processor.ValueBoolean:
 		return "boolean"
 	case processor.ValueArray:

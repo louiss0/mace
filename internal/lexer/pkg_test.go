@@ -82,7 +82,7 @@ var _ = Describe("Lexer", func() {
 			tAssert.NoError(err)
 			assertTokenSequence(tokens, expected)
 		},
-		Entry("keywords and identifiers", "from import type schema gen_doc schema_doc enum array string int float boolean output schema_file data injectable user_1", []expectedToken{
+		Entry("keywords and identifiers", "from import type schema gen_doc schema_doc enum array string int float hex_int hex_float boolean output schema_file data injectable user_1", []expectedToken{
 			{tokenType: TokenFrom, lexeme: "from"},
 			{tokenType: TokenImport, lexeme: "import"},
 			{tokenType: TokenTypeKeyword, lexeme: "type"},
@@ -94,6 +94,8 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenStringType, lexeme: "string"},
 			{tokenType: TokenIntType, lexeme: "int"},
 			{tokenType: TokenFloatType, lexeme: "float"},
+			{tokenType: TokenHexIntType, lexeme: "hex_int"},
+			{tokenType: TokenHexFloatType, lexeme: "hex_float"},
 			{tokenType: TokenBooleanType, lexeme: "boolean"},
 			{tokenType: TokenOutput, lexeme: "output"},
 			{tokenType: TokenSchemaFile, lexeme: "schema_file"},
@@ -110,7 +112,7 @@ var _ = Describe("Lexer", func() {
 			tAssert.NoError(err)
 			assertTokenSequence(tokens, expected)
 		},
-		Entry("string and numbers", "\"hello\" 'world' \"\"\"block\"\"\" 0 42 3.14 10.0 true false", []expectedToken{
+		Entry("string and numbers", "\"hello\" 'world' \"\"\"block\"\"\" 0 42 3.14 10.0 0xFF 0x2.8 true false", []expectedToken{
 			{tokenType: TokenString, lexeme: "\"hello\""},
 			{tokenType: TokenString, lexeme: "'world'"},
 			{tokenType: TokenString, lexeme: "\"\"\"block\"\"\""},
@@ -118,6 +120,8 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenInt, lexeme: "42"},
 			{tokenType: TokenFloat, lexeme: "3.14"},
 			{tokenType: TokenFloat, lexeme: "10.0"},
+			{tokenType: TokenHexInt, lexeme: "0xFF"},
+			{tokenType: TokenHexFloat, lexeme: "0x2.8"},
 			{tokenType: TokenBoolean, lexeme: "true"},
 			{tokenType: TokenBoolean, lexeme: "false"},
 			{tokenType: TokenEOF, lexeme: ""},
@@ -201,6 +205,18 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenIdentifier, lexeme: "value"},
 			{tokenType: TokenEOF, lexeme: ""},
 		}),
+	)
+
+	DescribeTable("rejects invalid hexadecimal literals",
+		func(input string, message string) {
+			_, err := collectTokens(input)
+			tAssert.Error(err)
+			tAssert.ErrorContains(err, message)
+		},
+		Entry("missing digits", "0x", "expected hexadecimal digit after 0x"),
+		Entry("missing whole part", "0x.8", "expected hexadecimal digit after 0x"),
+		Entry("missing fractional digits", "0x8.", "expected hexadecimal digit after hexadecimal point"),
+		Entry("invalid digit", "0xG", "expected hexadecimal digit after 0x"),
 	)
 
 	DescribeTable("tracks line and column positions",

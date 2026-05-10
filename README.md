@@ -68,16 +68,17 @@ Mace supports:
 
 - `:` for type declarations (`type`, `schema`, `enum`)
 - `=` for variable initializers and enum member values
-- primitive types: `string`, `int`, `float`, `boolean`
+- primitive types: `string`, `int`, `float`, `hex_int`, `hex_float`, `boolean`
 - arrays: `array<T>`
 - unions: `union[T1, T2, ...]`
 - variants: `variant[T1, T2, ...]`
 - named type aliases
 - schemas
-- enums backed by `string` or `int`, with implicit or explicit member values
+- enums backed by `string`, `int`, `float`, `hex_int`, or `hex_float`
 - enum member access with `EnumName.MemberName`
 - record, array, arithmetic, logical, merge, and conditional expressions
 - `$self` references inside output evaluation
+- hexadecimal integer and fractional numeric types with canonical string JSON output
 
 Union and variant types are first-class across the language, including named
 aliases, output schema validation, imports, formatter output, and editor
@@ -154,6 +155,10 @@ Permission value = Permission.Execute;
   value: value
 }
 ```
+
+Hexadecimal values stay distinct from decimal numerics. When emitted through
+`mace json`, `hex_int` and `hex_float` values are serialized as strings such as
+`"0xFF"` and `"0x2.8"` so their hexadecimal spelling is preserved.
 
 For the exact rules and currently supported syntax, see
 [`mace-spec.md`](./mace-spec.md).

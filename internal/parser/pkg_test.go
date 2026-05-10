@@ -115,6 +115,26 @@ func requireStringLiteral(expression ast.Expression, lexeme string) ast.StringLi
 	return literal
 }
 
+func requireHexIntLiteral(expression ast.Expression, lexeme string) ast.HexIntLiteral {
+	literal, ok := expression.(ast.HexIntLiteral)
+	tAssert.True(ok)
+	if !ok {
+		return ast.HexIntLiteral{}
+	}
+	tAssert.Equal(lexeme, literal.Lexeme)
+	return literal
+}
+
+func requireHexFloatLiteral(expression ast.Expression, lexeme string) ast.HexFloatLiteral {
+	literal, ok := expression.(ast.HexFloatLiteral)
+	tAssert.True(ok)
+	if !ok {
+		return ast.HexFloatLiteral{}
+	}
+	tAssert.Equal(lexeme, literal.Lexeme)
+	return literal
+}
+
 func requirePrefix(expression ast.Expression, operator lexer.TokenType) ast.PrefixExpression {
 	prefix, ok := expression.(ast.PrefixExpression)
 	tAssert.True(ok)
@@ -207,6 +227,12 @@ var _ = Describe("Parser", func() {
 		}),
 		Entry("int literal", "42", func(expression ast.Expression) {
 			requireIntLiteral(expression, "42")
+		}),
+		Entry("hex int literal", "0xFF", func(expression ast.Expression) {
+			requireHexIntLiteral(expression, "0xFF")
+		}),
+		Entry("hex float literal", "0x2.8", func(expression ast.Expression) {
+			requireHexFloatLiteral(expression, "0x2.8")
 		}),
 	)
 
@@ -722,6 +748,59 @@ injectable string env;
 					tAssert.Equal("env", varDecl.Name)
 					tAssert.False(varDecl.HasValue)
 					tAssert.Nil(varDecl.Value)
+				}
+			}
+		})
+
+		It("parses hex primitive type references", func() {
+			input := `|===|
+hex_int mask = 0xFF;
+hex_float ratio = 0x2.8;
+|===|
+[output = schema]
+{
+  mask: hex_int;
+  ratio: hex_float;
+}`
+
+			file, err := parseFileInput(input)
+			tAssert.NoError(err)
+
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 2) {
+				maskDecl, ok := file.Script.Items[0].(ast.VariableDeclaration)
+				tAssert.True(ok)
+				if ok {
+					maskType, ok := maskDecl.Type.(ast.PrimitiveType)
+					tAssert.True(ok)
+					if ok {
+						tAssert.Equal("hex_int", maskType.Name)
+					}
+					requireHexIntLiteral(maskDecl.Value, "0xFF")
+				}
+
+				ratioDecl, ok := file.Script.Items[1].(ast.VariableDeclaration)
+				tAssert.True(ok)
+				if ok {
+					ratioType, ok := ratioDecl.Type.(ast.PrimitiveType)
+					tAssert.True(ok)
+					if ok {
+						tAssert.Equal("hex_float", ratioType.Name)
+					}
+					requireHexFloatLiteral(ratioDecl.Value, "0x2.8")
+				}
+			}
+
+			if tAssert.Len(file.Output.SchemaFields, 2) {
+				maskType, ok := file.Output.SchemaFields[0].Type.(ast.PrimitiveType)
+				tAssert.True(ok)
+				if ok {
+					tAssert.Equal("hex_int", maskType.Name)
+				}
+
+				ratioType, ok := file.Output.SchemaFields[1].Type.(ast.PrimitiveType)
+				tAssert.True(ok)
+				if ok {
+					tAssert.Equal("hex_float", ratioType.Name)
 				}
 			}
 		})
