@@ -254,6 +254,19 @@ injectable string env;
 		tAssert.Empty(snapshot.diagnostics)
 	})
 
+	It("reports empty script blocks as syntax errors", func() {
+		snapshot := analyzeDocument(`|===|
+|===|
+[output = data]
+{}`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "empty script block")
+			tAssert.Equal(protocol.DiagnosticSeverityError, *snapshot.diagnostics[0].Severity)
+			tAssert.Equal(string(diagnosticSyntaxEmptyScriptBlock), requireDiagnosticCode(snapshot.diagnostics[0]))
+		}
+	})
+
 	It("offers documentation generation actions for declarations", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		snapshot := analyzeDocumentAt(`|===|

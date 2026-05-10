@@ -19,10 +19,6 @@ import (
 	"github.com/louiss0/mace/internal/processor"
 )
 
-var (
-	emptyScriptBlockPattern = regexp.MustCompile(`(?s)^\s*\|===\|\s*\|===\|\s*`)
-)
-
 type symbolOrigin string
 
 const (
@@ -622,8 +618,8 @@ func scriptBlockStructureCodeActions(text string, documentPath string) []analysi
 		addTextAction("Fix script delimiter length mismatch", fixed)
 		addTextAction("Normalize script fence", fixed)
 	}
-	if emptyScriptBlockPattern.MatchString(text) {
-		addTextAction("Remove empty script block", emptyScriptBlockPattern.ReplaceAllString(text, ""))
+	if updated, ok := removeLeadingEmptyScriptBlockText(text); ok {
+		addTextAction("Remove empty script block", updated)
 	}
 	if moved, ok := moveScriptBlockBeforeOutputText(text); ok {
 		addTextAction("Move script block before output block", moved)
@@ -685,6 +681,21 @@ func moveScriptBlockBeforeOutputText(text string) (string, bool) {
 	script := strings.TrimSpace(text[firstScript:scriptEnd])
 	withoutScript := strings.TrimSpace(text[:firstScript] + text[scriptEnd:])
 	return script + "\n" + withoutScript, true
+}
+
+func removeLeadingEmptyScriptBlockText(text string) (string, bool) {
+	trimmed := strings.TrimLeft(text, " \t\r\n")
+	if !strings.HasPrefix(trimmed, "|===|") {
+		return "", false
+	}
+
+	trimmed = strings.TrimLeft(trimmed[len("|===|"):], " \t\r\n")
+	if !strings.HasPrefix(trimmed, "|===|") {
+		return "", false
+	}
+
+	trimmed = strings.TrimLeft(trimmed[len("|===|"):], " \t\r\n")
+	return trimmed, true
 }
 
 func schemaCreationTextCodeActions(text string, documentPath string) []analysisCodeActionCandidate {

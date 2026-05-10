@@ -172,6 +172,9 @@ func (p *Parser) parseScriptBlock() (ast.ScriptBlock, error) {
 		}
 		imports = append(imports, importDecl)
 	}
+	if p.current().Type == lexer.TokenScriptDelimiter && len(imports) == 0 {
+		return ast.ScriptBlock{}, p.unexpectedTokenError("parser: empty script block")
+	}
 
 	items := []ast.Declaration{}
 	for !p.isAtEnd() && p.current().Type != lexer.TokenScriptDelimiter {

@@ -14,6 +14,7 @@ type diagnosticCode string
 const (
 	diagnosticSyntaxUnterminatedScriptBlock         diagnosticCode = "mace.syntax.unterminated-script-block"
 	diagnosticSyntaxInconsistentScriptDelimiters    diagnosticCode = "mace.syntax.inconsistent-script-delimiters"
+	diagnosticSyntaxEmptyScriptBlock                diagnosticCode = "mace.syntax.empty-script-block"
 	diagnosticSyntaxMalformedImport                 diagnosticCode = "mace.syntax.malformed-import"
 	diagnosticSyntaxMalformedDirectiveList          diagnosticCode = "mace.syntax.malformed-directive-list"
 	diagnosticSyntaxMalformedEnum                   diagnosticCode = "mace.syntax.malformed-enum"
@@ -95,6 +96,8 @@ func diagnosticWithCode(rangeValue protocol.Range, severity protocol.DiagnosticS
 
 func classifyParseDiagnostic(message string) diagnosticCode {
 	switch {
+	case strings.Contains(message, "empty script block"):
+		return diagnosticSyntaxEmptyScriptBlock
 	case strings.Contains(message, "expected closing script delimiter") && strings.Contains(message, "EOF"):
 		return diagnosticSyntaxUnterminatedScriptBlock
 	case strings.Contains(message, "script delimiter"):
