@@ -2728,7 +2728,7 @@ func evaluateBitwise(operator lexer.TokenType, left, right Value) (Value, error)
 
 func evaluateEquality(operator lexer.TokenType, left, right Value) (Value, error) {
 	if left.Kind != right.Kind {
-		if !(isHexValue(left) && isHexValue(right)) {
+		if !isHexValue(left) || !isHexValue(right) {
 			return Value{}, validationErrorf("type mismatch: incompatible equality comparison")
 		}
 	}
@@ -3571,7 +3571,7 @@ func inferInfixType(expr ast.InfixExpression, variables *variableRegistry, symbo
 		return valueType{kind: ValueInt}, nil
 	case lexer.TokenEqualEqual, lexer.TokenNotEqual, lexer.TokenStrictEqual, lexer.TokenStrictNotEqual:
 		if leftType.kind != ValueUnknown && rightType.kind != ValueUnknown && !typesEqual(leftType, rightType) {
-			if !(isHexValueType(leftType) && isHexValueType(rightType)) {
+			if !isHexValueType(leftType) || !isHexValueType(rightType) {
 				return valueType{}, validationErrorf("type mismatch: incompatible equality comparison")
 			}
 		}
