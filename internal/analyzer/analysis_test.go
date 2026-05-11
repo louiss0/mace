@@ -487,7 +487,7 @@ from "./shared.mace" import age;
 		}
 	})
 
-	It("reports imports that escape the activation directory", func() {
+	It("allows parent-relative imports in analyzer contexts", func() {
 		workspace, err := os.MkdirTemp("", "mace-analysis-import-boundary-*")
 		tAssert.NoError(err)
 		defer func() {
@@ -512,8 +512,8 @@ from "../shared.mace" import User;
 		messages := lo.Map(snapshot.diagnostics, func(diagnostic protocol.Diagnostic, _ int) string {
 			return diagnostic.Message
 		})
-		tAssert.True(lo.ContainsBy(messages, func(message string) bool {
-			return strings.Contains(message, `import path "../shared.mace" escapes root:`)
+		tAssert.False(lo.ContainsBy(messages, func(message string) bool {
+			return strings.Contains(message, `escapes root`)
 		}))
 	})
 

@@ -368,35 +368,14 @@ func resolveBoundedPath(importBaseDir string, importPath string) (string, error)
 	return resolveBoundedPathInRoot(importBaseDir, importBaseDir, importPath)
 }
 
-func resolveBoundedPathInRoot(importBaseDir string, importRootDir string, importPath string) (string, error) {
+func resolveBoundedPathInRoot(importBaseDir string, _ string, importPath string) (string, error) {
 	if filepath.IsAbs(importPath) {
-		return "", fmt.Errorf("import path %q must be relative: root=%q, base=%q", importPath, formatImportRoot(importRootDir), importBaseDir)
+		return "", fmt.Errorf("import path %q must be relative: base=%q", importPath, importBaseDir)
 	}
 
 	cleanPath := filepath.Clean(filepath.FromSlash(importPath))
 	resolvedPath := filepath.Clean(filepath.Join(importBaseDir, cleanPath))
-	relativePath, err := filepath.Rel(importRootDir, resolvedPath)
-	if err != nil {
-		return "", fmt.Errorf("unable to resolve path %q", importPath)
-	}
-	if relativePath == ".." || strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("import path %q escapes root: root=%q, base=%q, resolved=%q", importPath, formatImportRoot(importRootDir), importBaseDir, resolvedPath)
-	}
-
 	return resolvedPath, nil
-}
-
-func formatImportRoot(importRootDir string) string {
-	if importRootDir == "" || importRootDir == "." {
-		return "./"
-	}
-
-	cleanRoot := filepath.Clean(importRootDir)
-	label := filepath.Base(cleanRoot)
-	if label == "." || label == string(filepath.Separator) || label == "" {
-		return filepath.ToSlash(cleanRoot)
-	}
-	return label + "/"
 }
 
 func parseUint(value string) protocol.UInteger {
