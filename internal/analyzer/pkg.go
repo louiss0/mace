@@ -65,8 +65,16 @@ func AnalyzeDocumentAt(text string, documentPath string) Snapshot {
 	return analyzeDocumentAt(text, documentPath)
 }
 
+func AnalyzeDocumentAtInRoot(text string, documentPath string, rootDir string) Snapshot {
+	return analyzeDocumentAtInRoot(text, documentPath, rootDir)
+}
+
 func AnalyzeCompletionContext(text string, documentPath string, position protocol.Position) Snapshot {
 	return analyzeCompletionContext(text, documentPath, position)
+}
+
+func AnalyzeCompletionContextInRoot(text string, documentPath string, rootDir string, position protocol.Position) Snapshot {
+	return analyzeCompletionContextInRoot(text, documentPath, rootDir, position)
 }
 
 func HasParsedFile(snapshot Snapshot) bool {
@@ -354,6 +362,28 @@ func processorDiagnosticError(err error) (processor.DiagnosticError, bool) {
 
 func documentPath(uri protocol.DocumentUri) string {
 	return DocumentPath(uri)
+}
+
+func resolveBoundedPath(baseDir string, importPath string) (string, error) {
+	return resolveBoundedPathInRoot(baseDir, baseDir, importPath)
+}
+
+func resolveBoundedPathInRoot(baseDir string, rootDir string, importPath string) (string, error) {
+	if filepath.IsAbs(importPath) {
+		return "", fmt.Errorf("import path %q must be relative: root=%q, base=%q", importPath, rootDir, baseDir)
+	}
+
+	cleanPath := filepath.Clean(filepath.FromSlash(importPath))
+	resolvedPath := filepath.Clean(filepath.Join(baseDir, cleanPath))
+	relativePath, err := filepath.Rel(rootDir, resolvedPath)
+	if err != nil {
+		return "", fmt.Errorf("unable to resolve path %q", importPath)
+	}
+	if relativePath == ".." || strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("import path %q escapes root: root=%q, base=%q", importPath, rootDir, baseDir)
+	}
+
+	return resolvedPath, nil
 }
 
 func parseUint(value string) protocol.UInteger {

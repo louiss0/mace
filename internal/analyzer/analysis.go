@@ -45,6 +45,7 @@ type analysisCodeActionCandidate struct {
 type analysisSnapshot struct {
 	text                 string
 	documentURI          protocol.DocumentUri
+	rootDir              string
 	file                 *ast.File
 	result               *processor.Result
 	tokens               []lexer.Token
@@ -402,7 +403,16 @@ func analyzeDocument(text string) analysisSnapshot {
 }
 
 func analyzeDocumentAt(text string, documentPath string) analysisSnapshot {
+	rootDir := filepath.Dir(documentPath)
+	if documentPath == "" {
+		rootDir = ""
+	}
+	return analyzeDocumentAtInRoot(text, documentPath, rootDir)
+}
+
+func analyzeDocumentAtInRoot(text string, documentPath string, rootDir string) analysisSnapshot {
 	snapshot := analysisSnapshot{}
+	snapshot.rootDir = rootDir
 	snapshot.text = text
 	snapshot.documentURI = pathURI(documentPath)
 
@@ -437,7 +447,7 @@ func analyzeDocumentAt(text string, documentPath string) analysisSnapshot {
 	snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, fileActions...)
 
 	processorInstance := processor.New()
-	result, processErr := processorInstance.ProcessInDir(text, baseDir)
+	result, processErr := processorInstance.ProcessInScope(text, baseDir, rootDir)
 	if processErr != nil {
 		snapshot.diagnostics = append(snapshot.diagnostics, fileDiagnostics...)
 		if semanticDiagnostic, ok := semanticDiagnosticFromError(file, tokens, processErr); ok {
@@ -464,6 +474,15 @@ func analyzeDocumentAt(text string, documentPath string) analysisSnapshot {
 
 func analyzeCompletionContext(text string, documentPath string, position protocol.Position) analysisSnapshot {
 	snapshot := analyzeDocumentAt(text, documentPath)
+	if snapshot.file != nil {
+		return snapshot
+	}
+
+	return analyzeCompletionContextInRoot(text, documentPath, snapshot.rootDir, position)
+}
+
+func analyzeCompletionContextInRoot(text string, documentPath string, rootDir string, position protocol.Position) analysisSnapshot {
+	snapshot := analyzeDocumentAtInRoot(text, documentPath, rootDir)
 	if snapshot.file != nil {
 		return snapshot
 	}
@@ -509,15 +528,24 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 				action     *analysisCodeActionCandidate
 			}{}, false
 		}
-		if strings.HasSuffix(pathValue, ".mace") {
+		rangeValue, found := tokenRangeByType(tokens, lexer.TokenString, importDecl.Path.Lexeme)
+		if !found {
 			return struct {
 				diagnostic protocol.Diagnostic
 				action     *analysisCodeActionCandidate
 			}{}, false
 		}
 
-		rangeValue, found := tokenRangeByType(tokens, lexer.TokenString, importDecl.Path.Lexeme)
-		if !found {
+		if _, err := resolveBoundedPath(filepath.Dir(documentPath), pathValue); err != nil {
+			return struct {
+				diagnostic protocol.Diagnostic
+				action     *analysisCodeActionCandidate
+			}{
+				diagnostic: diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticImportFileNotFound, err.Error()),
+			}, true
+		}
+
+		if strings.HasSuffix(pathValue, ".mace") {
 			return struct {
 				diagnostic protocol.Diagnostic
 				action     *analysisCodeActionCandidate
@@ -1164,8 +1192,15 @@ func importResolutionCodeActions(text string, file ast.File, tokens []lexer.Toke
 			continue
 		}
 
-		importedPath := filepath.Clean(filepath.Join(baseDir, pathValue))
+		importedPath, err := resolveBoundedPath(baseDir, pathValue)
 		importRange, _ := tokenRangeByType(tokens, lexer.TokenString, importDecl.Path.Lexeme)
+		if err != nil {
+			actions = append(actions, analysisCodeActionCandidate{
+				Range:  protocol.Range{Start: protocol.Position{}, End: protocol.Position{}},
+				Action: protocol.CodeAction{Title: "Explain why symbol is not importable", Kind: Ptr(protocol.CodeActionKindQuickFix), Command: &protocol.Command{Title: "Explain why symbol is not importable", Command: "mace.explainImport", Arguments: []any{err.Error()}}},
+			})
+			continue
+		}
 		if _, err := os.Stat(importedPath); os.IsNotExist(err) {
 			actions = append(actions, analysisCodeActionCandidate{
 				Range: protocol.Range{Start: protocol.Position{}, End: protocol.Position{}},
@@ -1262,7 +1297,10 @@ func unavailableImportNameSet(file ast.File, documentPath string) map[string]str
 			continue
 		}
 
-		importedPath := filepath.Clean(filepath.Join(baseDir, pathValue))
+		importedPath, err := resolveBoundedPath(baseDir, pathValue)
+		if err != nil {
+			continue
+		}
 		_, importedFile, _, ok := parsedFile(importedPath)
 		if !ok {
 			continue
@@ -3444,7 +3482,10 @@ func importedSemanticSymbols(file ast.File, documentPath string) []semanticSymbo
 			return nil
 		}
 
-		importedPath := filepath.Clean(filepath.Join(baseDir, pathValue))
+		importedPath, err := resolveBoundedPath(baseDir, pathValue)
+		if err != nil {
+			return nil
+		}
 		_, importedFile, _, ok := parsedFile(importedPath)
 		if !ok {
 			return nil

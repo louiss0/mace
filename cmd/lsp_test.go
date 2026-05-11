@@ -819,7 +819,7 @@ from "`, nil)
 		tAssert.Contains(labels, "./nested/")
 	})
 
-	It("suggests parent relative import paths while the from string changes", func() {
+	It("does not suggest parent relative import paths while the from string changes", func() {
 
 		workspace, err := os.MkdirTemp("", "mace-lsp-parent-import-path-*")
 		tAssert.NoError(err)
@@ -832,7 +832,7 @@ from "`, nil)
 from "../`, nil)
 
 		labels := completeLabels(server, consumerURI, 1, uint32(len(`from "../`)))
-		tAssert.Contains(labels, "../shared.mace")
+		tAssert.NotContains(labels, "../shared.mace")
 	})
 
 	It("suggests import after a valid from path change with trailing space", func() {

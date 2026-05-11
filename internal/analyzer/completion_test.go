@@ -128,7 +128,7 @@ schema Basket: { favorite_fruit: Fruit; };
 			return
 		}
 
-		model := buildCompletionModel(*file, filepath.Dir("document.mace"), map[string]completionModel{})
+		model := buildCompletionModel(*file, filepath.Dir("document.mace"), filepath.Dir("document.mace"), map[string]completionModel{})
 		expectedType, path, ok := placeholderOutputCompletionType(*file, model)
 		tAssert.True(ok)
 		tAssert.Equal([]string{"favorite_fruit"}, path)
@@ -389,7 +389,7 @@ type Alias: string;
 
 		documentPath := filepath.Join(workspace, "consumer.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))
-		symbols, ok := importableSymbols(uri, "./shared.mace")
+		symbols, ok := importableSymbols(uri, filepath.Dir(documentPath), "./shared.mace")
 		tAssert.True(ok)
 
 		kinds := map[string]protocol.CompletionItemKind{}
@@ -415,7 +415,7 @@ type Alias: string;
 
 		documentPath := filepath.Join(workspace, "consumer.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))
-		symbols, ok := importableSymbols(uri, "./shared.mace")
+		symbols, ok := importableSymbols(uri, filepath.Dir(documentPath), "./shared.mace")
 		tAssert.True(ok)
 
 		names := lo.Map(symbols, func(s importableSymbol, _ int) string { return s.Name })

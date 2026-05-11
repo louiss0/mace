@@ -58,7 +58,7 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 	declarations := completionDeclarations(document, uri, position, linePrefix, scope)
 
 	if scope == completionScopeScript {
-		if items, handled := importCompletionItems(linePrefix, uri); handled {
+		if items, handled := importCompletionItems(document, linePrefix, uri); handled {
 			return items
 		}
 	}
@@ -137,7 +137,8 @@ func initializerCompletionItems(document document, uri protocol.DocumentUri, pos
 		baseDir = "."
 	}
 
-	model := buildCompletionModel(*file, baseDir, map[string]completionModel{})
+	rootDir := completionRoot(document.analysis, uri)
+	model := buildCompletionModel(*file, baseDir, rootDir, map[string]completionModel{})
 	expectedType, path, ok := placeholderCompletionType(*file, model)
 	if !ok {
 		return nil, false
@@ -162,7 +163,8 @@ func outputInitializerCompletionItems(document document, uri protocol.DocumentUr
 		baseDir = "."
 	}
 
-	model := buildCompletionModel(*file, baseDir, map[string]completionModel{})
+	rootDir := completionRoot(document.analysis, uri)
+	model := buildCompletionModel(*file, baseDir, rootDir, map[string]completionModel{})
 	expectedType, path, ok := placeholderOutputCompletionType(*file, model)
 	if !ok {
 		return nil, false
@@ -685,7 +687,7 @@ func completionModelAt(document document, uri protocol.DocumentUri, position pro
 		baseDir = "."
 	}
 
-	return buildCompletionModel(*file, baseDir, map[string]completionModel{}), true
+	return buildCompletionModel(*file, baseDir, completionRoot(document.analysis, uri), map[string]completionModel{}), true
 }
 
 func partialScriptFile(text string, position protocol.Position) (ast.File, bool) {
@@ -751,15 +753,15 @@ func completionScopeAt(text string, position protocol.Position) completionScope 
 	return completionScopeFile
 }
 
-func importCompletionItems(linePrefix string, uri protocol.DocumentUri) ([]protocol.CompletionItem, bool) {
+func importCompletionItems(document document, linePrefix string, uri protocol.DocumentUri) ([]protocol.CompletionItem, bool) {
 	if matches := importOpenPathPattern.FindStringSubmatch(linePrefix); len(matches) == 2 {
-		return relativePathItems(uri, matches[1], nil), true
+		return relativePathItems(document, uri, matches[1], nil), true
 	}
 
 	if matches := importIdentifiersPattern.FindStringSubmatch(linePrefix); len(matches) == 3 {
 		path := matches[1]
 		prefix := matches[2]
-		symbols, ok := importableSymbols(uri, path)
+		symbols, ok := importableSymbols(uri, completionRoot(document.analysis, uri), path)
 		if !ok {
 			return []protocol.CompletionItem{}, true
 		}
@@ -782,7 +784,7 @@ func importCompletionItems(linePrefix string, uri protocol.DocumentUri) ([]proto
 		if prefix != "" && !strings.HasPrefix("import", prefix) {
 			return []protocol.CompletionItem{}, true
 		}
-		if _, ok := importableIdentifiers(uri, path); !ok {
+		if _, ok := importableIdentifiers(uri, completionRoot(document.analysis, uri), path); !ok {
 			return []protocol.CompletionItem{}, true
 		}
 
@@ -974,13 +976,16 @@ type importableSymbol struct {
 	Kind protocol.CompletionItemKind
 }
 
-func importableSymbols(uri protocol.DocumentUri, importPath string) ([]importableSymbol, bool) {
+func importableSymbols(uri protocol.DocumentUri, rootDir string, importPath string) ([]importableSymbol, bool) {
 	documentPath, ok := documentPathFromURI(uri)
 	if !ok {
 		return nil, false
 	}
 
-	resolvedPath := filepath.Clean(filepath.Join(filepath.Dir(documentPath), importPath))
+	resolvedPath, err := resolveBoundedPathInRoot(filepath.Dir(documentPath), rootDir, importPath)
+	if err != nil {
+		return nil, false
+	}
 	contents, err := os.ReadFile(resolvedPath)
 	if err != nil {
 		return nil, false
@@ -997,7 +1002,7 @@ func importableSymbols(uri protocol.DocumentUri, importPath string) ([]importabl
 	}
 	for _, field := range file.Output.SchemaFields {
 		kind := protocol.CompletionItemKindClass
-		resolved := resolveCompletionType(field.Type, buildCompletionModel(file, filepath.Dir(resolvedPath), map[string]completionModel{}), map[string]struct{}{})
+		resolved := resolveCompletionType(field.Type, buildCompletionModel(file, filepath.Dir(resolvedPath), filepath.Dir(resolvedPath), map[string]completionModel{}), map[string]struct{}{})
 		switch resolved.kind {
 		case completionTypeSchema:
 			kind = protocol.CompletionItemKindStruct
@@ -1009,8 +1014,8 @@ func importableSymbols(uri protocol.DocumentUri, importPath string) ([]importabl
 	return symbols, true
 }
 
-func importableIdentifiers(uri protocol.DocumentUri, importPath string) ([]string, bool) {
-	symbols, ok := importableSymbols(uri, importPath)
+func importableIdentifiers(uri protocol.DocumentUri, rootDir string, importPath string) ([]string, bool) {
+	symbols, ok := importableSymbols(uri, rootDir, importPath)
 	if !ok {
 		return nil, false
 	}
@@ -1035,13 +1040,13 @@ func documentPathFromURI(uri protocol.DocumentUri) (string, bool) {
 	return filepath.FromSlash(path), true
 }
 
-func relativePathItems(uri protocol.DocumentUri, pathPrefix string, excludedPaths []string) []protocol.CompletionItem {
+func relativePathItems(document document, uri protocol.DocumentUri, pathPrefix string, excludedPaths []string) []protocol.CompletionItem {
 	documentPath, ok := documentPathFromURI(uri)
 	if !ok {
 		return []protocol.CompletionItem{}
 	}
 
-	items, err := directoryEntries(filepath.Dir(documentPath), pathPrefix, excludedPaths)
+	items, err := directoryEntries(filepath.Dir(documentPath), completionRoot(document.analysis, uri), pathPrefix, excludedPaths)
 	if err != nil {
 		return []protocol.CompletionItem{}
 	}
@@ -1063,7 +1068,19 @@ func schemaReferenceItems(document document, uri protocol.DocumentUri, linePrefi
 }
 
 func schemaFileItems(document document, uri protocol.DocumentUri, linePrefix string, pathPrefix string) []protocol.CompletionItem {
-	return relativePathItems(uri, pathPrefix, importedPaths(document, linePrefix))
+	return relativePathItems(document, uri, pathPrefix, importedPaths(document, linePrefix))
+}
+
+func completionRoot(snapshot analysisSnapshot, uri protocol.DocumentUri) string {
+	if snapshot.rootDir != "" {
+		return snapshot.rootDir
+	}
+
+	baseDir := filepath.Dir(documentPath(uri))
+	if baseDir == "" {
+		return "."
+	}
+	return baseDir
 }
 
 func availableSchemaNames(document document, uri protocol.DocumentUri, linePrefix string) []string {
@@ -1081,7 +1098,7 @@ func availableSchemaNames(document document, uri protocol.DocumentUri, linePrefi
 	}
 
 	importedSchemas := lo.FlatMap(currentImports(document, linePrefix), func(importDecl ast.ImportDeclaration, _ int) []string {
-		exportedSchemas, ok := importableSchemaIdentifiers(uri, importDecl)
+		exportedSchemas, ok := importableSchemaIdentifiers(document, uri, importDecl)
 		if !ok {
 			return nil
 		}
@@ -1093,7 +1110,7 @@ func availableSchemaNames(document document, uri protocol.DocumentUri, linePrefi
 	return lo.Uniq(sortStrings(names))
 }
 
-func importableSchemaIdentifiers(uri protocol.DocumentUri, importDecl ast.ImportDeclaration) ([]string, bool) {
+func importableSchemaIdentifiers(document document, uri protocol.DocumentUri, importDecl ast.ImportDeclaration) ([]string, bool) {
 	pathValue, ok := stringLiteralValue(importDecl.Path)
 	if !ok {
 		return nil, false
@@ -1104,7 +1121,10 @@ func importableSchemaIdentifiers(uri protocol.DocumentUri, importDecl ast.Import
 		return nil, false
 	}
 
-	resolvedPath := filepath.Clean(filepath.Join(filepath.Dir(documentPath), pathValue))
+	resolvedPath, err := resolveBoundedPathInRoot(filepath.Dir(documentPath), completionRoot(document.analysis, uri), pathValue)
+	if err != nil {
+		return nil, false
+	}
 	contents, err := os.ReadFile(resolvedPath)
 	if err != nil {
 		return nil, false
@@ -1251,7 +1271,7 @@ func partialOutputResult(document document, uri protocol.DocumentUri, position p
 		baseDir = "."
 	}
 
-	result, err := processor.New().ProcessInDir(partialText, baseDir)
+	result, err := processor.New().ProcessInScope(partialText, baseDir, completionRoot(document.analysis, uri))
 	if err != nil {
 		return processor.Result{}, false
 	}
@@ -1587,7 +1607,7 @@ func outputSchemaDirective(file ast.File) (string, bool) {
 	return directive.Value, true
 }
 
-func buildCompletionModel(file ast.File, baseDir string, cache map[string]completionModel) completionModel {
+func buildCompletionModel(file ast.File, baseDir string, rootDir string, cache map[string]completionModel) completionModel {
 	model := completionModel{
 		aliases: map[string]ast.TypeReference{},
 		schemas: map[string]ast.RecordType{},
@@ -1621,8 +1641,11 @@ func buildCompletionModel(file ast.File, baseDir string, cache map[string]comple
 			continue
 		}
 
-		resolvedPath := filepath.Clean(filepath.Join(baseDir, importPath))
-		importedModel, importedFile, ok := importedCompletionModel(resolvedPath, cache)
+		resolvedPath, err := resolveBoundedPathInRoot(baseDir, rootDir, importPath)
+		if err != nil {
+			continue
+		}
+		importedModel, importedFile, ok := importedCompletionModel(resolvedPath, rootDir, cache)
 		if !ok {
 			continue
 		}
@@ -1650,7 +1673,7 @@ func buildCompletionModel(file ast.File, baseDir string, cache map[string]comple
 	return model
 }
 
-func importedCompletionModel(path string, cache map[string]completionModel) (completionModel, ast.File, bool) {
+func importedCompletionModel(path string, rootDir string, cache map[string]completionModel) (completionModel, ast.File, bool) {
 	if model, ok := cache[path]; ok {
 		_, file, _, parsed := parsedFile(path)
 		return model, file, parsed
@@ -1666,7 +1689,7 @@ func importedCompletionModel(path string, cache map[string]completionModel) (com
 		schemas: map[string]ast.RecordType{},
 		enums:   map[string]completionEnum{},
 	}
-	model := buildCompletionModel(file, filepath.Dir(path), cache)
+	model := buildCompletionModel(file, filepath.Dir(path), rootDir, cache)
 	cache[path] = model
 	return model, file, true
 }
@@ -1865,8 +1888,8 @@ func defaultLiteralForType(typeReference ast.TypeReference, model completionMode
 	}
 }
 
-func directoryEntries(baseDir string, pathPrefix string, excludedPaths []string) ([]protocol.CompletionItem, error) {
-	resolvedDir, itemPrefix, labelPrefix := importDirectory(baseDir, pathPrefix)
+func directoryEntries(baseDir string, rootDir string, pathPrefix string, excludedPaths []string) ([]protocol.CompletionItem, error) {
+	resolvedDir, itemPrefix, labelPrefix := importDirectory(baseDir, rootDir, pathPrefix)
 	entries, err := os.ReadDir(resolvedDir)
 	if err != nil {
 		return nil, err
@@ -1900,7 +1923,7 @@ func directoryEntries(baseDir string, pathPrefix string, excludedPaths []string)
 	return items, nil
 }
 
-func importDirectory(baseDir string, pathPrefix string) (string, string, string) {
+func importDirectory(baseDir string, rootDir string, pathPrefix string) (string, string, string) {
 	cleanPrefix := normalizedRelativePathPrefix(pathPrefix)
 	parent, name := path.Split(cleanPrefix)
 	if strings.HasSuffix(cleanPrefix, "/") {
@@ -1908,7 +1931,11 @@ func importDirectory(baseDir string, pathPrefix string) (string, string, string)
 		name = ""
 	}
 
-	return filepath.Clean(filepath.Join(baseDir, filepath.FromSlash(parent))), name, parent
+	resolvedDir, err := resolveBoundedPathInRoot(baseDir, rootDir, parent)
+	if err != nil {
+		return "", name, parent
+	}
+	return resolvedDir, name, parent
 }
 
 func normalizedRelativePathPrefix(pathPrefix string) string {
