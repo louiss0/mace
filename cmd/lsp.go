@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/samber/lo"
@@ -24,10 +23,11 @@ const (
 )
 
 type Server struct {
-	documents        map[protocol.DocumentUri]document
-	workspaceRootDir string
-	handler          protocol.Handler
-	lock             sync.RWMutex
+	documents             map[protocol.DocumentUri]document
+	workspaceRootDir      string
+	workspaceRootProvided bool
+	handler               protocol.Handler
+	lock                  sync.RWMutex
 }
 
 type document struct {
@@ -97,7 +97,7 @@ func (server *Server) RunStdio() error {
 }
 
 func (server *Server) initialize(context *glsp.Context, params *protocol.InitializeParams) (any, error) {
-	server.workspaceRootDir = workspaceRootDir(params)
+	server.workspaceRootDir, server.workspaceRootProvided = workspaceRootDir(params)
 	capabilities := server.handler.CreateServerCapabilities()
 	if syncOptions, ok := capabilities.TextDocumentSync.(*protocol.TextDocumentSyncOptions); ok {
 		syncMode := protocol.TextDocumentSyncKindFull
@@ -374,39 +374,35 @@ func documentPath(uri protocol.DocumentUri) string {
 	return analyzer.DocumentPath(uri)
 }
 
-func workspaceRootDir(params *protocol.InitializeParams) string {
+func workspaceRootDir(params *protocol.InitializeParams) (string, bool) {
 	if params != nil {
 		for _, folder := range params.WorkspaceFolders {
 			if path := analyzer.DocumentPath(folder.URI); path != "" {
-				return path
+				return path, true
 			}
 		}
 		if params.RootURI != nil {
 			if path := analyzer.DocumentPath(*params.RootURI); path != "" {
-				return path
+				return path, true
 			}
 		}
 		if params.RootPath != nil && *params.RootPath != "" {
-			return *params.RootPath
+			return *params.RootPath, true
 		}
 	}
 
-	return cliActivationDir
+	return cliActivationDir, false
 }
 
 func (server *Server) importRootDir(documentPath string) string {
-	if server.workspaceRootDir != "" {
-		if documentPath == "" {
-			return server.workspaceRootDir
-		}
-		relativePath, err := filepath.Rel(server.workspaceRootDir, documentPath)
-		if err == nil && relativePath != ".." && !strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) {
-			return server.workspaceRootDir
-		}
-		return filepath.Dir(documentPath)
+	if server.workspaceRootProvided && server.workspaceRootDir != "" {
+		return server.workspaceRootDir
 	}
 	if documentPath != "" {
 		return filepath.Dir(documentPath)
+	}
+	if server.workspaceRootDir != "" {
+		return server.workspaceRootDir
 	}
 	return "."
 }
