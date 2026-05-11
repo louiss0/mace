@@ -391,11 +391,7 @@ func workspaceRootDir(params *protocol.InitializeParams) string {
 		}
 	}
 
-	importRootDir, err := os.Getwd()
-	if err != nil {
-		return "."
-	}
-	return importRootDir
+	return cliActivationDir
 }
 
 func (server *Server) importRootDir(documentPath string) string {
