@@ -63,12 +63,12 @@ func newJSONCommand() *cobra.Command {
 				processorInstance = processor.NewWithInjections(injections)
 			}
 
-			rootDir, err := os.Getwd()
+			importRootDir, err := os.Getwd()
 			if err != nil {
-				rootDir = "."
+				importRootDir = "."
 			}
 
-			result, err := processorInstance.ProcessFileInDir(args[0], rootDir)
+			result, err := processorInstance.ProcessFileInDir(args[0], importRootDir)
 			if err != nil {
 				return err
 			}

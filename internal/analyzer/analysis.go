@@ -45,7 +45,7 @@ type analysisCodeActionCandidate struct {
 type analysisSnapshot struct {
 	text                 string
 	documentURI          protocol.DocumentUri
-	rootDir              string
+	importRootDir        string
 	file                 *ast.File
 	result               *processor.Result
 	tokens               []lexer.Token
@@ -403,16 +403,16 @@ func analyzeDocument(text string) analysisSnapshot {
 }
 
 func analyzeDocumentAt(text string, documentPath string) analysisSnapshot {
-	rootDir := filepath.Dir(documentPath)
+	importRootDir := filepath.Dir(documentPath)
 	if documentPath == "" {
-		rootDir = ""
+		importRootDir = ""
 	}
-	return analyzeDocumentAtInRoot(text, documentPath, rootDir)
+	return analyzeDocumentAtInRoot(text, documentPath, importRootDir)
 }
 
-func analyzeDocumentAtInRoot(text string, documentPath string, rootDir string) analysisSnapshot {
+func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir string) analysisSnapshot {
 	snapshot := analysisSnapshot{}
-	snapshot.rootDir = rootDir
+	snapshot.importRootDir = importRootDir
 	snapshot.text = text
 	snapshot.documentURI = pathURI(documentPath)
 
@@ -434,9 +434,9 @@ func analyzeDocumentAtInRoot(text string, documentPath string, rootDir string) a
 	}
 
 	snapshot.file = &file
-	baseDir := filepath.Dir(documentPath)
+	importBaseDir := filepath.Dir(documentPath)
 	if documentPath == "" {
-		baseDir = ""
+		importBaseDir = ""
 	}
 
 	snapshot.symbols = collectSemanticSymbols(file, tokens, nil, documentPath)
@@ -447,7 +447,7 @@ func analyzeDocumentAtInRoot(text string, documentPath string, rootDir string) a
 	snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, fileActions...)
 
 	processorInstance := processor.New()
-	result, processErr := processorInstance.ProcessInScope(text, baseDir, rootDir)
+	result, processErr := processorInstance.ProcessInScope(text, importBaseDir, importRootDir)
 	if processErr != nil {
 		snapshot.diagnostics = append(snapshot.diagnostics, fileDiagnostics...)
 		if semanticDiagnostic, ok := semanticDiagnosticFromError(file, tokens, processErr); ok {
@@ -478,11 +478,11 @@ func analyzeCompletionContext(text string, documentPath string, position protoco
 		return snapshot
 	}
 
-	return analyzeCompletionContextInRoot(text, documentPath, snapshot.rootDir, position)
+	return analyzeCompletionContextInRoot(text, documentPath, snapshot.importRootDir, position)
 }
 
-func analyzeCompletionContextInRoot(text string, documentPath string, rootDir string, position protocol.Position) analysisSnapshot {
-	snapshot := analyzeDocumentAtInRoot(text, documentPath, rootDir)
+func analyzeCompletionContextInRoot(text string, documentPath string, importRootDir string, position protocol.Position) analysisSnapshot {
+	snapshot := analyzeDocumentAtInRoot(text, documentPath, importRootDir)
 	if snapshot.file != nil {
 		return snapshot
 	}
@@ -1182,7 +1182,7 @@ func importResolutionCodeActions(text string, file ast.File, tokens []lexer.Toke
 	}
 
 	uri := protocol.DocumentUri(fileURI(documentPath))
-	baseDir := filepath.Dir(documentPath)
+	importBaseDir := filepath.Dir(documentPath)
 	fullRange := fullDocumentRange(text)
 	_ = fullRange
 	actions := []analysisCodeActionCandidate{}
@@ -1192,7 +1192,7 @@ func importResolutionCodeActions(text string, file ast.File, tokens []lexer.Toke
 			continue
 		}
 
-		importedPath, err := resolveBoundedPath(baseDir, pathValue)
+		importedPath, err := resolveBoundedPath(importBaseDir, pathValue)
 		importRange, _ := tokenRangeByType(tokens, lexer.TokenString, importDecl.Path.Lexeme)
 		if err != nil {
 			actions = append(actions, analysisCodeActionCandidate{
@@ -1214,7 +1214,7 @@ func importResolutionCodeActions(text string, file ast.File, tokens []lexer.Toke
 			})
 
 			if renamedPath, ok := existingMacePathWithSimilarName(importedPath); ok && importRange != (protocol.Range{}) {
-				relativePath, err := filepath.Rel(baseDir, renamedPath)
+				relativePath, err := filepath.Rel(importBaseDir, renamedPath)
 				if err == nil {
 					relativePath = filepath.ToSlash(relativePath)
 					if !strings.HasPrefix(relativePath, ".") {
@@ -1289,7 +1289,7 @@ func unavailableImportNameSet(file ast.File, documentPath string) map[string]str
 		return nil
 	}
 
-	baseDir := filepath.Dir(documentPath)
+	importBaseDir := filepath.Dir(documentPath)
 	names := map[string]struct{}{}
 	for _, importDecl := range file.Imports {
 		pathValue, ok := stringLiteralValue(importDecl.Path)
@@ -1297,7 +1297,7 @@ func unavailableImportNameSet(file ast.File, documentPath string) map[string]str
 			continue
 		}
 
-		importedPath, err := resolveBoundedPath(baseDir, pathValue)
+		importedPath, err := resolveBoundedPath(importBaseDir, pathValue)
 		if err != nil {
 			continue
 		}
@@ -3313,8 +3313,8 @@ func tokenProtocolRange(token lexer.Token) protocol.Range {
 	return protocol.Range{Start: start, End: end}
 }
 
-func collectDeclarations(file ast.File, result *processor.Result, baseDir string) []declarationDefinition {
-	return declarationsFromSymbols(collectSemanticSymbols(file, nil, result, filepath.Join(baseDir, "document.mace")))
+func collectDeclarations(file ast.File, result *processor.Result, importBaseDir string) []declarationDefinition {
+	return declarationsFromSymbols(collectSemanticSymbols(file, nil, result, filepath.Join(importBaseDir, "document.mace")))
 }
 
 func declarationsFromSymbols(symbols []semanticSymbol) []declarationDefinition {
@@ -3471,7 +3471,7 @@ func stringLiteralMarkdown(literal ast.StringLiteral) string {
 }
 
 func importedSemanticSymbols(file ast.File, documentPath string) []semanticSymbol {
-	baseDir := filepath.Dir(documentPath)
+	importBaseDir := filepath.Dir(documentPath)
 	if documentPath == "" {
 		return nil
 	}
@@ -3482,7 +3482,7 @@ func importedSemanticSymbols(file ast.File, documentPath string) []semanticSymbo
 			return nil
 		}
 
-		importedPath, err := resolveBoundedPath(baseDir, pathValue)
+		importedPath, err := resolveBoundedPath(importBaseDir, pathValue)
 		if err != nil {
 			return nil
 		}

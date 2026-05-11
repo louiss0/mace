@@ -132,13 +132,13 @@ func initializerCompletionItems(document document, uri protocol.DocumentUri, pos
 		return nil, false
 	}
 
-	baseDir := filepath.Dir(documentPath(uri))
-	if baseDir == "" {
-		baseDir = "."
+	importBaseDir := filepath.Dir(documentPath(uri))
+	if importBaseDir == "" {
+		importBaseDir = "."
 	}
 
-	rootDir := completionRoot(document.analysis, uri)
-	model := buildCompletionModel(*file, baseDir, rootDir, map[string]completionModel{})
+	importRootDir := completionRoot(document.analysis, uri)
+	model := buildCompletionModel(*file, importBaseDir, importRootDir, map[string]completionModel{})
 	expectedType, path, ok := placeholderCompletionType(*file, model)
 	if !ok {
 		return nil, false
@@ -158,13 +158,13 @@ func outputInitializerCompletionItems(document document, uri protocol.DocumentUr
 		return nil, false
 	}
 
-	baseDir := filepath.Dir(documentPath(uri))
-	if baseDir == "" {
-		baseDir = "."
+	importBaseDir := filepath.Dir(documentPath(uri))
+	if importBaseDir == "" {
+		importBaseDir = "."
 	}
 
-	rootDir := completionRoot(document.analysis, uri)
-	model := buildCompletionModel(*file, baseDir, rootDir, map[string]completionModel{})
+	importRootDir := completionRoot(document.analysis, uri)
+	model := buildCompletionModel(*file, importBaseDir, importRootDir, map[string]completionModel{})
 	expectedType, path, ok := placeholderOutputCompletionType(*file, model)
 	if !ok {
 		return nil, false
@@ -501,12 +501,12 @@ func scriptVariablesForOutput(text string, uri protocol.DocumentUri) map[string]
 }
 
 func processVariablesInDocument(text string, uri protocol.DocumentUri) map[string]processor.Value {
-	baseDir := filepath.Dir(documentPath(uri))
-	if baseDir == "" {
-		baseDir = "."
+	importBaseDir := filepath.Dir(documentPath(uri))
+	if importBaseDir == "" {
+		importBaseDir = "."
 	}
 
-	variables, err := processor.New().ProcessVariablesInDir(text, baseDir)
+	variables, err := processor.New().ProcessVariablesInDir(text, importBaseDir)
 	if err != nil {
 		return nil
 	}
@@ -682,12 +682,12 @@ func completionModelAt(document document, uri protocol.DocumentUri, position pro
 		return completionModel{}, false
 	}
 
-	baseDir := filepath.Dir(documentPath(uri))
-	if baseDir == "" {
-		baseDir = "."
+	importBaseDir := filepath.Dir(documentPath(uri))
+	if importBaseDir == "" {
+		importBaseDir = "."
 	}
 
-	return buildCompletionModel(*file, baseDir, completionRoot(document.analysis, uri), map[string]completionModel{}), true
+	return buildCompletionModel(*file, importBaseDir, completionRoot(document.analysis, uri), map[string]completionModel{}), true
 }
 
 func partialScriptFile(text string, position protocol.Position) (ast.File, bool) {
@@ -976,13 +976,13 @@ type importableSymbol struct {
 	Kind protocol.CompletionItemKind
 }
 
-func importableSymbols(uri protocol.DocumentUri, rootDir string, importPath string) ([]importableSymbol, bool) {
+func importableSymbols(uri protocol.DocumentUri, importRootDir string, importPath string) ([]importableSymbol, bool) {
 	documentPath, ok := documentPathFromURI(uri)
 	if !ok {
 		return nil, false
 	}
 
-	resolvedPath, err := resolveBoundedPathInRoot(filepath.Dir(documentPath), rootDir, importPath)
+	resolvedPath, err := resolveBoundedPathInRoot(filepath.Dir(documentPath), importRootDir, importPath)
 	if err != nil {
 		return nil, false
 	}
@@ -1014,8 +1014,8 @@ func importableSymbols(uri protocol.DocumentUri, rootDir string, importPath stri
 	return symbols, true
 }
 
-func importableIdentifiers(uri protocol.DocumentUri, rootDir string, importPath string) ([]string, bool) {
-	symbols, ok := importableSymbols(uri, rootDir, importPath)
+func importableIdentifiers(uri protocol.DocumentUri, importRootDir string, importPath string) ([]string, bool) {
+	symbols, ok := importableSymbols(uri, importRootDir, importPath)
 	if !ok {
 		return nil, false
 	}
@@ -1072,15 +1072,15 @@ func schemaFileItems(document document, uri protocol.DocumentUri, linePrefix str
 }
 
 func completionRoot(snapshot analysisSnapshot, uri protocol.DocumentUri) string {
-	if snapshot.rootDir != "" {
-		return snapshot.rootDir
+	if snapshot.importRootDir != "" {
+		return snapshot.importRootDir
 	}
 
-	baseDir := filepath.Dir(documentPath(uri))
-	if baseDir == "" {
+	importBaseDir := filepath.Dir(documentPath(uri))
+	if importBaseDir == "" {
 		return "."
 	}
-	return baseDir
+	return importBaseDir
 }
 
 func availableSchemaNames(document document, uri protocol.DocumentUri, linePrefix string) []string {
@@ -1266,12 +1266,12 @@ func partialOutputResult(document document, uri protocol.DocumentUri, position p
 	}
 	partialText += "\n}"
 
-	baseDir := filepath.Dir(documentPath(uri))
-	if baseDir == "" {
-		baseDir = "."
+	importBaseDir := filepath.Dir(documentPath(uri))
+	if importBaseDir == "" {
+		importBaseDir = "."
 	}
 
-	result, err := processor.New().ProcessInScope(partialText, baseDir, completionRoot(document.analysis, uri))
+	result, err := processor.New().ProcessInScope(partialText, importBaseDir, completionRoot(document.analysis, uri))
 	if err != nil {
 		return processor.Result{}, false
 	}
@@ -1607,7 +1607,7 @@ func outputSchemaDirective(file ast.File) (string, bool) {
 	return directive.Value, true
 }
 
-func buildCompletionModel(file ast.File, baseDir string, rootDir string, cache map[string]completionModel) completionModel {
+func buildCompletionModel(file ast.File, importBaseDir string, importRootDir string, cache map[string]completionModel) completionModel {
 	model := completionModel{
 		aliases: map[string]ast.TypeReference{},
 		schemas: map[string]ast.RecordType{},
@@ -1641,11 +1641,11 @@ func buildCompletionModel(file ast.File, baseDir string, rootDir string, cache m
 			continue
 		}
 
-		resolvedPath, err := resolveBoundedPathInRoot(baseDir, rootDir, importPath)
+		resolvedPath, err := resolveBoundedPathInRoot(importBaseDir, importRootDir, importPath)
 		if err != nil {
 			continue
 		}
-		importedModel, importedFile, ok := importedCompletionModel(resolvedPath, rootDir, cache)
+		importedModel, importedFile, ok := importedCompletionModel(resolvedPath, importRootDir, cache)
 		if !ok {
 			continue
 		}
@@ -1673,7 +1673,7 @@ func buildCompletionModel(file ast.File, baseDir string, rootDir string, cache m
 	return model
 }
 
-func importedCompletionModel(path string, rootDir string, cache map[string]completionModel) (completionModel, ast.File, bool) {
+func importedCompletionModel(path string, importRootDir string, cache map[string]completionModel) (completionModel, ast.File, bool) {
 	if model, ok := cache[path]; ok {
 		_, file, _, parsed := parsedFile(path)
 		return model, file, parsed
@@ -1689,7 +1689,7 @@ func importedCompletionModel(path string, rootDir string, cache map[string]compl
 		schemas: map[string]ast.RecordType{},
 		enums:   map[string]completionEnum{},
 	}
-	model := buildCompletionModel(file, filepath.Dir(path), rootDir, cache)
+	model := buildCompletionModel(file, filepath.Dir(path), importRootDir, cache)
 	cache[path] = model
 	return model, file, true
 }
@@ -1888,8 +1888,8 @@ func defaultLiteralForType(typeReference ast.TypeReference, model completionMode
 	}
 }
 
-func directoryEntries(baseDir string, rootDir string, pathPrefix string, excludedPaths []string) ([]protocol.CompletionItem, error) {
-	resolvedDir, itemPrefix, labelPrefix := importDirectory(baseDir, rootDir, pathPrefix)
+func directoryEntries(importBaseDir string, importRootDir string, pathPrefix string, excludedPaths []string) ([]protocol.CompletionItem, error) {
+	resolvedDir, itemPrefix, labelPrefix := importDirectory(importBaseDir, importRootDir, pathPrefix)
 	entries, err := os.ReadDir(resolvedDir)
 	if err != nil {
 		return nil, err
@@ -1923,7 +1923,7 @@ func directoryEntries(baseDir string, rootDir string, pathPrefix string, exclude
 	return items, nil
 }
 
-func importDirectory(baseDir string, rootDir string, pathPrefix string) (string, string, string) {
+func importDirectory(importBaseDir string, importRootDir string, pathPrefix string) (string, string, string) {
 	cleanPrefix := normalizedRelativePathPrefix(pathPrefix)
 	parent, name := path.Split(cleanPrefix)
 	if strings.HasSuffix(cleanPrefix, "/") {
@@ -1931,7 +1931,7 @@ func importDirectory(baseDir string, rootDir string, pathPrefix string) (string,
 		name = ""
 	}
 
-	resolvedDir, err := resolveBoundedPathInRoot(baseDir, rootDir, parent)
+	resolvedDir, err := resolveBoundedPathInRoot(importBaseDir, importRootDir, parent)
 	if err != nil {
 		return "", name, parent
 	}

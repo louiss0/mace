@@ -24,10 +24,10 @@ const (
 )
 
 type Server struct {
-	documents     map[protocol.DocumentUri]document
-	workspaceRoot string
-	handler       protocol.Handler
-	lock          sync.RWMutex
+	documents        map[protocol.DocumentUri]document
+	workspaceRootDir string
+	handler          protocol.Handler
+	lock             sync.RWMutex
 }
 
 type document struct {
@@ -97,7 +97,7 @@ func (server *Server) RunStdio() error {
 }
 
 func (server *Server) initialize(context *glsp.Context, params *protocol.InitializeParams) (any, error) {
-	server.workspaceRoot = workspaceRoot(params)
+	server.workspaceRootDir = workspaceRootDir(params)
 	capabilities := server.handler.CreateServerCapabilities()
 	if syncOptions, ok := capabilities.TextDocumentSync.(*protocol.TextDocumentSyncOptions); ok {
 		syncMode := protocol.TextDocumentSyncKindFull
@@ -134,7 +134,7 @@ func (server *Server) setTrace(context *glsp.Context, params *protocol.SetTraceP
 }
 
 func (server *Server) didOpen(context *glsp.Context, params *protocol.DidOpenTextDocumentParams) error {
-	analysis := analyzer.AnalyzeDocumentAtInRoot(params.TextDocument.Text, documentPath(params.TextDocument.URI), server.rootDir(documentPath(params.TextDocument.URI)))
+	analysis := analyzer.AnalyzeDocumentAtInRoot(params.TextDocument.Text, documentPath(params.TextDocument.URI), server.importRootDir(documentPath(params.TextDocument.URI)))
 
 	server.lock.Lock()
 	server.documents[params.TextDocument.URI] = document{
@@ -184,7 +184,7 @@ func (server *Server) didChange(context *glsp.Context, params *protocol.DidChang
 		return changeResult.err
 	}
 
-	analysis := analyzer.AnalyzeDocumentAtInRoot(changeResult.text, documentPath(params.TextDocument.URI), server.rootDir(documentPath(params.TextDocument.URI)))
+	analysis := analyzer.AnalyzeDocumentAtInRoot(changeResult.text, documentPath(params.TextDocument.URI), server.importRootDir(documentPath(params.TextDocument.URI)))
 	server.documents[params.TextDocument.URI] = document{
 		text:     changeResult.text,
 		version:  protocol.UInteger(params.TextDocument.Version),
@@ -213,7 +213,7 @@ func (server *Server) didSave(context *glsp.Context, params *protocol.DidSaveTex
 	server.documents[params.TextDocument.URI] = document{
 		text:     text,
 		version:  current.version,
-		analysis: analyzer.AnalyzeDocumentAtInRoot(text, documentPath(params.TextDocument.URI), server.rootDir(documentPath(params.TextDocument.URI))),
+		analysis: analyzer.AnalyzeDocumentAtInRoot(text, documentPath(params.TextDocument.URI), server.importRootDir(documentPath(params.TextDocument.URI))),
 	}
 	server.lock.Unlock()
 
@@ -366,7 +366,7 @@ func (server *Server) documentForPosition(uri protocol.DocumentUri, position pro
 		return document, true
 	}
 
-	document.analysis = analyzer.AnalyzeCompletionContextInRoot(document.text, documentPath(uri), server.rootDir(documentPath(uri)), position)
+	document.analysis = analyzer.AnalyzeCompletionContextInRoot(document.text, documentPath(uri), server.importRootDir(documentPath(uri)), position)
 	return document, true
 }
 
@@ -374,7 +374,7 @@ func documentPath(uri protocol.DocumentUri) string {
 	return analyzer.DocumentPath(uri)
 }
 
-func workspaceRoot(params *protocol.InitializeParams) string {
+func workspaceRootDir(params *protocol.InitializeParams) string {
 	if params != nil {
 		for _, folder := range params.WorkspaceFolders {
 			if path := analyzer.DocumentPath(folder.URI); path != "" {
@@ -391,21 +391,21 @@ func workspaceRoot(params *protocol.InitializeParams) string {
 		}
 	}
 
-	rootDir, err := os.Getwd()
+	importRootDir, err := os.Getwd()
 	if err != nil {
 		return "."
 	}
-	return rootDir
+	return importRootDir
 }
 
-func (server *Server) rootDir(documentPath string) string {
-	if server.workspaceRoot != "" {
+func (server *Server) importRootDir(documentPath string) string {
+	if server.workspaceRootDir != "" {
 		if documentPath == "" {
-			return server.workspaceRoot
+			return server.workspaceRootDir
 		}
-		relativePath, err := filepath.Rel(server.workspaceRoot, documentPath)
+		relativePath, err := filepath.Rel(server.workspaceRootDir, documentPath)
 		if err == nil && relativePath != ".." && !strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) {
-			return server.workspaceRoot
+			return server.workspaceRootDir
 		}
 		return filepath.Dir(documentPath)
 	}

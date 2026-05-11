@@ -65,16 +65,16 @@ func AnalyzeDocumentAt(text string, documentPath string) Snapshot {
 	return analyzeDocumentAt(text, documentPath)
 }
 
-func AnalyzeDocumentAtInRoot(text string, documentPath string, rootDir string) Snapshot {
-	return analyzeDocumentAtInRoot(text, documentPath, rootDir)
+func AnalyzeDocumentAtInRoot(text string, documentPath string, importRootDir string) Snapshot {
+	return analyzeDocumentAtInRoot(text, documentPath, importRootDir)
 }
 
 func AnalyzeCompletionContext(text string, documentPath string, position protocol.Position) Snapshot {
 	return analyzeCompletionContext(text, documentPath, position)
 }
 
-func AnalyzeCompletionContextInRoot(text string, documentPath string, rootDir string, position protocol.Position) Snapshot {
-	return analyzeCompletionContextInRoot(text, documentPath, rootDir, position)
+func AnalyzeCompletionContextInRoot(text string, documentPath string, importRootDir string, position protocol.Position) Snapshot {
+	return analyzeCompletionContextInRoot(text, documentPath, importRootDir, position)
 }
 
 func HasParsedFile(snapshot Snapshot) bool {
@@ -364,23 +364,23 @@ func documentPath(uri protocol.DocumentUri) string {
 	return DocumentPath(uri)
 }
 
-func resolveBoundedPath(baseDir string, importPath string) (string, error) {
-	return resolveBoundedPathInRoot(baseDir, baseDir, importPath)
+func resolveBoundedPath(importBaseDir string, importPath string) (string, error) {
+	return resolveBoundedPathInRoot(importBaseDir, importBaseDir, importPath)
 }
 
-func resolveBoundedPathInRoot(baseDir string, rootDir string, importPath string) (string, error) {
+func resolveBoundedPathInRoot(importBaseDir string, importRootDir string, importPath string) (string, error) {
 	if filepath.IsAbs(importPath) {
-		return "", fmt.Errorf("import path %q must be relative: root=%q, base=%q", importPath, rootDir, baseDir)
+		return "", fmt.Errorf("import path %q must be relative: root=%q, base=%q", importPath, importRootDir, importBaseDir)
 	}
 
 	cleanPath := filepath.Clean(filepath.FromSlash(importPath))
-	resolvedPath := filepath.Clean(filepath.Join(baseDir, cleanPath))
-	relativePath, err := filepath.Rel(rootDir, resolvedPath)
+	resolvedPath := filepath.Clean(filepath.Join(importBaseDir, cleanPath))
+	relativePath, err := filepath.Rel(importRootDir, resolvedPath)
 	if err != nil {
 		return "", fmt.Errorf("unable to resolve path %q", importPath)
 	}
 	if relativePath == ".." || strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("import path %q escapes root: root=%q, base=%q", importPath, rootDir, baseDir)
+		return "", fmt.Errorf("import path %q escapes root: root=%q, base=%q", importPath, importRootDir, importBaseDir)
 	}
 
 	return resolvedPath, nil
