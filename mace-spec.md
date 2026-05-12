@@ -665,25 +665,15 @@ The processor validates:
 
 ## Comments
 
-Comments use the `/=` prefix.
+Comments use standard slash-delimited forms.
 
-- Line comments continue to the end of the line.
-- Block comments begin with `/=` and end with `=/`.
-- Vertical block comments are supported when `/=` starts a line and `=/` ends
-  the block on a later line.
+- Line comments begin with `//` and continue to the end of the line.
+- Block comments begin with `/*` and end with `*/`.
 
-Disambiguation rule:
-
-- If a `=/` terminator appears before the next newline, the comment is a block
-  comment.
-- If `/=` is followed only by spaces/tabs before the next newline, it starts a
-  vertical block comment that runs until a later `=/`.
-- Otherwise the comment is a line comment and ends at the newline.
-
-Example (vertical block comment):
+Example (block comment):
 
 ```mace
-/=
+/*
 
 [output = data]
 {
@@ -695,7 +685,7 @@ Example (vertical block comment):
   tax_amount: $self.subtotal * $self.tax_rate;
   total: $self.subtotal + $self.tax_amount;
 }
-=/
+*/
 ```
 
 ## Example

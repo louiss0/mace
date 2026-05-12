@@ -5,12 +5,12 @@
 whitespace        = " " | "\t" | newline ;
 newline           = "\n" | "\r\n" ;
 
-comment            = "/=" , comment_body ;
-comment_body       = block_comment_body | line_comment_body ;
-block_comment_body = ? either an inline body whose nearest terminator is "=/"
-                     before newline, or a vertical body started by a delimiter
-                     line and terminated by a later "=/" ? ;
-line_comment_body  = ? a comment body that ends at the next newline when no "=/" appears first ? ;
+comment
+   = line_comment | block_comment ;
+
+block_comment = "/*" , ? any character sequence up to but not including "*/" ? , "*/" ;
+
+line_comment = "//" , ? any character sequence up to but not including newline ? ;
 inline_description = "/#" , ws0 , description_text ;
 description_text   = ? any character sequence up to but not including ',' ';' or newline ? ;
 

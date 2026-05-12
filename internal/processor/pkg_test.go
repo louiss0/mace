@@ -288,24 +288,24 @@ gen_doc greeting {
 };
 |===|`)),
 		Entry("line and block comments are ignored", `|===|
-from "testdata/imports/base.mace" import Name; /= trailing import comment
-/= line comment before declaration
+from "testdata/imports/base.mace" import Name; // trailing import comment
+// line comment before declaration
 schema Profile: {
-  /= line comment before field
-  name: string; /= trailing field comment
-  /= block comment before optional field =/
-  age?: int; /= trailing field comment
+  // line comment before field
+  name: string; // trailing field comment
+  /* block comment before optional field */
+  age?: int; // trailing field comment
 };
 
 Profile user = {
-  name: "Ada"; /= trailing field comment
-  /= block comment in record =/
-  age?: 30; /= trailing field comment
+  name: "Ada"; // trailing field comment
+  /* block comment in record */
+  age?: 30; // trailing field comment
 };
 |===|
 [output = data]
 {
-  result: user.name; /= trailing output comment
+  result: user.name; // trailing output comment
 }`),
 		Entry("inline descriptions before and after separators", `|===|
 schema User: {

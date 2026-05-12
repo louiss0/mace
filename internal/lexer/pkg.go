@@ -281,7 +281,7 @@ func (l *Lexer) skipWhitespaceAndComments() error {
 			l.advance()
 			continue
 		case '/':
-			if l.peekNext() != '=' {
+			if l.peekNext() != '/' && l.peekNext() != '*' {
 				return nil
 			}
 			if err := l.skipComment(); err != nil {
@@ -298,60 +298,26 @@ func (l *Lexer) skipComment() error {
 	startLine := l.line
 	startColumn := l.column
 	l.advance()
-	l.advance()
+	commentType := l.advance()
 
-	if l.shouldUseBlockComment() {
-		for !l.isAtEnd() {
-			if l.peek() == '=' && l.peekNext() == '/' {
-				l.advance()
-				l.advance()
-				return nil
-			}
+	if commentType == '/' {
+		for !l.isAtEnd() && l.peek() != '\n' && l.peek() != '\r' {
 			l.advance()
 		}
-		return fmt.Errorf("lexer: unterminated block comment at %d:%d", startLine, startColumn)
+
+		return nil
 	}
 
-	for !l.isAtEnd() && l.peek() != '\n' && l.peek() != '\r' {
+	for !l.isAtEnd() {
+		if l.peek() == '*' && l.peekNext() == '/' {
+			l.advance()
+			l.advance()
+			return nil
+		}
 		l.advance()
 	}
 
-	return nil
-}
-
-func (l *Lexer) shouldUseBlockComment() bool {
-	rest := l.input[l.position:]
-	if startsWithVerticalBlockDelimiter(rest) {
-		return strings.Contains(rest, "=/")
-	}
-	blockEnd := strings.Index(rest, "=/")
-	if blockEnd == -1 {
-		return false
-	}
-
-	lineEnd := strings.IndexAny(rest, "\r\n")
-	if lineEnd == -1 {
-		return true
-	}
-
-	return blockEnd < lineEnd
-}
-
-func startsWithVerticalBlockDelimiter(rest string) bool {
-	index := 0
-	for index < len(rest) {
-		current, size := utf8.DecodeRuneInString(rest[index:])
-		if current == utf8.RuneError && size == 1 {
-			return false
-		}
-		if current == ' ' || current == '\t' {
-			index += size
-			continue
-		}
-		return current == '\r' || current == '\n'
-	}
-
-	return false
+	return fmt.Errorf("lexer: unterminated block comment at %d:%d", startLine, startColumn)
 }
 
 func (l *Lexer) isScriptDelimiterStart(startPosition int) bool {

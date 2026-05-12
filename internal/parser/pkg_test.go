@@ -493,30 +493,30 @@ string user = "Ada";
 
 		It("ignores line and block comment content while parsing", func() {
 			input := `|===|
-from "base.mace" import User; /= trailing import comment
-/= line comment before declarations
+from "base.mace" import User; // trailing import comment
+// line comment before declarations
 schema Profile: {
-  /= line comment before field
-  name: string; /= trailing line comment
-  /= block comment before optional field =/
-  age?: int; /= trailing line comment
+  // line comment before field
+  name: string; // trailing line comment
+  /* block comment before optional field */
+  age?: int; // trailing line comment
 };
 
-/= block comment between declarations =/
+/* block comment between declarations */
 Profile current = {
-  name: "Ada"; /= trailing field comment
-  /= comment before optional field =/
-  age?: 30; /= trailing field comment
+  name: "Ada"; // trailing field comment
+  /* comment before optional field */
+  age?: 30; // trailing field comment
 };
 |===|
 [output = data]
 {
-  /= line comment before output field
-  result: current.name; /= trailing output comment
+  // line comment before output field
+  result: current.name; // trailing output comment
   profile: {
-    /= line comment inside nested record
-    age?: current.age; /= trailing nested comment
-  }; /= trailing record comment
+    // line comment inside nested record
+    age?: current.age; // trailing nested comment
+  }; // trailing record comment
 }`
 
 			file, err := parseFileInput(input)
@@ -549,8 +549,8 @@ Profile current = {
 			}
 		})
 
-		It("ignores vertical block comments that wrap script and output blocks", func() {
-			input := `/=
+		It("ignores block comments that wrap script and output blocks", func() {
+			input := `/*
 |===|
 type Hidden: string;
 |===|
@@ -558,7 +558,7 @@ type Hidden: string;
 {
   hidden: "ignore me";
 }
-=/
+*/
 |===|
 string visible = "ok";
 |===|
@@ -581,15 +581,15 @@ string visible = "ok";
 			}
 		})
 
-		It("ignores vertical block comments that wrap script imports", func() {
-			input := `/=
+		It("ignores block comments that wrap script imports", func() {
+			input := `/*
 from "./ignored.mace" import Ignored;
-=/
+*/
 |===|
 from "./base.mace" import User;
-/=
+/*
 from "./also_ignored.mace" import AlsoIgnored;
-=/
+*/
 |===|
 [output = data]
 {
@@ -613,14 +613,14 @@ from "./also_ignored.mace" import AlsoIgnored;
 			tAssert.ErrorContains(err, "expected output directive")
 		})
 
-		It("ignores vertical block comments around type and schema declarations", func() {
+		It("ignores block comments around type and schema declarations", func() {
 			input := `|===|
-/=
+/*
 type Hidden: string;
 schema HiddenUser: {
   name: string;
 };
-=/
+*/
 type Name: string;
 schema User: {
   name: Name;
@@ -648,13 +648,13 @@ schema User: {
 			}
 		})
 
-		It("ignores vertical block comments around enum declarations", func() {
+		It("ignores block comments around enum declarations", func() {
 			input := `|===|
-/=
+/*
 enum HiddenStatus: string {
   Hidden,
 };
-=/
+*/
 enum Status: string {
   Ready,
 };
@@ -682,16 +682,16 @@ Status status = Status.Ready;
 			}
 		})
 
-		It("ignores vertical block comments around documentation declarations", func() {
+		It("ignores block comments around documentation declarations", func() {
 			input := `|===|
 schema User: {
   name: string;
 };
-/=
+/*
 schema_doc User {
   summary: "Ignore this doc";
 };
-=/
+*/
 schema_doc User {
   summary: "Visible doc";
 };
@@ -712,13 +712,13 @@ schema_doc User {
 			}
 		})
 
-		It("ignores vertical block comments inside output fields", func() {
+		It("ignores block comments inside output fields", func() {
 			input := `[output = data]
 {
   subtotal: 129.99 * 3;
-/=
+/*
   total: $self.subtotal * 1.08875;
-=/
+*/
   result: $self.subtotal;
 }`
 
