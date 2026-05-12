@@ -755,7 +755,7 @@ func completionScopeAt(text string, position protocol.Position) completionScope 
 
 func importCompletionItems(document document, linePrefix string, uri protocol.DocumentUri) ([]protocol.CompletionItem, bool) {
 	if matches := importOpenPathPattern.FindStringSubmatch(linePrefix); len(matches) == 2 {
-		return relativePathItems(document, uri, matches[1], nil), true
+		return relativePathItems(document, uri, matches[1], nil, false), true
 	}
 
 	if matches := importIdentifiersPattern.FindStringSubmatch(linePrefix); len(matches) == 3 {
@@ -1040,13 +1040,13 @@ func documentPathFromURI(uri protocol.DocumentUri) (string, bool) {
 	return filepath.FromSlash(path), true
 }
 
-func relativePathItems(document document, uri protocol.DocumentUri, pathPrefix string, excludedPaths []string) []protocol.CompletionItem {
+func relativePathItems(document document, uri protocol.DocumentUri, pathPrefix string, excludedPaths []string, rootBounded bool) []protocol.CompletionItem {
 	documentPath, ok := documentPathFromURI(uri)
 	if !ok {
 		return []protocol.CompletionItem{}
 	}
 
-	items, err := directoryEntries(filepath.Dir(documentPath), completionRoot(document.analysis, uri), pathPrefix, excludedPaths)
+	items, err := directoryEntries(filepath.Dir(documentPath), completionRoot(document.analysis, uri), pathPrefix, excludedPaths, rootBounded)
 	if err != nil {
 		return []protocol.CompletionItem{}
 	}
@@ -1068,7 +1068,7 @@ func schemaReferenceItems(document document, uri protocol.DocumentUri, linePrefi
 }
 
 func schemaFileItems(document document, uri protocol.DocumentUri, linePrefix string, pathPrefix string) []protocol.CompletionItem {
-	return relativePathItems(document, uri, pathPrefix, importedPaths(document, linePrefix))
+	return relativePathItems(document, uri, pathPrefix, importedPaths(document, linePrefix), true)
 }
 
 func completionRoot(snapshot analysisSnapshot, uri protocol.DocumentUri) string {
@@ -1888,8 +1888,8 @@ func defaultLiteralForType(typeReference ast.TypeReference, model completionMode
 	}
 }
 
-func directoryEntries(importBaseDir string, importRootDir string, pathPrefix string, excludedPaths []string) ([]protocol.CompletionItem, error) {
-	resolvedDir, itemPrefix, labelPrefix := importDirectory(importBaseDir, importRootDir, pathPrefix)
+func directoryEntries(importBaseDir string, importRootDir string, pathPrefix string, excludedPaths []string, rootBounded bool) ([]protocol.CompletionItem, error) {
+	resolvedDir, itemPrefix, labelPrefix := importDirectory(importBaseDir, importRootDir, pathPrefix, rootBounded)
 	entries, err := os.ReadDir(resolvedDir)
 	if err != nil {
 		return nil, err
@@ -1923,7 +1923,7 @@ func directoryEntries(importBaseDir string, importRootDir string, pathPrefix str
 	return items, nil
 }
 
-func importDirectory(importBaseDir string, importRootDir string, pathPrefix string) (string, string, string) {
+func importDirectory(importBaseDir string, importRootDir string, pathPrefix string, rootBounded bool) (string, string, string) {
 	cleanPrefix := normalizedRelativePathPrefix(pathPrefix)
 	parent, name := path.Split(cleanPrefix)
 	if strings.HasSuffix(cleanPrefix, "/") {
@@ -1931,7 +1931,12 @@ func importDirectory(importBaseDir string, importRootDir string, pathPrefix stri
 		name = ""
 	}
 
-	resolvedDir, err := resolveBoundedPathInRoot(importBaseDir, importRootDir, parent)
+	resolvePath := resolveBoundedPathInRoot
+	if rootBounded {
+		resolvePath = resolveRootBoundedPathInRoot
+	}
+
+	resolvedDir, err := resolvePath(importBaseDir, importRootDir, parent)
 	if err != nil {
 		return "", name, parent
 	}

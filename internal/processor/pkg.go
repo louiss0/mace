@@ -125,7 +125,7 @@ func (p *Processor) ProcessInDir(input string, importBaseDir string) (Result, er
 		importBaseDir = "."
 	}
 
-	return p.processInput(input, importBaseDir, importBaseDir)
+	return p.processInput(input, importBaseDir, importBaseDir, true)
 }
 
 func (p *Processor) ProcessInScope(input string, importBaseDir string, importRootDir string) (Result, error) {
@@ -136,7 +136,7 @@ func (p *Processor) ProcessInScope(input string, importBaseDir string, importRoo
 		importRootDir = importBaseDir
 	}
 
-	return p.processInput(input, importBaseDir, importRootDir)
+	return p.processInput(input, importBaseDir, importRootDir, false)
 }
 
 func (p *Processor) ProcessScriptBlock(input string) (ScriptResult, error) {
@@ -170,7 +170,7 @@ func (p *Processor) ProcessVariablesInScope(input string, importBaseDir string, 
 		return nil, err
 	}
 
-	context, err := buildProcessContext(file.Imports, file.Script, importBaseDir, importRootDir, p.injections)
+	context, err := buildProcessContext(file.Imports, file.Script, importBaseDir, importRootDir, false, p.injections)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +206,7 @@ func (p *Processor) ProcessFileInDir(path string, importRootDir string) (Result,
 		importRootDir = filepath.Dir(path)
 	}
 
-	return p.processInput(string(contents), filepath.Dir(path), importRootDir)
+	return p.processInput(string(contents), filepath.Dir(path), importRootDir, true)
 }
 
 func ParseInjectionRecord(input string) (map[string]Value, error) {
@@ -231,7 +231,7 @@ func ParseInjectionRecord(input string) (map[string]Value, error) {
 	return value.Record, nil
 }
 
-func (p *Processor) processInput(input string, importBaseDir string, importRootDir string) (Result, error) {
+func (p *Processor) processInput(input string, importBaseDir string, importRootDir string, enforceImportRoot bool) (Result, error) {
 	tokens, err := lex(input)
 	if err != nil {
 		return Result{}, err
@@ -242,7 +242,7 @@ func (p *Processor) processInput(input string, importBaseDir string, importRootD
 		return Result{}, err
 	}
 
-	context, err := buildProcessContext(file.Imports, file.Script, importBaseDir, importRootDir, p.injections)
+	context, err := buildProcessContext(file.Imports, file.Script, importBaseDir, importRootDir, enforceImportRoot, p.injections)
 	if err != nil {
 		return Result{}, err
 	}
@@ -261,7 +261,7 @@ func (p *Processor) processScriptInput(input string, importBaseDir string) (Scri
 		return ScriptResult{}, err
 	}
 
-	context, err := buildProcessContext(script.Imports, &script, importBaseDir, importBaseDir, p.injections)
+	context, err := buildProcessContext(script.Imports, &script, importBaseDir, importBaseDir, true, p.injections)
 	if err != nil {
 		return ScriptResult{}, err
 	}
@@ -381,22 +381,23 @@ func lex(input string) ([]lexer.Token, error) {
 	}
 }
 
-func buildProcessContext(imports []ast.ImportDeclaration, script *ast.ScriptBlock, importBaseDir string, importRootDir string, injections map[string]Value) (processContext, error) {
+func buildProcessContext(imports []ast.ImportDeclaration, script *ast.ScriptBlock, importBaseDir string, importRootDir string, enforceImportRoot bool, injections map[string]Value) (processContext, error) {
 	return buildProcessContextWithState(
 		imports,
 		script,
 		importBaseDir,
 		importRootDir,
+		enforceImportRoot,
 		injections,
 		map[string]map[string]importedDeclaration{},
 		map[string]struct{}{},
 	)
 }
 
-func buildProcessContextWithState(imports []ast.ImportDeclaration, script *ast.ScriptBlock, importBaseDir string, importRootDir string, injections map[string]Value, cache map[string]map[string]importedDeclaration, stack map[string]struct{}) (processContext, error) {
+func buildProcessContextWithState(imports []ast.ImportDeclaration, script *ast.ScriptBlock, importBaseDir string, importRootDir string, enforceImportRoot bool, injections map[string]Value, cache map[string]map[string]importedDeclaration, stack map[string]struct{}) (processContext, error) {
 	context := newProcessContext(importBaseDir, importRootDir)
 
-	imported, err := resolveImportsWithState(ast.File{Imports: imports}, importBaseDir, importRootDir, cache, stack)
+	imported, err := resolveImportsWithState(ast.File{Imports: imports}, importBaseDir, importRootDir, enforceImportRoot, cache, stack)
 	if err != nil {
 		return processContext{}, err
 	}
@@ -494,7 +495,7 @@ type importedDeclaration struct {
 	vtype   valueType
 }
 
-func resolveImportsWithState(file ast.File, importBaseDir string, importRootDir string, cache map[string]map[string]importedDeclaration, stack map[string]struct{}) ([]importedDeclaration, error) {
+func resolveImportsWithState(file ast.File, importBaseDir string, importRootDir string, enforceImportRoot bool, cache map[string]map[string]importedDeclaration, stack map[string]struct{}) ([]importedDeclaration, error) {
 	if len(file.Imports) == 0 {
 		return nil, nil
 	}
@@ -507,11 +508,11 @@ func resolveImportsWithState(file ast.File, importBaseDir string, importRootDir 
 			return nil, err
 		}
 
-		resolvedPath, err := resolveBoundedPath(importBaseDir, importRootDir, path)
+		resolvedPath, err := resolveImportPathInScope(importBaseDir, importRootDir, path, enforceImportRoot)
 		if err != nil {
 			return nil, err
 		}
-		declarations, err := loadImportExports(resolvedPath, importRootDir, cache, stack)
+		declarations, err := loadImportExports(resolvedPath, importRootDir, enforceImportRoot, cache, stack)
 		if err != nil {
 			return nil, err
 		}
@@ -545,13 +546,30 @@ func parseImportPath(literal ast.StringLiteral) (string, error) {
 	return value.String, nil
 }
 
-func resolveBoundedPath(importBaseDir string, importRootDir string, importPath string) (string, error) {
+func resolveImportPath(importBaseDir string, importPath string) (string, error) {
 	if filepath.IsAbs(importPath) {
+		return "", validationErrorf("import path %q must be relative: base=%q", importPath, importBaseDir)
+	}
+
+	cleanPath := filepath.Clean(filepath.FromSlash(importPath))
+	return filepath.Clean(filepath.Join(importBaseDir, cleanPath)), nil
+}
+
+func resolveImportPathInScope(importBaseDir string, importRootDir string, importPath string, enforceImportRoot bool) (string, error) {
+	if !enforceImportRoot {
+		return resolveImportPath(importBaseDir, importPath)
+	}
+
+	return resolveBoundedPath(importBaseDir, importRootDir, importPath)
+}
+
+func resolveBoundedPath(importBaseDir string, importRootDir string, importPath string) (string, error) {
+	resolvedPath, err := resolveImportPath(importBaseDir, importPath)
+	if err != nil {
 		return "", validationErrorf("import path %q must be relative: root=%q, base=%q", importPath, formatImportRoot(importRootDir), importBaseDir)
 	}
 
 	cleanPath := filepath.Clean(filepath.FromSlash(importPath))
-	resolvedPath := filepath.Clean(filepath.Join(importBaseDir, cleanPath))
 	if cleanPath == ".." || strings.HasPrefix(cleanPath, ".."+string(filepath.Separator)) {
 		return "", validationErrorf("import path %q escapes root: root=%q, base=%q, resolved=%q", importPath, formatImportRoot(importRootDir), importBaseDir, resolvedPath)
 	}
@@ -580,7 +598,7 @@ func formatImportRoot(importRootDir string) string {
 	return label + "/"
 }
 
-func loadImportExports(path string, importRootDir string, cache map[string]map[string]importedDeclaration, stack map[string]struct{}) (map[string]importedDeclaration, error) {
+func loadImportExports(path string, importRootDir string, enforceImportRoot bool, cache map[string]map[string]importedDeclaration, stack map[string]struct{}) (map[string]importedDeclaration, error) {
 	if declarations, ok := cache[path]; ok {
 		return declarations, nil
 	}
@@ -611,6 +629,7 @@ func loadImportExports(path string, importRootDir string, cache map[string]map[s
 		file.Script,
 		filepath.Dir(path),
 		importRootDir,
+		enforceImportRoot,
 		map[string]Value{},
 		cache,
 		stack,

@@ -496,4 +496,57 @@ from "./shared.mace" import
 
 		tAssert.Equal([]string{"age", "name"}, labels)
 	})
+
+	It("completes $self fields for parent-relative imports", func() {
+		workspace, err := os.MkdirTemp("", "mace-completion-parent-import-self-*")
+		tAssert.NoError(err)
+
+		writeAnalysisFile(workspace, "shared.mace", `[output = data]
+{
+  base: {
+    name: "Ada";
+  };
+}`)
+
+		documentDir := filepath.Join(workspace, "nested")
+		tAssert.NoError(os.MkdirAll(documentDir, 0o755))
+		documentPath := filepath.Join(documentDir, "consumer.mace")
+		text := `|===|
+from "../shared.mace" import base;
+|===|
+[output = data]
+{
+  base: base;
+  result: $self.base.
+}`
+		position := protocol.Position{Line: 6, Character: protocol.UInteger(len(`  result: $self.base.`))}
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string { return item.Label })
+
+		tAssert.Equal([]string{"name"}, labels)
+	})
+
+	It("keeps schema_file completion root-bounded", func() {
+		workspace, err := os.MkdirTemp("", "mace-completion-schema-file-root-*")
+		tAssert.NoError(err)
+
+		writeAnalysisFile(workspace, "shared.mace", `[output = schema]
+{
+  User: string;
+}`)
+
+		documentDir := filepath.Join(workspace, "nested")
+		tAssert.NoError(os.MkdirAll(documentDir, 0o755))
+		documentPath := filepath.Join(documentDir, "consumer.mace")
+		line := `[output = data, schema_file = "../`
+		position := protocol.Position{Line: 0, Character: protocol.UInteger(len(line))}
+		snapshot := AnalyzeCompletionContext(line, documentPath, position)
+
+		items := CompletionItems(line, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string { return item.Label })
+
+		tAssert.NotContains(labels, "../shared.mace")
+	})
 })
