@@ -1016,6 +1016,42 @@ enum Status: string { Pending, Done = "done" };
 		tAssert.Contains(missingAction.Edit.Changes[uri][0].NewText, `Missing`)
 	})
 
+	It("supports float enum details and normalization actions", func() {
+		text := `|===|
+enum Status: float { Pending, Done = 0.5 };
+|===|
+[output = schema]
+{}`
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := analyzeDocumentAt(text, documentPath)
+
+		rangeValue := protocol.Range{Start: protocol.Position{Line: 1, Character: 5}, End: protocol.Position{Line: 1, Character: 11}}
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		explicitAction := requireCodeAction(snapshot, uri, rangeValue, "Convert mixed enum to all-explicit")
+		tAssert.Contains(explicitAction.Edit.Changes[uri][0].NewText, `Pending = 0.0`)
+		missingAction := requireCodeAction(snapshot, uri, rangeValue, "Add missing enum member")
+		tAssert.Contains(missingAction.Edit.Changes[uri][0].NewText, `Missing = 0.2`)
+
+		hover := Hover(text, snapshot, protocol.Position{Line: 1, Character: 6})
+		tAssert.NotNil(hover)
+		if hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if !ok {
+			return
+		}
+		tAssert.Contains(content.Value, `enum Status: float { Pending = 0.0, Done = 0.5 }`)
+
+		symbols := DocumentSymbols(text, snapshot)
+		if tAssert.Len(symbols, 1) {
+			tAssert.Equal("0.0", lo.FromPtr(symbols[0].Children[0].Detail))
+			tAssert.Equal("0.5", lo.FromPtr(symbols[0].Children[1].Detail))
+		}
+	})
+
 	It("offers string and style actions", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		snapshot := analyzeDocumentAt(`|====|

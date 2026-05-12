@@ -1810,16 +1810,8 @@ func completionEnumMemberDetail(declaration ast.EnumDeclaration, member ast.Enum
 		return fmt.Sprintf("enum member %s.%s = %s", declaration.Name, member.Name, expressionSummary(member.Value))
 	}
 
-	if declaration.BackingType.Name == "string" {
-		return fmt.Sprintf("enum member %s.%s = %q", declaration.Name, member.Name, member.Name)
-	}
-
-	if declaration.BackingType.Name == "int" {
-		return fmt.Sprintf("enum member %s.%s = %d", declaration.Name, member.Name, index)
-	}
-
-	if declaration.BackingType.Name == "float" {
-		return fmt.Sprintf("enum member %s.%s = %.1f", declaration.Name, member.Name, float64(index)/10)
+	if implicitValue, ok := implicitEnumMemberValueDetail(declaration.BackingType.Name, member.Name, index); ok {
+		return fmt.Sprintf("enum member %s.%s = %s", declaration.Name, member.Name, implicitValue)
 	}
 
 	return fmt.Sprintf("enum member %s.%s", declaration.Name, member.Name)
