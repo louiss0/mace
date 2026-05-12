@@ -19,7 +19,10 @@ import (
 	"github.com/louiss0/mace/internal/processor"
 )
 
+var cliActivationDir = "."
+
 func run(args []string, stdout io.Writer, stderr io.Writer) int {
+	cliActivationDir = activationDir()
 	command := newRootCommand(stdout, stderr)
 	command.SetArgs(args)
 
@@ -63,7 +66,7 @@ func newJSONCommand() *cobra.Command {
 				processorInstance = processor.NewWithInjections(injections)
 			}
 
-			result, err := processorInstance.ProcessFile(args[0])
+			result, err := processorInstance.ProcessFileInDir(args[0], cliActivationDir)
 			if err != nil {
 				return err
 			}
@@ -324,4 +327,12 @@ func lex(input string) ([]lexer.Token, error) {
 			return tokens, nil
 		}
 	}
+}
+
+func activationDir() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	return dir
 }

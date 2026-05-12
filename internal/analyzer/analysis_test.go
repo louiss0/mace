@@ -487,6 +487,36 @@ from "./shared.mace" import age;
 		}
 	})
 
+	It("allows parent-relative imports in analyzer contexts", func() {
+		workspace, err := os.MkdirTemp("", "mace-analysis-import-boundary-*")
+		tAssert.NoError(err)
+		defer func() {
+			tAssert.NoError(os.RemoveAll(workspace))
+		}()
+
+		writeAnalysisFile(workspace, "shared.mace", `[output = schema]
+{
+  User: string;
+}`)
+		consumerDir := filepath.Join(workspace, "nested")
+		tAssert.NoError(os.MkdirAll(consumerDir, 0o755))
+		documentPath := writeAnalysisFile(consumerDir, "document.mace", `|===|
+from "../shared.mace" import User;
+|===|
+[output = data]
+{}`)
+		contents, err := os.ReadFile(documentPath)
+		tAssert.NoError(err)
+		snapshot := analyzeDocumentAt(string(contents), documentPath)
+
+		messages := lo.Map(snapshot.diagnostics, func(diagnostic protocol.Diagnostic, _ int) string {
+			return diagnostic.Message
+		})
+		tAssert.False(lo.ContainsBy(messages, func(message string) bool {
+			return strings.Contains(message, `escapes root`)
+		}))
+	})
+
 	It("offers remaining add and fix import actions", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))

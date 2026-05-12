@@ -128,7 +128,7 @@ schema Basket: { favorite_fruit: Fruit; };
 			return
 		}
 
-		model := buildCompletionModel(*file, filepath.Dir("document.mace"), map[string]completionModel{})
+		model := buildCompletionModel(*file, filepath.Dir("document.mace"), filepath.Dir("document.mace"), map[string]completionModel{})
 		expectedType, path, ok := placeholderOutputCompletionType(*file, model)
 		tAssert.True(ok)
 		tAssert.Equal([]string{"favorite_fruit"}, path)
@@ -389,7 +389,7 @@ type Alias: string;
 
 		documentPath := filepath.Join(workspace, "consumer.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))
-		symbols, ok := importableSymbols(uri, "./shared.mace")
+		symbols, ok := importableSymbols(uri, filepath.Dir(documentPath), "./shared.mace")
 		tAssert.True(ok)
 
 		kinds := map[string]protocol.CompletionItemKind{}
@@ -415,7 +415,7 @@ type Alias: string;
 
 		documentPath := filepath.Join(workspace, "consumer.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))
-		symbols, ok := importableSymbols(uri, "./shared.mace")
+		symbols, ok := importableSymbols(uri, filepath.Dir(documentPath), "./shared.mace")
 		tAssert.True(ok)
 
 		names := lo.Map(symbols, func(s importableSymbol, _ int) string { return s.Name })
@@ -495,5 +495,58 @@ from "./shared.mace" import
 		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string { return item.Label })
 
 		tAssert.Equal([]string{"age", "name"}, labels)
+	})
+
+	It("completes $self fields for parent-relative imports", func() {
+		workspace, err := os.MkdirTemp("", "mace-completion-parent-import-self-*")
+		tAssert.NoError(err)
+
+		writeAnalysisFile(workspace, "shared.mace", `[output = data]
+{
+  base: {
+    name: "Ada";
+  };
+}`)
+
+		documentDir := filepath.Join(workspace, "nested")
+		tAssert.NoError(os.MkdirAll(documentDir, 0o755))
+		documentPath := filepath.Join(documentDir, "consumer.mace")
+		text := `|===|
+from "../shared.mace" import base;
+|===|
+[output = data]
+{
+  base: base;
+  result: $self.base.
+}`
+		position := protocol.Position{Line: 6, Character: protocol.UInteger(len(`  result: $self.base.`))}
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string { return item.Label })
+
+		tAssert.Equal([]string{"name"}, labels)
+	})
+
+	It("keeps schema_file completion root-bounded", func() {
+		workspace, err := os.MkdirTemp("", "mace-completion-schema-file-root-*")
+		tAssert.NoError(err)
+
+		writeAnalysisFile(workspace, "shared.mace", `[output = schema]
+{
+  User: string;
+}`)
+
+		documentDir := filepath.Join(workspace, "nested")
+		tAssert.NoError(os.MkdirAll(documentDir, 0o755))
+		documentPath := filepath.Join(documentDir, "consumer.mace")
+		line := `[output = data, schema_file = "../`
+		position := protocol.Position{Line: 0, Character: protocol.UInteger(len(line))}
+		snapshot := AnalyzeCompletionContext(line, documentPath, position)
+
+		items := CompletionItems(line, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string { return item.Label })
+
+		tAssert.NotContains(labels, "../shared.mace")
 	})
 })

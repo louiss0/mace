@@ -1175,6 +1175,78 @@ type Name: string;
 [output = data] {}`, "duplicate declaration"),
 	)
 
+	It("rejects imports that escape the activation directory", func() {
+		workspace, err := os.MkdirTemp("", "mace-import-root-boundary-*")
+		tAssert.NoError(err)
+
+		outsidePath := writeFixtureFile(workspace, "shared.mace", `[output = schema]
+{
+  User: string;
+}`)
+		consumerDir := filepath.Join(workspace, "nested")
+		tAssert.NoError(os.MkdirAll(consumerDir, 0o755))
+		consumerPath := writeFixtureFile(consumerDir, "consumer.mace", `|===|
+from "../shared.mace" import User;
+|===|
+[output = data]
+{}`)
+
+		processor := New()
+		_, err = processor.ProcessFileInDir(consumerPath, consumerDir)
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, `import path "../shared.mace" escapes root:`)
+		tAssert.FileExists(outsidePath)
+	})
+
+	It("allows parent-relative imports during scoped processing", func() {
+		workspace, err := os.MkdirTemp("", "mace-import-scope-parent-*")
+		tAssert.NoError(err)
+
+		writeFixtureFile(workspace, "shared.mace", `[output = data]
+{
+  value: "Ada";
+}`)
+
+		consumerDir := filepath.Join(workspace, "nested")
+		tAssert.NoError(os.MkdirAll(consumerDir, 0o755))
+		input := `|===|
+from "../shared.mace" import value;
+|===|
+[output = data]
+{
+  result: value;
+}`
+
+		processor := New()
+		result, err := processor.ProcessInScope(input, consumerDir, consumerDir)
+		tAssert.NoError(err)
+		assertExpectedOutput(result, map[string]expectedValue{
+			"result": {kind: ValueString, string: "Ada"},
+		})
+	})
+
+	It("rejects schema_file paths that escape the activation directory", func() {
+		workspace, err := os.MkdirTemp("", "mace-schema-file-root-boundary-*")
+		tAssert.NoError(err)
+
+		writeFixtureFile(workspace, "shared.mace", `|===|
+schema User: { name: string; };
+|===|
+[output = schema]
+{
+  User: User;
+}`)
+		consumerDir := filepath.Join(workspace, "nested")
+		tAssert.NoError(os.MkdirAll(consumerDir, 0o755))
+		consumerPath := writeFixtureFile(consumerDir, "consumer.mace", `[output = data, schema_file = "../shared.mace"]
+{}`)
+
+		processor := New()
+		_, err = processor.ProcessFileInDir(consumerPath, consumerDir)
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, `import path "../shared.mace" escapes root:`)
+	})
+
 	It("imports enums exposed through schema output", func() {
 		workspace, err := os.MkdirTemp("", "mace-processor-enum-import-*")
 		tAssert.NoError(err)
