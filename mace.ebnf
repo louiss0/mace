@@ -5,16 +5,17 @@
 whitespace        = " " | "\t" | newline ;
 newline           = "\n" | "\r\n" ;
 
-comment            = "/=" , comment_body ;
-comment_body       = block_comment_body | line_comment_body ;
-block_comment_body = ? either an inline body whose nearest terminator is "=/"
-                     before newline, or a vertical body started by a delimiter
-                     line and terminated by a later "=/" ? ;
-line_comment_body  = ? a comment body that ends at the next newline when no "=/" appears first ? ;
+comment
+   = line_comment | block_comment ;
+
+block_comment = "/*" , ? any character sequence up to but not including "*/" ? , "*/" ;
+
+line_comment = "//" , ? any character sequence up to but not including newline ? ;
+
 inline_description = "/#" , ws0 , description_text ;
 description_text   = ? any character sequence up to but not including ',' ';' or newline ? ;
 
-(* `;` terminates completed declaration entities in Mace. Record-style fields
+(* `;` terminates completed declaration entities in Mace. object-style fields
    may use `,` or `;` separators, and inline descriptions may appear
    immediately before or after that separator. *)
 
@@ -195,10 +196,10 @@ schema_declaration
   = "schema" , ws1 ,
     identifier , ws0 ,
     ":" , ws0 ,
-    record_type ,
+    object_type ,
     ws0 , ";" ;
 
-record_type
+object_type
   = "{" , ws0 ,
     { schema_field , ws0 } ,
     "}" ;
@@ -303,7 +304,7 @@ primary_expression
   | string_literal
   | boolean_literal
   | array_literal
-  | record_literal ;
+  | object_literal ;
 
 postfix_expression
   = postfix_target , { postfix_suffix } ;
@@ -369,8 +370,13 @@ equality_expression
   | equality_expression "!==" relational_expression ;
 
 bitwise_and_expression
-  = equality_expression
-  | bitwise_and_expression "&" equality_expression ;
+  = merge_expression
+  | bitwise_and_expression "&" merge_expression ;
+
+merge_operand
+  = postfix_expression
+  | array_literal
+  | object_literal ;
 
 bitwise_xor_expression
   = bitwise_and_expression
@@ -394,6 +400,10 @@ conditional_expression
     expression , ws0 , ":" , ws0 ,
     conditional_expression ;
 
+merge_expression
+  = merge_operand
+  | merge_expression , ws0 , "<>" , ws0 , merge_operand ;
+
 (* ===================================================== *)
 (* 12. LITERALS                                         *)
 (* ===================================================== *)
@@ -403,12 +413,12 @@ array_literal
     [ expression , { ws0 , "," , ws0 , expression } ] ,
     ws0 , "]" ;
 
-record_literal
+object_literal
   = "{" , ws0 ,
-    { record_field , ws0 } ,
+    { object_field , ws0 } ,
     "}" ;
 
-record_field
+object_field
   = identifier , [ "?" ] , ws0 ,
     ":" , ws0 ,
     expression ,

@@ -24,7 +24,7 @@ var diagnosticPositionPattern = regexp.MustCompile(`at (\d+):(\d+)`)
 
 var keywordDocs = map[string]string{
 	"array":      "Declares an array type like `array<string>`.",
-	"enum":       "Declares a named scalar enum type backed by `string` or `int`.",
+	"enum":       "Declares a named scalar enum type backed by `string`, `int`, or `float`.",
 	"injectable": "Marks a script variable as overrideable through injections.",
 	"type":       "Declares a reusable type alias.",
 	"union":      "Declares schema composition like `union[Profile, Audit]`.",
@@ -157,10 +157,12 @@ func DocumentSymbols(text string, snapshot Snapshot) []protocol.DocumentSymbol {
 		case ast.TypeDeclaration:
 			return newSymbol(text, declaration.Name, "type", protocol.SymbolKindClass, nil), true
 		case ast.EnumDeclaration:
-			children := lo.Map(declaration.Members, func(member ast.EnumMember, _ int) protocol.DocumentSymbol {
+			children := lo.Map(declaration.Members, func(member ast.EnumMember, index int) protocol.DocumentSymbol {
 				detail := member.Name
 				if member.HasValue {
 					detail = expressionSummary(member.Value)
+				} else if implicitValue, ok := implicitEnumMemberValueDetail(declaration.BackingType.Name, member.Name, index); ok {
+					detail = implicitValue
 				}
 				return newSymbol(text, member.Name, detail, protocol.SymbolKindEnumMember, nil)
 			})

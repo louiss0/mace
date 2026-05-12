@@ -1899,7 +1899,7 @@ func addEnumRefactorActions(file ast.File, addWholeFileAction func(string, proto
 		addWholeFileAction("Convert mixed enum to all-implicit", targetRange, updated)
 		member := ast.EnumMember{Name: "Missing", HasValue: declaration.BackingType.Name != "string"}
 		if member.HasValue {
-			member.Value = ast.IntLiteral{Lexeme: strconv.Itoa(len(declaration.Members))}
+			member.Value = defaultEnumMemberValue(declaration, member, len(declaration.Members))
 		}
 		added := declaration
 		added.Members = append(append([]ast.EnumMember{}, declaration.Members...), member)
@@ -2045,6 +2045,9 @@ func replaceScriptItem(file ast.File, index int, declaration ast.Declaration) as
 func defaultEnumMemberValue(declaration ast.EnumDeclaration, member ast.EnumMember, index int) ast.Expression {
 	if declaration.BackingType.Name == "string" {
 		return ast.StringLiteral{Lexeme: strconv.Quote(strings.ToLower(member.Name))}
+	}
+	if declaration.BackingType.Name == "float" {
+		return ast.FloatLiteral{Lexeme: implicitFloatEnumValue(index)}
 	}
 	return ast.IntLiteral{Lexeme: strconv.Itoa(index)}
 }
@@ -3719,12 +3722,8 @@ func enumDeclarationDetail(declaration ast.EnumDeclaration) string {
 			return member.Name + " = " + expressionSummary(member.Value)
 		}
 
-		if declaration.BackingType.Name == "string" {
-			return member.Name + " = " + fmt.Sprintf("%q", member.Name)
-		}
-
-		if declaration.BackingType.Name == "int" {
-			return member.Name + " = " + fmt.Sprintf("%d", index)
+		if implicitValue, ok := implicitEnumMemberValueDetail(declaration.BackingType.Name, member.Name, index); ok {
+			return member.Name + " = " + implicitValue
 		}
 
 		return member.Name
@@ -3738,27 +3737,34 @@ func enumMemberDetail(declaration ast.EnumDeclaration, member ast.EnumMember) st
 		return fmt.Sprintf("enum member %s.%s = %s", declaration.Name, member.Name, expressionSummary(member.Value))
 	}
 
-	if declaration.BackingType.Name == "string" {
-		return fmt.Sprintf("enum member %s.%s = %q", declaration.Name, member.Name, member.Name)
-	}
-
-	if declaration.BackingType.Name == "int" {
-		for index, declarationMember := range declaration.Members {
-			if declarationMember.Name == member.Name {
-				return fmt.Sprintf("enum member %s.%s = %d", declaration.Name, member.Name, index)
-			}
+	for index, declarationMember := range declaration.Members {
+		if declarationMember.Name != member.Name {
+			continue
 		}
-	}
-
-	if declaration.BackingType.Name == "float" {
-		for index, declarationMember := range declaration.Members {
-			if declarationMember.Name == member.Name {
-				return fmt.Sprintf("enum member %s.%s = %.1f", declaration.Name, member.Name, float64(index)/10)
-			}
+		if implicitValue, ok := implicitEnumMemberValueDetail(declaration.BackingType.Name, member.Name, index); ok {
+			return fmt.Sprintf("enum member %s.%s = %s", declaration.Name, member.Name, implicitValue)
 		}
+		break
 	}
 
 	return fmt.Sprintf("enum member %s.%s", declaration.Name, member.Name)
+}
+
+func implicitEnumMemberValueDetail(backingType string, memberName string, index int) (string, bool) {
+	switch backingType {
+	case "string":
+		return fmt.Sprintf("%q", memberName), true
+	case "int":
+		return strconv.Itoa(index), true
+	case "float":
+		return implicitFloatEnumValue(index), true
+	default:
+		return "", false
+	}
+}
+
+func implicitFloatEnumValue(index int) string {
+	return fmt.Sprintf("%.1f", float64(index)/10)
 }
 
 func indexSymbols(symbols []semanticSymbol) map[string]semanticSymbol {

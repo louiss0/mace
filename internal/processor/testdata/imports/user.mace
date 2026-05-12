@@ -11,6 +11,7 @@ enum Personality: string { friendly, nice, rude };
 type Thing: variant[string, int];
 
 enum Status: int { mad, happy, content };
+enum OtherStatus: float { mad, happy, content };
 
 Personality is_type  = Personality.nice;
 

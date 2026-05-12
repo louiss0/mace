@@ -195,12 +195,12 @@ var _ = Describe("Lexer", func() {
 			tAssert.NoError(err)
 			assertTokenSequence(tokens, expected)
 		},
-		Entry("line comments", "  /= comment line\nname value", []expectedToken{
+		Entry("line comments", "  // comment line\nname value", []expectedToken{
 			{tokenType: TokenIdentifier, lexeme: "name"},
 			{tokenType: TokenIdentifier, lexeme: "value"},
 			{tokenType: TokenEOF, lexeme: ""},
 		}),
-		Entry("block comments", "name /= block comment =/ value", []expectedToken{
+		Entry("block comments", "name /* block comment */ value", []expectedToken{
 			{tokenType: TokenIdentifier, lexeme: "name"},
 			{tokenType: TokenIdentifier, lexeme: "value"},
 			{tokenType: TokenEOF, lexeme: ""},
@@ -428,19 +428,19 @@ var _ = Describe("Lexer", func() {
 			tAssert.NoError(err)
 			assertTokenSequence(tokens, expected)
 		},
-		Entry("block comment before newline", "/= block =/ value", []expectedToken{
+		Entry("block comment before newline", "/* block */ value", []expectedToken{
 			{tokenType: TokenIdentifier, lexeme: "value"},
 			{tokenType: TokenEOF, lexeme: ""},
 		}),
-		Entry("line comment at eof", "name /= comment", []expectedToken{
+		Entry("line comment at eof", "name // comment", []expectedToken{
 			{tokenType: TokenIdentifier, lexeme: "name"},
 			{tokenType: TokenEOF, lexeme: ""},
 		}),
-		Entry("line comment does not consume later block closer", "/= comment\n/= block =/ value", []expectedToken{
+		Entry("line comment does not consume later block closer", "// comment\n/* block */ value", []expectedToken{
 			{tokenType: TokenIdentifier, lexeme: "value"},
 			{tokenType: TokenEOF, lexeme: ""},
 		}),
-		Entry("vertical block comment delimiters on standalone lines", "/=\nname: should_be_ignored;\n=/ value", []expectedToken{
+		Entry("multiline block comments can span standalone lines", "/*\nname: should_be_ignored;\n*/ value", []expectedToken{
 			{tokenType: TokenIdentifier, lexeme: "value"},
 			{tokenType: TokenEOF, lexeme: ""},
 		}),
