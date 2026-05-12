@@ -373,6 +373,11 @@ bitwise_and_expression
   = merge_expression
   | bitwise_and_expression "&" merge_expression ;
 
+merge_operand
+  = postfix_expression
+  | array_literal
+  | object_literal ;
+
 bitwise_xor_expression
   = bitwise_and_expression
   | bitwise_xor_expression "^" bitwise_and_expression ;
@@ -396,8 +401,8 @@ conditional_expression
     conditional_expression ;
 
 merge_expression
-  = equality_expression
-  | merge_expression , ws0 , "<>" , ws0 , equality_expression ;
+  = merge_operand
+  | merge_expression , ws0 , "<>" , ws0 , merge_operand ;
 
 (* ===================================================== *)
 (* 12. LITERALS                                         *)
