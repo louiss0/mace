@@ -223,6 +223,7 @@ func Rename(text string, snapshot Snapshot, uri protocol.DocumentUri, position p
 		currentURI = snapshot.documentURI
 	}
 
+	localImportRename := localImportRenameTarget(snapshot, position, symbol)
 	for index, token := range snapshot.tokens {
 		if token.Type != lexer.TokenIdentifier || token.Lexeme != symbol.Name {
 			continue
@@ -234,7 +235,11 @@ func Rename(text string, snapshot Snapshot, uri protocol.DocumentUri, position p
 		edits[currentURI] = append(edits[currentURI], protocol.TextEdit{Range: rangeValue, NewText: newName})
 	}
 
-	if symbol.Origin == symbolOriginImport {
+	if localImportRename.ok {
+		if !hasTextEditAtRange(edits[currentURI], localImportRename.rangeValue) {
+			edits[currentURI] = append(edits[currentURI], protocol.TextEdit{Range: localImportRename.rangeValue, NewText: newName})
+		}
+	} else if symbol.Origin == symbolOriginImport {
 		definitionURI := symbol.Definition.URI
 		if definitionURI != "" && definitionURI != currentURI {
 			edits[definitionURI] = append(edits[definitionURI], protocol.TextEdit{Range: symbol.Definition.Range, NewText: newName})
@@ -245,6 +250,49 @@ func Rename(text string, snapshot Snapshot, uri protocol.DocumentUri, position p
 		return nil, false
 	}
 	return &protocol.WorkspaceEdit{Changes: edits}, true
+}
+
+func localImportRenameTarget(snapshot Snapshot, position protocol.Position, symbol semanticSymbol) struct {
+	rangeValue protocol.Range
+	ok         bool
+} {
+	if snapshot.file == nil || symbol.Origin != symbolOriginImport {
+		return struct {
+			rangeValue protocol.Range
+			ok         bool
+		}{ok: false}
+	}
+
+	for _, importDecl := range snapshot.file.Imports {
+		for _, identifier := range importDecl.Identifiers {
+			if identifier.Alias == "" || identifier.LocalName() != symbol.Name {
+				continue
+			}
+			aliasToken, ok := importAliasToken(snapshot.tokens, importDecl, identifier)
+			if !ok {
+				continue
+			}
+			aliasRange := tokenProtocolRange(aliasToken)
+			return struct {
+				rangeValue protocol.Range
+				ok         bool
+			}{rangeValue: aliasRange, ok: true}
+		}
+	}
+
+	return struct {
+		rangeValue protocol.Range
+		ok         bool
+	}{ok: false}
+}
+
+func hasTextEditAtRange(edits []protocol.TextEdit, rangeValue protocol.Range) bool {
+	for _, edit := range edits {
+		if rangesEqual(edit.Range, rangeValue) {
+			return true
+		}
+	}
+	return false
 }
 
 func renameTokenMatchesSymbol(snapshot Snapshot, index int, rangeValue protocol.Range, symbol semanticSymbol) bool {

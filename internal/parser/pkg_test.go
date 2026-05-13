@@ -442,7 +442,7 @@ string user = "Ada";
 
 			if tAssert.Len(file.Imports, 1) {
 				tAssert.Equal("\"base.mace\"", file.Imports[0].Path.Lexeme)
-				tAssert.Equal([]string{"User", "Config"}, file.Imports[0].Identifiers)
+				tAssert.Equal([]ast.ImportedIdentifier{{Name: "User"}, {Name: "Config"}}, file.Imports[0].Identifiers)
 			}
 
 			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 3) {
@@ -524,7 +524,7 @@ Profile current = {
 
 			if tAssert.Len(file.Imports, 1) {
 				tAssert.Equal("base.mace", file.Imports[0].Path.Lexeme[1:len(file.Imports[0].Path.Lexeme)-1])
-				tAssert.Equal([]string{"User"}, file.Imports[0].Identifiers)
+				tAssert.Equal([]ast.ImportedIdentifier{{Name: "User"}}, file.Imports[0].Identifiers)
 			}
 
 			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 2) {
@@ -600,7 +600,7 @@ from "./also_ignored.mace" import AlsoIgnored;
 			tAssert.NoError(err)
 			if tAssert.Len(file.Imports, 1) {
 				tAssert.Equal("\"./base.mace\"", file.Imports[0].Path.Lexeme)
-				tAssert.Equal([]string{"User"}, file.Imports[0].Identifiers)
+				tAssert.Equal([]ast.ImportedIdentifier{{Name: "User"}}, file.Imports[0].Identifiers)
 			}
 		})
 

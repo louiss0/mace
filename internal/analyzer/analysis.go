@@ -1238,15 +1238,15 @@ func importResolutionCodeActions(text string, file ast.File, tokens []lexer.Toke
 			actions = append(actions, analysisCodeActionCandidate{Range: protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, Action: protocol.CodeAction{Title: "Open source output block", Kind: Ptr(protocol.CodeActionKindRefactor), Command: &protocol.Command{Title: "Open source output block", Command: "mace.openOutput", Arguments: []any{protocol.DocumentUri(fileURI(importedPath))}}}})
 			actions = append(actions, analysisCodeActionCandidate{Range: protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, Action: protocol.CodeAction{Title: "Explain why symbol is not importable", Kind: Ptr(protocol.CodeActionKindQuickFix), Command: &protocol.Command{Title: "Explain why symbol is not importable", Command: "mace.explainImport", Arguments: []any{"Only names surfaced through the imported file output block are importable."}}}})
 		}
-		for _, name := range importDecl.Identifiers {
-			if lo.Contains(exportedNames, name) {
+		for _, identifier := range importDecl.Identifiers {
+			if lo.Contains(exportedNames, identifier.Name) {
 				continue
 			}
-			closest, ok := closestName(name, exportedNames)
+			closest, ok := closestName(identifier.Name, exportedNames)
 			if !ok {
 				continue
 			}
-			nameToken, ok := importIdentifierToken(tokens, importDecl, name)
+			nameToken, ok := importIdentifierToken(tokens, importDecl, identifier.Name)
 			if !ok {
 				continue
 			}
@@ -1268,15 +1268,15 @@ func unavailableImportDiagnostics(file ast.File, tokens []lexer.Token, documentP
 		if !ok {
 			continue
 		}
-		for _, name := range importDecl.Identifiers {
-			if _, ok := unavailableNames[importNameKey(pathValue, name)]; !ok {
+		for _, identifier := range importDecl.Identifiers {
+			if _, ok := unavailableNames[importNameKey(pathValue, identifier.Name)]; !ok {
 				continue
 			}
-			nameToken, ok := importIdentifierToken(tokens, importDecl, name)
+			nameToken, ok := importIdentifierToken(tokens, importDecl, identifier.Name)
 			if !ok {
 				continue
 			}
-			message := fmt.Sprintf("imported key %q is not exported by %q", name, pathValue)
+			message := fmt.Sprintf("imported key %q is not exported by %q", identifier.Name, pathValue)
 			diagnostics = append(diagnostics, diagnosticWithCode(tokenProtocolRange(nameToken), protocol.DiagnosticSeverityError, diagnosticImportNameNotExposed, message))
 		}
 	}
@@ -1307,11 +1307,11 @@ func unavailableImportNameSet(file ast.File, documentPath string) map[string]str
 		}
 
 		exportedNames := exportedOutputNames(importedFile)
-		for _, name := range importDecl.Identifiers {
-			if lo.Contains(exportedNames, name) {
+		for _, identifier := range importDecl.Identifiers {
+			if lo.Contains(exportedNames, identifier.Name) {
 				continue
 			}
-			names[importNameKey(pathValue, name)] = struct{}{}
+			names[importNameKey(pathValue, identifier.Name)] = struct{}{}
 		}
 	}
 
@@ -1520,7 +1520,9 @@ func addImportRefactorActions(file ast.File, addWholeFileAction func(string, pro
 			return strings.Compare(left.Path.Lexeme, right.Path.Lexeme)
 		})
 		if !slices.EqualFunc(sortedImports, imports, func(left ast.ImportDeclaration, right ast.ImportDeclaration) bool {
-			return left.Path.Lexeme == right.Path.Lexeme && slices.Equal(left.Identifiers, right.Identifiers)
+			return left.Path.Lexeme == right.Path.Lexeme && slices.EqualFunc(left.Identifiers, right.Identifiers, func(a, b ast.ImportedIdentifier) bool {
+				return a.Name == b.Name && a.Alias == b.Alias
+			})
 		}) {
 			updated := replaceFileImports(file, sortedImports)
 			addWholeFileAction("Sort imports", protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, updated)
@@ -1547,7 +1549,7 @@ func addImportRefactorActions(file ast.File, addWholeFileAction func(string, pro
 			updatedImports := append([]ast.ImportDeclaration{}, imports...)
 			updatedImports = slices.Delete(updatedImports, index, index+1)
 			for offset, identifier := range importDecl.Identifiers {
-				updatedImports = slices.Insert(updatedImports, index+offset, ast.ImportDeclaration{Path: importDecl.Path, Identifiers: []string{identifier}})
+				updatedImports = slices.Insert(updatedImports, index+offset, ast.ImportDeclaration{Path: importDecl.Path, Identifiers: []ast.ImportedIdentifier{identifier}})
 			}
 			updated := replaceFileImports(file, updatedImports)
 			addWholeFileAction("Split import declaration", targetRange, updated)
@@ -1557,7 +1559,7 @@ func addImportRefactorActions(file ast.File, addWholeFileAction func(string, pro
 				continue
 			}
 			updatedImports := append([]ast.ImportDeclaration{}, imports...)
-			updatedImports[index].Identifiers = append(append([]string{}, importDecl.Identifiers...), imports[otherIndex].Identifiers...)
+			updatedImports[index].Identifiers = append(append([]ast.ImportedIdentifier{}, importDecl.Identifiers...), imports[otherIndex].Identifiers...)
 			updatedImports = slices.Delete(updatedImports, otherIndex, otherIndex+1)
 			updated := replaceFileImports(file, updatedImports)
 			addWholeFileAction("Merge duplicate imports", targetRange, updated)
@@ -1577,26 +1579,28 @@ func replaceFileImports(file ast.File, imports []ast.ImportDeclaration) ast.File
 	return updated
 }
 
-func hasDuplicateImportIdentifiers(identifiers []string) bool {
+func hasDuplicateImportIdentifiers(identifiers []ast.ImportedIdentifier) bool {
 	seen := map[string]struct{}{}
-	for _, identifier := range identifiers {
-		if _, ok := seen[identifier]; ok {
+	for _, id := range identifiers {
+		localName := id.LocalName()
+		if _, ok := seen[localName]; ok {
 			return true
 		}
-		seen[identifier] = struct{}{}
+		seen[localName] = struct{}{}
 	}
 	return false
 }
 
-func uniqueImportIdentifiers(identifiers []string) []string {
+func uniqueImportIdentifiers(identifiers []ast.ImportedIdentifier) []ast.ImportedIdentifier {
 	seen := map[string]struct{}{}
-	unique := []string{}
-	for _, identifier := range identifiers {
-		if _, ok := seen[identifier]; ok {
+	unique := []ast.ImportedIdentifier{}
+	for _, id := range identifiers {
+		localName := id.LocalName()
+		if _, ok := seen[localName]; ok {
 			continue
 		}
-		seen[identifier] = struct{}{}
-		unique = append(unique, identifier)
+		seen[localName] = struct{}{}
+		unique = append(unique, id)
 	}
 	return unique
 }
@@ -2474,21 +2478,22 @@ func unusedImportAnalysis(text string, file ast.File, tokens []lexer.Token, docu
 	actions := []analysisCodeActionCandidate{}
 	for _, importDecl := range file.Imports {
 		pathValue, _ := stringLiteralValue(importDecl.Path)
-		for _, name := range importDecl.Identifiers {
-			if _, ok := unavailableNames[importNameKey(pathValue, name)]; ok {
+		for _, identifier := range importDecl.Identifiers {
+			localName := identifier.LocalName()
+			if _, ok := unavailableNames[importNameKey(pathValue, identifier.Name)]; ok {
 				continue
 			}
-			if _, ok := referencedNames[name]; ok {
+			if _, ok := referencedNames[localName]; ok {
 				continue
 			}
 
-			token, ok := importIdentifierToken(tokens, importDecl, name)
+			token, ok := importEntryToken(tokens, importDecl, identifier)
 			if !ok {
 				continue
 			}
 
 			rangeValue := tokenProtocolRange(token)
-			message := fmt.Sprintf("import %q is never used", name)
+			message := fmt.Sprintf("import %q is never used", localName)
 			diagnostics = append(diagnostics, diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityWarning, diagnosticImportUnused, message))
 			if documentPath == "" {
 				continue
@@ -2525,7 +2530,43 @@ func importIdentifierToken(tokens []lexer.Token, importDecl ast.ImportDeclaratio
 		}
 		for current := index + 3; current < len(tokens) && tokens[current].Type != lexer.TokenSemicolon; current++ {
 			if tokens[current].Type == lexer.TokenIdentifier && tokens[current].Lexeme == name {
+				// Skip alias tokens: an identifier preceded by ':' is an alias, not an exported name
+				if current > 0 && tokens[current-1].Type == lexer.TokenColon {
+					continue
+				}
 				return tokens[current], true
+			}
+		}
+	}
+
+	return lexer.Token{}, false
+}
+
+func importEntryToken(tokens []lexer.Token, importDecl ast.ImportDeclaration, identifier ast.ImportedIdentifier) (lexer.Token, bool) {
+	if identifier.Alias != "" {
+		return importAliasToken(tokens, importDecl, identifier)
+	}
+	return importIdentifierToken(tokens, importDecl, identifier.Name)
+}
+
+func importAliasToken(tokens []lexer.Token, importDecl ast.ImportDeclaration, identifier ast.ImportedIdentifier) (lexer.Token, bool) {
+	if identifier.Alias == "" {
+		return lexer.Token{}, false
+	}
+
+	for index := 0; index < len(tokens); index++ {
+		if tokens[index].Type != lexer.TokenFrom {
+			continue
+		}
+		if index+3 >= len(tokens) || tokens[index+1].Lexeme != importDecl.Path.Lexeme || tokens[index+2].Type != lexer.TokenImport {
+			continue
+		}
+		for current := index + 3; current+2 < len(tokens) && tokens[current].Type != lexer.TokenSemicolon; current++ {
+			if tokens[current].Type != lexer.TokenIdentifier || tokens[current].Lexeme != identifier.Name {
+				continue
+			}
+			if tokens[current+1].Type == lexer.TokenColon && tokens[current+2].Type == lexer.TokenIdentifier && tokens[current+2].Lexeme == identifier.Alias {
+				return tokens[current+2], true
 			}
 		}
 	}
@@ -2549,10 +2590,20 @@ func importIdentifierEditRange(text string, tokens []lexer.Token, nameToken lexe
 		return importDeclarationEditRange(text, tokens, nameIndex)
 	}
 
+	// Determine the last token of this entry, extending past :Alias if present
+	entryEndIndex := nameIndex
+	if nameIndex+2 < len(tokens) &&
+		tokens[nameIndex+1].Type == lexer.TokenColon &&
+		tokens[nameIndex+2].Type == lexer.TokenIdentifier {
+		entryEndIndex = nameIndex + 2
+	}
+
 	start := tokenStartIndex(text, nameToken)
-	end := start + len(nameToken.Lexeme)
-	if nameIndex+1 < len(tokens) && tokens[nameIndex+1].Type == lexer.TokenComma {
-		end = tokenStartIndex(text, tokens[nameIndex+1]) + len(tokens[nameIndex+1].Lexeme)
+	entryEndToken := tokens[entryEndIndex]
+	end := tokenStartIndex(text, entryEndToken) + len(entryEndToken.Lexeme)
+
+	if entryEndIndex+1 < len(tokens) && tokens[entryEndIndex+1].Type == lexer.TokenComma {
+		end = tokenStartIndex(text, tokens[entryEndIndex+1]) + len(tokens[entryEndIndex+1].Lexeme)
 		for end < len(text) && (text[end] == ' ' || text[end] == '\t') {
 			end++
 		}
@@ -3494,10 +3545,13 @@ func importedSemanticSymbols(file ast.File, documentPath string) []semanticSymbo
 			return nil
 		}
 
-		return lo.FilterMap(importDecl.Identifiers, func(name string, _ int) (semanticSymbol, bool) {
-			symbol, ok := importedSemanticSymbol(importedFile, importedPath, name)
+		return lo.FilterMap(importDecl.Identifiers, func(identifier ast.ImportedIdentifier, _ int) (semanticSymbol, bool) {
+			symbol, ok := importedSemanticSymbol(importedFile, importedPath, identifier.Name)
 			if !ok {
 				return semanticSymbol{}, false
+			}
+			if identifier.Alias != "" {
+				symbol.Name = identifier.LocalName()
 			}
 			return symbol, true
 		})

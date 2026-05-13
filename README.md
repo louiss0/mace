@@ -37,13 +37,14 @@ A Mace file can contain:
 - exactly one output block
 
 Imports use `from ... import ...;` and must appear at the top of the script
-block before other declarations.
+block before other declarations. Imported names may optionally define a
+local alias with `Name:Alias`.
 
 Example:
 
 ```mace
 |===|
-from "./shared.mace" import User;
+from "./shared.mace" import User:ProfileUser;
 
 enum Environment: string {
   Dev,
@@ -51,7 +52,7 @@ enum Environment: string {
 }
 
 Environment env = Environment.Prod;
-User current = {
+ProfileUser current = {
   name: "Ada",
   age: 27
 };
@@ -63,6 +64,9 @@ User current = {
   current: current
 }
 ```
+
+Aliases only rename the local reference inside the importing file. They do
+not rename the exported key in the imported file.
 
 Mace supports:
 

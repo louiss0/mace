@@ -115,9 +115,21 @@ type File struct {
 	Output  OutputBlock
 }
 
+type ImportedIdentifier struct {
+	Name  string // exported name (the name in the source file)
+	Alias string // local alias (empty if no alias)
+}
+
+func (i ImportedIdentifier) LocalName() string {
+	if i.Alias != "" {
+		return i.Alias
+	}
+	return i.Name
+}
+
 type ImportDeclaration struct {
 	Path        StringLiteral
-	Identifiers []string
+	Identifiers []ImportedIdentifier
 }
 
 type ScriptBlock struct {
