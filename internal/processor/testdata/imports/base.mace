@@ -1,17 +1,18 @@
-|=============================================|
-from "./profile.mace" import Profile, Age;
+|======================================================|
+from "./profile.mace" import Profile:UserProfile, Age;
 type Name: string;
 
 schema User: {
   name: Name,
   age: Age,
+  profile: UserProfile,
 };
 
 schema Secret: {
   token: int,
 };
 
-|=============================================|
+|======================================================|
 
 [output = schema]
 {

@@ -517,17 +517,20 @@ func resolveImportsWithState(file ast.File, importBaseDir string, importRootDir 
 			return nil, err
 		}
 
-		for _, name := range importDecl.Identifiers {
-			if _, exists := imports[name]; exists {
-				return nil, validationErrorf("duplicate import %q", name)
+		for _, imported := range importDecl.Identifiers {
+			localName := imported.LocalName()
+			if _, exists := imports[localName]; exists {
+				return nil, validationErrorf("duplicate import %q", localName)
 			}
 
-			decl, ok := declarations[name]
+			decl, ok := declarations[imported.Name]
 			if !ok {
-				return nil, validationErrorf("imported identifier %q not found in %q", name, path)
+				return nil, validationErrorf("imported identifier %q not found in %q", imported.Name, path)
 			}
 
-			imports[name] = decl
+			aliasedDecl := decl
+			aliasedDecl.name = localName
+			imports[localName] = aliasedDecl
 		}
 	}
 

@@ -42,7 +42,15 @@ func (f *formatter) writeFile(file ast.File) error {
 }
 
 func formatImportDeclaration(importDeclaration ast.ImportDeclaration) string {
-	return "from " + importDeclaration.Path.Lexeme + " import " + strings.Join(importDeclaration.Identifiers, ", ") + ";"
+	parts := make([]string, 0, len(importDeclaration.Identifiers))
+	for _, id := range importDeclaration.Identifiers {
+		if id.Alias != "" {
+			parts = append(parts, id.Name+":"+id.Alias)
+		} else {
+			parts = append(parts, id.Name)
+		}
+	}
+	return "from " + importDeclaration.Path.Lexeme + " import " + strings.Join(parts, ", ") + ";"
 }
 
 func normalizedScriptBlock(file ast.File) (ast.ScriptBlock, bool) {

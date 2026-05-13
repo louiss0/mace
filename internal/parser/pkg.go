@@ -139,14 +139,33 @@ func (p *Parser) parseImportDeclaration() (ast.ImportDeclaration, error) {
 		return ast.ImportDeclaration{}, err
 	}
 
-	identifiers := []string{firstIdentifier.Lexeme}
+	firstImported := ast.ImportedIdentifier{Name: firstIdentifier.Lexeme}
+	if p.current().Type == lexer.TokenColon {
+		p.advance()
+		aliasToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier as alias in import list")
+		if err != nil {
+			return ast.ImportDeclaration{}, err
+		}
+		firstImported.Alias = aliasToken.Lexeme
+	}
+
+	identifiers := []ast.ImportedIdentifier{firstImported}
 	for p.current().Type == lexer.TokenComma {
 		p.advance()
 		nextIdentifier, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier after ',' in import list")
 		if err != nil {
 			return ast.ImportDeclaration{}, err
 		}
-		identifiers = append(identifiers, nextIdentifier.Lexeme)
+		imported := ast.ImportedIdentifier{Name: nextIdentifier.Lexeme}
+		if p.current().Type == lexer.TokenColon {
+			p.advance()
+			aliasToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier as alias in import list")
+			if err != nil {
+				return ast.ImportDeclaration{}, err
+			}
+			imported.Alias = aliasToken.Lexeme
+		}
+		identifiers = append(identifiers, imported)
 	}
 
 	if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after import declaration"); err != nil {

@@ -1139,8 +1139,11 @@ func importableSchemaIdentifiers(document document, uri protocol.DocumentUri, im
 		return field.Name
 	})
 
-	return lo.Filter(importDecl.Identifiers, func(name string, _ int) bool {
-		return lo.Contains(exportedSchemaNames, name)
+	return lo.FilterMap(importDecl.Identifiers, func(identifier ast.ImportedIdentifier, _ int) (string, bool) {
+		if lo.Contains(exportedSchemaNames, identifier.Name) {
+			return identifier.LocalName(), true
+		}
+		return "", false
 	}), true
 }
 
@@ -1650,9 +1653,10 @@ func buildCompletionModel(file ast.File, importBaseDir string, importRootDir str
 			continue
 		}
 
-		for _, name := range importDecl.Identifiers {
+		for _, identifier := range importDecl.Identifiers {
+			localName := identifier.LocalName()
 			field, ok := lo.Find(importedFile.Output.SchemaFields, func(field ast.OutputSchemaField) bool {
-				return field.Name == name
+				return field.Name == identifier.Name
 			})
 			if !ok {
 				continue
@@ -1661,11 +1665,11 @@ func buildCompletionModel(file ast.File, importBaseDir string, importRootDir str
 			resolved := resolveCompletionType(field.Type, importedModel, map[string]struct{}{})
 			switch resolved.kind {
 			case completionTypeSchema:
-				model.schemas[name] = resolved.record
+				model.schemas[localName] = resolved.record
 			case completionTypeEnum:
-				model.enums[name] = resolved.enum.rename(name)
+				model.enums[localName] = resolved.enum.rename(localName)
 			default:
-				model.aliases[name] = field.Type
+				model.aliases[localName] = field.Type
 			}
 		}
 	}
