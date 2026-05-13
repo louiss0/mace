@@ -31,9 +31,12 @@ Imports use this syntax:
 
 ```mace
 |===|
-from "./shared.mace" import Name, User;
+from "./shared.mace" import Name, User:CurrentUser;
 |===|
 ```
+
+Aliases rename only the local reference inside the importing file. The
+exported key in the imported file stays unchanged.
 
 Current import rules:
 

@@ -66,7 +66,10 @@ import_declaration
     ws0 , ";" ;
 
 import_list
-  = identifier , { ws0 , "," , ws0 , identifier } ;
+  = imported_identifier , { ws0 , "," , ws0 , imported_identifier } ;
+
+imported_identifier
+  = identifier , [ ws0 , ":" , ws0 , identifier ] ;
 
 (* ===================================================== *)
 (* 4. SCRIPT BLOCK                                      *)

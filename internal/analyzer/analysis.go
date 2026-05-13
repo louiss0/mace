@@ -2487,7 +2487,7 @@ func unusedImportAnalysis(text string, file ast.File, tokens []lexer.Token, docu
 				continue
 			}
 
-			token, ok := importIdentifierToken(tokens, importDecl, identifier.Name)
+			token, ok := importEntryToken(tokens, importDecl, identifier)
 			if !ok {
 				continue
 			}
@@ -2540,6 +2540,13 @@ func importIdentifierToken(tokens []lexer.Token, importDecl ast.ImportDeclaratio
 	}
 
 	return lexer.Token{}, false
+}
+
+func importEntryToken(tokens []lexer.Token, importDecl ast.ImportDeclaration, identifier ast.ImportedIdentifier) (lexer.Token, bool) {
+	if identifier.Alias != "" {
+		return importAliasToken(tokens, importDecl, identifier)
+	}
+	return importIdentifierToken(tokens, importDecl, identifier.Name)
 }
 
 func importAliasToken(tokens []lexer.Token, importDecl ast.ImportDeclaration, identifier ast.ImportedIdentifier) (lexer.Token, bool) {
