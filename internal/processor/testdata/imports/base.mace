@@ -5,7 +5,7 @@ type Name: string;
 schema User: {
   name: Name,
   age: Age,
-  profile: UserProfile,
+  profile?: UserProfile,
 };
 
 schema Secret: {

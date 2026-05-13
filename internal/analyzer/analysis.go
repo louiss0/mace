@@ -2530,6 +2530,10 @@ func importIdentifierToken(tokens []lexer.Token, importDecl ast.ImportDeclaratio
 		}
 		for current := index + 3; current < len(tokens) && tokens[current].Type != lexer.TokenSemicolon; current++ {
 			if tokens[current].Type == lexer.TokenIdentifier && tokens[current].Lexeme == name {
+				// Skip alias tokens: an identifier preceded by ':' is an alias, not an exported name
+				if current > 0 && tokens[current-1].Type == lexer.TokenColon {
+					continue
+				}
 				return tokens[current], true
 			}
 		}
@@ -2554,10 +2558,20 @@ func importIdentifierEditRange(text string, tokens []lexer.Token, nameToken lexe
 		return importDeclarationEditRange(text, tokens, nameIndex)
 	}
 
+	// Determine the last token of this entry, extending past :Alias if present
+	entryEndIndex := nameIndex
+	if nameIndex+2 < len(tokens) &&
+		tokens[nameIndex+1].Type == lexer.TokenColon &&
+		tokens[nameIndex+2].Type == lexer.TokenIdentifier {
+		entryEndIndex = nameIndex + 2
+	}
+
 	start := tokenStartIndex(text, nameToken)
-	end := start + len(nameToken.Lexeme)
-	if nameIndex+1 < len(tokens) && tokens[nameIndex+1].Type == lexer.TokenComma {
-		end = tokenStartIndex(text, tokens[nameIndex+1]) + len(tokens[nameIndex+1].Lexeme)
+	entryEndToken := tokens[entryEndIndex]
+	end := tokenStartIndex(text, entryEndToken) + len(entryEndToken.Lexeme)
+
+	if entryEndIndex+1 < len(tokens) && tokens[entryEndIndex+1].Type == lexer.TokenComma {
+		end = tokenStartIndex(text, tokens[entryEndIndex+1]) + len(tokens[entryEndIndex+1].Lexeme)
 		for end < len(text) && (text[end] == ' ' || text[end] == '\t') {
 			end++
 		}
