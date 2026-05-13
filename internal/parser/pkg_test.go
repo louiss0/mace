@@ -1119,6 +1119,24 @@ schema_doc Status {
 			}
 		})
 
+		It("rejects props entries in gen_doc declarations", func() {
+			input := `|===|
+type Name: string;
+
+gen_doc Name {
+  props: {
+    value: "Nope",
+  },
+};
+|===|
+[output = data]
+{}`
+
+			_, err := parseFileInput(input)
+			tAssert.Error(err)
+			tAssert.ErrorContains(err, "props entry is only allowed in schema_doc")
+		})
+
 		It("parses documentation fixtures with props and inline descriptions", func() {
 			file, err := parseFixtureFile(filepath.Join("..", "analyzer", "testdata", "docs", "hover.mace"))
 			tAssert.NoError(err)

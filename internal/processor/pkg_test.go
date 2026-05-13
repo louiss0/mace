@@ -267,6 +267,9 @@ enum Status: string {
 
 type Name: string;
 string greeting = "Hello";
+User profile = {
+  name: greeting,
+};
 
 schema_doc User {
   summary: "Represents a user.",
@@ -277,6 +280,13 @@ schema_doc User {
 
 schema_doc Status {
   summary: "Represents a status.",
+};
+
+schema_doc profile {
+  summary: "Profile object.",
+  props: {
+    name: "Profile name.",
+  };
 };
 
 gen_doc Name {
@@ -370,6 +380,26 @@ schema_doc Status {
   summary: "Invalid target.";
 };
 |===|`), "schema_doc target"),
+		Entry("schema_doc rejects scalar variables", wrapScriptWithOutput(`|===|
+string greeting = "Hello";
+
+schema_doc greeting {
+  summary: "Invalid target.";
+};
+|===|`), "schema_doc target \"greeting\" must reference a schema, enum, or object-valued variable"),
+		Entry("gen_doc rejects object variables", wrapScriptWithOutput(`|===|
+schema User: {
+  name: string;
+};
+
+User profile = {
+  name: "Ada";
+};
+
+gen_doc profile {
+  summary: "Invalid target.";
+};
+|===|`), "gen_doc target \"profile\" must reference a type or non-object variable"),
 		Entry("output inline doc requires a directive list", `"""
 Invalid: no directive list
 """
@@ -419,7 +449,7 @@ gen_doc Name {
     value: "Nope";
   };
 };
-|===|`), "require a schema target"),
+|===|`), "props entry is only allowed in schema_doc"),
 		Entry("schema_doc must appear after its schema declaration", wrapScriptWithOutput(`|===|
 schema_doc User {
   summary: "Late-bound docs";
@@ -428,7 +458,7 @@ schema_doc User {
 schema User: {
   name: string;
 };
-|===|`), "must appear after its schema or enum declaration"),
+|===|`), "must appear after its schema, enum, or object-valued variable declaration"),
 		Entry("schema_doc must appear after its enum declaration", wrapScriptWithOutput(`|===|
 schema_doc Status {
   summary: "Late-bound docs";
@@ -437,21 +467,21 @@ schema_doc Status {
 enum Status: string {
   Pending,
 };
-|===|`), "must appear after its schema or enum declaration"),
+|===|`), "must appear after its schema, enum, or object-valued variable declaration"),
 		Entry("gen_doc must appear after its type declaration", wrapScriptWithOutput(`|===|
 gen_doc Name {
   summary: "Late-bound docs";
 };
 
 type Name: string;
-|===|`), "must appear after its type or variable declaration"),
+|===|`), "must appear after its type or non-object variable declaration"),
 		Entry("gen_doc must appear after its variable declaration", wrapScriptWithOutput(`|===|
 gen_doc name {
   summary: "Late-bound docs";
 };
 
 string name = "Ada";
-|===|`), "must appear after its type or variable declaration"),
+|===|`), "must appear after its type or non-object variable declaration"),
 	)
 
 	DescribeTable("accepts primitive variant alternatives",
