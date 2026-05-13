@@ -2542,6 +2542,31 @@ func importIdentifierToken(tokens []lexer.Token, importDecl ast.ImportDeclaratio
 	return lexer.Token{}, false
 }
 
+func importAliasToken(tokens []lexer.Token, importDecl ast.ImportDeclaration, identifier ast.ImportedIdentifier) (lexer.Token, bool) {
+	if identifier.Alias == "" {
+		return lexer.Token{}, false
+	}
+
+	for index := 0; index < len(tokens); index++ {
+		if tokens[index].Type != lexer.TokenFrom {
+			continue
+		}
+		if index+3 >= len(tokens) || tokens[index+1].Lexeme != importDecl.Path.Lexeme || tokens[index+2].Type != lexer.TokenImport {
+			continue
+		}
+		for current := index + 3; current+2 < len(tokens) && tokens[current].Type != lexer.TokenSemicolon; current++ {
+			if tokens[current].Type != lexer.TokenIdentifier || tokens[current].Lexeme != identifier.Name {
+				continue
+			}
+			if tokens[current+1].Type == lexer.TokenColon && tokens[current+2].Type == lexer.TokenIdentifier && tokens[current+2].Lexeme == identifier.Alias {
+				return tokens[current+2], true
+			}
+		}
+	}
+
+	return lexer.Token{}, false
+}
+
 func importIdentifierEditRange(text string, tokens []lexer.Token, nameToken lexer.Token, onlyIdentifier bool) (protocol.Range, bool) {
 	nameIndex := -1
 	for index, token := range tokens {

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
+	"github.com/samber/lo"
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
@@ -2503,6 +2504,62 @@ from "./shared.mace" import User;
 			}
 		}
 		tAssert.NotEmpty(sharedEdits)
+	})
+
+	It("renames import aliases without renaming matching output keys", func() {
+		workspace, err := os.MkdirTemp("", "mace-lsp-rename-import-alias-*")
+		tAssert.NoError(err)
+		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
+{
+  Scripts: { name: string; };
+}`)
+		consumerPath := writeWorkspaceFile(workspace, "consumer.mace", `|===|
+from "./shared.mace" import Scripts:MyScripts;
+|===|
+[output = schema]
+{
+  scripts: MyScripts;
+  Scripts: { name: string; };
+}`)
+		consumerURI := protocol.DocumentUri(consumerPath)
+		openEmptyDocument(server, consumerURI, nil)
+		didChange(server, consumerURI, 2, `|===|
+from "./shared.mace" import Scripts:MyScripts;
+|===|
+[output = schema]
+{
+  scripts: MyScripts;
+  Scripts: { name: string; };
+}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentRename, protocol.RenameParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: consumerURI},
+				Position:     protocol.Position{Line: 5, Character: 11},
+			},
+			NewName: "UserScripts",
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		edit, ok := resultValue.(*protocol.WorkspaceEdit)
+		tAssert.True(ok)
+		if !ok || !tAssert.NotNil(edit) {
+			return
+		}
+
+		edits := edit.Changes[consumerURI]
+		tAssert.Len(edits, 2)
+		newTexts := lo.Map(edits, func(edit protocol.TextEdit, _ int) string {
+			return edit.NewText
+		})
+		tAssert.Equal([]string{"UserScripts", "UserScripts"}, newTexts)
+		for _, edit := range edits {
+			tAssert.NotEqual(protocol.Position{Line: 6, Character: 2}, edit.Range.Start)
+			tAssert.NotEqual(protocol.Position{Line: 5, Character: 2}, edit.Range.Start)
+		}
+		tAssert.Len(edit.Changes, 1)
 	})
 
 	It("returns hierarchical document symbols", func() {
