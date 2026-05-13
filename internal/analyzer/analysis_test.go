@@ -288,6 +288,28 @@ schema User: { name: string; };
 		}
 	})
 
+	It("offers schema_doc generation for object-valued variables", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := analyzeDocumentAt(`|===|
+schema User: { name: string; };
+User profile = { name: "Ada"; };
+|===|
+[output = data]
+{
+  profile: profile;
+}`, documentPath)
+
+		rangeValue := protocol.Range{
+			Start: protocol.Position{Line: 2, Character: 5},
+			End:   protocol.Position{Line: 2, Character: 12},
+		}
+		action := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), rangeValue, "Generate schema_doc")
+		edits := action.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
+		if tAssert.Len(edits, 1) {
+			tAssert.Contains(edits[0].NewText, `schema_doc profile`)
+		}
+	})
+
 	It("offers schema output generation from schema declarations", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		snapshot := analyzeDocumentAt(`|===|

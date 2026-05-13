@@ -1403,7 +1403,13 @@ func documentationCodeActions(text string, file ast.File, tokens []lexer.Token, 
 				}
 			}
 		case ast.VariableDeclaration:
-			actions = append(actions, documentationCodeAction(documentPath, tokenProtocolRange(declaration.NameToken), insertRange, "Generate gen_doc", genDocText(declaration.Name)))
+			title := "Generate gen_doc"
+			text := genDocText(declaration.Name)
+			if isSchemaDocVariableDeclaration(declaration, file) {
+				title = "Generate schema_doc"
+				text = schemaDocText(declaration.Name)
+			}
+			actions = append(actions, documentationCodeAction(documentPath, tokenProtocolRange(declaration.NameToken), insertRange, title, text))
 		case ast.SchemaDeclaration:
 			actions = append(actions, documentationCodeAction(documentPath, tokenProtocolRange(declaration.NameToken), insertRange, "Generate schema_doc", schemaDocText(declaration.Name)))
 		case ast.EnumDeclaration:
@@ -3641,6 +3647,15 @@ func isSchemaTypeReference(typeReference ast.TypeReference, file ast.File) bool 
 	default:
 		return false
 	}
+}
+
+func isSchemaDocVariableDeclaration(declaration ast.VariableDeclaration, file ast.File) bool {
+	if isSchemaTypeReference(declaration.Type, file) {
+		return true
+	}
+
+	_, ok := declaration.Value.(ast.RecordLiteral)
+	return ok
 }
 
 func isEnumTypeReference(typeReference ast.TypeReference, file ast.File) bool {
