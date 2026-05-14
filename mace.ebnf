@@ -144,16 +144,19 @@ schema_doc_declaration
     { schema_doc_entry , ws0 } ,
     "}" ;
 
-(* `gen_doc` must appear after the target `type` declaration.
-   `schema_doc` must appear after the target `schema` declaration. *)
+(* `gen_doc` must appear after the target `type` declaration or a variable
+   declaration whose value is not an object.
+   `schema_doc` must appear after the target `schema` declaration, `enum`
+   declaration, or a variable declaration whose value is an object. *)
 
 gen_doc_entry
   = "summary" , ws0 , ":" , ws0 , string_literal , ws0 , pair_separator
-  | "description" , ws0 , ":" , ws0 , block_string , ws0 , pair_separator
-  | "props" , ws0 , ":" , ws0 , "{" , ws0 , { prop_entry , ws0 } , "}" , ws0 , pair_separator ;
+  | "description" , ws0 , ":" , ws0 , block_string , ws0 , pair_separator ;
 
 schema_doc_entry
-  = gen_doc_entry ;
+  = "summary" , ws0 , ":" , ws0 , string_literal , ws0 , pair_separator
+  | "description" , ws0 , ":" , ws0 , block_string , ws0 , pair_separator
+  | "props" , ws0 , ":" , ws0 , "{" , ws0 , { prop_entry , ws0 } , "}" , ws0 , pair_separator ;
 
 prop_entry
   = identifier , ws0 , ":" , ws0 , string_literal , ws0 , pair_separator ;

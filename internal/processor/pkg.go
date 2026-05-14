@@ -1197,7 +1197,7 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 		_, err := enumDefinitionFromDeclaration(decl)
 		return err
 	case ast.DocDeclaration:
-		return validateDocDeclaration(decl, symbols, schemas, seenDocs, declaredKinds)
+		return validateDocDeclaration(decl, symbols, schemas, variables, seenDocs, declaredKinds)
 	default:
 		return validationErrorf("unknown declaration")
 	}
@@ -1290,7 +1290,7 @@ func validateRecordType(record ast.RecordType, symbols *symbolTable, types *type
 	return nil
 }
 
-func validateDocDeclaration(declaration ast.DocDeclaration, symbols *symbolTable, schemas *schemaRegistry, seenDocs map[string]struct{}, declaredKinds map[string]symbolKind) error {
+func validateDocDeclaration(declaration ast.DocDeclaration, symbols *symbolTable, schemas *schemaRegistry, variables *variableRegistry, seenDocs map[string]struct{}, declaredKinds map[string]symbolKind) error {
 	targetKind, ok := symbols.Get(declaration.Target)
 	if !ok {
 		return validationErrorf("documentation target %q must reference an existing declaration", declaration.Target)
@@ -1301,20 +1301,28 @@ func validateDocDeclaration(declaration ast.DocDeclaration, symbols *symbolTable
 
 	keyword := "gen_doc"
 	declaredKind, declared := declaredKinds[declaration.Target]
+	variableType, hasVariableType := variables.Get(declaration.Target)
+	isObjectVariable := hasVariableType && variableType.kind == ValueRecord
 	if declaration.Kind == ast.DocumentationKindSchema {
 		keyword = "schema_doc"
-		if !declared || (declaredKind != symbolKindSchema && declaredKind != symbolKindEnum) {
-			return validationErrorf("schema_doc target %q must appear after its schema or enum declaration", declaration.Target)
+		if !declared || (declaredKind != symbolKindSchema && declaredKind != symbolKindEnum && declaredKind != symbolKindVariable) {
+			return validationErrorf("schema_doc target %q must appear after its schema, enum, or object-valued variable declaration", declaration.Target)
 		}
-		if targetKind != symbolKindSchema && targetKind != symbolKindEnum {
-			return validationErrorf("schema_doc target %q must reference a schema or enum", declaration.Target)
+		if targetKind != symbolKindSchema && targetKind != symbolKindEnum && targetKind != symbolKindVariable {
+			return validationErrorf("schema_doc target %q must reference a schema, enum, or object-valued variable", declaration.Target)
+		}
+		if targetKind == symbolKindVariable && !isObjectVariable {
+			return validationErrorf("schema_doc target %q must reference a schema, enum, or object-valued variable", declaration.Target)
 		}
 	} else {
 		if !declared || (declaredKind != symbolKindType && declaredKind != symbolKindVariable) {
-			return validationErrorf("gen_doc target %q must appear after its type or variable declaration", declaration.Target)
+			return validationErrorf("gen_doc target %q must appear after its type or non-object variable declaration", declaration.Target)
 		}
 		if targetKind != symbolKindType && targetKind != symbolKindVariable {
-			return validationErrorf("gen_doc target %q must reference a type or variable", declaration.Target)
+			return validationErrorf("gen_doc target %q must reference a type or non-object variable", declaration.Target)
+		}
+		if targetKind == symbolKindVariable && isObjectVariable {
+			return validationErrorf("gen_doc target %q must reference a type or non-object variable", declaration.Target)
 		}
 	}
 	seenDocs[declaration.Target] = struct{}{}
@@ -1332,22 +1340,36 @@ func validateDocDeclaration(declaration ast.DocDeclaration, symbols *symbolTable
 
 	if len(declaration.Documentation.Props) > 0 {
 		if declaration.Kind != ast.DocumentationKindSchema {
-			return validationErrorf("%s props for %q require a schema target", keyword, declaration.Target)
-		}
-
-		record, ok := schemas.Get(declaration.Target)
-		if !ok {
-			return validationErrorf("unknown schema %q for %s props", declaration.Target, keyword)
+			return validationErrorf("%s props for %q require a schema-style target", keyword, declaration.Target)
 		}
 
 		fieldNames := map[string]struct{}{}
-		for _, field := range record.Fields {
-			fieldNames[field.Name] = struct{}{}
+		switch targetKind {
+		case symbolKindSchema:
+			record, ok := schemas.Get(declaration.Target)
+			if !ok {
+				return validationErrorf("unknown schema %q for %s props", declaration.Target, keyword)
+			}
+			for _, field := range record.Fields {
+				fieldNames[field.Name] = struct{}{}
+			}
+		case symbolKindVariable:
+			if !isObjectVariable {
+				return validationErrorf("%s props for %q require a schema-style target", keyword, declaration.Target)
+			}
+			if variableType.record == nil {
+				return validationErrorf("unknown object shape for %q %s props", declaration.Target, keyword)
+			}
+			for _, field := range variableType.record.Fields {
+				fieldNames[field.Name] = struct{}{}
+			}
+		default:
+			return validationErrorf("%s props for %q require a schema-style target", keyword, declaration.Target)
 		}
 
 		for name, value := range declaration.Documentation.Props {
 			if _, exists := fieldNames[name]; !exists {
-				return validationErrorf("%s props field %q does not exist on schema %q", keyword, name, declaration.Target)
+				return validationErrorf("%s props field %q does not exist on %q", keyword, name, declaration.Target)
 			}
 			if _, err := parseStaticString(value.Lexeme); err != nil {
 				return err

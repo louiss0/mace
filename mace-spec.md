@@ -178,7 +178,7 @@ Current inline doc block rules:
 Documentation declarations attach structured metadata to named declarations in
 the script block.
 
-Use `gen_doc` for `type` declarations and variables:
+Use `gen_doc` for `type` declarations and variables whose value is not an object:
 
 ```mace
 type Name: string;
@@ -193,7 +193,7 @@ gen_doc greeting {
 }
 ```
 
-Use `schema_doc` for `schema` declarations and enums:
+Use `schema_doc` for `schema` declarations, enums, and variables whose value is an object:
 
 ```mace
 schema User: {
@@ -222,19 +222,31 @@ A reusable schema that models application users.
 schema_doc Status {
   summary: "Processing status.",
 };
+
+User profile = {
+  name: greeting,
+};
+
+schema_doc profile {
+  summary: "Profile object.",
+  props: {
+    name: "Profile display name",
+  },
+};
 ```
 
 Current documentation declaration rules:
 
-- `gen_doc` must appear after the target `type` or variable declaration.
-- `schema_doc` must appear after the target `schema` or `enum` declaration.
+- `gen_doc` must appear after the target `type` or non-object variable declaration.
+- `schema_doc` must appear after the target `schema`, `enum`, or object-valued variable declaration.
 - A target may have at most one documentation declaration.
-- Supported entries are `summary`, `description`, and `props`.
+- `gen_doc` supports `summary` and `description`.
+- `schema_doc` supports `summary`, `description`, and `props`.
 - Duplicate or unknown documentation entries are invalid.
 - `summary` must be a static string literal.
 - `description` must be a static block string.
-- `props` is allowed only for `schema_doc` declarations targeting schemas.
-- `props` keys must match fields on the target schema.
+- `props` is allowed only for `schema_doc` declarations.
+- `props` keys must match fields on the target schema or object-valued variable.
 - Documentation declarations are metadata only and do not affect evaluation.
 
 ### Inline Declaration Descriptions

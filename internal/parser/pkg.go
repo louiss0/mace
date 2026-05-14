@@ -390,6 +390,9 @@ func (p *Parser) parseDocDeclaration(kind ast.DocumentationKind, keywordType lex
 				documentation.Description = &value
 			}
 		case "props":
+			if kind != ast.DocumentationKindSchema {
+				return nil, fmt.Errorf("parser: props entry is only allowed in schema_doc at %d:%d", entryToken.Line, entryToken.Column)
+			}
 			if _, err := p.consume(lexer.TokenLBrace, "parser: expected '{' to start props entry"); err != nil {
 				return nil, err
 			}
