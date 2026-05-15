@@ -373,6 +373,8 @@ equality_expression
   | equality_expression "==" relational_expression
   | equality_expression "!=" relational_expression ;
 
+(* Structural merge is listed here to define precedence, not because it is
+   a bitwise or math operator. *)
 bitwise_and_expression
   = structural_merge
   | bitwise_and_expression "&" structural_merge ;
