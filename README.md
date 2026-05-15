@@ -88,10 +88,10 @@ Union and variant types are first-class across the language, including named
 aliases, output schema validation, imports, formatter output, and editor
 tooling.
 
-The merge operator `<>` combines two values of the same mergeable type. Records
-merge deeply, colliding scalar fields use the right-hand value, and colliding
-nested records or arrays merge recursively. Arrays concatenate in left-to-right
-order.
+Structural merge with `<>` combines identifier, object literal, or array literal
+operands of the same mergeable type. Records merge deeply, colliding scalar
+fields use the right-hand value, and colliding nested records or arrays merge
+recursively. Arrays concatenate in left-to-right order.
 
 ```mace
 [output = data]

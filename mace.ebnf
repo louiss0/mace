@@ -374,13 +374,17 @@ equality_expression
   | equality_expression "!=" relational_expression ;
 
 bitwise_and_expression
-  = merge_expression
-  | bitwise_and_expression "&" merge_expression ;
+  = structural_merge
+  | bitwise_and_expression "&" structural_merge ;
+
+structural_merge
+  = merge_operand ,
+    { ws0 , "<>" , ws0 , merge_operand } ;
 
 merge_operand
-  = postfix_expression
+  = object_literal
   | array_literal
-  | object_literal ;
+  | identifier ;
 
 bitwise_xor_expression
   = bitwise_and_expression
@@ -403,10 +407,6 @@ conditional_expression
   | logical_or_expression , ws0 , "?" , ws0 ,
     expression , ws0 , ":" , ws0 ,
     conditional_expression ;
-
-merge_expression
-  = merge_operand
-  | merge_expression , ws0 , "<>" , ws0 , merge_operand ;
 
 (* ===================================================== *)
 (* 12. LITERALS                                         *)

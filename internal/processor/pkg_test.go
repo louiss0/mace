@@ -1590,7 +1590,7 @@ hex_float c = a % b;
 			tAssert.Contains(err.Error(), expected)
 		},
 		Entry("different kinds", `[output = data] { result: { name: "Ada"; } <> [1]; }`, "merge operands must have the same type"),
-		Entry("primitive operands", `[output = data] { result: 1 <> 2; }`, "merge operands must be records or arrays"),
+		Entry("primitive operands", `[output = data] { result: 1 <> 2; }`, "expected identifier, array literal, or record literal before '<>'"),
 		Entry("different array element types", `|===|
 array<int> left = [1];
 array<string> right = ["two"];

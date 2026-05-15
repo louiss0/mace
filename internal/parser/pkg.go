@@ -1201,6 +1201,10 @@ func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token)
 		return ast.ArrayAccess{Target: left, Index: ast.IntLiteral{Lexeme: indexToken.Lexeme}}, nil
 	}
 
+	if operator.Type == lexer.TokenMerge && !isMergeLeftOperand(left) {
+		return nil, fmt.Errorf("parser: expected identifier, array literal, or record literal before '<>' at %d:%d", operator.Line, operator.Column)
+	}
+
 	precedence := p.precedenceFor(operator.Type)
 	rightPrecedence := precedence
 	if operator.Type == lexer.TokenDoubleStar {
@@ -1212,11 +1216,32 @@ func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token)
 		return nil, err
 	}
 
+	if operator.Type == lexer.TokenMerge && !isMergeOperand(right) {
+		return nil, fmt.Errorf("parser: expected identifier, array literal, or record literal after '<>' at %d:%d", operator.Line, operator.Column)
+	}
+
 	return ast.InfixExpression{
 		Left:     left,
 		Operator: operator.Type,
 		Right:    right,
 	}, nil
+}
+
+func isMergeLeftOperand(expression ast.Expression) bool {
+	if infix, ok := expression.(ast.InfixExpression); ok {
+		return infix.Operator == lexer.TokenMerge
+	}
+
+	return isMergeOperand(expression)
+}
+
+func isMergeOperand(expression ast.Expression) bool {
+	switch expression.(type) {
+	case ast.Identifier, ast.ArrayLiteral, ast.RecordLiteral:
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *Parser) parseConditionalExpression(left ast.Expression, operator lexer.Token) (ast.Expression, error) {

@@ -2128,6 +2128,9 @@ func evaluateExpression(expression ast.Expression, environment *valueEnvironment
 	case ast.Identifier:
 		value, ok := environment.Get(expr.Name)
 		if !ok {
+			if selfValue, exists := self.Record[expr.Name]; exists {
+				return selfValue, nil
+			}
 			if environment.IsMissingInjectable(expr.Name) {
 				return Value{}, diagnosticErrorf(ErrorDeclaration, CodeMissingInjectable, DiagnosticFields{Name: expr.Name}, "injectable %q requires a runtime value", expr.Name)
 			}
