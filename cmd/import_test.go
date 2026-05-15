@@ -345,7 +345,7 @@ api_service:
       CACHE_ENABLED: true
     }
   },
-  api_service: $self.base_service <> {
+  api_service: base_service <> {
     replicas: 4,
     env: {
       LOG_LEVEL: "debug",
@@ -414,13 +414,13 @@ services:
   },
   services: {
     writer: {
-      database: $self.database_defaults <> {
+      database: database_defaults <> {
         credentials: $self.database_credentials,
         pool_size: 20
       }
     },
     reader: {
-      database: $self.database_defaults <> {
+      database: database_defaults <> {
         credentials: $self.database_credentials,
         pool_size: 8
       }
@@ -441,13 +441,13 @@ services:
   },
   services: {
     writer: {
-      database: $self.database_defaults <> {
+      database: database_defaults <> {
         credentials: $self.database_credentials,
         pool_size: 20
       }
     },
     reader: {
-      database: $self.database_defaults <> {
+      database: database_defaults <> {
         credentials: $self.database_credentials,
         pool_size: 8
       }
@@ -486,7 +486,7 @@ worker:
     network: "private",
     expose_metrics: true
   },
-  worker: $self.runtime_defaults <> $self.network_defaults <> {
+  worker: runtime_defaults <> network_defaults <> {
     name: "queue-worker",
     memory_mb: 1024
   }
@@ -502,7 +502,7 @@ worker:
     network: "private",
     expose_metrics: true
   },
-  worker: $self.runtime_defaults <> $self.network_defaults <> {
+  worker: runtime_defaults <> network_defaults <> {
     name: "queue-worker",
     memory_mb: 1024
   }
@@ -566,9 +566,9 @@ deployment:
 
 		source, err := importYAMLSource(filepath.Join("workspace", "05_deep_nested_merges.yaml"), input)
 		tAssert.NoError(err)
-		tAssert.Contains(source, "$self.global_metadata")
+		tAssert.Contains(source, "global_metadata <>")
 		tAssert.Contains(source, "$self.global_labels")
-		tAssert.Contains(source, "$self.base_container")
+		tAssert.Contains(source, "base_container <>")
 		tAssert.Contains(source, "$self.base_resources")
 		tAssert.GreaterOrEqual(strings.Count(source, "<>"), 6)
 

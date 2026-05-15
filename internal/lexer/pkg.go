@@ -50,9 +50,6 @@ func (l *Lexer) NextToken() (Token, error) {
 		return Token{}, fmt.Errorf("lexer: unexpected character %q at %d:%d", current, startLine, startColumn)
 	case '=':
 		if l.match('=') {
-			if l.match('=') {
-				return l.makeToken(TokenStrictEqual, startPosition, startLine, startColumn), nil
-			}
 			return l.makeToken(TokenEqualEqual, startPosition, startLine, startColumn), nil
 		}
 		return l.makeToken(TokenAssign, startPosition, startLine, startColumn), nil
@@ -98,9 +95,6 @@ func (l *Lexer) NextToken() (Token, error) {
 		return l.makeToken(TokenPercent, startPosition, startLine, startColumn), nil
 	case '!':
 		if l.match('=') {
-			if l.match('=') {
-				return l.makeToken(TokenStrictNotEqual, startPosition, startLine, startColumn), nil
-			}
 			return l.makeToken(TokenNotEqual, startPosition, startLine, startColumn), nil
 		}
 		return l.makeToken(TokenBang, startPosition, startLine, startColumn), nil

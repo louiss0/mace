@@ -625,10 +625,6 @@ func tokenLexeme(tokenType lexer.TokenType) string {
 		return "=="
 	case lexer.TokenNotEqual:
 		return "!="
-	case lexer.TokenStrictEqual:
-		return "==="
-	case lexer.TokenStrictNotEqual:
-		return "!=="
 	case lexer.TokenAmpersand:
 		return "&"
 	case lexer.TokenCaret:
@@ -681,7 +677,7 @@ func infixPrecedence(tokenType lexer.TokenType) int {
 		return precedenceBitwiseXor
 	case lexer.TokenAmpersand:
 		return precedenceBitwiseAnd
-	case lexer.TokenEqualEqual, lexer.TokenNotEqual, lexer.TokenStrictEqual, lexer.TokenStrictNotEqual:
+	case lexer.TokenEqualEqual, lexer.TokenNotEqual:
 		return precedenceEquality
 	case lexer.TokenMerge:
 		return precedenceMerge

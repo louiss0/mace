@@ -935,9 +935,19 @@ func (expression recordExpression) render(depth int) string {
 func (expression mergeExpression) render(depth int) string {
 	parts := make([]string, 0, len(expression.parts))
 	for _, part := range expression.parts {
-		parts = append(parts, part.render(depth))
+		parts = append(parts, renderMergeOperand(part, depth))
 	}
 	return strings.Join(parts, " <> ")
+}
+
+func renderMergeOperand(expression importExpression, depth int) string {
+	if raw, ok := expression.(rawExpression); ok {
+		if name, isTopLevelReference := yamlTopLevelReferenceName(raw.text); isTopLevelReference {
+			return name
+		}
+	}
+
+	return expression.render(depth)
 }
 
 func (expression omittedExpression) render(int) string {

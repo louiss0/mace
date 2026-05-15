@@ -359,7 +359,7 @@ var _ = Describe("Parser", func() {
 			requireIdentifier(root.Left, "base")
 			requireIdentifier(root.Right, "override")
 		},
-		Entry("merge operator", "base <> override"),
+		Entry("structural merge", "base <> override"),
 	)
 
 	DescribeTable("parses grouped expressions",
@@ -416,6 +416,9 @@ var _ = Describe("Parser", func() {
 		Entry("unterminated group", "(1 + 2"),
 		Entry("array access requires integer index", "names[value]"),
 		Entry("array access requires closing bracket", "names[0"),
+		Entry("merge rejects scalar left operand", "1 <> right"),
+		Entry("merge rejects scalar right operand", "left <> 2"),
+		Entry("merge rejects member access operand", "base.value <> override"),
 	)
 
 	Describe("parses a full file", func() {
