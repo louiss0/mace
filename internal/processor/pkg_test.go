@@ -899,6 +899,22 @@ injectable string env;
 		tAssert.ErrorContains(err, "requires a runtime value")
 	})
 
+	It("rejects missing injectables before self field fallback", func() {
+		processor := New()
+
+		_, err := processor.Process(`|===|
+injectable string token;
+|===|
+[output = data]
+{
+  token: "x";
+  next: token;
+}`)
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, "injectable")
+		tAssert.ErrorContains(err, "requires a runtime value")
+	})
+
 	It("rejects unknown injected values", func() {
 		processor := NewWithInjections(map[string]Value{
 			"missing": {Kind: ValueString, String: "prod"},
