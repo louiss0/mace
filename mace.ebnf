@@ -371,9 +371,7 @@ relational_expression
 equality_expression
   = relational_expression
   | equality_expression "==" relational_expression
-  | equality_expression "!=" relational_expression
-  | equality_expression "===" relational_expression
-  | equality_expression "!==" relational_expression ;
+  | equality_expression "!=" relational_expression ;
 
 bitwise_and_expression
   = merge_expression

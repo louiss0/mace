@@ -2564,7 +2564,7 @@ func evaluateInfix(expr ast.InfixExpression, environment *valueEnvironment, self
 		return evaluateShift(expr.Operator, left, right)
 	case lexer.TokenAmpersand, lexer.TokenPipe, lexer.TokenCaret:
 		return evaluateBitwise(expr.Operator, left, right)
-	case lexer.TokenEqualEqual, lexer.TokenNotEqual, lexer.TokenStrictEqual, lexer.TokenStrictNotEqual:
+	case lexer.TokenEqualEqual, lexer.TokenNotEqual:
 		return evaluateEquality(expr.Operator, left, right)
 	case lexer.TokenLess, lexer.TokenLessEqual, lexer.TokenGreater, lexer.TokenGreaterEqual:
 		return evaluateComparison(expr.Operator, left, right)
@@ -2864,7 +2864,7 @@ func evaluateEquality(operator lexer.TokenType, left, right Value) (Value, error
 		return Value{}, err
 	}
 
-	if operator == lexer.TokenNotEqual || operator == lexer.TokenStrictNotEqual {
+	if operator == lexer.TokenNotEqual {
 		equal = !equal
 	}
 
@@ -3696,7 +3696,7 @@ func inferInfixType(expr ast.InfixExpression, variables *variableRegistry, symbo
 			return valueType{}, validationErrorf("type mismatch: expected int operands for bitwise operator")
 		}
 		return valueType{kind: ValueInt}, nil
-	case lexer.TokenEqualEqual, lexer.TokenNotEqual, lexer.TokenStrictEqual, lexer.TokenStrictNotEqual:
+	case lexer.TokenEqualEqual, lexer.TokenNotEqual:
 		if leftType.kind != ValueUnknown && rightType.kind != ValueUnknown && !typesEqual(leftType, rightType) {
 			if !isHexValueType(leftType) || !isHexValueType(rightType) {
 				return valueType{}, validationErrorf("type mismatch: incompatible equality comparison")

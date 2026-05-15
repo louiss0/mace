@@ -1298,7 +1298,7 @@ func (p *Parser) precedenceFor(tokenType lexer.TokenType) int {
 		return precedenceBitwiseXor
 	case lexer.TokenAmpersand:
 		return precedenceBitwiseAnd
-	case lexer.TokenEqualEqual, lexer.TokenNotEqual, lexer.TokenStrictEqual, lexer.TokenStrictNotEqual:
+	case lexer.TokenEqualEqual, lexer.TokenNotEqual:
 		return precedenceEquality
 	case lexer.TokenMerge:
 		return precedenceMerge

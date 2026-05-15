@@ -58,8 +58,6 @@ const (
 	TokenGreaterEqual
 	TokenEqualEqual
 	TokenNotEqual
-	TokenStrictEqual
-	TokenStrictNotEqual
 
 	TokenAmpersand
 	TokenCaret

@@ -1513,8 +1513,6 @@ string value = "Ada";
 		Entry("greater than or equal", `[output = data] { result: 2 >= 2; }`, expectedValue{kind: ValueBoolean, bool: true}),
 		Entry("equal", `[output = data] { result: 3 == 3; }`, expectedValue{kind: ValueBoolean, bool: true}),
 		Entry("not equal", `[output = data] { result: 3 != 4; }`, expectedValue{kind: ValueBoolean, bool: true}),
-		Entry("strict equal", `[output = data] { result: 3 === 3; }`, expectedValue{kind: ValueBoolean, bool: true}),
-		Entry("strict not equal", `[output = data] { result: 3 !== 4; }`, expectedValue{kind: ValueBoolean, bool: true}),
 		Entry("bitwise and", `[output = data] { result: 6 & 3; }`, expectedValue{kind: ValueInt, int64: 2}),
 		Entry("bitwise xor", `[output = data] { result: 5 ^ 3; }`, expectedValue{kind: ValueInt, int64: 6}),
 		Entry("bitwise or", `[output = data] { result: 5 | 2; }`, expectedValue{kind: ValueInt, int64: 7}),
@@ -1719,14 +1717,10 @@ boolean greater = 5 > 3;
 		}),
 		Entry("equality operators", wrapScriptWithOutputFields(`|===|
 boolean equal = 3 == 3;
-boolean strict = 3 === 3;
 boolean not_equal = 3 != 4;
-boolean strict_not = 3 !== 4;
-|===|`, "equal: equal;\nstrict: strict;\nnot_equal: not_equal;\nstrict_not: strict_not;"), map[string]expectedValue{
-			"equal":      {kind: ValueBoolean, bool: true},
-			"strict":     {kind: ValueBoolean, bool: true},
-			"not_equal":  {kind: ValueBoolean, bool: true},
-			"strict_not": {kind: ValueBoolean, bool: true},
+|===|`, "equal: equal;\nnot_equal: not_equal;"), map[string]expectedValue{
+			"equal":     {kind: ValueBoolean, bool: true},
+			"not_equal": {kind: ValueBoolean, bool: true},
 		}),
 		Entry("logical operators", wrapScriptWithOutputFields(`|===|
 boolean result = true && false || true;
