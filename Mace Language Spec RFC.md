@@ -1171,7 +1171,7 @@ Two documentation blocks cannot target the same identifier. A duplicate
 documentation target is an error because the resulting documentation metadata
 would be ambiguous.
 
-## Output Mode Selection
+[## Output Mode Selection](#mace-language-specification)
 
 The output block is evaluated according to its `output` directive. If no
 directive list is written, the output block defaults to data mode.
@@ -1189,7 +1189,7 @@ unknown directives, a missing `output` directive in a directive list, and
 schema-only combinations such as `output = schema` with `schema` or
 `schema_file` are rejected before the output fields are evaluated.
 
-## Data Output Evaluation
+[## Data Output Evaluation](#mace-language-specification)
 
 Data output is evaluated from top to bottom. Each field expression is evaluated
 in source order, and the resulting value is stored under that field name in the
@@ -1314,7 +1314,7 @@ Modulo evaluates as remainder. Decimal `int % int` produces `int`, decimal
 modulo involving `float` produces `float`, and hexadecimal modulo requires
 `hex_int` operands.
 
-## Bitwise and Shift Evaluation
+[## Bitwise and Shift Evaluation](#mace-language-specification)
 
 Bitwise operators evaluate integer families only. `&`, `|`, and `^` require
 both operands to be `int` or both operands to be `hex_int`.
@@ -1605,7 +1605,8 @@ documentation on the same declaration or field.
 If validation fails, the processor must reject the source text and report a
 diagnostic describing the invalid construct. A processor must not emit output
 from a source text that fails validation.
-## Processing Model
+
+[## Processing Model](#mace-language-specification)
 
 Here’s the final version, aligned with the current Mace spec.
 
