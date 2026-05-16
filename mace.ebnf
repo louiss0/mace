@@ -8,9 +8,11 @@ newline           = "\n" | "\r\n" ;
 comment
    = line_comment | block_comment ;
 
-block_comment = "/*" , ? any character sequence up to but not including "*/" ? , "*/" ;
+block_comment
+  = "/*" newline ? any character except \ and * ? "*/" newline ;
 
-line_comment = "//" , ? any character sequence up to but not including newline ? ;
+line_comment
+  = "//" ? any character except \ ? newline ;
 
 inline_description = "/#" , ws0 , description_text ;
 description_text   = ? any character sequence up to but not including ',' ';' or newline ? ;
@@ -156,9 +158,9 @@ gen_doc_entry
 schema_doc_entry
   = "summary" , ws0 , ":" , ws0 , string_literal , ws0 , pair_separator
   | "description" , ws0 , ":" , ws0 , block_string , ws0 , pair_separator
-  | "props" , ws0 , ":" , ws0 , "{" , ws0 , { prop_entry , ws0 } , "}" , ws0 , pair_separator ;
+  | "fields" , ws0 , ":" , ws0 , "{" , ws0 , { field_entry , ws0 } , "}" , ws0 , pair_separator ;
 
-prop_entry
+field_entry
   = identifier , ws0 , ":" , ws0 , string_literal , ws0 , pair_separator ;
 
 (* ===================================================== *)
@@ -202,10 +204,10 @@ schema_declaration
   = "schema" , ws1 ,
     identifier , ws0 ,
     ":" , ws0 ,
-    object_type ,
+    record_type ,
     ws0 , ";" ;
 
-object_type
+record_type
   = "{" , ws0 ,
     { schema_field , ws0 } ,
     "}" ;
@@ -310,7 +312,7 @@ primary_expression
   | string_literal
   | boolean_literal
   | array_literal
-  | object_literal ;
+  | record_literal ;
 
 postfix_expression
   = postfix_target , { postfix_suffix } ;
@@ -373,20 +375,9 @@ equality_expression
   | equality_expression "==" relational_expression
   | equality_expression "!=" relational_expression ;
 
-(* Structural merge is listed here to define precedence, not because it is
-   a bitwise or math operator. *)
 bitwise_and_expression
-  = structural_merge
-  | bitwise_and_expression "&" structural_merge ;
-
-structural_merge
-  = merge_operand ,
-    { ws0 , "<>" , ws0 , merge_operand } ;
-
-merge_operand
-  = object_literal
-  | array_literal
-  | identifier ;
+  = equality_expression
+  | bitwise_and_expression "&" equality_expression ;
 
 bitwise_xor_expression
   = bitwise_and_expression
@@ -410,6 +401,11 @@ conditional_expression
     expression , ws0 , ":" , ws0 ,
     conditional_expression ;
 
+merge_expression
+  = (array_literal | record_literal) ,
+    { ws0 , "<>" , ws0 , (array_literal | record_literal) } ,
+    ws0 ;
+
 (* ===================================================== *)
 (* 12. LITERALS                                         *)
 (* ===================================================== *)
@@ -419,12 +415,12 @@ array_literal
     [ expression , { ws0 , "," , ws0 , expression } ] ,
     ws0 , "]" ;
 
-object_literal
+record_literal
   = "{" , ws0 ,
-    { object_field , ws0 } ,
+    { record_field , ws0 } ,
     "}" ;
 
-object_field
+record_field
   = identifier , [ "?" ] , ws0 ,
     ":" , ws0 ,
     expression ,
