@@ -312,6 +312,17 @@ var _ = Describe("Check", func() {
 }`, source)
 	})
 
+	It("detects extensionless JSON files by parsing their contents", func() {
+		root := GinkgoT().TempDir()
+		path := writeCodecTempFile(root, "config", "{\n  \"foo-bar\": true\n}\n")
+
+		report, err := CheckFile(path)
+		tAssert.NoError(err)
+		tAssert.Equal("json", report.Format)
+		tAssert.Len(report.Errors.KeyIncompatibility, 1)
+		tAssert.Equal("foo-bar", report.Errors.KeyIncompatibility[0].Key)
+	})
+
 	It("reports JSON duplicate keys and null values", func() {
 		report := CheckJSON(`{
   "name": null,
@@ -420,6 +431,27 @@ var _ = Describe("Check", func() {
       line: 4,
       column: 7,
       actual: "comment"
+    }]
+}`, source)
+	})
+
+	It("reports YAML merge values that do not resolve to records", func() {
+		report := CheckYAML("base: &base 1\nprofile:\n  <<: *base\n")
+
+		source, err := FormatCheckReport(report)
+		tAssert.NoError(err)
+		tAssert.Equal(`{
+  syntax: [],
+  key_incompatibility: [],
+  type_incompatibility: [],
+  structure_incompatibility: [{
+      path: "$.profile[\"<<\"]",
+      reason: "merge values must resolve to records or sequences of records",
+      format: "yaml",
+      line: 3,
+      column: 7,
+      actual: "alias",
+      expected: "record or sequence of records"
     }]
 }`, source)
 	})

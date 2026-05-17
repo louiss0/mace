@@ -1,11 +1,11 @@
 package codec
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -210,8 +210,7 @@ func checkFormat(path string, contents []byte) (string, error) {
 		return "toml", nil
 	}
 
-	mime := http.DetectContentType(contents)
-	if mime == "application/json" {
+	if isJSONCheckInput(contents) {
 		return "json", nil
 	}
 
@@ -325,6 +324,7 @@ func checkYAMLNode(node *yaml.Node, path string, report *CheckReport, visited ma
 			childPath := path
 			if keyNode.Value == "<<" || keyNode.ShortTag() == "!!merge" {
 				childPath = objectCheckPath(path, keyNode.Value)
+				checkYAMLMergeValue(valueNode, childPath, report)
 				checkYAMLNode(valueNode, childPath, report, visited, commentReported)
 				continue
 			}
@@ -431,6 +431,88 @@ func isSupportedYAMLScalarTag(tag string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func isJSONCheckInput(contents []byte) bool {
+	trimmed := bytes.TrimSpace(contents)
+	if len(trimmed) == 0 {
+		return false
+	}
+	if trimmed[0] != '{' && trimmed[0] != '[' {
+		return false
+	}
+	return json.Valid(trimmed)
+}
+
+func checkYAMLMergeValue(node *yaml.Node, path string, report *CheckReport) {
+	if node == nil {
+		return
+	}
+	if isSupportedYAMLMergeValue(node) {
+		return
+	}
+	report.StructureIncompatibility = append(report.StructureIncompatibility, positionedCheckIssue(node, CheckIssue{
+		Path:     path,
+		Reason:   "merge values must resolve to records or sequences of records",
+		Format:   "yaml",
+		Actual:   yamlNodeKindName(node),
+		Expected: "record or sequence of records",
+	}))
+}
+
+func isSupportedYAMLMergeValue(node *yaml.Node) bool {
+	if node == nil {
+		return false
+	}
+
+	switch node.Kind {
+	case yaml.DocumentNode:
+		if len(node.Content) != 1 {
+			return false
+		}
+		return isSupportedYAMLMergeValue(node.Content[0])
+	case yaml.AliasNode:
+		return isSupportedYAMLMergeValue(node.Alias)
+	case yaml.MappingNode:
+		return true
+	case yaml.SequenceNode:
+		if len(node.Content) == 0 {
+			return false
+		}
+		for _, child := range node.Content {
+			if !isSupportedYAMLMergeValue(child) {
+				return false
+			}
+		}
+		return true
+	case yaml.ScalarNode:
+		if node.ShortTag() == "!!merge" {
+			return true
+		}
+	}
+
+	return false
+}
+
+func yamlNodeKindName(node *yaml.Node) string {
+	if node == nil {
+		return "unknown"
+	}
+
+	switch node.Kind {
+	case yaml.DocumentNode:
+		return "document"
+	case yaml.MappingNode:
+		return "record"
+	case yaml.SequenceNode:
+		return "sequence"
+	case yaml.ScalarNode:
+		return "scalar"
+	case yaml.AliasNode:
+		return "alias"
+	default:
+		return "unknown"
 	}
 }
 

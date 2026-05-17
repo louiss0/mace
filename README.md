@@ -278,7 +278,7 @@ Checks JSON, YAML, and TOML files for Mace compatibility issues and prints a
 Mace record report.
 
 - input format is determined from the file extension when available
-- JSON can fall back to MIME detection when no supported extension is present
+- JSON can fall back to content detection when no supported extension is present
 - syntax problems are reported under `syntax`
 - incompatible keys are reported under `key_incompatibility`
 - `null` values and YAML scalar/tag mismatches are reported under
