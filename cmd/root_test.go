@@ -304,6 +304,70 @@ injectable string env;
 		})
 	})
 
+	Describe("check", func() {
+		It("prints a plain Mace compatibility report for a single file", func() {
+			path := writeTempFile("config.json", `{
+  "name": "Ada",
+  "foo-bar": true
+}`)
+
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			exitCode := run([]string{"check", path}, &stdout, &stderr)
+			tAssert.Equal(1, exitCode)
+			tAssert.Equal("", stderr.String())
+			tAssert.Equal(`{
+  syntax: [],
+  key_incompatibility: [{
+      path: "$[\"foo-bar\"]",
+      reason: "key is not a valid Mace identifier",
+      format: "json",
+      key: "foo-bar"
+    }],
+  type_incompatibility: [],
+  structure_incompatibility: []
+}
+`, stdout.String())
+		})
+
+		It("prints aggregated reports for multiple files", func() {
+			jsonPath := writeTempFile("config.json", `{
+  "foo-bar": true
+}`)
+			tomlPath := writeTempFile("config.toml", "name = \"Ada\"\n")
+
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			exitCode := run([]string{"check", jsonPath, tomlPath}, &stdout, &stderr)
+			tAssert.Equal(1, exitCode)
+			tAssert.Equal("", stderr.String())
+			tAssert.Contains(stdout.String(), "files")
+			tAssert.Contains(stdout.String(), strings.ReplaceAll(jsonPath, "\\", "\\\\"))
+			tAssert.Contains(stdout.String(), strings.ReplaceAll(tomlPath, "\\", "\\\\"))
+			tAssert.Contains(stdout.String(), `key: "foo-bar"`)
+		})
+
+		It("returns success when no incompatibilities are found", func() {
+			path := writeTempFile("config.toml", "name = \"Ada\"\n")
+
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			exitCode := run([]string{"check", path}, &stdout, &stderr)
+			tAssert.Equal(0, exitCode)
+			tAssert.Equal("", stderr.String())
+			tAssert.Equal(`{
+  syntax: [],
+  key_incompatibility: [],
+  type_incompatibility: [],
+  structure_incompatibility: []
+}
+`, stdout.String())
+		})
+	})
+
 	Describe("nodes", func() {
 		It("prints the parsed node structure", func() {
 			path := writeMaceFile(`[output = data] { result: 1 + 2; }`)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -27,6 +28,13 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	command.SetArgs(args)
 
 	if err := command.Execute(); err != nil {
+		var cliErr *commandError
+		if errors.As(err, &cliErr) {
+			if !cliErr.quiet && cliErr.message != "" {
+				_, _ = fmt.Fprintln(stderr, cliErr.message)
+			}
+			return cliErr.code
+		}
 		_, _ = fmt.Fprintln(stderr, err)
 		return 1
 	}
@@ -44,7 +52,7 @@ func newRootCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
 
 	command.SetOut(stdout)
 	command.SetErr(stderr)
-	command.AddCommand(newJSONCommand(), newImportCommand(), newNodesCommand(), newOutputCommand(), newLSPCommand())
+	command.AddCommand(newJSONCommand(), newImportCommand(), newCheckCommand(), newNodesCommand(), newOutputCommand(), newLSPCommand())
 
 	return command
 }

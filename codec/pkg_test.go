@@ -281,6 +281,141 @@ var _ = Describe("MarshalOutput", func() {
 	})
 })
 
+var _ = Describe("Check", func() {
+	It("reports JSON key incompatibilities in Mace syntax", func() {
+		report := CheckJSON(`{
+  "name": "Ada",
+  "foo-bar": true,
+  "profile": {
+    "😀": 1
+  }
+}`)
+
+		source, err := FormatCheckReport(report)
+		tAssert.NoError(err)
+		tAssert.Equal(`{
+  syntax: [],
+  key_incompatibility: [{
+      path: "$[\"foo-bar\"]",
+      reason: "key is not a valid Mace identifier",
+      format: "json",
+      key: "foo-bar"
+    }, {
+      path: "$.profile[\"😀\"]",
+      reason: "key is not a valid Mace identifier",
+      format: "json",
+      key: "😀"
+    }],
+  type_incompatibility: [],
+  structure_incompatibility: []
+}`, source)
+	})
+
+	It("reports YAML syntax locations", func() {
+		report := CheckYAML("created_at: 2026-05-17T12:30:00Z\nname: Ada\ninvalid: [1, 2\n")
+		tAssert.Len(report.Syntax, 1)
+		tAssert.Equal("yaml", report.Syntax[0].Format)
+		tAssert.NotZero(report.Syntax[0].Line)
+		tAssert.Empty(report.KeyIncompatibility)
+		tAssert.Empty(report.TypeIncompatibility)
+	})
+
+	It("reports YAML timestamp coercion and non-string keys", func() {
+		report := CheckYAML("created_at: 2026-05-17T12:30:00Z\n1: Ada\n")
+
+		source, err := FormatCheckReport(report)
+		tAssert.NoError(err)
+		tAssert.Equal(`{
+  syntax: [],
+  key_incompatibility: [{
+      path: "$",
+      reason: "mapping keys must be strings",
+      format: "yaml",
+      key: "1",
+      line: 2,
+      column: 1
+    }],
+  type_incompatibility: [{
+      path: "$.created_at",
+      reason: "YAML timestamp values do not map directly to Mace scalars",
+      format: "yaml",
+      line: 1,
+      column: 13,
+      actual: "!!timestamp"
+    }],
+  structure_incompatibility: []
+}`, source)
+	})
+
+	It("accepts YAML aliases and merge keys that can map to Mace merge semantics", func() {
+		report := CheckYAML("base: &base\n  name: Ada\nprofile:\n  <<: *base\n")
+
+		source, err := FormatCheckReport(report)
+		tAssert.NoError(err)
+		tAssert.Equal(`{
+  syntax: [],
+  key_incompatibility: [],
+  type_incompatibility: [],
+  structure_incompatibility: []
+}`, source)
+	})
+
+	It("reports multi-document YAML as a structural migration concern", func() {
+		report := CheckYAML("name: Ada\n---\nname: Bob\n")
+
+		source, err := FormatCheckReport(report)
+		tAssert.NoError(err)
+		tAssert.Equal(`{
+  syntax: [],
+  key_incompatibility: [],
+  type_incompatibility: [],
+  structure_incompatibility: [{
+      path: "$",
+      reason: "multiple YAML documents require migration before direct Mace use",
+      format: "yaml",
+      actual: "2 documents",
+      expected: "single document"
+    }]
+}`, source)
+	})
+
+	It("accepts TOML timestamps and flags invalid quoted nested keys", func() {
+		report := CheckTOML("updated_at = 2026-05-08T09:00:00Z\nsite.\"google.com\" = true\n")
+
+		source, err := FormatCheckReport(report)
+		tAssert.NoError(err)
+		tAssert.Equal(`{
+  syntax: [],
+  key_incompatibility: [{
+      path: "$.site[\"google.com\"]",
+      reason: "key is not a valid Mace identifier",
+      format: "toml",
+      key: "google.com"
+    }],
+  type_incompatibility: [],
+  structure_incompatibility: []
+}`, source)
+	})
+
+	It("reports TOML quoted key incompatibilities", func() {
+		report := CheckTOML("\"foo-bar\" = \"Ada\"\n")
+
+		source, err := FormatCheckReport(report)
+		tAssert.NoError(err)
+		tAssert.Equal(`{
+  syntax: [],
+  key_incompatibility: [{
+      path: "$[\"foo-bar\"]",
+      reason: "key is not a valid Mace identifier",
+      format: "toml",
+      key: "foo-bar"
+    }],
+  type_incompatibility: [],
+  structure_incompatibility: []
+}`, source)
+	})
+})
+
 var _ = Describe("Import", func() {
 	It("imports JSON objects into a Mace output block", func() {
 		source, err := ImportJSON(`{
