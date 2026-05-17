@@ -281,9 +281,10 @@ Mace record report.
 - JSON can fall back to MIME detection when no supported extension is present
 - syntax problems are reported under `syntax`
 - incompatible keys are reported under `key_incompatibility`
-- YAML values that do not map directly to Mace scalars are reported under
+- `null` values and YAML scalar/tag mismatches are reported under
   `type_incompatibility`
-- structural mismatches such as non-record JSON roots are reported under
+- duplicate keys, YAML multi-document files, comments, block scalar style loss,
+  and structural mismatches such as non-record JSON roots are reported under
   `structure_incompatibility`
 - multiple files are emitted as a `files` array of per-file reports
 

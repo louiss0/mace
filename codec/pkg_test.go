@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -311,6 +312,39 @@ var _ = Describe("Check", func() {
 }`, source)
 	})
 
+	It("reports JSON duplicate keys and null values", func() {
+		report := CheckJSON(`{
+  "name": null,
+  "items": [1, null],
+  "name": "Ada"
+}`)
+
+		source, err := FormatCheckReport(report)
+		tAssert.NoError(err)
+		tAssert.Equal(`{
+  syntax: [],
+  key_incompatibility: [],
+  type_incompatibility: [{
+      path: "$.name",
+      reason: "null values are omitted during Mace conversion",
+      format: "json",
+      actual: "null"
+    }, {
+      path: "$.items[1]",
+      reason: "null values are omitted during Mace conversion",
+      format: "json",
+      actual: "null"
+    }],
+  structure_incompatibility: [{
+      path: "$.name",
+      reason: "duplicate object key",
+      format: "json",
+      key: "name",
+      expected: "unique keys"
+    }]
+}`, source)
+	})
+
 	It("reports YAML syntax locations", func() {
 		report := CheckYAML("created_at: 2026-05-17T12:30:00Z\nname: Ada\ninvalid: [1, 2\n")
 		tAssert.Len(report.Syntax, 1)
@@ -344,6 +378,49 @@ var _ = Describe("Check", func() {
       actual: "!!timestamp"
     }],
   structure_incompatibility: []
+}`, source)
+	})
+
+	It("reports YAML duplicate keys, nulls, comments, and block scalar style loss", func() {
+		report := CheckYAML("note: |\n  hello\nname: null\nname: Ada # keep me\n")
+
+		source, err := FormatCheckReport(report)
+		tAssert.NoError(err)
+		tAssert.Equal(`{
+  syntax: [],
+  key_incompatibility: [],
+  type_incompatibility: [{
+      path: "$.name",
+      reason: "null values are omitted during Mace conversion",
+      format: "yaml",
+      line: 3,
+      column: 7,
+      actual: "!!null"
+    }],
+  structure_incompatibility: [{
+      path: "$.note",
+      reason: "block scalar presentation is not preserved during Mace conversion",
+      format: "yaml",
+      line: 1,
+      column: 7,
+      actual: "|"
+    }, {
+      path: "$.name",
+      reason: "duplicate mapping key",
+      format: "yaml",
+      key: "name",
+      line: 4,
+      column: 1,
+      actual: "first declared at 3:1",
+      expected: "unique keys"
+    }, {
+      path: "$.name",
+      reason: "comments are not preserved during Mace conversion",
+      format: "yaml",
+      line: 4,
+      column: 7,
+      actual: "comment"
+    }]
 }`, source)
 	})
 
@@ -395,6 +472,13 @@ var _ = Describe("Check", func() {
   type_incompatibility: [],
   structure_incompatibility: []
 }`, source)
+	})
+
+	It("reports TOML duplicate keys as syntax errors", func() {
+		report := CheckTOML("name = \"Ada\"\nname = \"Bob\"\n")
+		tAssert.Len(report.Syntax, 1)
+		tAssert.Equal("toml", report.Syntax[0].Format)
+		tAssert.Contains(strings.ToLower(report.Syntax[0].Reason), "name")
 	})
 
 	It("reports TOML quoted key incompatibilities", func() {

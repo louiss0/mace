@@ -48,6 +48,11 @@ type checkFileReports struct {
 
 var yamlLineColumnPattern = regexp.MustCompile(`line (\d+):(?: column (\d+):)?`)
 
+type jsonCheckScanner struct {
+	decoder *json.Decoder
+	report  *CheckReport
+}
+
 func (report CheckReport) HasIssues() bool {
 	return len(report.Syntax) > 0 ||
 		len(report.KeyIncompatibility) > 0 ||
@@ -56,6 +61,12 @@ func (report CheckReport) HasIssues() bool {
 }
 
 func CheckJSON(input string) CheckReport {
+	report := newCheckReport()
+	scanner := newJSONCheckScanner(input, &report)
+	if err := scanner.scanRoot(); err != nil {
+		return CheckReport{Syntax: []CheckIssue{jsonSyntaxIssue(input, err)}}
+	}
+
 	decoder := json.NewDecoder(strings.NewReader(input))
 	decoder.UseNumber()
 
@@ -64,14 +75,6 @@ func CheckJSON(input string) CheckReport {
 		return CheckReport{Syntax: []CheckIssue{jsonSyntaxIssue(input, err)}}
 	}
 
-	var trailing any
-	if err := decoder.Decode(&trailing); err == nil {
-		return CheckReport{Syntax: []CheckIssue{{Path: "$", Reason: "unexpected trailing content", Format: "json"}}}
-	} else if !errors.Is(err, io.EOF) {
-		return CheckReport{Syntax: []CheckIssue{jsonSyntaxIssue(input, err)}}
-	}
-
-	report := newCheckReport()
 	record, ok := value.(map[string]any)
 	if !ok {
 		report.StructureIncompatibility = append(report.StructureIncompatibility, CheckIssue{
@@ -92,6 +95,7 @@ func CheckYAML(input string) CheckReport {
 	decoder := yaml.NewDecoder(strings.NewReader(input))
 	report := newCheckReport()
 	documents := []yaml.Node{}
+	commentReported := false
 
 	for {
 		var document yaml.Node
@@ -112,7 +116,7 @@ func CheckYAML(input string) CheckReport {
 			path = objectCheckPath(path, fmt.Sprintf("document_%d", index+1))
 		}
 		visited := map[*yaml.Node]struct{}{}
-		checkYAMLNode(&documents[index], path, &report, visited)
+		checkYAMLNode(&documents[index], path, &report, visited, &commentReported)
 	}
 
 	if len(documents) > 1 {
@@ -236,6 +240,18 @@ func checkRecordValue(record map[string]any, format string, path string, report 
 }
 
 func checkValue(value any, format string, path string, report *CheckReport) {
+	if value == nil {
+		if format != "json" {
+			report.TypeIncompatibility = append(report.TypeIncompatibility, CheckIssue{
+				Path:   path,
+				Reason: "null values are omitted during Mace conversion",
+				Format: format,
+				Actual: "null",
+			})
+		}
+		return
+	}
+
 	switch typed := value.(type) {
 	case map[string]any:
 		checkRecordValue(typed, format, path, report)
@@ -269,7 +285,7 @@ func checkValue(value any, format string, path string, report *CheckReport) {
 	}
 }
 
-func checkYAMLNode(node *yaml.Node, path string, report *CheckReport, visited map[*yaml.Node]struct{}) {
+func checkYAMLNode(node *yaml.Node, path string, report *CheckReport, visited map[*yaml.Node]struct{}, commentReported *bool) {
 	if node == nil {
 		return
 	}
@@ -278,10 +294,20 @@ func checkYAMLNode(node *yaml.Node, path string, report *CheckReport, visited ma
 	}
 	visited[node] = struct{}{}
 
+	if !*commentReported && yamlNodeHasComment(node) {
+		report.StructureIncompatibility = append(report.StructureIncompatibility, positionedCheckIssue(node, CheckIssue{
+			Path:   path,
+			Reason: "comments are not preserved during Mace conversion",
+			Format: "yaml",
+			Actual: "comment",
+		}))
+		*commentReported = true
+	}
+
 	switch node.Kind {
 	case yaml.DocumentNode:
 		for _, child := range node.Content {
-			checkYAMLNode(child, path, report, visited)
+			checkYAMLNode(child, path, report, visited, commentReported)
 		}
 	case yaml.MappingNode:
 		if tag := node.ShortTag(); tag != "!!map" && tag != "" {
@@ -292,13 +318,14 @@ func checkYAMLNode(node *yaml.Node, path string, report *CheckReport, visited ma
 				Actual: tag,
 			}))
 		}
+		seenKeys := map[string]yaml.Node{}
 		for index := 0; index+1 < len(node.Content); index += 2 {
 			keyNode := node.Content[index]
 			valueNode := node.Content[index+1]
 			childPath := path
 			if keyNode.Value == "<<" || keyNode.ShortTag() == "!!merge" {
 				childPath = objectCheckPath(path, keyNode.Value)
-				checkYAMLNode(valueNode, childPath, report, visited)
+				checkYAMLNode(valueNode, childPath, report, visited, commentReported)
 				continue
 			}
 			if keyNode.Kind != yaml.ScalarNode || keyNode.ShortTag() != "!!str" {
@@ -308,10 +335,22 @@ func checkYAMLNode(node *yaml.Node, path string, report *CheckReport, visited ma
 					Format: "yaml",
 					Key:    keyNode.Value,
 				}))
-				checkYAMLNode(valueNode, path, report, visited)
+				checkYAMLNode(valueNode, path, report, visited, commentReported)
 				continue
 			}
 			childPath = objectCheckPath(path, keyNode.Value)
+			if previous, exists := seenKeys[keyNode.Value]; exists {
+				report.StructureIncompatibility = append(report.StructureIncompatibility, positionedCheckIssue(keyNode, CheckIssue{
+					Path:     childPath,
+					Reason:   "duplicate mapping key",
+					Format:   "yaml",
+					Key:      keyNode.Value,
+					Expected: "unique keys",
+					Actual:   fmt.Sprintf("first declared at %d:%d", previous.Line, previous.Column),
+				}))
+			} else {
+				seenKeys[keyNode.Value] = *keyNode
+			}
 			if !isMaceIdentifier(keyNode.Value) {
 				report.KeyIncompatibility = append(report.KeyIncompatibility, positionedCheckIssue(keyNode, CheckIssue{
 					Path:   childPath,
@@ -320,7 +359,7 @@ func checkYAMLNode(node *yaml.Node, path string, report *CheckReport, visited ma
 					Key:    keyNode.Value,
 				}))
 			}
-			checkYAMLNode(valueNode, childPath, report, visited)
+			checkYAMLNode(valueNode, childPath, report, visited, commentReported)
 		}
 	case yaml.SequenceNode:
 		if tag := node.ShortTag(); tag != "!!seq" && tag != "" {
@@ -332,10 +371,27 @@ func checkYAMLNode(node *yaml.Node, path string, report *CheckReport, visited ma
 			}))
 		}
 		for index, child := range node.Content {
-			checkYAMLNode(child, indexCheckPath(path, index), report, visited)
+			checkYAMLNode(child, indexCheckPath(path, index), report, visited, commentReported)
 		}
 	case yaml.ScalarNode:
+		if node.Style == yaml.LiteralStyle || node.Style == yaml.FoldedStyle {
+			report.StructureIncompatibility = append(report.StructureIncompatibility, positionedCheckIssue(node, CheckIssue{
+				Path:   path,
+				Reason: "block scalar presentation is not preserved during Mace conversion",
+				Format: "yaml",
+				Actual: yamlScalarStyleName(node.Style),
+			}))
+		}
 		tag := node.ShortTag()
+		if tag == "!!null" {
+			report.TypeIncompatibility = append(report.TypeIncompatibility, positionedCheckIssue(node, CheckIssue{
+				Path:   path,
+				Reason: "null values are omitted during Mace conversion",
+				Format: "yaml",
+				Actual: tag,
+			}))
+			return
+		}
 		if isSupportedYAMLScalarTag(tag) {
 			return
 		}
@@ -350,7 +406,22 @@ func checkYAMLNode(node *yaml.Node, path string, report *CheckReport, visited ma
 			Actual: tag,
 		}))
 	case yaml.AliasNode:
-		checkYAMLNode(node.Alias, path, report, visited)
+		checkYAMLNode(node.Alias, path, report, visited, commentReported)
+	}
+}
+
+func yamlNodeHasComment(node *yaml.Node) bool {
+	return node.HeadComment != "" || node.LineComment != "" || node.FootComment != ""
+}
+
+func yamlScalarStyleName(style yaml.Style) string {
+	switch style {
+	case yaml.LiteralStyle:
+		return "|"
+	case yaml.FoldedStyle:
+		return ">"
+	default:
+		return "plain"
 	}
 }
 
@@ -361,6 +432,95 @@ func isSupportedYAMLScalarTag(tag string) bool {
 	default:
 		return false
 	}
+}
+
+func newJSONCheckScanner(input string, report *CheckReport) *jsonCheckScanner {
+	decoder := json.NewDecoder(strings.NewReader(input))
+	decoder.UseNumber()
+	return &jsonCheckScanner{decoder: decoder, report: report}
+}
+
+func (scanner *jsonCheckScanner) scanRoot() error {
+	if err := scanner.scanValue("$"); err != nil {
+		return err
+	}
+	if _, err := scanner.decoder.Token(); err == nil {
+		return fmt.Errorf("unexpected trailing content")
+	} else if !errors.Is(err, io.EOF) {
+		return err
+	}
+	return nil
+}
+
+func (scanner *jsonCheckScanner) scanValue(path string) error {
+	token, err := scanner.decoder.Token()
+	if err != nil {
+		return err
+	}
+
+	switch typed := token.(type) {
+	case json.Delim:
+		switch typed {
+		case '{':
+			return scanner.scanObject(path)
+		case '[':
+			return scanner.scanArray(path)
+		default:
+			return fmt.Errorf("unexpected delimiter %q", typed)
+		}
+	case nil:
+		scanner.report.TypeIncompatibility = append(scanner.report.TypeIncompatibility, CheckIssue{
+			Path:   path,
+			Reason: "null values are omitted during Mace conversion",
+			Format: "json",
+			Actual: "null",
+		})
+	}
+
+	return nil
+}
+
+func (scanner *jsonCheckScanner) scanObject(path string) error {
+	seenKeys := map[string]struct{}{}
+	for scanner.decoder.More() {
+		keyToken, err := scanner.decoder.Token()
+		if err != nil {
+			return err
+		}
+		key, ok := keyToken.(string)
+		if !ok {
+			return fmt.Errorf("expected object key")
+		}
+		childPath := objectCheckPath(path, key)
+		if _, exists := seenKeys[key]; exists {
+			scanner.report.StructureIncompatibility = append(scanner.report.StructureIncompatibility, CheckIssue{
+				Path:     childPath,
+				Reason:   "duplicate object key",
+				Format:   "json",
+				Key:      key,
+				Expected: "unique keys",
+			})
+		} else {
+			seenKeys[key] = struct{}{}
+		}
+		if err := scanner.scanValue(childPath); err != nil {
+			return err
+		}
+	}
+	_, err := scanner.decoder.Token()
+	return err
+}
+
+func (scanner *jsonCheckScanner) scanArray(path string) error {
+	index := 0
+	for scanner.decoder.More() {
+		if err := scanner.scanValue(indexCheckPath(path, index)); err != nil {
+			return err
+		}
+		index++
+	}
+	_, err := scanner.decoder.Token()
+	return err
 }
 
 func jsonSyntaxIssue(input string, err error) CheckIssue {
