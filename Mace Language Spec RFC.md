@@ -1855,44 +1855,64 @@ The Mace CLI emits JSON.
 
 ## Interoperability
 
-Mace is compatible with JSON, YAML, and TOML through structural conversion.
+Mace interoperability is conversion-based. JSON, YAML, and TOML do not become
+native Mace syntax, and a conversion is not required to preserve every source
+format feature.
 
-Compatibility in Mace does not mean that those formats become native Mace
-syntax. Instead, Mace converts external data formats and schema systems into
-the Mace record and schema model.
+This section describes only the interoperability behavior that is not
+supported.
 
-The conversion system exists to:
+### General restrictions
 
-- migrate existing configuration ecosystems into Mace
-- reuse existing schema investments
-- generate Mace schemas from external schema systems
-- preserve strong typing during migration
-- provide deterministic schema generation
+Mace interoperability does not preserve source presentation details.
+Comments, formatting, quoting style, field ordering semantics that exist only
+for presentation, and other non-structural source features are not part of the
+Mace data model.
 
+### JSON
 
-| Mace            | JSON    | YAML     | TOML    |
-| --------------- | ------- | -------- | ------- |
-| record / record | record  | mapping  | table   |
-| array\<T>       | array   | sequence | array   |
-| string          | string  | string   | string  |
-| int             | number  | integer  | integer |
-| float           | number  | float    | float   |
-| boolean         | boolean | boolean  | boolean |
+The following JSON interoperability is not supported:
 
-This shared record model allows Mace to import and export deterministic
-configuration structures across all supported formats.
+- object keys that are not valid Mace identifiers are not directly supported as
+  Mace field names
+- duplicate object keys are not supported
+- `null` is not preserved as a normal runtime value during data conversion
+- non-object document roots are not supported for direct data-block import
+- JSON Schema composition keywords do not preserve their original schema syntax;
+  they are converted into Mace schema forms instead
+
+### YAML
+
+The following YAML interoperability is not supported:
+
+- YAML tags are not supported as native Mace constructs
+- non-string mapping keys are not supported as Mace field names
+- duplicate mapping keys are not supported
+- `null` is not preserved as a normal runtime value during data conversion
+- YAML timestamp scalars are not preserved as native Mace scalar types
+- YAML block scalar presentation styles such as `|` and `>` are not preserved
+- YAML comments are not preserved by conversion
+- direct preservation of multi-document YAML streams is not supported; when
+  converted, documents are materialized as `document_<number>` records
+- YAML-specific scalar spellings and implicit typing behavior are not preserved
+  as YAML semantics inside Mace
+
+### TOML
+
+The following TOML interoperability is not supported:
+
+- quoted keys that are not valid Mace identifiers are not directly supported as
+  Mace field names
+- duplicate keys are not supported
+- TOML presentation distinctions such as dotted-key syntax, inline tables,
+  standard tables, and arrays-of-tables are not preserved in their original
+  TOML surface form after conversion
+- TOML date and time values are not preserved as native TOML temporal types in
+  Mace
 
 TOML schemas are supported by the `#:schema ./schemas/user.schema.json`
 YAML schemas are supported through `# yaml-language-server: $schema=./schemas/user.schema.json`
 
-> [!warning]  
-> When Mace convert's YAML files it will make records for documents and call them `document_<number>` from 1 to how many documents are written. 
-
->[!info] Mace doesn't support:  
->- JSON's `oneOf` syntax for schemas
->- YAML's tags 
->- YAML's boolean conversions
->
 ## Diagnostics
 
 This section focuses on only processor diagnostics! The examples below are supposed demonstrate what a Mace diagnostic looks like! The conventions showed is `<language>.<error_type>.<error_title>`. 

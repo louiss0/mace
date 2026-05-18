@@ -194,6 +194,7 @@ The root command is `mace`.
 ```text
 mace json <path>
 mace import <path>
+mace check <path>
 mace nodes <path>
 mace output <path>
 mace lsp
@@ -269,6 +270,43 @@ Use `--output-dir` to write generated files to a different directory:
 
 ```bash
 mace import ./config.json --output-dir ./generated
+```
+
+### `mace check <path> [path...]`
+
+Checks JSON, YAML, and TOML files for Mace compatibility issues and prints a
+Mace record report.
+
+- input format is determined from the file extension when available
+- JSON can fall back to content detection when no supported extension is present
+- syntax problems are reported under `syntax`
+- incompatible keys are reported under `key_incompatibility`
+- `null` values and YAML scalar/tag mismatches are reported under
+  `type_incompatibility`
+- duplicate keys, YAML multi-document files, comments, block scalar style loss,
+  and structural mismatches such as non-record JSON roots are reported under
+  `structure_incompatibility`
+- multiple files are emitted as a `files` array of per-file reports
+
+```bash
+mace check ./config.json
+mace check ./config.yaml ./config.toml
+```
+
+Example output:
+
+```mace
+{
+  syntax: [],
+  key_incompatibility: [{
+      path: "$[\"foo-bar\"]",
+      reason: "key is not a valid Mace identifier",
+      format: "json",
+      key: "foo-bar"
+    }],
+  type_incompatibility: [],
+  structure_incompatibility: []
+}
 ```
 
 ### `mace nodes <path>`

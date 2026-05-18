@@ -679,6 +679,37 @@ primary_user:
 		tAssert.Equal(int64(1), document2["total_users"])
 	})
 
+	It("converts YAML merge keys into Mace merge expressions", func() {
+		input := `defaults: &defaults
+  enabled: true
+  retries: 3
+profile:
+  <<: *defaults
+  retries: 5
+  name: api
+`
+
+		source, err := importYAMLSource(filepath.Join("workspace", "merge_expression.yaml"), input)
+		tAssert.NoError(err)
+		tAssert.Equal(`[output = data]
+{
+  defaults: {
+    enabled: true,
+    retries: 3
+  },
+  profile: defaults <> {
+    retries: 5,
+    name: "api"
+  }
+}`, source)
+
+		output := importedOutput(source)
+		profile := output["profile"].(map[string]any)
+		tAssert.Equal(true, profile["enabled"])
+		tAssert.Equal(int64(5), profile["retries"])
+		tAssert.Equal("api", profile["name"])
+	})
+
 	It("keeps root YAML merge mappings at the top level", func() {
 		input := `defaults: &defaults
   enabled: true
