@@ -321,9 +321,8 @@ func checkYAMLNode(node *yaml.Node, path string, report *CheckReport, visited ma
 		for index := 0; index+1 < len(node.Content); index += 2 {
 			keyNode := node.Content[index]
 			valueNode := node.Content[index+1]
-			childPath := path
 			if keyNode.Value == "<<" || keyNode.ShortTag() == "!!merge" {
-				childPath = objectCheckPath(path, keyNode.Value)
+				childPath := objectCheckPath(path, keyNode.Value)
 				checkYAMLMergeValue(valueNode, childPath, report)
 				checkYAMLNode(valueNode, childPath, report, visited, commentReported)
 				continue
@@ -338,7 +337,7 @@ func checkYAMLNode(node *yaml.Node, path string, report *CheckReport, visited ma
 				checkYAMLNode(valueNode, path, report, visited, commentReported)
 				continue
 			}
-			childPath = objectCheckPath(path, keyNode.Value)
+			childPath := objectCheckPath(path, keyNode.Value)
 			if previous, exists := seenKeys[keyNode.Value]; exists {
 				report.StructureIncompatibility = append(report.StructureIncompatibility, positionedCheckIssue(keyNode, CheckIssue{
 					Path:     childPath,
