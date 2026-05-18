@@ -14,7 +14,7 @@ This repository contains:
 ## Status
 
 Mace is actively implemented in this repository. The current language contract
-is documented in [`mace-spec.md`](./mace-spec.md).
+is documented in [the formal specification](./docs/src/content/docs/reference/specification.md).
 
 ## Features
 
@@ -165,7 +165,7 @@ Hexadecimal values stay distinct from decimal numerics. When emitted through
 `"0xFF"` and `"0x2.8"` so their hexadecimal spelling is preserved.
 
 For the exact rules and currently supported syntax, see
-[`mace-spec.md`](./mace-spec.md).
+[the formal specification](./docs/src/content/docs/reference/specification.md).
 
 ## Installation
 
@@ -458,7 +458,8 @@ go test ./...
 - `internal/analyzer/` - editor analysis, diagnostics, hover, completion,
   definitions, symbols, code actions, and formatting helpers
 - `internal/formatter/` - canonical source formatting
-- `mace-spec.md` - current language specification
+- `docs/src/content/docs/reference/specification.md` - current language
+  specification
 - `mace.ebnf` - grammar reference
 
 ## Notes
