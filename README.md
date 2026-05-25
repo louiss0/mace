@@ -81,7 +81,8 @@ Mace supports:
 - named type aliases
 - schemas
 - enums backed by `string`, `int`, `float`, `hex_int`, or `hex_float`
-- literal `choice[...]` aliases with mixed scalar members and reusable choice aliases
+- literal `choice[...]` aliases with mixed scalar members, reusable choice aliases,
+  and variant-friendly autocomplete
 - enum member access with `EnumName.MemberName`
 - record, array, arithmetic, logical, merge, and conditional expressions
 - `$self` references inside output evaluation

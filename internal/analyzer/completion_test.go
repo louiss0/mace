@@ -200,6 +200,66 @@ schema Basket: { favorite_fruit: Fruit; };
 		tAssert.Contains(labels, "Fruit.Strawberry")
 	})
 
+	It("suggests choice values for output block schema fields", func() {
+		text := `|===|
+ type Fruit: choice["Apple", "Strawberry"];
+ schema Basket: { favorite_fruit: Fruit; };
+|===|
+[output = data, schema = Basket]
+{
+  favorite_fruit:
+}`
+
+		position := protocol.Position{
+			Line:      6,
+			Character: uint32(len(`  favorite_fruit: `)),
+		}
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+			return item.Label
+		})
+
+		tAssert.Contains(labels, "$self")
+		tAssert.Contains(labels, `"Apple"`)
+		tAssert.Contains(labels, `"Strawberry"`)
+	})
+
+	It("suggests choice values inside variants while keeping imprecise alternatives", func() {
+		text := `|===|
+ type Role: choice["Admin", "Member"];
+ schema User: { name: string; };
+ type Identity: variant[Role, User];
+ schema Envelope: { value: Identity; };
+ schema Response: { payload: Envelope; };
+|===|
+[output = data, schema = Response]
+{
+  payload: {
+    value:
+  };
+}`
+
+		position := protocol.Position{
+			Line:      10,
+			Character: uint32(len(`    value: `)),
+		}
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+			return item.Label
+		})
+
+		tAssert.Contains(labels, "$self")
+		tAssert.Contains(labels, `"Admin"`)
+		tAssert.Contains(labels, `"Member"`)
+		tAssert.Contains(labels, `{ name: "" }`)
+	})
+
 	It("suggests variant members for nested output schema aliases", func() {
 		text := `|===|
 enum Role: string {

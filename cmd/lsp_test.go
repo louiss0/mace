@@ -1145,6 +1145,46 @@ Basket basket = {
 		tAssert.Equal([]string{`{ name: "", age?: 0 }`}, labels)
 	})
 
+	It("suggests choice values for output schema fields", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+ type Fruit: choice["Apple", "Strawberry"];
+ schema Basket: { favorite_fruit: Fruit; };
+|===|
+[output = data, schema = Basket]
+{
+  favorite_fruit:
+}`, nil)
+
+		labels := completeLabels(server, uri, 6, uint32(len(`  favorite_fruit: `)))
+		tAssert.Contains(labels, "$self")
+		tAssert.Contains(labels, `"Apple"`)
+		tAssert.Contains(labels, `"Strawberry"`)
+	})
+
+	It("suggests choice values inside variants while keeping imprecise alternatives", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+ type Role: choice["Admin", "Member"];
+ schema User: { name: string; };
+ type Identity: variant[Role, User];
+ schema Envelope: { value: Identity; };
+ schema Response: { payload: Envelope; };
+|===|
+[output = data, schema = Response]
+{
+  payload: {
+    value:
+  };
+}`, nil)
+
+		labels := completeLabels(server, uri, 10, uint32(len(`    value: `)))
+		tAssert.Contains(labels, "$self")
+		tAssert.Contains(labels, `"Admin"`)
+		tAssert.Contains(labels, `"Member"`)
+		tAssert.Contains(labels, `{ name: "" }`)
+	})
+
 	It("suggests variant members for nested output schema aliases", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
@@ -1730,6 +1770,42 @@ User user = { name: "Ada"; created_at: "2026-04-09"; };
 		tAssert.True(ok)
 		if ok {
 			tAssert.Contains(content.Value, `union[Profile, Audit] user = record literal`)
+		}
+	})
+
+	It("includes gen_doc details for choice types in hover", func() {
+		didOpen(server, uri, `|===|
+ type Flavor: choice["Vanilla", "Chocolate"];
+ gen_doc Flavor {
+   summary: "Selectable flavor values";
+   description: "Use autocomplete to choose a supported flavor.";
+ };
+ Flavor current = "Vanilla";
+|===|
+[output = data] { result: current; }`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 5, Character: 1},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, `type Flavor: choice["Vanilla", "Chocolate"];`)
+			tAssert.Contains(content.Value, `Selectable flavor values`)
+			tAssert.Contains(content.Value, `Use autocomplete to choose a supported flavor.`)
 		}
 	})
 

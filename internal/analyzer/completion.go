@@ -1577,6 +1577,17 @@ func completionItemsForType(typeReference ast.TypeReference, model completionMod
 				Detail: Ptr(detail),
 			}
 		})
+	case completionTypeChoice:
+		return lo.Map(resolved.choice.members, func(member completionChoiceMember, _ int) protocol.CompletionItem {
+			item := protocol.CompletionItem{
+				Label: member.Label,
+				Kind:  Ptr(protocol.CompletionItemKindValue),
+			}
+			if member.Detail != "" {
+				item.Detail = Ptr(member.Detail)
+			}
+			return item
+		})
 	case completionTypeSchema:
 		if !allowSchemaLiteral {
 			return nil
@@ -1715,6 +1726,12 @@ func resolveCompletionType(typeReference ast.TypeReference, model completionMode
 		return completionType{kind: completionTypeSchema, record: record}
 	case ast.VariantType:
 		return completionType{kind: completionTypeVariant, members: typed.Members}
+	case ast.ChoiceType:
+		choiceValue, ok := completionChoiceFromMembers(typed.Members, model, seen)
+		if !ok {
+			return completionType{}
+		}
+		return completionType{kind: completionTypeChoice, choice: choiceValue}
 	case ast.RecordType:
 		return completionType{kind: completionTypeSchema, record: typed}
 	case ast.NamedType:
@@ -1767,6 +1784,55 @@ func completionUnionEnum(name string, typeReference ast.TypeReference, model com
 	}
 
 	return completionEnum{name: name, members: members}, true
+}
+
+func completionChoiceFromMembers(members []ast.Expression, model completionModel, seen map[string]struct{}) (completionChoice, bool) {
+	choiceMembers := []completionChoiceMember{}
+	memberLabels := map[string]int{}
+
+	for _, member := range members {
+		resolved, ok := completionChoiceMemberValues(member, model, seen)
+		if !ok {
+			return completionChoice{}, false
+		}
+		for _, choiceMember := range resolved {
+			if index, exists := memberLabels[choiceMember.Label]; exists {
+				choiceMembers[index] = choiceMember
+				continue
+			}
+			memberLabels[choiceMember.Label] = len(choiceMembers)
+			choiceMembers = append(choiceMembers, choiceMember)
+		}
+	}
+
+	return completionChoice{members: choiceMembers}, true
+}
+
+func completionChoiceMemberValues(member ast.Expression, model completionModel, seen map[string]struct{}) ([]completionChoiceMember, bool) {
+	switch typed := member.(type) {
+	case ast.Identifier:
+		if _, exists := seen[typed.Name]; exists {
+			return nil, false
+		}
+		aliasValue, ok := model.aliases[typed.Name]
+		if !ok {
+			return nil, false
+		}
+		nextSeen := map[string]struct{}{typed.Name: {}}
+		for name := range seen {
+			nextSeen[name] = struct{}{}
+		}
+		resolved := resolveCompletionType(aliasValue, model, nextSeen)
+		if resolved.kind != completionTypeChoice {
+			return nil, false
+		}
+		return resolved.choice.members, true
+	case ast.StringLiteral, ast.IntLiteral, ast.FloatLiteral, ast.HexIntLiteral, ast.HexFloatLiteral, ast.BooleanLiteral:
+		label := expressionSummary(member)
+		return []completionChoiceMember{{Label: label, Detail: label}}, true
+	default:
+		return nil, false
+	}
 }
 
 func completionUnionRecord(members []ast.TypeReference, model completionModel, seen map[string]struct{}) (ast.RecordType, bool) {
@@ -1858,6 +1924,11 @@ func defaultLiteralForType(typeReference ast.TypeReference, model completionMode
 	case completionTypeEnum:
 		if len(resolved.enum.members) > 0 {
 			return resolved.enum.access(resolved.enum.members[0].Name)
+		}
+		return `""`
+	case completionTypeChoice:
+		if len(resolved.choice.members) > 0 {
+			return resolved.choice.members[0].Label
 		}
 		return `""`
 	case completionTypeSchema:
@@ -2067,6 +2138,15 @@ type completionEnumMember struct {
 	Detail string
 }
 
+type completionChoice struct {
+	members []completionChoiceMember
+}
+
+type completionChoiceMember struct {
+	Label  string
+	Detail string
+}
+
 func (enum completionEnum) access(memberName string) string {
 	if enum.name == "" {
 		return memberName
@@ -2102,6 +2182,7 @@ const (
 	completionTypeArray
 	completionTypeSchema
 	completionTypeEnum
+	completionTypeChoice
 	completionTypeVariant
 )
 
@@ -2110,6 +2191,7 @@ type completionType struct {
 	primitive string
 	record    ast.RecordType
 	enum      completionEnum
+	choice    completionChoice
 	members   []ast.TypeReference
 }
 
