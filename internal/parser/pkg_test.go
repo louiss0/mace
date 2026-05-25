@@ -896,6 +896,36 @@ type Matrix: array<array<int>>;
 			}
 		})
 
+		It("parses choice types with literals and choice aliases", func() {
+			input := `|===|
+ type Environment: choice["dev", "prod"];
+ type Mode: choice[Environment, 1, true];
+|===|
+[output = data] {}`
+
+			file, err := parseFileInput(input)
+			tAssert.NoError(err)
+
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 2) {
+				choiceDecl, ok := file.Script.Items[1].(ast.TypeDeclaration)
+				tAssert.True(ok)
+				if ok {
+					choiceType, ok := choiceDecl.Type.(ast.ChoiceType)
+					tAssert.True(ok)
+					if ok && tAssert.Len(choiceType.Members, 3) {
+						_, ok = choiceType.Members[0].(ast.Identifier)
+						tAssert.True(ok)
+						requireIntLiteral(choiceType.Members[1], "1")
+						booleanLiteral, ok := choiceType.Members[2].(ast.BooleanLiteral)
+						tAssert.True(ok)
+						if ok {
+							tAssert.True(booleanLiteral.Value)
+						}
+					}
+				}
+			}
+		})
+
 		It("parses enum declarations with implicit and explicit members", func() {
 			input := `|===|
 enum Fruit: string {

@@ -17,6 +17,7 @@ const (
 	TokenArray
 	TokenUnion
 	TokenVariant
+	TokenChoice
 	TokenStringType
 	TokenIntType
 	TokenFloatType

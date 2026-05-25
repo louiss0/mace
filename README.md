@@ -19,6 +19,7 @@ is documented in [the formal specification](./docs/src/content/docs/reference/sp
 ## Features
 
 - Typed script declarations for `type`, `schema`, `enum`, and variables
+- Literal `choice[...]` types for user-selectable value domains
 - Enum member access with `EnumName.MemberName`
 - Deterministic expression evaluation
 - Output validation against local schemas or external schema files
@@ -76,9 +77,11 @@ Mace supports:
 - arrays: `array<T>`
 - unions: `union[T1, T2, ...]`
 - variants: `variant[T1, T2, ...]`
+- choices: `choice["a", 1, true, OtherChoice]`
 - named type aliases
 - schemas
 - enums backed by `string`, `int`, `float`, `hex_int`, or `hex_float`
+- literal `choice[...]` aliases with mixed scalar members and reusable choice aliases
 - enum member access with `EnumName.MemberName`
 - record, array, arithmetic, logical, merge, and conditional expressions
 - `$self` references inside output evaluation

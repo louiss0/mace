@@ -259,6 +259,16 @@ func formatTypeReference(typeReference ast.TypeReference) (string, error) {
 			members = append(members, formatted)
 		}
 		return fmt.Sprintf("variant[%s]", strings.Join(members, ", ")), nil
+	case ast.ChoiceType:
+		members := make([]string, 0, len(typedReference.Members))
+		for _, member := range typedReference.Members {
+			formatted, err := formatExpressionWithDepth(member, 0)
+			if err != nil {
+				return "", err
+			}
+			members = append(members, formatted)
+		}
+		return fmt.Sprintf("choice[%s]", strings.Join(members, ", ")), nil
 	case ast.RecordType:
 		return formatRecordType(typedReference, 0)
 	case ast.NamedType:

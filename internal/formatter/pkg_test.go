@@ -75,6 +75,27 @@ injectable string user = "Ada";
 }`, output)
 	})
 
+	It("formats choice type declarations", func() {
+		file, err := parseMaceFile(`|===|
+ type Environment: choice["dev", "prod"];
+ type Mode: choice[Environment, 1, true];
+|===|
+[output = data]
+{ value: "dev"; }`)
+		tAssert.NoError(err)
+
+		output, err := FormatFile(file)
+		tAssert.NoError(err)
+		tAssert.Equal(`|========================================|
+type Environment: choice["dev", "prod"];
+type Mode: choice[Environment, 1, true];
+|========================================|
+[output = data]
+{
+  value: "dev"
+}`, output)
+	})
+
 	It("formats script imports without duplicating flattened file imports", func() {
 		file, err := parseMaceFile(`|===|
 from "./shared.mace" import User;

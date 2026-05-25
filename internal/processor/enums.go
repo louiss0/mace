@@ -141,6 +141,8 @@ func enumValueKey(value Value) (string, bool) {
 		return "hex_int:" + formatHexInt(value.Int), true
 	case ValueHexFloat:
 		return "hex_float:" + formatHexFloat(value.Float), true
+	case ValueBoolean:
+		return "boolean:" + strconv.FormatBool(value.Boolean), true
 	default:
 		return "", false
 	}
@@ -158,6 +160,8 @@ func enumValueDisplay(value Value) string {
 		return formatHexInt(value.Int)
 	case ValueHexFloat:
 		return formatHexFloat(value.Float)
+	case ValueBoolean:
+		return strconv.FormatBool(value.Boolean)
 	default:
 		return "unknown"
 	}

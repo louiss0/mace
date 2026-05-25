@@ -237,6 +237,12 @@ type VariantType struct {
 
 func (VariantType) typeReferenceNode() {}
 
+type ChoiceType struct {
+	Members []Expression
+}
+
+func (ChoiceType) typeReferenceNode() {}
+
 type NamedType struct {
 	Name string
 }

@@ -972,6 +972,59 @@ Status result = Status.Running;
 }`, expectedValue{kind: ValueInt, int64: 1}),
 	)
 
+	DescribeTable("processes valid choice declarations",
+		func(input string, expected expectedValue) {
+			processor := New()
+			result, err := processor.Process(input)
+			tAssert.NoError(err)
+
+			actual := requireOutputValue(result, "result")
+			assertExpectedValue(actual, expected)
+		},
+		Entry("choice string literal", `|===|
+ type Fruit: choice["Apple", "Strawberry"];
+ Fruit result = "Apple";
+|===|
+[output = data]
+{
+  result: result;
+}`, expectedValue{kind: ValueString, string: "Apple"}),
+		Entry("choice aliases can be mixed", `|===|
+ type Environment: choice["dev", "prod"];
+ type Numeric: choice[1, 2];
+ type Mode: choice[Environment, Numeric, true];
+ Mode result = 2;
+|===|
+[output = data]
+{
+  result: result;
+}`, expectedValue{kind: ValueInt, int64: 2}),
+	)
+
+	DescribeTable("rejects invalid choice declarations and assignments",
+		func(input string, message string) {
+			processor := New()
+			_, err := processor.Process(input)
+			tAssert.Error(err)
+			tAssert.ErrorContains(err, message)
+		},
+		Entry("unknown choice alias", wrapScriptWithOutput(`|===|
+ type Fruit: choice[MissingChoice];
+|===|`), "unknown choice member"),
+		Entry("non-choice alias in choice members", wrapScriptWithOutput(`|===|
+ type Name: string;
+ type Fruit: choice[Name];
+|===|`), "must resolve to a choice type"),
+		Entry("value outside choice domain", `|===|
+ type Fruit: choice["Apple", "Strawberry"];
+ Fruit result = "Pear";
+|===|
+[output = data]
+{
+  result: result;
+}`, "type mismatch: expected choice[\"Apple\", \"Strawberry\"], got \"Pear\""),
+	)
+
 	DescribeTable("rejects invalid enum declarations and assignments",
 		func(input string, message string) {
 			processor := New()

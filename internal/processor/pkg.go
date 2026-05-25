@@ -975,6 +975,11 @@ func resolveExportedTypeReference(typeRef ast.TypeReference, types *typeRegistry
 		}
 
 		return ast.VariantType{Members: members}, nil
+	case ast.ChoiceType:
+		if _, err := resolveChoiceType(ref, types); err != nil {
+			return nil, err
+		}
+		return ref, nil
 	case ast.RecordType:
 		return resolveExportedRecordType(ref, types, schemas, aliasStack, schemaStack)
 	case ast.NamedType:
@@ -1260,6 +1265,9 @@ func validateTypeReference(typeRef ast.TypeReference, symbols *symbolTable, type
 		return validateVariantValueTypes(resolved.members)
 	case ast.RecordType:
 		return validateRecordType(ref, symbols, types, schemas, enums)
+	case ast.ChoiceType:
+		_, err := resolveChoiceType(ref, types)
+		return err
 	case ast.NamedType:
 		if symbols.IsType(ref.Name) {
 			_, _, err := types.Resolve(ref.Name)
@@ -1771,6 +1779,12 @@ func validateEvaluatedOutputSchema(schemaName string, fields map[string]Value, s
 func validateEvaluatedValueAgainstType(value Value, expectedType valueType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) error {
 	if len(expectedType.members) > 0 {
 		return validateEvaluatedValueAgainstVariantMembers(value, expectedType.members, symbols, types, schemas, enums)
+	}
+	if len(expectedType.choiceValues) > 0 {
+		if !choiceContainsValue(expectedType.choiceValues, value) {
+			return typeMismatchError(expectedType.name(), enumValueDisplay(value))
+		}
+		return nil
 	}
 	if expectedType.enumName != "" {
 		enumDef, ok := enums.Get(expectedType.enumName)
@@ -3109,12 +3123,13 @@ const (
 )
 
 type valueType struct {
-	kind       ValueKind
-	element    *valueType
-	schemaName string
-	record     *ast.RecordType
-	enumName   string
-	members    []valueType
+	kind         ValueKind
+	element      *valueType
+	schemaName   string
+	record       *ast.RecordType
+	enumName     string
+	choiceValues []Value
+	members      []valueType
 }
 
 func isHexValueType(valueType valueType) bool {
@@ -3126,6 +3141,10 @@ func (t valueType) isNumeric() bool {
 }
 
 func (t valueType) name() string {
+	if len(t.choiceValues) > 0 {
+		return choiceTypeName(t.choiceValues)
+	}
+
 	switch t.kind {
 	case ValueString:
 		if t.enumName != "" {
@@ -3185,6 +3204,8 @@ func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *ty
 			return valueType{}, err
 		}
 		return valueType{kind: ValueArray, element: &element}, nil
+	case ast.ChoiceType:
+		return resolveChoiceType(ref, types)
 	case ast.UnionType:
 		if members, ok, err := resolveUnionEnumValueTypes(ref, types, enums, false); err != nil {
 			return valueType{}, err
@@ -3259,6 +3280,8 @@ func validateVariantValueTypes(members []valueType) error {
 			} else if enumBacking != member.kind {
 				return validationErrorf("enum variants require the same backing type")
 			}
+		case len(member.choiceValues) > 0:
+			hasPrimitive = true
 		case member.kind == ValueRecord:
 			hasSchema = true
 		case member.kind == ValueString || member.kind == ValueInt || member.kind == ValueFloat || member.kind == ValueHexInt || member.kind == ValueHexFloat || member.kind == ValueBoolean:
@@ -3474,6 +3497,8 @@ func schemaTypeFromTypeReference(typeRef ast.TypeReference) (SchemaType, error) 
 			members = append(members, resolved)
 		}
 		return SchemaType{Kind: SchemaTypeVariant, Members: members}, nil
+	case ast.ChoiceType:
+		return SchemaType{Kind: SchemaTypeNamed, Name: choiceTypeNameForSchema(ref)}, nil
 	case ast.RecordType:
 		fields := make(map[SchemaField]SchemaType, len(ref.Fields))
 		for _, field := range ref.Fields {
@@ -3786,6 +3811,9 @@ func inferConditionalType(expr ast.ConditionalExpression, variables *variableReg
 }
 
 func typesEqual(leftType, rightType valueType) bool {
+	if len(leftType.choiceValues) > 0 || len(rightType.choiceValues) > 0 {
+		return choiceValuesEqual(leftType.choiceValues, rightType.choiceValues)
+	}
 	if len(leftType.members) > 0 || len(rightType.members) > 0 {
 		if len(leftType.members) != len(rightType.members) {
 			return false
@@ -3838,7 +3866,23 @@ func ensureAssignable(expectedType, actualType valueType) error {
 		}
 		return typeMismatchError(expectedType.name(), actualType.name())
 	}
-	if len(actualType.members) > 0 {
+	if len(expectedType.choiceValues) > 0 {
+		if len(actualType.choiceValues) > 0 {
+			for _, actualValue := range actualType.choiceValues {
+				if !choiceContainsValue(expectedType.choiceValues, actualValue) {
+					return typeMismatchError(expectedType.name(), actualType.name())
+				}
+			}
+			return nil
+		}
+		for _, expectedValue := range expectedType.choiceValues {
+			if ensureAssignable(valueTypeFromChoiceValue(expectedValue), actualType) == nil {
+				return nil
+			}
+		}
+		return typeMismatchError(expectedType.name(), actualType.name())
+	}
+	if len(actualType.members) > 0 || len(actualType.choiceValues) > 0 {
 		return typeMismatchError(expectedType.name(), actualType.name())
 	}
 	if expectedType.kind == ValueUnknown {
