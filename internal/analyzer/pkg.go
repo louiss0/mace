@@ -155,7 +155,7 @@ func DocumentSymbols(text string, snapshot Snapshot) []protocol.DocumentSymbol {
 	symbols := lo.FilterMap(fileScriptItems(file), func(item ast.Declaration, _ int) (protocol.DocumentSymbol, bool) {
 		switch declaration := item.(type) {
 		case ast.TypeDeclaration:
-			return newSymbol(text, declaration.Name, "type", protocol.SymbolKindClass, nil), true
+			return newSymbol(text, declaration.Name, typeReferenceDetail(declaration.Type), protocol.SymbolKindClass, nil), true
 		case ast.EnumDeclaration:
 			children := lo.Map(declaration.Members, func(member ast.EnumMember, index int) protocol.DocumentSymbol {
 				detail := member.Name
@@ -523,6 +523,11 @@ func typeReferenceDetail(typeReference ast.TypeReference) string {
 			return typeReferenceDetail(member)
 		})
 		return fmt.Sprintf("variant[%s]", strings.Join(parts, ", "))
+	case ast.ChoiceType:
+		parts := lo.Map(value.Members, func(member ast.Expression, _ int) string {
+			return expressionSummary(member)
+		})
+		return fmt.Sprintf("choice[%s]", strings.Join(parts, ", "))
 	case ast.RecordType:
 		return recordTypeDetail(value)
 	default:

@@ -2670,6 +2670,33 @@ string env = "dev";
 		}
 	})
 
+	It("includes choice details in hierarchical document symbols", func() {
+		didOpen(server, uri, `|===|
+ type Flavor: choice["Vanilla", "Chocolate"];
+|===|
+[output = data]
+{
+  result: "Vanilla";
+}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentDocumentSymbol, protocol.DocumentSymbolParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		symbols, ok := resultValue.([]protocol.DocumentSymbol)
+		tAssert.True(ok)
+		if !ok || !tAssert.NotEmpty(symbols) {
+			return
+		}
+
+		tAssert.Equal("Flavor", symbols[0].Name)
+		tAssert.Equal(protocol.SymbolKindClass, symbols[0].Kind)
+		tAssert.Equal(`choice["Vanilla", "Chocolate"]`, lo.FromPtr(symbols[0].Detail))
+	})
+
 	It("includes enums in hierarchical document symbols", func() {
 		didOpen(server, uri, `|===|
 enum Fruit: string {

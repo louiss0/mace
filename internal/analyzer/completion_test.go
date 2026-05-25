@@ -488,6 +488,30 @@ type Alias: string;
 		tAssert.Equal(protocol.CompletionItemKindClass, kinds["count"])
 	})
 
+	It("returns choice aliases as type importables from an exported output block", func() {
+		workspace, err := os.MkdirTemp("", "mace-completion-importable-choice-*")
+		tAssert.NoError(err)
+
+		writeAnalysisFile(workspace, "shared.mace", `|===|
+ type Flavor: choice["Vanilla", "Chocolate"];
+|===|
+[output = schema]
+{
+  flavor: Flavor;
+}`)
+
+		documentPath := filepath.Join(workspace, "consumer.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		symbols, ok := importableSymbols(uri, filepath.Dir(documentPath), "./shared.mace")
+		tAssert.True(ok)
+		if !ok || !tAssert.Len(symbols, 1) {
+			return
+		}
+
+		tAssert.Equal("flavor", symbols[0].Name)
+		tAssert.Equal(protocol.CompletionItemKindClass, symbols[0].Kind)
+	})
+
 	It("returns data fields as variables from a data output block", func() {
 		workspace, err := os.MkdirTemp("", "mace-completion-importable-data-*")
 		tAssert.NoError(err)
