@@ -136,20 +136,6 @@ func completeLabels(server *Server, uri protocol.DocumentUri, line uint32, chara
 	return requireCompletionLabels(resultValue, validMethod, validParams, err)
 }
 
-func completeLabelsWithContext(server *Server, uri protocol.DocumentUri, line uint32, character uint32, context protocol.CompletionContext) []string {
-	resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentCompletion, protocol.CompletionParams{
-		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
-			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
-			Position: protocol.Position{
-				Line:      protocol.UInteger(line),
-				Character: protocol.UInteger(character),
-			},
-		},
-		Context: &context,
-	}, nil)
-	return requireCompletionLabels(resultValue, validMethod, validParams, err)
-}
-
 func requireCompletionLabels(resultValue any, validMethod bool, validParams bool, err error) []string {
 	tAssert.True(validMethod)
 	tAssert.True(validParams)

@@ -2,7 +2,9 @@ package processor
 
 import (
 	"fmt"
+	"math"
 	"strconv"
+	"strings"
 )
 
 func scalarValueKey(value Value) (string, bool) {
@@ -12,11 +14,11 @@ func scalarValueKey(value Value) (string, bool) {
 	case ValueInt:
 		return "int:" + strconv.FormatInt(value.Int, 10), true
 	case ValueFloat:
-		return "float:" + strconv.FormatFloat(value.Float, 'f', 1, 64), true
+		return "float:" + strconv.FormatUint(math.Float64bits(value.Float), 16), true
 	case ValueHexInt:
 		return "hex_int:" + formatHexInt(value.Int), true
 	case ValueHexFloat:
-		return "hex_float:" + formatHexFloat(value.Float), true
+		return "hex_float:" + strconv.FormatUint(math.Float64bits(value.Float), 16), true
 	case ValueBoolean:
 		return "boolean:" + strconv.FormatBool(value.Boolean), true
 	default:
@@ -31,7 +33,7 @@ func scalarValueDisplay(value Value) string {
 	case ValueInt:
 		return strconv.FormatInt(value.Int, 10)
 	case ValueFloat:
-		return strconv.FormatFloat(value.Float, 'f', 1, 64)
+		return decimalFloatLiteral(value.Float)
 	case ValueHexInt:
 		return formatHexInt(value.Int)
 	case ValueHexFloat:
@@ -41,4 +43,12 @@ func scalarValueDisplay(value Value) string {
 	default:
 		return "unknown"
 	}
+}
+
+func decimalFloatLiteral(value float64) string {
+	formatted := strconv.FormatFloat(value, 'g', -1, 64)
+	if strings.ContainsAny(formatted, ".eE") {
+		return formatted
+	}
+	return formatted + ".0"
 }

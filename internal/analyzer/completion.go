@@ -594,27 +594,6 @@ func isDigits(value string) bool {
 	return true
 }
 
-func completionModelAt(document document, uri protocol.DocumentUri, position protocol.Position, linePrefix string) (completionModel, bool) {
-	file := document.analysis.file
-	if file == nil {
-		if partialFile, ok := partialScriptFile(document.text, position); ok {
-			file = &partialFile
-		} else {
-			file = completionFile(document, linePrefix)
-		}
-	}
-	if file == nil {
-		return completionModel{}, false
-	}
-
-	importBaseDir := filepath.Dir(documentPath(uri))
-	if importBaseDir == "" {
-		importBaseDir = "."
-	}
-
-	return buildCompletionModel(*file, importBaseDir, completionRoot(document.analysis, uri), map[string]completionModel{}), true
-}
-
 func partialScriptFile(text string, position protocol.Position) (ast.File, bool) {
 	index := positionIndex(text, position)
 	if index < 0 {

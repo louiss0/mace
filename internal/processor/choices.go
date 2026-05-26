@@ -144,16 +144,56 @@ func choiceValueKeys(values []Value) []string {
 	return keys
 }
 
-func choiceTypeNameForSchema(reference ast.ChoiceType) string {
-	values, err := resolveChoiceValues(reference.Members, newTypeRegistry(), map[string]struct{}{})
+func choiceTypeNameForSchema(reference ast.ChoiceType, types *typeRegistry) string {
+	if types == nil {
+		types = newTypeRegistry()
+	}
+
+	values, err := resolveChoiceValues(reference.Members, types, map[string]struct{}{})
 	if err != nil {
 		parts := make([]string, 0, len(reference.Members))
 		for _, member := range reference.Members {
-			parts = append(parts, fmt.Sprintf("%T", member))
+			parts = append(parts, choiceSchemaMemberLabel(member))
 		}
 		return fmt.Sprintf("choice[%s]", strings.Join(parts, ", "))
 	}
 	return choiceTypeName(values)
+}
+
+func choiceSchemaMemberLabel(member ast.Expression) string {
+	switch typed := member.(type) {
+	case ast.Identifier:
+		return typed.Name
+	case ast.StringLiteral:
+		value, err := parseStaticString(typed.Lexeme)
+		if err == nil {
+			return scalarValueDisplay(value)
+		}
+	case ast.IntLiteral:
+		value, err := parseInt(typed.Lexeme)
+		if err == nil {
+			return scalarValueDisplay(value)
+		}
+	case ast.FloatLiteral:
+		value, err := parseFloat(typed.Lexeme)
+		if err == nil {
+			return scalarValueDisplay(value)
+		}
+	case ast.HexIntLiteral:
+		value, err := parseHexInt(typed.Lexeme)
+		if err == nil {
+			return scalarValueDisplay(value)
+		}
+	case ast.HexFloatLiteral:
+		value, err := parseHexFloat(typed.Lexeme)
+		if err == nil {
+			return scalarValueDisplay(value)
+		}
+	case ast.BooleanLiteral:
+		return scalarValueDisplay(Value{Kind: ValueBoolean, Boolean: typed.Value})
+	}
+
+	return fmt.Sprintf("%T", member)
 }
 
 func choiceTypeName(values []Value) string {
@@ -162,8 +202,4 @@ func choiceTypeName(values []Value) string {
 		parts = append(parts, scalarValueDisplay(value))
 	}
 	return fmt.Sprintf("choice[%s]", strings.Join(parts, ", "))
-}
-
-func valueTypeFromChoiceValue(value Value) valueType {
-	return valueType{kind: value.Kind}
 }

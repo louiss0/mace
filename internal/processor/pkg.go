@@ -313,7 +313,7 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 		if err := validateSchemaOutputFields(outputBlock.SchemaFields, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
 			return Result{}, err
 		}
-		schema, err := evaluateSchemaOutput(outputBlock)
+		schema, err := evaluateSchemaOutput(outputBlock, outputContext.types)
 		if err != nil {
 			return Result{}, err
 		}
@@ -1518,6 +1518,24 @@ func validateExpressionAgainstType(expression ast.Expression, expectedType value
 	if len(expectedType.members) > 0 {
 		return validateExpressionAgainstVariantMembers(expression, expectedType.members, variables, symbols, types, schemas, enums)
 	}
+	if len(expectedType.choiceValues) > 0 {
+		switch typed := expression.(type) {
+		case ast.ConditionalExpression:
+			if err := validateExpressionAgainstType(typed.Then, expectedType, variables, symbols, types, schemas, enums); err != nil {
+				return err
+			}
+			if err := validateExpressionAgainstType(typed.Else, expectedType, variables, symbols, types, schemas, enums); err != nil {
+				return err
+			}
+			return nil
+		default:
+			actualType, err := inferExpressionType(expression, variables, symbols, types, schemas, enums)
+			if err != nil {
+				return err
+			}
+			return ensureAssignable(expectedType, actualType)
+		}
+	}
 
 	switch expectedType.kind {
 	case ValueString, ValueInt, ValueFloat, ValueHexInt, ValueHexFloat, ValueBoolean:
@@ -1872,14 +1890,14 @@ func (environment *valueEnvironment) Clone() *valueEnvironment {
 	return cloned
 }
 
-func evaluateSchemaOutput(output ast.OutputBlock) (map[SchemaField]SchemaType, error) {
+func evaluateSchemaOutput(output ast.OutputBlock, types *typeRegistry) (map[SchemaField]SchemaType, error) {
 	if output.Mode != ast.OutputModeSchema {
 		return map[SchemaField]SchemaType{}, nil
 	}
 
 	fields := make(map[SchemaField]SchemaType, len(output.SchemaFields))
 	for _, field := range output.SchemaFields {
-		schemaType, err := schemaTypeFromTypeReference(field.Type)
+		schemaType, err := schemaTypeFromTypeReference(field.Type, types)
 		if err != nil {
 			return nil, err
 		}
@@ -2960,6 +2978,7 @@ type valueType struct {
 	element      *valueType
 	schemaName   string
 	record       *ast.RecordType
+	exactValue   *Value
 	choiceValues []Value
 	members      []valueType
 }
@@ -3185,14 +3204,14 @@ func primitiveValueType(name string) (valueType, error) {
 	}
 }
 
-func schemaTypeFromTypeReference(typeRef ast.TypeReference) (SchemaType, error) {
+func schemaTypeFromTypeReference(typeRef ast.TypeReference, types *typeRegistry) (SchemaType, error) {
 	switch ref := typeRef.(type) {
 	case ast.PrimitiveType:
 		return SchemaType{Kind: SchemaTypePrimitive, Name: ref.Name}, nil
 	case ast.NamedType:
 		return SchemaType{Kind: SchemaTypeNamed, Name: ref.Name}, nil
 	case ast.ArrayType:
-		element, err := schemaTypeFromTypeReference(ref.Element)
+		element, err := schemaTypeFromTypeReference(ref.Element, types)
 		if err != nil {
 			return SchemaType{}, err
 		}
@@ -3201,7 +3220,7 @@ func schemaTypeFromTypeReference(typeRef ast.TypeReference) (SchemaType, error) 
 	case ast.UnionType:
 		members := make([]SchemaType, 0, len(ref.Members))
 		for _, member := range ref.Members {
-			resolved, err := schemaTypeFromTypeReference(member)
+			resolved, err := schemaTypeFromTypeReference(member, types)
 			if err != nil {
 				return SchemaType{}, err
 			}
@@ -3211,7 +3230,7 @@ func schemaTypeFromTypeReference(typeRef ast.TypeReference) (SchemaType, error) 
 	case ast.VariantType:
 		members := make([]SchemaType, 0, len(ref.Members))
 		for _, member := range ref.Members {
-			resolved, err := schemaTypeFromTypeReference(member)
+			resolved, err := schemaTypeFromTypeReference(member, types)
 			if err != nil {
 				return SchemaType{}, err
 			}
@@ -3219,11 +3238,11 @@ func schemaTypeFromTypeReference(typeRef ast.TypeReference) (SchemaType, error) 
 		}
 		return SchemaType{Kind: SchemaTypeVariant, Members: members}, nil
 	case ast.ChoiceType:
-		return SchemaType{Kind: SchemaTypeNamed, Name: choiceTypeNameForSchema(ref)}, nil
+		return SchemaType{Kind: SchemaTypeNamed, Name: choiceTypeNameForSchema(ref, types)}, nil
 	case ast.RecordType:
 		fields := make(map[SchemaField]SchemaType, len(ref.Fields))
 		for _, field := range ref.Fields {
-			fieldType, err := schemaTypeFromTypeReference(field.Type)
+			fieldType, err := schemaTypeFromTypeReference(field.Type, types)
 			if err != nil {
 				return SchemaType{}, err
 			}
@@ -3294,17 +3313,38 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 		}
 		return *targetType.element, nil
 	case ast.IntLiteral:
-		return valueType{kind: ValueInt}, nil
+		value, err := parseInt(expr.Lexeme)
+		if err != nil {
+			return valueType{}, err
+		}
+		return valueType{kind: ValueInt, exactValue: &value}, nil
 	case ast.FloatLiteral:
-		return valueType{kind: ValueFloat}, nil
+		value, err := parseFloat(expr.Lexeme)
+		if err != nil {
+			return valueType{}, err
+		}
+		return valueType{kind: ValueFloat, exactValue: &value}, nil
 	case ast.HexIntLiteral:
-		return valueType{kind: ValueHexInt}, nil
+		value, err := parseHexInt(expr.Lexeme)
+		if err != nil {
+			return valueType{}, err
+		}
+		return valueType{kind: ValueHexInt, exactValue: &value}, nil
 	case ast.HexFloatLiteral:
-		return valueType{kind: ValueHexFloat}, nil
+		value, err := parseHexFloat(expr.Lexeme)
+		if err != nil {
+			return valueType{}, err
+		}
+		return valueType{kind: ValueHexFloat, exactValue: &value}, nil
 	case ast.StringLiteral:
-		return valueType{kind: ValueString}, nil
+		value, err := parseStaticString(expr.Lexeme)
+		if err != nil {
+			return valueType{kind: ValueString}, nil
+		}
+		return valueType{kind: ValueString, exactValue: &value}, nil
 	case ast.BooleanLiteral:
-		return valueType{kind: ValueBoolean}, nil
+		value := Value{Kind: ValueBoolean, Boolean: expr.Value}
+		return valueType{kind: ValueBoolean, exactValue: &value}, nil
 	case ast.ArrayLiteral:
 		return inferArrayLiteralType(expr, variables, symbols, types, schemas, enums)
 	case ast.RecordLiteral:
@@ -3517,8 +3557,20 @@ func inferConditionalType(expr ast.ConditionalExpression, variables *variableReg
 	if thenType.kind == ValueUnknown {
 		return elseType, nil
 	}
+	if elseType.kind == ValueUnknown {
+		return thenType, nil
+	}
+	if thenType.exactValue != nil && elseType.exactValue != nil {
+		equal, err := valuesEqual(*thenType.exactValue, *elseType.exactValue)
+		if err != nil {
+			return valueType{}, err
+		}
+		if equal {
+			return thenType, nil
+		}
+	}
 
-	return thenType, nil
+	return valueType{kind: thenType.kind}, nil
 }
 
 func typesEqual(leftType, rightType valueType) bool {
@@ -3580,8 +3632,14 @@ func ensureAssignable(expectedType, actualType valueType) error {
 			}
 			return nil
 		}
+		if actualType.exactValue != nil {
+			if choiceContainsValue(expectedType.choiceValues, *actualType.exactValue) {
+				return nil
+			}
+			return typeMismatchError(expectedType.name(), scalarValueDisplay(*actualType.exactValue))
+		}
 		for _, expectedValue := range expectedType.choiceValues {
-			if ensureAssignable(valueTypeFromChoiceValue(expectedValue), actualType) == nil {
+			if expectedValue.Kind == actualType.kind {
 				return nil
 			}
 		}

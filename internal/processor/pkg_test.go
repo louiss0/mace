@@ -770,6 +770,18 @@ injectable string env = "dev";
 {
   result: result;
 }`, expectedValue{kind: ValueInt, int64: 2}),
+		Entry("choice float members preserve precision", `|===|
+ type Ratio: choice[1.04, 1.0];
+ Ratio first = 1.04;
+ Ratio second = 1.0;
+|===|
+[output = data]
+{
+  result: { first: first; second: second; };
+}`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+			"first":  {kind: ValueFloat, float: 1.04},
+			"second": {kind: ValueFloat, float: 1.0},
+		}}),
 	)
 
 	DescribeTable("rejects invalid choice declarations and assignments",
@@ -789,6 +801,15 @@ injectable string env = "dev";
 		Entry("value outside choice domain", `|===|
  type Fruit: choice["Apple", "Strawberry"];
  Fruit result = "Pear";
+|===|
+[output = data]
+{
+  result: result;
+}`, "type mismatch: expected choice[\"Apple\", \"Strawberry\"], got \"Pear\""),
+		Entry("conditional branch outside choice domain", `|===|
+ boolean enabled = true;
+ type Fruit: choice["Apple", "Strawberry"];
+ Fruit result = (enabled ? "Pear" : "Apple");
 |===|
 [output = data]
 {
@@ -1153,6 +1174,16 @@ schema User: { name: string; };
   value: variant[string, int];
 }`, map[expectedSchemaField]SchemaType{
 			{name: "value"}: {Kind: SchemaTypeVariant, Members: []SchemaType{schemaPrimitive("string"), schemaPrimitive("int")}},
+		}),
+		Entry("choice fields resolve nested choice aliases", `|===|
+ type Environment: choice["dev", "prod"];
+ type Numeric: choice[1, 2];
+|===|
+[output = schema]
+{
+  mode: choice[Environment, Numeric];
+}`, map[expectedSchemaField]SchemaType{
+			{name: "mode"}: schemaNamed(`choice["dev", "prod", 1, 2]`),
 		}),
 	)
 
