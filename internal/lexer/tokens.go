@@ -13,7 +13,6 @@ const (
 	TokenSchema
 	TokenGenDoc
 	TokenSchemaDoc
-	TokenEnum
 	TokenArray
 	TokenUnion
 	TokenVariant

@@ -194,20 +194,6 @@ func requireSelfReference(expression ast.Expression, path []string) ast.SelfRefe
 	return selfRef
 }
 
-func requireEnumMemberValue(member ast.EnumMember, lexeme string) {
-	literal, ok := member.Value.(ast.StringLiteral)
-	if ok {
-		tAssert.Equal(lexeme, literal.Lexeme)
-		return
-	}
-
-	intLiteral, ok := member.Value.(ast.IntLiteral)
-	tAssert.True(ok)
-	if ok {
-		tAssert.Equal(lexeme, intLiteral.Lexeme)
-	}
-}
-
 var _ = Describe("Parser", func() {
 	DescribeTable("parses identifiers and literals",
 		func(input string, assertExpression func(ast.Expression)) {

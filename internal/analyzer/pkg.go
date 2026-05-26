@@ -306,40 +306,12 @@ func renameTokenMatchesSymbol(snapshot Snapshot, index int, rangeValue protocol.
 		}
 	}
 
-	if tokenInEnumDeclaration(snapshot.tokens, index) {
-		return false
-	}
-
 	location, ok := snapshot.definitionAt(rangeValue.Start)
 	if ok && sameLocation(location, symbol.Definition) {
 		return true
 	}
 
-	return symbol.Kind == protocol.CompletionItemKindVariable && !tokenInEnumDeclaration(snapshot.tokens, index)
-}
-
-func tokenInEnumDeclaration(tokens []lexer.Token, index int) bool {
-	depth := 0
-	for cursor := index; cursor >= 0; cursor-- {
-		switch tokens[cursor].Type {
-		case lexer.TokenRBrace:
-			depth++
-		case lexer.TokenLBrace:
-			if depth == 0 {
-				for check := cursor - 1; check >= 0; check-- {
-					switch tokens[check].Type {
-					case lexer.TokenEnum:
-						return true
-					case lexer.TokenSemicolon, lexer.TokenScriptDelimiter:
-						return false
-					}
-				}
-				return false
-			}
-			depth--
-		}
-	}
-	return false
+	return symbol.Kind == protocol.CompletionItemKindVariable
 }
 
 func sameLocation(left protocol.Location, right protocol.Location) bool {
