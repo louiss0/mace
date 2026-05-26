@@ -5,8 +5,6 @@ import (
 	"strconv"
 )
 
-type enumRegistry struct{}
-
 func scalarValueKey(value Value) (string, bool) {
 	switch value.Kind {
 	case ValueString:
