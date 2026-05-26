@@ -36,6 +36,7 @@ var globalKeywordCompletions = []completionDefinition{}
 var scriptKeywordCompletions = []completionDefinition{
 	{Label: "array", Kind: protocol.CompletionItemKindKeyword, Detail: "type constructor"},
 	{Label: "boolean", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
+	{Label: "choice", Kind: protocol.CompletionItemKindKeyword, Detail: "literal choice type"},
 	{Label: "enum", Kind: protocol.CompletionItemKindKeyword, Detail: "enum declaration"},
 	{Label: "float", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
 	{Label: "hex_float", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},

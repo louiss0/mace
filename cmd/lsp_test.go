@@ -952,6 +952,17 @@ en
 		tAssert.Contains(labels, "enum")
 	})
 
+	It("suggests choice in script scope", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+ch
+|===|
+[output = data] {}`, nil)
+
+		labels := completeLabels(server, uri, 1, 2)
+		tAssert.Contains(labels, "choice")
+	})
+
 	It("suggests enum values when assigning an enum typed variable", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
@@ -1559,6 +1570,28 @@ schema Profile: { age: int; };
 		if ok {
 			tAssert.Contains(content.Value, "schema composition")
 		}
+
+		resultValue, validMethod, validParams, err = invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 2, Character: 14},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok = resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok = hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, "finite literal choice type")
+		}
 	})
 
 	It("returns hover documentation for enum declarations", func() {
@@ -2137,6 +2170,53 @@ int default_age = 30;
 		tAssert.True(ok)
 		if ok {
 			tAssert.Contains(content.Value, `output summary.stats.totals: { users: int } = { users: 3 }`)
+		}
+	})
+
+	It("returns hover details for imported choice declarations", func() {
+
+		workspace, err := os.MkdirTemp("", "mace-lsp-hover-import-choice-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "shared.mace", `|===|
+ type Flavor: choice["Vanilla", "Chocolate"];
+|===|
+[output = schema]
+{
+  Flavor: Flavor;
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `|===|
+from "./shared.mace" import Flavor;
+Flavor current = "Vanilla";
+|===|
+[output = data] { result: current; }`))
+
+		didOpen(server, uri, `|===|
+from "./shared.mace" import Flavor;
+Flavor current = "Vanilla";
+|===|
+[output = data] { result: current; }`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 2, Character: 1},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, `type Flavor: choice["Vanilla", "Chocolate"];`)
 		}
 	})
 

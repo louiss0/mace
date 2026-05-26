@@ -24,6 +24,7 @@ var diagnosticPositionPattern = regexp.MustCompile(`at (\d+):(\d+)`)
 
 var keywordDocs = map[string]string{
 	"array":      "Declares an array type like `array<string>`.",
+	"choice":     "Declares a finite literal choice type like `choice[\"dev\", 1, true]`.",
 	"enum":       "Declares a named scalar enum type backed by `string`, `int`, or `float`.",
 	"injectable": "Marks a script variable as overrideable through injections.",
 	"type":       "Declares a reusable type alias.",

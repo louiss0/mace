@@ -3571,13 +3571,13 @@ func importedSemanticSymbol(file ast.File, path string, name string) (semanticSy
 		rangeValue := tokenProtocolRange(field.NameToken)
 
 		kind := protocol.CompletionItemKindClass
-		detail := fmt.Sprintf("type %s: %s;", field.Name, fieldTypeDetail(field.Type))
+		detail := fmt.Sprintf("type %s: %s;", field.Name, resolvedImportedTypeDetail(field.Type, file))
 		if isSchemaTypeReference(field.Type, file) {
 			kind = protocol.CompletionItemKindStruct
 			detail = fmt.Sprintf("schema %s: %s", field.Name, fieldTypeDetail(field.Type))
 		} else if isEnumTypeReference(field.Type, file) {
 			kind = protocol.CompletionItemKindEnum
-			detail = fmt.Sprintf("enum %s: %s", field.Name, fieldTypeDetail(field.Type))
+			detail = fmt.Sprintf("enum %s: %s", field.Name, resolvedImportedTypeDetail(field.Type, file))
 		}
 
 		return semanticSymbol{
@@ -3633,6 +3633,22 @@ func parsedFile(path string) (string, ast.File, []lexer.Token, bool) {
 	}
 
 	return text, file, tokens, true
+}
+
+func resolvedImportedTypeDetail(typeReference ast.TypeReference, file ast.File) string {
+	value, ok := typeReference.(ast.NamedType)
+	if !ok {
+		return fieldTypeDetail(typeReference)
+	}
+
+	for _, item := range fileScriptDeclarations(file) {
+		declaration, ok := item.(ast.TypeDeclaration)
+		if ok && declaration.Name == value.Name {
+			return typeReferenceDetail(declaration.Type)
+		}
+	}
+
+	return fieldTypeDetail(typeReference)
 }
 
 func isSchemaTypeReference(typeReference ast.TypeReference, file ast.File) bool {
