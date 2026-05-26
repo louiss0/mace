@@ -651,40 +651,6 @@ schema User: {
 			}
 		})
 
-		It("ignores block comments around enum declarations", func() {
-			input := `|===|
-/*
-enum HiddenStatus: string {
-  Hidden,
-};
-*/
-enum Status: string {
-  Ready,
-};
-Status status = Status.Ready;
-|===|
-[output = data]
-{
-  result: status;
-}`
-
-			file, err := parseFileInput(input)
-			tAssert.NoError(err)
-			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 2) {
-				enumDecl, ok := file.Script.Items[0].(ast.EnumDeclaration)
-				tAssert.True(ok)
-				if ok {
-					tAssert.Equal("Status", enumDecl.Name)
-				}
-
-				varDecl, ok := file.Script.Items[1].(ast.VariableDeclaration)
-				tAssert.True(ok)
-				if ok {
-					tAssert.Equal("status", varDecl.Name)
-				}
-			}
-		})
-
 		It("ignores block comments around documentation declarations", func() {
 			input := `|===|
 schema User: {
@@ -926,37 +892,6 @@ type Matrix: array<array<int>>;
 			}
 		})
 
-		It("parses enum declarations with implicit and explicit members", func() {
-			input := `|===|
-enum Fruit: string {
-  Apple /# Default apple,
-  Strawberry = "strawberry" /# Explicit strawberry
-};
-|===|
-[output = data] {}`
-
-			file, err := parseFileInput(input)
-			tAssert.NoError(err)
-
-			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 1) {
-				enumDecl, ok := file.Script.Items[0].(ast.EnumDeclaration)
-				tAssert.True(ok)
-				if ok {
-					tAssert.Equal("Fruit", enumDecl.Name)
-					tAssert.Equal("string", enumDecl.BackingType.Name)
-					if tAssert.Len(enumDecl.Members, 2) {
-						tAssert.Equal("Apple", enumDecl.Members[0].Name)
-						tAssert.False(enumDecl.Members[0].HasValue)
-						tAssert.Equal("Default apple", enumDecl.Members[0].Description)
-						tAssert.Equal("Strawberry", enumDecl.Members[1].Name)
-						tAssert.True(enumDecl.Members[1].HasValue)
-						tAssert.Equal("Explicit strawberry", enumDecl.Members[1].Description)
-						requireEnumMemberValue(enumDecl.Members[1], "\"strawberry\"")
-					}
-				}
-			}
-		})
-
 		It("parses a bare output block as default data output", func() {
 			file, err := parseFileInput(`{ result: 1 + 2; }`)
 			tAssert.NoError(err)
@@ -1109,9 +1044,7 @@ schema User: {
   name: string,
 };
 
-enum Status: string {
-  Active,
-};
+type Status: choice["Active"];
 
 schema_doc User {
   summary: "Represents a user.",
@@ -1120,8 +1053,8 @@ schema_doc User {
 """,
 };
 
-schema_doc Status {
-  summary: "Represents a status enum.",
+gen_doc Status {
+  summary: "Represents a status choice.",
 };
 |===|
 [output = schema]
@@ -1143,11 +1076,11 @@ schema_doc Status {
 					}
 				}
 
-				enumDoc, ok := file.Script.Items[3].(ast.DocDeclaration)
+				choiceDoc, ok := file.Script.Items[3].(ast.DocDeclaration)
 				tAssert.True(ok)
-				if ok && tAssert.NotNil(enumDoc.Documentation.Summary) {
-					tAssert.Equal("Status", enumDoc.Target)
-					tAssert.Equal("\"Represents a status enum.\"", enumDoc.Documentation.Summary.Lexeme)
+				if ok && tAssert.NotNil(choiceDoc.Documentation.Summary) {
+					tAssert.Equal("Status", choiceDoc.Target)
+					tAssert.Equal("\"Represents a status choice.\"", choiceDoc.Documentation.Summary.Lexeme)
 				}
 			}
 		})

@@ -42,11 +42,8 @@ var _ = Describe("FormatFile", func() {
 		file, err := parseMaceFile(`|===|
 from "./base.mace" import User, Config;
 type Name: string;
+type Fruit: choice["Apple", "strawberry"];
 schema User: { name: string; age?: int; };
-enum Fruit: string {
-  Apple /# Default apple,
-  Strawberry = "strawberry" /# Explicit strawberry
-};
 injectable string user = "Ada";
 |===|
 [output = data, schema = User]
@@ -55,19 +52,16 @@ injectable string user = "Ada";
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
-		tAssert.Equal(`|==================================================|
+		tAssert.Equal(`|==========================================|
 from "./base.mace" import User, Config;
 type Name: string;
+type Fruit: choice["Apple", "strawberry"];
 schema User: {
   name: string,
   age?: int
 }
-enum Fruit: string {
-  Apple /# Default apple,
-  Strawberry = "strawberry" /# Explicit strawberry
-}
 injectable string user = "Ada";
-|==================================================|
+|==========================================|
 [output = data, schema = User]
 {
   name: user,

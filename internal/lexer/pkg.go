@@ -440,8 +440,6 @@ func keywordToken(lexeme string) (TokenType, bool) {
 		return TokenGenDoc, true
 	case "schema_doc":
 		return TokenSchemaDoc, true
-	case "enum":
-		return TokenEnum, true
 	case "array":
 		return TokenArray, true
 	case "union":

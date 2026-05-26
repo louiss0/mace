@@ -89,7 +89,7 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenSchema, lexeme: "schema"},
 			{tokenType: TokenGenDoc, lexeme: "gen_doc"},
 			{tokenType: TokenSchemaDoc, lexeme: "schema_doc"},
-			{tokenType: TokenEnum, lexeme: "enum"},
+			{tokenType: TokenIdentifier, lexeme: "enum"},
 			{tokenType: TokenArray, lexeme: "array"},
 			{tokenType: TokenUnion, lexeme: "union"},
 			{tokenType: TokenVariant, lexeme: "variant"},
