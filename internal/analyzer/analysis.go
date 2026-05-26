@@ -2130,7 +2130,7 @@ func moveImportsToTopEdit(text string, file ast.File, tokens []lexer.Token, mess
 }
 
 func duplicateDeclarationEditRange(text string, file ast.File, tokens []lexer.Token, message string) (protocol.Range, bool) {
-	matches := regexp.MustCompile(`duplicate (?:enum )?declaration "([^"]+)"`).FindStringSubmatch(message)
+	matches := regexp.MustCompile(`duplicate declaration "([^"]+)"`).FindStringSubmatch(message)
 	if len(matches) != 2 {
 		return protocol.Range{}, false
 	}
@@ -2830,12 +2830,6 @@ func semanticDiagnosticFromError(file ast.File, tokens []lexer.Token, err error)
 		}
 	}
 
-	if hasDiagnosticError {
-		if diagnostic, ok := enumDiagnostic(tokens, diagnosticError, message); ok {
-			return diagnostic, true
-		}
-	}
-
 	return protocol.Diagnostic{}, false
 }
 
@@ -3099,37 +3093,6 @@ func dataOutputValueDiagnostic(tokens []lexer.Token, diagnosticError processor.D
 	}
 
 	return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticTypeUnknownIdentifier, message), true
-}
-
-func enumDiagnostic(tokens []lexer.Token, diagnosticError processor.DiagnosticError, message string) (protocol.Diagnostic, bool) {
-	name := diagnosticError.Fields.Name
-	if name == "" {
-		name = diagnosticError.Fields.Schema
-	}
-	if name == "" {
-		return protocol.Diagnostic{}, false
-	}
-
-	switch diagnosticError.Code {
-	case processor.CodeDuplicateEnumMember,
-		processor.CodeDuplicateEnumValue,
-		processor.CodeEnumMemberValueType,
-		processor.CodeEnumMixedValues,
-		processor.CodeEnumRequiresExplicitValues,
-		processor.CodeInvalidEnumBackingType,
-		processor.CodeInvalidEnumValue,
-		processor.CodeUnknownEnum,
-		processor.CodeUnknownEnumMember:
-	default:
-		return protocol.Diagnostic{}, false
-	}
-
-	rangeValue, found := tokenRange(tokens, name)
-	if !found {
-		return protocol.Diagnostic{}, false
-	}
-
-	return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, classifyProcessorDiagnostic(message), message), true
 }
 
 func expressionTypeSummary(expression ast.Expression, knownTypes map[string]string) (string, bool) {

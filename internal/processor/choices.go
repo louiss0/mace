@@ -26,7 +26,7 @@ func resolveChoiceValues(members []ast.Expression, types *typeRegistry, seen map
 			return nil, err
 		}
 		for _, value := range resolved {
-			key, ok := enumValueKey(value)
+			key, ok := scalarValueKey(value)
 			if !ok {
 				return nil, validationErrorf("choice members must use scalar literals")
 			}
@@ -105,12 +105,12 @@ func resolveChoiceMemberValues(member ast.Expression, types *typeRegistry, seen 
 }
 
 func choiceContainsValue(values []Value, value Value) bool {
-	key, ok := enumValueKey(value)
+	key, ok := scalarValueKey(value)
 	if !ok {
 		return false
 	}
 	for _, candidate := range values {
-		candidateKey, ok := enumValueKey(candidate)
+		candidateKey, ok := scalarValueKey(candidate)
 		if ok && candidateKey == key {
 			return true
 		}
@@ -135,7 +135,7 @@ func choiceValuesEqual(left []Value, right []Value) bool {
 func choiceValueKeys(values []Value) []string {
 	keys := make([]string, 0, len(values))
 	for _, value := range values {
-		key, ok := enumValueKey(value)
+		key, ok := scalarValueKey(value)
 		if ok {
 			keys = append(keys, key)
 		}
@@ -159,7 +159,7 @@ func choiceTypeNameForSchema(reference ast.ChoiceType) string {
 func choiceTypeName(values []Value) string {
 	parts := make([]string, 0, len(values))
 	for _, value := range values {
-		parts = append(parts, enumValueDisplay(value))
+		parts = append(parts, scalarValueDisplay(value))
 	}
 	return fmt.Sprintf("choice[%s]", strings.Join(parts, ", "))
 }

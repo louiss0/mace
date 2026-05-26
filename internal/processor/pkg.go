@@ -63,7 +63,6 @@ type processContext struct {
 	symbols       *symbolTable
 	types         *typeRegistry
 	schemas       *schemaRegistry
-	enums         *enumRegistry
 	variables     *variableRegistry
 	environment   *valueEnvironment
 }
@@ -75,7 +74,6 @@ func newProcessContext(importBaseDir string, importRootDir string) processContex
 		symbols:       newSymbolTable(),
 		types:         newTypeRegistry(),
 		schemas:       newSchemaRegistry(),
-		enums:         newEnumRegistry(),
 		variables:     newVariableRegistry(),
 		environment:   newValueEnvironment(),
 	}
@@ -92,7 +90,6 @@ func (context processContext) clone() processContext {
 		symbols:       context.symbols.Clone(),
 		types:         context.types.Clone(),
 		schemas:       context.schemas.Clone(),
-		enums:         context.enums.Clone(),
 		variables:     context.variables.Clone(),
 		environment:   context.environment.Clone(),
 	}
@@ -220,7 +217,7 @@ func ParseInjectionRecord(input string) (map[string]Value, error) {
 		return nil, err
 	}
 
-	value, err := evaluateExpression(expression, newValueEnvironment(), Value{}, newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), newEnumRegistry())
+	value, err := evaluateExpression(expression, newValueEnvironment(), Value{}, newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -313,7 +310,7 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 		if err := validateSchemaOutputScriptVariables(file); err != nil {
 			return Result{}, err
 		}
-		if err := validateSchemaOutputFields(outputBlock.SchemaFields, outputContext.symbols, outputContext.types, outputContext.schemas, outputContext.enums); err != nil {
+		if err := validateSchemaOutputFields(outputBlock.SchemaFields, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
 			return Result{}, err
 		}
 		schema, err := evaluateSchemaOutput(outputBlock)
@@ -329,18 +326,18 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 	}
 
 	if schemaName, ok := outputSchemaName(outputBlock.Directives); ok {
-		if err := validateOutputSchema(schemaName, outputBlock.DataFields, outputContext.variables, outputContext.symbols, outputContext.types, outputContext.schemas, outputContext.enums); err != nil {
+		if err := validateOutputSchema(schemaName, outputBlock.DataFields, outputContext.variables, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
 			return Result{}, err
 		}
 	}
 
-	output, err := evaluateOutputFields(outputBlock.DataFields, outputContext.environment, outputContext.symbols, outputContext.types, outputContext.schemas, outputContext.enums)
+	output, err := evaluateOutputFields(outputBlock.DataFields, outputContext.environment, outputContext.symbols, outputContext.types, outputContext.schemas, nil)
 	if err != nil {
 		return Result{}, err
 	}
 
 	if schemaName, ok := outputSchemaName(outputBlock.Directives); ok {
-		if err := validateEvaluatedOutputSchema(schemaName, output, outputContext.symbols, outputContext.types, outputContext.schemas, outputContext.enums); err != nil {
+		if err := validateEvaluatedOutputSchema(schemaName, output, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
 			return Result{}, err
 		}
 	}
@@ -417,25 +414,22 @@ func buildProcessContextWithState(imports []ast.ImportDeclaration, script *ast.S
 			context.symbols.Add(importedDecl.name, symbolKindVariable)
 			context.variables.Add(importedDecl.name, importedDecl.vtype)
 			context.environment.Add(importedDecl.name, importedDecl.value)
-		case symbolKindEnum:
-			context.symbols.Add(importedDecl.name, symbolKindEnum)
-			context.enums.Add(importedDecl.name, importedDecl.enumDef)
 		default:
 			return processContext{}, validationErrorf("unknown import %q", importedDecl.name)
 		}
 	}
 
 	if script != nil {
-		if err := collectDeclarations(script.Items, context.symbols, context.types, context.schemas, context.enums); err != nil {
+		if err := collectDeclarations(script.Items, context.symbols, context.types, context.schemas); err != nil {
 			return processContext{}, err
 		}
-		if err := validateDeclarations(script.Items, context.symbols, context.types, context.schemas, context.enums, context.variables, injections); err != nil {
+		if err := validateDeclarations(script.Items, context.symbols, context.types, context.schemas, context.variables, injections); err != nil {
 			return processContext{}, err
 		}
 		if err := validateInjections(script.Items, injections); err != nil {
 			return processContext{}, err
 		}
-		if err := evaluateScript(script.Items, context.environment, injections, context.symbols, context.types, context.schemas, context.enums); err != nil {
+		if err := evaluateScript(script.Items, context.environment, injections, context.symbols, context.types, context.schemas, nil); err != nil {
 			return processContext{}, err
 		}
 	}
@@ -470,9 +464,6 @@ func prepareOutputContext(output ast.OutputBlock, context processContext) (proce
 		case symbolKindSchema:
 			outputContext.symbols.Add(declaration.name, symbolKindSchema)
 			outputContext.schemas.Add(declaration.name, declaration.record)
-		case symbolKindEnum:
-			outputContext.symbols.Add(declaration.name, symbolKindEnum)
-			outputContext.enums.Add(declaration.name, declaration.enumDef)
 		default:
 			return processContext{}, validationErrorf("unknown declaration %q in schema_file", declaration.name)
 		}
@@ -490,7 +481,6 @@ type importedDeclaration struct {
 	kind    symbolKind
 	typeRef ast.TypeReference
 	record  ast.RecordType
-	enumDef enumDefinition
 	value   Value
 	vtype   valueType
 }
@@ -700,17 +690,6 @@ func resolveSchemaFileDeclarations(directives []ast.OutputDirective, importBaseD
 				kind:   symbolKindSchema,
 				record: typedDeclaration.Type,
 			})
-		case ast.EnumDeclaration:
-			enumDef, err := enumDefinitionFromDeclaration(typedDeclaration)
-			if err != nil {
-				return nil, err
-			}
-
-			outputDeclarations = append(outputDeclarations, importedDeclaration{
-				name:    name,
-				kind:    symbolKindEnum,
-				enumDef: enumDef,
-			})
 		}
 	}
 
@@ -768,8 +747,6 @@ func loadSchemaFileDeclarations(path string, importRootDir string, cache map[str
 				declarations[typedDecl.Name] = typedDecl
 			case ast.SchemaDeclaration:
 				declarations[typedDecl.Name] = typedDecl
-			case ast.EnumDeclaration:
-				declarations[typedDecl.Name] = typedDecl
 			}
 		}
 	}
@@ -785,7 +762,7 @@ func collectImportExports(output ast.OutputBlock, context processContext) (map[s
 	}
 
 	if output.Mode == ast.OutputModeSchema {
-		if err := validateSchemaOutputFields(output.SchemaFields, outputContext.symbols, outputContext.types, outputContext.schemas, outputContext.enums); err != nil {
+		if err := validateSchemaOutputFields(output.SchemaFields, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
 			return nil, err
 		}
 
@@ -803,12 +780,12 @@ func collectImportExports(output ast.OutputBlock, context processContext) (map[s
 	}
 
 	if schemaName, ok := outputSchemaName(output.Directives); ok {
-		if err := validateOutputSchema(schemaName, output.DataFields, outputContext.variables, outputContext.symbols, outputContext.types, outputContext.schemas, outputContext.enums); err != nil {
+		if err := validateOutputSchema(schemaName, output.DataFields, outputContext.variables, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
 			return nil, err
 		}
 	}
 
-	values, err := evaluateOutputFields(output.DataFields, outputContext.environment, outputContext.symbols, outputContext.types, outputContext.schemas, outputContext.enums)
+	values, err := evaluateOutputFields(output.DataFields, outputContext.environment, outputContext.symbols, outputContext.types, outputContext.schemas, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -844,18 +821,6 @@ func schemaFieldImportDeclaration(field ast.OutputSchemaField, context processCo
 				name:   field.Name,
 				kind:   symbolKindSchema,
 				record: exportedRecord,
-			}, nil
-		}
-
-		enumDef, ok, err := resolveExportedEnumDefinition(typedRef, context.types, context.enums)
-		if err != nil {
-			return importedDeclaration{}, err
-		}
-		if ok {
-			return importedDeclaration{
-				name:    field.Name,
-				kind:    symbolKindEnum,
-				enumDef: enumDef.Rename(field.Name),
 			}, nil
 		}
 	case ast.RecordType:
@@ -895,7 +860,7 @@ func exportedOutputFieldType(field ast.OutputField, output ast.OutputBlock, cont
 				continue
 			}
 
-			resolvedType, err := resolveValueType(schemaField.Type, context.symbols, context.types, context.schemas, context.enums)
+			resolvedType, err := resolveValueType(schemaField.Type, context.symbols, context.types, context.schemas, nil)
 			if err != nil {
 				return valueType{}, err
 			}
@@ -904,7 +869,7 @@ func exportedOutputFieldType(field ast.OutputField, output ast.OutputBlock, cont
 		}
 	}
 
-	inferredType, err := inferExpressionType(field.Value, context.variables, context.symbols, context.types, context.schemas, context.enums)
+	inferredType, err := inferExpressionType(field.Value, context.variables, context.symbols, context.types, context.schemas, nil)
 	if err != nil {
 		return valueType{}, err
 	}
@@ -1031,27 +996,6 @@ func resolveExportedRecordType(record ast.RecordType, types *typeRegistry, schem
 	return ast.RecordType{Fields: fields}, nil
 }
 
-func resolveExportedEnumDefinition(typeRef ast.TypeReference, types *typeRegistry, enums *enumRegistry) (enumDefinition, bool, error) {
-	switch ref := typeRef.(type) {
-	case ast.NamedType:
-		if enumDef, ok := enums.Get(ref.Name); ok {
-			return enumDef, true, nil
-		}
-
-		resolved, exists, err := types.Resolve(ref.Name)
-		if err != nil {
-			return enumDefinition{}, false, err
-		}
-		if !exists {
-			return enumDefinition{}, false, nil
-		}
-
-		return resolveExportedEnumDefinition(resolved, types, enums)
-	default:
-		return enumDefinition{}, false, nil
-	}
-}
-
 func cloneNameSet(values map[string]struct{}) map[string]struct{} {
 	cloned := make(map[string]struct{}, len(values))
 	for name := range values {
@@ -1061,7 +1005,7 @@ func cloneNameSet(values map[string]struct{}) map[string]struct{} {
 	return cloned
 }
 
-func collectDeclarations(items []ast.Declaration, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) error {
+func collectDeclarations(items []ast.Declaration, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry) error {
 	for _, declaration := range items {
 		switch decl := declaration.(type) {
 		case ast.VariableDeclaration:
@@ -1081,16 +1025,6 @@ func collectDeclarations(items []ast.Declaration, symbols *symbolTable, types *t
 			}
 			symbols.Add(decl.Name, symbolKindSchema)
 			schemas.Add(decl.Name, decl.Type)
-		case ast.EnumDeclaration:
-			if symbols.Has(decl.Name) {
-				return validationErrorf("duplicate enum declaration %q", decl.Name)
-			}
-			enumDef, err := enumDefinitionFromDeclaration(decl)
-			if err != nil {
-				return err
-			}
-			symbols.Add(decl.Name, symbolKindEnum)
-			enums.Add(decl.Name, enumDef)
 		case ast.DocDeclaration:
 			continue
 		default:
@@ -1101,7 +1035,7 @@ func collectDeclarations(items []ast.Declaration, symbols *symbolTable, types *t
 	return nil
 }
 
-func validateDeclarations(items []ast.Declaration, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry, variables *variableRegistry, injections map[string]Value) error {
+func validateDeclarations(items []ast.Declaration, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, variables *variableRegistry, injections map[string]Value) error {
 	seenDocs := map[string]struct{}{}
 	docsByTarget := map[string]ast.DocDeclaration{}
 	declaredKinds := map[string]symbolKind{}
@@ -1114,7 +1048,7 @@ func validateDeclarations(items []ast.Declaration, symbols *symbolTable, types *
 	}
 
 	for _, declaration := range items {
-		if err := validateDeclaration(declaration, symbols, types, schemas, enums, variables, injections, seenDocs, docsByTarget, declaredKinds); err != nil {
+		if err := validateDeclaration(declaration, symbols, types, schemas, nil, variables, injections, seenDocs, docsByTarget, declaredKinds); err != nil {
 			return err
 		}
 
@@ -1123,8 +1057,6 @@ func validateDeclarations(items []ast.Declaration, symbols *symbolTable, types *
 			declaredKinds[decl.Name] = symbolKindType
 		case ast.SchemaDeclaration:
 			declaredKinds[decl.Name] = symbolKindSchema
-		case ast.EnumDeclaration:
-			declaredKinds[decl.Name] = symbolKindEnum
 		case ast.VariableDeclaration:
 			declaredKinds[decl.Name] = symbolKindVariable
 		}
@@ -1172,11 +1104,6 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 		if err := validateTypeReference(decl.Type, symbols, types, schemas, enums); err != nil {
 			return err
 		}
-		if enumDef, ok, err := resolveUnionEnumDefinition(decl.Name, decl.Type, types, enums); err != nil {
-			return err
-		} else if ok {
-			enums.Add(decl.Name, enumDef)
-		}
 		if decl.Description != "" {
 			if _, ok := docsByTarget[decl.Name]; ok {
 				return validationErrorf("type %q is already documented by a documentation declaration", decl.Name)
@@ -1198,9 +1125,6 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 			}
 		}
 		return nil
-	case ast.EnumDeclaration:
-		_, err := enumDefinitionFromDeclaration(decl)
-		return err
 	case ast.DocDeclaration:
 		return validateDocDeclaration(decl, symbols, schemas, variables, seenDocs, declaredKinds)
 	default:
@@ -1241,12 +1165,6 @@ func validateTypeReference(typeRef ast.TypeReference, symbols *symbolTable, type
 	case ast.ArrayType:
 		return validateTypeReference(ref.Element, symbols, types, schemas, enums)
 	case ast.UnionType:
-		if members, ok, err := resolveUnionEnumValueTypes(ref, types, enums, false); err != nil || ok {
-			if err != nil {
-				return err
-			}
-			return validateVariantValueTypes(members)
-		}
 		_, err := resolveUnionRecordType(ref, symbols, types, schemas)
 		if err != nil && strings.Contains(err.Error(), "union members must be schemas") {
 			return validationErrorf("union members must be schemas")
@@ -1273,7 +1191,7 @@ func validateTypeReference(typeRef ast.TypeReference, symbols *symbolTable, type
 			_, _, err := types.Resolve(ref.Name)
 			return err
 		}
-		if !symbols.IsSchema(ref.Name) && !symbols.IsEnum(ref.Name) && !symbols.IsImport(ref.Name) {
+		if !symbols.IsSchema(ref.Name) && !symbols.IsImport(ref.Name) {
 			return validationErrorf("unknown type %q", ref.Name)
 		}
 		return nil
@@ -1510,7 +1428,7 @@ func validateDataOutputFields(fields []ast.OutputField, symbols *symbolTable) er
 func validateDataOutputExpression(expression ast.Expression, symbols *symbolTable) error {
 	switch expr := expression.(type) {
 	case ast.Identifier:
-		if symbols.IsType(expr.Name) || symbols.IsSchema(expr.Name) || symbols.IsEnum(expr.Name) {
+		if symbols.IsType(expr.Name) || symbols.IsSchema(expr.Name) {
 			return diagnosticErrorf(ErrorValue, CodeOutputValueDeclaration, DiagnosticFields{Name: expr.Name}, "output value %q cannot reference type or schema declaration", expr.Name)
 		}
 	case ast.ArrayLiteral:
@@ -1782,17 +1700,7 @@ func validateEvaluatedValueAgainstType(value Value, expectedType valueType, symb
 	}
 	if len(expectedType.choiceValues) > 0 {
 		if !choiceContainsValue(expectedType.choiceValues, value) {
-			return typeMismatchError(expectedType.name(), enumValueDisplay(value))
-		}
-		return nil
-	}
-	if expectedType.enumName != "" {
-		enumDef, ok := enums.Get(expectedType.enumName)
-		if !ok {
-			return enumError(CodeUnknownEnum, DiagnosticFields{Name: expectedType.enumName}, "unknown enum %q", expectedType.enumName)
-		}
-		if !enumDef.ContainsValue(value) {
-			return enumError(CodeInvalidEnumValue, DiagnosticFields{Schema: expectedType.enumName}, "invalid enum value %s for enum %q", enumValueDisplay(value), expectedType.enumName)
+			return typeMismatchError(expectedType.name(), scalarValueDisplay(value))
 		}
 		return nil
 	}
@@ -1864,13 +1772,6 @@ func validateEvaluatedValueAgainstType(value Value, expectedType valueType, symb
 }
 
 func validateEvaluatedValueAgainstVariantMembers(value Value, members []valueType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) error {
-	if variantMembersAreEnums(members) {
-		if value.Kind == members[0].kind {
-			return nil
-		}
-		return typeMismatchError(valueType{members: members}.name(), value.kindName())
-	}
-
 	matchCount := 0
 	for _, member := range members {
 		if err := validateEvaluatedValueAgainstType(value, member, symbols, types, schemas, enums); err == nil {
@@ -1886,18 +1787,6 @@ func validateEvaluatedValueAgainstVariantMembers(value Value, members []valueTyp
 	}
 
 	return validationErrorf("type mismatch: expected exactly one variant member for %s", valueType{members: members}.name())
-}
-
-func variantMembersAreEnums(members []valueType) bool {
-	if len(members) == 0 {
-		return false
-	}
-	for _, member := range members {
-		if member.enumName == "" {
-			return false
-		}
-	}
-	return true
 }
 
 func schemaFieldMap(schema ast.RecordType) map[string]ast.SchemaField {
@@ -2088,53 +1977,7 @@ func coerceEvaluatedValueAgainstType(expression ast.Expression, value Value, exp
 		return Value{Kind: ValueArray, Array: values}, nil
 	}
 
-	if !variantMembersAreEnums(expectedType.members) {
-		return value, nil
-	}
-
-	memberAccess, ok := expression.(ast.MemberAccess)
-	if !ok {
-		return value, nil
-	}
-	identifier, ok := memberAccess.Target.(ast.Identifier)
-	if !ok {
-		return value, nil
-	}
-	merged, ok, err := mergedEnumFromValueTypes("", expectedType.members, enums)
-	if err != nil || !ok {
-		return value, err
-	}
-	for _, member := range expectedType.members {
-		if member.enumName != identifier.Name {
-			continue
-		}
-		if _, exists := enums.Get(member.enumName); !exists {
-			continue
-		}
-		mergedMember, exists := merged.Member(memberAccess.Name)
-		if !exists {
-			return Value{}, enumError(CodeUnknownEnumMember, DiagnosticFields{Name: memberAccess.Name}, "unknown enum member %q in enum union", memberAccess.Name)
-		}
-		return mergedMember.Value, nil
-	}
-
 	return value, nil
-}
-
-func mergedEnumFromValueTypes(name string, members []valueType, enums *enumRegistry) (enumDefinition, bool, error) {
-	definitions := make([]enumDefinition, 0, len(members))
-	for _, member := range members {
-		if member.enumName == "" {
-			return enumDefinition{}, false, nil
-		}
-		definition, exists := enums.Get(member.enumName)
-		if !exists {
-			return enumDefinition{}, false, nil
-		}
-		definitions = append(definitions, definition)
-	}
-	definition, err := mergeEnumDefinitions(name, definitions)
-	return definition, true, err
 }
 
 func evaluateExpression(expression ast.Expression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) (Value, error) {
@@ -2472,16 +2315,6 @@ trim:
 }
 
 func evaluateMemberAccess(expr ast.MemberAccess, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums *enumRegistry) (Value, error) {
-	if identifier, ok := expr.Target.(ast.Identifier); ok {
-		if enumDef, exists := enums.Get(identifier.Name); exists {
-			member, exists := enumDef.Member(expr.Name)
-			if !exists {
-				return Value{}, enumError(CodeUnknownEnumMember, DiagnosticFields{Name: expr.Name, Schema: identifier.Name}, "unknown enum member %q in enum %q", expr.Name, identifier.Name)
-			}
-			return member.Value, nil
-		}
-	}
-
 	target, err := evaluateExpression(expr.Target, environment, self, symbols, types, schemas, enums)
 	if err != nil {
 		return Value{}, err
@@ -3127,7 +2960,6 @@ type valueType struct {
 	element      *valueType
 	schemaName   string
 	record       *ast.RecordType
-	enumName     string
 	choiceValues []Value
 	members      []valueType
 }
@@ -3147,29 +2979,14 @@ func (t valueType) name() string {
 
 	switch t.kind {
 	case ValueString:
-		if t.enumName != "" {
-			return t.enumName
-		}
 		return "string"
 	case ValueInt:
-		if t.enumName != "" {
-			return t.enumName
-		}
 		return "int"
 	case ValueFloat:
-		if t.enumName != "" {
-			return t.enumName
-		}
 		return "float"
 	case ValueHexInt:
-		if t.enumName != "" {
-			return t.enumName
-		}
 		return "hex_int"
 	case ValueHexFloat:
-		if t.enumName != "" {
-			return t.enumName
-		}
 		return "hex_float"
 	case ValueBoolean:
 		return "boolean"
@@ -3207,22 +3024,12 @@ func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *ty
 	case ast.ChoiceType:
 		return resolveChoiceType(ref, types)
 	case ast.UnionType:
-		if members, ok, err := resolveUnionEnumValueTypes(ref, types, enums, false); err != nil {
-			return valueType{}, err
-		} else if ok {
-			return valueType{members: members}, nil
-		}
 		record, err := resolveUnionRecordType(ref, symbols, types, schemas)
 		if err != nil {
 			return valueType{}, err
 		}
 		return valueType{kind: ValueRecord, record: &record}, nil
 	case ast.VariantType:
-		if _, ok, err := resolveUnionEnumValueTypes(ast.UnionType(ref), types, enums, true); err != nil || ok {
-			if err != nil {
-				return valueType{}, err
-			}
-		}
 		members := make([]valueType, 0, len(ref.Members))
 		for _, member := range ref.Members {
 			resolved, err := resolveValueType(member, symbols, types, schemas, enums)
@@ -3238,9 +3045,6 @@ func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *ty
 	case ast.RecordType:
 		return valueType{kind: ValueRecord, record: &ref}, nil
 	case ast.NamedType:
-		if enumDef, ok := enums.Get(ref.Name); ok {
-			return valueType{kind: enumDef.BackingType.kind, enumName: ref.Name}, nil
-		}
 		resolved, resolvedByAlias, err := types.Resolve(ref.Name)
 		if err != nil {
 			return valueType{}, err
@@ -3263,36 +3067,18 @@ func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *ty
 
 func validateVariantValueTypes(members []valueType) error {
 	members = flattenVariantValueTypes(members)
-	hasEnum := false
-	hasSchema := false
-	hasPrimitive := false
-	enumBacking := ValueUnknown
 
 	for _, member := range members {
 		if member.kind == ValueArray {
 			return validationErrorf("variant members must be primitives or schemas")
 		}
 		switch {
-		case member.enumName != "":
-			hasEnum = true
-			if enumBacking == ValueUnknown {
-				enumBacking = member.kind
-			} else if enumBacking != member.kind {
-				return validationErrorf("enum variants require the same backing type")
-			}
 		case len(member.choiceValues) > 0:
-			hasPrimitive = true
 		case member.kind == ValueRecord:
-			hasSchema = true
 		case member.kind == ValueString || member.kind == ValueInt || member.kind == ValueFloat || member.kind == ValueHexInt || member.kind == ValueHexFloat || member.kind == ValueBoolean:
-			hasPrimitive = true
 		default:
 			return validationErrorf("variant members must be primitives or schemas")
 		}
-	}
-
-	if hasEnum && (hasPrimitive || hasSchema) {
-		return validationErrorf("enum variants may only combine enums with the same backing type")
 	}
 
 	return nil
@@ -3310,71 +3096,6 @@ func flattenVariantValueTypes(members []valueType) []valueType {
 	}
 
 	return flattened
-}
-
-func resolveUnionEnumDefinition(name string, typeRef ast.TypeReference, types *typeRegistry, enums *enumRegistry) (enumDefinition, bool, error) {
-	ref, ok := typeRef.(ast.UnionType)
-	if !ok {
-		return enumDefinition{}, false, nil
-	}
-
-	definitions := make([]enumDefinition, 0, len(ref.Members))
-	for _, member := range ref.Members {
-		definition, ok, err := resolveUnionEnumMember(member, types, enums)
-		if err != nil || !ok {
-			return enumDefinition{}, false, err
-		}
-		definitions = append(definitions, definition)
-	}
-
-	definition, err := mergeEnumDefinitions(name, definitions)
-	return definition, true, err
-}
-
-func resolveUnionEnumValueTypes(typeRef ast.TypeReference, types *typeRegistry, enums *enumRegistry, requireUniqueKeys bool) ([]valueType, bool, error) {
-	ref, ok := typeRef.(ast.UnionType)
-	if !ok {
-		return nil, false, nil
-	}
-
-	members := make([]valueType, 0, len(ref.Members))
-	memberNames := map[string]struct{}{}
-	for _, member := range ref.Members {
-		definition, ok, err := resolveUnionEnumMember(member, types, enums)
-		if err != nil || !ok {
-			return nil, false, err
-		}
-		if requireUniqueKeys {
-			for _, enumMember := range definition.Members {
-				if _, exists := memberNames[enumMember.Name]; exists {
-					return nil, false, enumError(CodeDuplicateEnumMember, DiagnosticFields{Name: enumMember.Name}, "duplicate enum member %q in enum variant", enumMember.Name)
-				}
-				memberNames[enumMember.Name] = struct{}{}
-			}
-		}
-		members = append(members, valueType{kind: definition.BackingType.kind, enumName: definition.Name})
-	}
-
-	return members, true, nil
-}
-
-func resolveUnionEnumMember(typeRef ast.TypeReference, types *typeRegistry, enums *enumRegistry) (enumDefinition, bool, error) {
-	switch ref := typeRef.(type) {
-	case ast.NamedType:
-		if enumDef, ok := enums.Get(ref.Name); ok {
-			return enumDef, true, nil
-		}
-
-		resolved, resolvedByAlias, err := types.Resolve(ref.Name)
-		if err != nil {
-			return enumDefinition{}, false, err
-		}
-		if resolvedByAlias {
-			return resolveUnionEnumMember(resolved, types, enums)
-		}
-	}
-
-	return enumDefinition{}, false, nil
 }
 
 func resolveUnionRecordType(typeRef ast.TypeReference, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry) (ast.RecordType, error) {
@@ -3529,16 +3250,6 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 		}
 		return valueType{kind: ValueUnknown}, nil
 	case ast.MemberAccess:
-		if identifier, ok := expr.Target.(ast.Identifier); ok {
-			enumDef, exists := enums.Get(identifier.Name)
-			if exists {
-				if _, exists := enumDef.Member(expr.Name); !exists {
-					return valueType{}, enumError(CodeUnknownEnumMember, DiagnosticFields{Name: expr.Name, Schema: identifier.Name}, "unknown enum member %q in enum %q", expr.Name, identifier.Name)
-				}
-				return valueType{kind: enumDef.BackingType.kind, enumName: identifier.Name}, nil
-			}
-		}
-
 		targetType, err := inferExpressionType(expr.Target, variables, symbols, types, schemas, enums)
 		if err != nil {
 			return valueType{}, err
@@ -3840,12 +3551,6 @@ func typesEqual(leftType, rightType valueType) bool {
 		}
 		return leftType.schemaName == rightType.schemaName
 	}
-	if (leftType.enumName == "") != (rightType.enumName == "") {
-		return false
-	}
-	if leftType.enumName != "" && rightType.enumName != "" {
-		return leftType.enumName == rightType.enumName
-	}
 	return true
 }
 
@@ -3894,12 +3599,6 @@ func ensureAssignable(expectedType, actualType valueType) error {
 	if expectedType.kind != actualType.kind {
 		return typeMismatchError(expectedType.name(), actualType.name())
 	}
-	if (expectedType.enumName == "") != (actualType.enumName == "") {
-		return typeMismatchError(expectedType.name(), actualType.name())
-	}
-	if expectedType.enumName != "" && actualType.enumName != "" && expectedType.enumName != actualType.enumName {
-		return typeMismatchError(expectedType.name(), actualType.name())
-	}
 	if expectedType.kind == ValueRecord {
 		if expectedType.schemaName != "" && actualType.schemaName != "" && expectedType.schemaName != actualType.schemaName {
 			return typeMismatchError(expectedType.name(), actualType.name())
@@ -3934,7 +3633,6 @@ const (
 	symbolKindType
 	symbolKindSchema
 	symbolKindVariable
-	symbolKindEnum
 )
 
 type symbolTable struct {
@@ -3988,11 +3686,6 @@ func (s *symbolTable) IsSchema(name string) bool {
 func (s *symbolTable) IsVariable(name string) bool {
 	kind, exists := s.symbols[name]
 	return exists && kind == symbolKindVariable
-}
-
-func (s *symbolTable) IsEnum(name string) bool {
-	kind, exists := s.symbols[name]
-	return exists && kind == symbolKindEnum
 }
 
 type typeRegistry struct {

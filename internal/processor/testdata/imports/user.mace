@@ -1,4 +1,3 @@
-
 |==================================================|
 from "./profile.mace" import Profile, Age;
 
@@ -6,14 +5,14 @@ type Name: string;
 
 injectable string name;
 
-enum Personality: string { friendly, nice, rude };
+type Personality: choice["friendly", "nice", "rude"];
 
 type Thing: variant[string, int];
 
-enum Status: int { mad, happy, content };
-enum OtherStatus: float { mad, happy, content };
+type Status: choice[0, 1, 2];
+type OtherStatus: choice[0.0, 0.1, 0.2];
 
-Personality is_type  = Personality.nice;
+Personality is_type = "nice";
 
 schema User: { name: Name, profile: Profile, };
 
@@ -21,7 +20,7 @@ Name default_name = "Ada";
 
 Age default_age = 30;
 
-int num = Status.happy + 45;
+int num = 1 + 45;
 
 |==================================================|
 

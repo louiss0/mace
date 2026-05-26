@@ -17,7 +17,6 @@ const (
 	diagnosticSyntaxEmptyScriptBlock                diagnosticCode = "mace.syntax.empty-script-block"
 	diagnosticSyntaxMalformedImport                 diagnosticCode = "mace.syntax.malformed-import"
 	diagnosticSyntaxMalformedDirectiveList          diagnosticCode = "mace.syntax.malformed-directive-list"
-	diagnosticSyntaxMalformedEnum                   diagnosticCode = "mace.syntax.malformed-enum"
 	diagnosticSyntaxMalformedSchema                 diagnosticCode = "mace.syntax.malformed-schema"
 	diagnosticSyntaxMalformedVariableDeclaration    diagnosticCode = "mace.syntax.malformed-variable-declaration"
 	diagnosticSyntaxMalformedOutputField            diagnosticCode = "mace.syntax.malformed-output-field"
@@ -41,18 +40,11 @@ const (
 	diagnosticImportTargetNotPublic                 diagnosticCode = "mace.import.target-not-public"
 	diagnosticImportUnused                          diagnosticCode = "mace.import.unused"
 	diagnosticDeclarationDuplicateType              diagnosticCode = "mace.declaration.duplicate-type"
-	diagnosticDeclarationDuplicateEnum              diagnosticCode = "mace.declaration.duplicate-enum"
-	diagnosticDeclarationDuplicateEnumMember        diagnosticCode = "mace.declaration.duplicate-enum-member"
-	diagnosticDeclarationDuplicateEnumValue         diagnosticCode = "mace.declaration.duplicate-enum-value"
 	diagnosticDeclarationDuplicateSchema            diagnosticCode = "mace.declaration.duplicate-schema"
 	diagnosticDeclarationDuplicateVariable          diagnosticCode = "mace.declaration.duplicate-variable"
 	diagnosticDeclarationDuplicateSchemaField       diagnosticCode = "mace.declaration.duplicate-schema-field"
 	diagnosticDeclarationDuplicateOutputField       diagnosticCode = "mace.declaration.duplicate-output-field"
 	diagnosticDeclarationUnknownTypeReference       diagnosticCode = "mace.declaration.unknown-type-reference"
-	diagnosticDeclarationInvalidEnumBackingType     diagnosticCode = "mace.declaration.invalid-enum-backing-type"
-	diagnosticDeclarationEnumMemberValueType        diagnosticCode = "mace.declaration.enum-member-value-type"
-	diagnosticDeclarationMixedEnumValues            diagnosticCode = "mace.declaration.mixed-enum-values"
-	diagnosticDeclarationEnumRequiresExplicitValues diagnosticCode = "mace.declaration.enum-requires-explicit-values"
 	diagnosticDeclarationVariableMissingType        diagnosticCode = "mace.declaration.variable-missing-type"
 	diagnosticDeclarationVariableMissingInitializer diagnosticCode = "mace.declaration.variable-missing-initializer"
 	diagnosticDeclarationUnusedVariable             diagnosticCode = "mace.declaration.unused-variable"
@@ -62,7 +54,6 @@ const (
 	diagnosticTypeInvalidBinaryOperator             diagnosticCode = "mace.type.invalid-binary-operator"
 	diagnosticTypeMixedArrayLiteral                 diagnosticCode = "mace.type.mixed-array-literal"
 	diagnosticTypeInvalidArrayAccess                diagnosticCode = "mace.type.invalid-array-access"
-	diagnosticTypeInvalidEnumValue                  diagnosticCode = "mace.type.invalid-enum-value"
 	diagnosticTypeUnknownIdentifier                 diagnosticCode = "mace.type.unknown-identifier"
 	diagnosticTypeUnknownSelfField                  diagnosticCode = "mace.type.unknown-self-field"
 	diagnosticTypeSelfForwardReference              diagnosticCode = "mace.type.self-forward-reference"
@@ -106,8 +97,6 @@ func classifyParseDiagnostic(message string) diagnosticCode {
 		return diagnosticSyntaxMalformedImport
 	case strings.Contains(message, "directive"):
 		return diagnosticSyntaxMalformedDirectiveList
-	case strings.Contains(message, "enum declaration") || strings.Contains(message, "enum member") || strings.Contains(message, "enum backing type"):
-		return diagnosticSyntaxMalformedEnum
 	case strings.Contains(message, "schema declaration") || strings.Contains(message, "record type") || strings.Contains(message, "schema field"):
 		return diagnosticSyntaxMalformedSchema
 	case strings.Contains(message, "integer index in array access") || strings.Contains(message, "after array access index"):
@@ -147,20 +136,6 @@ func classifyProcessorDiagnostic(message string) diagnosticCode {
 		return diagnosticImportNameNotExposed
 	case strings.Contains(message, "schema_doc target") || strings.Contains(message, "gen_doc target") || strings.Contains(message, "documentation target"):
 		return diagnosticSyntaxUnexpectedToken
-	case strings.Contains(message, "invalid enum backing type"):
-		return diagnosticDeclarationInvalidEnumBackingType
-	case strings.Contains(message, "duplicate enum declaration"):
-		return diagnosticDeclarationDuplicateEnum
-	case strings.Contains(message, "duplicate enum member"):
-		return diagnosticDeclarationDuplicateEnumMember
-	case strings.Contains(message, "duplicate enum value"):
-		return diagnosticDeclarationDuplicateEnumValue
-	case strings.Contains(message, "mixes implicit and explicit member values"):
-		return diagnosticDeclarationMixedEnumValues
-	case strings.Contains(message, "requires explicit values for int members"):
-		return diagnosticDeclarationEnumRequiresExplicitValues
-	case strings.Contains(message, "must use a string literal") || strings.Contains(message, "must use an int literal"):
-		return diagnosticDeclarationEnumMemberValueType
 	case strings.Contains(message, "unknown type ") || strings.Contains(message, "unknown type reference"):
 		return diagnosticDeclarationUnknownTypeReference
 	case strings.Contains(message, "not allowed when output = schema"):
@@ -179,8 +154,6 @@ func classifyProcessorDiagnostic(message string) diagnosticCode {
 		return diagnosticTypeMixedArrayLiteral
 	case strings.Contains(message, "array access requires an array value") || strings.Contains(message, "array index ") && strings.Contains(message, "out of range"):
 		return diagnosticTypeInvalidArrayAccess
-	case strings.Contains(message, "invalid enum value"):
-		return diagnosticTypeInvalidEnumValue
 	case strings.Contains(message, "unknown identifier"):
 		return diagnosticTypeUnknownIdentifier
 	case strings.Contains(message, "unknown self reference"):
@@ -217,20 +190,6 @@ func diagnosticCodeFromProcessorError(err processor.DiagnosticError) diagnosticC
 	switch err.Code {
 	case processor.CodeArrayIndexOutOfRange, processor.CodeArrayValueRequired:
 		return diagnosticTypeInvalidArrayAccess
-	case processor.CodeDuplicateEnumMember:
-		return diagnosticDeclarationDuplicateEnumMember
-	case processor.CodeDuplicateEnumValue:
-		return diagnosticDeclarationDuplicateEnumValue
-	case processor.CodeEnumMemberValueType:
-		return diagnosticDeclarationEnumMemberValueType
-	case processor.CodeEnumMixedValues:
-		return diagnosticDeclarationMixedEnumValues
-	case processor.CodeEnumRequiresExplicitValues:
-		return diagnosticDeclarationEnumRequiresExplicitValues
-	case processor.CodeInvalidEnumBackingType:
-		return diagnosticDeclarationInvalidEnumBackingType
-	case processor.CodeInvalidEnumValue:
-		return diagnosticTypeInvalidEnumValue
 	case processor.CodeInvalidOutputSchemaField:
 		return diagnosticTypeInvalidOutputSchemaField
 	case processor.CodeMissingInjectable:
@@ -243,8 +202,6 @@ func diagnosticCodeFromProcessorError(err processor.DiagnosticError) diagnosticC
 		return diagnosticTypeUnknownSelfField
 	case processor.CodeTypeMismatch:
 		return diagnosticTypeInitializerMismatch
-	case processor.CodeUnknownEnum, processor.CodeUnknownEnumMember:
-		return diagnosticTypeInvalidEnumValue
 	}
 
 	switch err.Kind {
