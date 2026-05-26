@@ -70,10 +70,6 @@ func (snapshot analysisSnapshot) symbolAt(position protocol.Position) (semanticS
 		}
 	}
 
-	if symbol, ok := snapshot.enumMemberSymbolAt(position); ok {
-		return symbol, true
-	}
-
 	if symbol, ok := snapshot.selfReferenceSymbolAt(position); ok {
 		return symbol, true
 	}
@@ -96,12 +92,6 @@ func (snapshot analysisSnapshot) definitionAt(position protocol.Position) (proto
 	}
 
 	symbol, ok := snapshot.documentSymbolAt(position)
-	if !ok {
-		if enumMember, memberOK := snapshot.enumMemberSymbolAt(position); memberOK {
-			symbol = enumMember
-			ok = true
-		}
-	}
 	if !ok {
 		identifier, found := identifierAt(snapshot.text, position)
 		if !found {
@@ -150,19 +140,6 @@ func findLastSymbol(symbols []semanticSymbol, predicate func(semanticSymbol) boo
 	return semanticSymbol{}, false
 }
 
-func (snapshot analysisSnapshot) enumMemberSymbolAt(position protocol.Position) (semanticSymbol, bool) {
-	if snapshot.file == nil {
-		return semanticSymbol{}, false
-	}
-
-	enumName, memberName, ok := enumMemberReferenceAt(snapshot.tokens, position)
-	if !ok {
-		return semanticSymbol{}, false
-	}
-
-	return localEnumMemberSymbol(*snapshot.file, snapshot.documentURI, enumName, memberName)
-}
-
 func (snapshot analysisSnapshot) selfReferenceSymbolAt(position protocol.Position) (semanticSymbol, bool) {
 	if snapshot.result == nil {
 		return semanticSymbol{}, false
@@ -209,25 +186,6 @@ func outputValueSymbol(name string, path []string, rangeValue protocol.Range, va
 		Origin: symbolOriginOutput,
 		Range:  rangeValue,
 	}
-}
-
-func enumMemberReferenceAt(tokens []lexer.Token, position protocol.Position) (string, string, bool) {
-	for index, token := range tokens {
-		rangeValue := tokenProtocolRange(token)
-		if comparePositions(rangeValue.Start, position) > 0 || comparePositions(position, rangeValue.End) > 0 {
-			continue
-		}
-		if token.Type != lexer.TokenIdentifier || index < 2 {
-			continue
-		}
-		if tokens[index-1].Type != lexer.TokenDot || tokens[index-2].Type != lexer.TokenIdentifier {
-			continue
-		}
-
-		return tokens[index-2].Lexeme, token.Lexeme, true
-	}
-
-	return "", "", false
 }
 
 func selfReferencePathAt(tokens []lexer.Token, position protocol.Position) ([]string, protocol.Range, bool) {
@@ -341,37 +299,6 @@ func outputValueAtPath(output map[string]processor.Value, path []string) (proces
 	}
 
 	return current, true
-}
-
-func localEnumMemberSymbol(file ast.File, uri protocol.DocumentUri, enumName string, memberName string) (semanticSymbol, bool) {
-	for _, item := range fileScriptDeclarations(file) {
-		declaration, ok := item.(ast.EnumDeclaration)
-		if !ok || declaration.Name != enumName {
-			continue
-		}
-
-		for _, member := range declaration.Members {
-			if member.Name != memberName {
-				continue
-			}
-
-			rangeValue := tokenProtocolRange(member.NameToken)
-			return semanticSymbol{
-				Name:          enumName + "." + memberName,
-				Kind:          protocol.CompletionItemKindEnumMember,
-				Detail:        enumMemberDetail(declaration, member),
-				Documentation: inlineDescriptionDocumentation(member.Description),
-				Origin:        symbolOriginLocal,
-				Range:         rangeValue,
-				Definition: protocol.Location{
-					URI:   uri,
-					Range: rangeValue,
-				},
-			}, true
-		}
-	}
-
-	return semanticSymbol{}, false
 }
 
 func (snapshot analysisSnapshot) codeActions(uri protocol.DocumentUri, targetRange protocol.Range) []protocol.CodeAction {
@@ -677,7 +604,7 @@ func addMissingScriptSemicolonText(text string) (string, bool) {
 		if trimmed == "" || strings.HasSuffix(trimmed, ";") || strings.HasSuffix(trimmed, "{") || strings.HasSuffix(trimmed, "}") {
 			return false
 		}
-		return strings.HasPrefix(trimmed, "type ") || strings.HasPrefix(trimmed, "schema ") || strings.HasPrefix(trimmed, "enum ") || strings.Contains(trimmed, "=")
+		return strings.HasPrefix(trimmed, "type ") || strings.HasPrefix(trimmed, "schema ") || strings.Contains(trimmed, "=")
 	})
 	if !ok {
 		return "", false
@@ -1148,9 +1075,6 @@ func semanticCodeActions(text string, file ast.File, tokens []lexer.Token, docum
 	if rangeValue, textValue, ok := typeMismatchEdit(file, diagnostic, message); ok {
 		addAction("Fix type mismatch", rangeValue, textValue)
 	}
-	if rangeValue, textValue, ok := enumValueEdit(file, tokens, diagnostic, message); ok {
-		addAction("Convert raw value to enum member", rangeValue, textValue)
-	}
 	if rangeValue, textValue, ok := missingImportEdit(text, file, tokens, message); ok {
 		addAction("Add missing import", rangeValue, textValue)
 	}
@@ -1412,8 +1336,6 @@ func documentationCodeActions(text string, file ast.File, tokens []lexer.Token, 
 			actions = append(actions, documentationCodeAction(documentPath, tokenProtocolRange(declaration.NameToken), insertRange, title, text))
 		case ast.SchemaDeclaration:
 			actions = append(actions, documentationCodeAction(documentPath, tokenProtocolRange(declaration.NameToken), insertRange, "Generate schema_doc", schemaDocText(declaration.Name)))
-		case ast.EnumDeclaration:
-			actions = append(actions, documentationCodeAction(documentPath, tokenProtocolRange(declaration.NameToken), insertRange, "Generate schema_doc", schemaDocText(declaration.Name)))
 		}
 	}
 
@@ -1505,7 +1427,6 @@ func editorRefactorCodeActions(text string, file ast.File, tokens []lexer.Token,
 	addImportRefactorActions(file, addWholeFileAction)
 	addDocumentationRefactorActions(file, addWholeFileAction)
 	addDeclarationRefactorActions(text, file, tokens, addWholeFileAction)
-	addEnumRefactorActions(file, addWholeFileAction)
 	addStringRefactorActions(text, uri, fullRange, &actions)
 	addStyleRefactorActions(text, protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, addTextAction)
 	addExpressionRefactorActions(text, file, protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, addTextAction)
@@ -1872,51 +1793,6 @@ func recordTypeFromLiteral(record ast.RecordLiteral) ast.RecordType {
 	})}
 }
 
-func addEnumRefactorActions(file ast.File, addWholeFileAction func(string, protocol.Range, ast.File)) {
-	if file.Script == nil {
-		return
-	}
-	for index, item := range file.Script.Items {
-		declaration, ok := item.(ast.EnumDeclaration)
-		if !ok {
-			continue
-		}
-		hasExplicit := lo.ContainsBy(declaration.Members, func(member ast.EnumMember) bool { return member.HasValue })
-		hasImplicit := lo.ContainsBy(declaration.Members, func(member ast.EnumMember) bool { return !member.HasValue })
-		if !hasExplicit || !hasImplicit {
-			continue
-		}
-		targetRange := tokenProtocolRange(declaration.NameToken)
-		explicit := declaration
-		explicit.Members = lo.Map(explicit.Members, func(member ast.EnumMember, memberIndex int) ast.EnumMember {
-			if member.HasValue {
-				return member
-			}
-			member.HasValue = true
-			member.Value = defaultEnumMemberValue(declaration, member, memberIndex)
-			return member
-		})
-		updated := replaceScriptItem(file, index, explicit)
-		addWholeFileAction("Convert mixed enum to all-explicit", targetRange, updated)
-
-		implicit := declaration
-		implicit.Members = lo.Map(implicit.Members, func(member ast.EnumMember, _ int) ast.EnumMember {
-			member.HasValue = false
-			member.Value = nil
-			return member
-		})
-		updated = replaceScriptItem(file, index, implicit)
-		addWholeFileAction("Convert mixed enum to all-implicit", targetRange, updated)
-		member := ast.EnumMember{Name: "Missing", HasValue: declaration.BackingType.Name != "string"}
-		if member.HasValue {
-			member.Value = defaultEnumMemberValue(declaration, member, len(declaration.Members))
-		}
-		added := declaration
-		added.Members = append(append([]ast.EnumMember{}, declaration.Members...), member)
-		addWholeFileAction("Add missing enum member", targetRange, replaceScriptItem(file, index, added))
-	}
-}
-
 func addStringRefactorActions(text string, uri protocol.DocumentUri, fullRange protocol.Range, actions *[]analysisCodeActionCandidate) {
 	tokens, err := lex(text)
 	if err != nil {
@@ -2050,16 +1926,6 @@ func replaceScriptItem(file ast.File, index int, declaration ast.Declaration) as
 	items[index] = declaration
 	updated.Script = &ast.ScriptBlock{Imports: file.Script.Imports, Items: items}
 	return updated
-}
-
-func defaultEnumMemberValue(declaration ast.EnumDeclaration, member ast.EnumMember, index int) ast.Expression {
-	if declaration.BackingType.Name == "string" {
-		return ast.StringLiteral{Lexeme: strconv.Quote(strings.ToLower(member.Name))}
-	}
-	if declaration.BackingType.Name == "float" {
-		return ast.FloatLiteral{Lexeme: implicitFloatEnumValue(index)}
-	}
-	return ast.IntLiteral{Lexeme: strconv.Itoa(index)}
 }
 
 func convertStringLiteralForm(lexeme string) string {
@@ -2237,21 +2103,6 @@ func typeMismatchEdit(file ast.File, diagnostic protocol.Diagnostic, message str
 	return diagnostic.Range, placeholderForType(file, expected), true
 }
 
-func enumValueEdit(file ast.File, tokens []lexer.Token, diagnostic protocol.Diagnostic, message string) (protocol.Range, string, bool) {
-	matches := regexp.MustCompile(`invalid enum value .+ for enum "([^"]+)"`).FindStringSubmatch(message)
-	if len(matches) != 2 || file.Script == nil {
-		return protocol.Range{}, "", false
-	}
-	for _, item := range file.Script.Items {
-		declaration, ok := item.(ast.EnumDeclaration)
-		if !ok || declaration.Name != matches[1] || len(declaration.Members) == 0 {
-			continue
-		}
-		return diagnostic.Range, declaration.Name + "." + declaration.Members[0].Name, true
-	}
-	return protocol.Range{}, "", false
-}
-
 func missingImportEdit(text string, file ast.File, tokens []lexer.Token, message string) (protocol.Range, string, bool) {
 	matches := regexp.MustCompile(`unknown type "([^"]+)"|unknown type reference "([^"]+)"|unknown identifier "([^"]+)"`).FindStringSubmatch(message)
 	if len(matches) == 0 || file.Script != nil {
@@ -2374,13 +2225,6 @@ func placeholderForType(file ast.File, name string) string {
 		return "0x0.0"
 	case "boolean":
 		return "false"
-	}
-	if file.Script != nil {
-		for _, item := range file.Script.Items {
-			if declaration, ok := item.(ast.EnumDeclaration); ok && declaration.Name == name && len(declaration.Members) > 0 {
-				return declaration.Name + "." + declaration.Members[0].Name
-			}
-		}
 	}
 	return "TODO"
 }
@@ -3396,8 +3240,6 @@ func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *process
 			switch declaration := item.(type) {
 			case ast.TypeDeclaration:
 				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindClass, symbolOriginLocal, fmt.Sprintf("type %s: %s;", declaration.Name, typeReferenceDetail(declaration.Type)), declarationDocumentation(file, declaration.Name)), true
-			case ast.EnumDeclaration:
-				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindEnum, symbolOriginLocal, enumDeclarationDetail(declaration), declarationDocumentation(file, declaration.Name)), true
 			case ast.SchemaDeclaration:
 				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindStruct, symbolOriginLocal, fmt.Sprintf("schema %s: %s;", declaration.Name, recordTypeDetail(declaration.Type)), declarationDocumentation(file, declaration.Name)), true
 			case ast.VariableDeclaration:
@@ -3575,9 +3417,6 @@ func importedSemanticSymbol(file ast.File, path string, name string) (semanticSy
 		if isSchemaTypeReference(field.Type, file) {
 			kind = protocol.CompletionItemKindStruct
 			detail = fmt.Sprintf("schema %s: %s", field.Name, fieldTypeDetail(field.Type))
-		} else if isEnumTypeReference(field.Type, file) {
-			kind = protocol.CompletionItemKindEnum
-			detail = fmt.Sprintf("enum %s: %s", field.Name, resolvedImportedTypeDetail(field.Type, file))
 		}
 
 		return semanticSymbol{
@@ -3672,18 +3511,6 @@ func isSchemaDocVariableDeclaration(declaration ast.VariableDeclaration, file as
 
 	_, ok := declaration.Value.(ast.RecordLiteral)
 	return ok
-}
-
-func isEnumTypeReference(typeReference ast.TypeReference, file ast.File) bool {
-	value, ok := typeReference.(ast.NamedType)
-	if !ok {
-		return false
-	}
-
-	return lo.ContainsBy(fileScriptDeclarations(file), func(item ast.Declaration) bool {
-		declaration, ok := item.(ast.EnumDeclaration)
-		return ok && declaration.Name == value.Name
-	})
 }
 
 func fileScriptDeclarations(file ast.File) []ast.Declaration {
@@ -3799,57 +3626,6 @@ func variableDeclarationDetail(declaration ast.VariableDeclaration) string {
 	}
 
 	return detail + " = " + expressionSummary(declaration.Value)
-}
-
-func enumDeclarationDetail(declaration ast.EnumDeclaration) string {
-	members := lo.Map(declaration.Members, func(member ast.EnumMember, index int) string {
-		if member.HasValue {
-			return member.Name + " = " + expressionSummary(member.Value)
-		}
-
-		if implicitValue, ok := implicitEnumMemberValueDetail(declaration.BackingType.Name, member.Name, index); ok {
-			return member.Name + " = " + implicitValue
-		}
-
-		return member.Name
-	})
-
-	return fmt.Sprintf("enum %s: %s { %s }", declaration.Name, declaration.BackingType.Name, strings.Join(members, ", "))
-}
-
-func enumMemberDetail(declaration ast.EnumDeclaration, member ast.EnumMember) string {
-	if member.HasValue {
-		return fmt.Sprintf("enum member %s.%s = %s", declaration.Name, member.Name, expressionSummary(member.Value))
-	}
-
-	for index, declarationMember := range declaration.Members {
-		if declarationMember.Name != member.Name {
-			continue
-		}
-		if implicitValue, ok := implicitEnumMemberValueDetail(declaration.BackingType.Name, member.Name, index); ok {
-			return fmt.Sprintf("enum member %s.%s = %s", declaration.Name, member.Name, implicitValue)
-		}
-		break
-	}
-
-	return fmt.Sprintf("enum member %s.%s", declaration.Name, member.Name)
-}
-
-func implicitEnumMemberValueDetail(backingType string, memberName string, index int) (string, bool) {
-	switch backingType {
-	case "string":
-		return fmt.Sprintf("%q", memberName), true
-	case "int":
-		return strconv.Itoa(index), true
-	case "float":
-		return implicitFloatEnumValue(index), true
-	default:
-		return "", false
-	}
-}
-
-func implicitFloatEnumValue(index int) string {
-	return fmt.Sprintf("%.1f", float64(index)/10)
 }
 
 func indexSymbols(symbols []semanticSymbol) map[string]semanticSymbol {

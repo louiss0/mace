@@ -1249,7 +1249,7 @@ func validateTypeReference(typeRef ast.TypeReference, symbols *symbolTable, type
 		}
 		_, err := resolveUnionRecordType(ref, symbols, types, schemas)
 		if err != nil && strings.Contains(err.Error(), "union members must be schemas") {
-			return validationErrorf("union members must be schemas or enums")
+			return validationErrorf("union members must be schemas")
 		}
 		return err
 	case ast.VariantType:
@@ -3270,7 +3270,7 @@ func validateVariantValueTypes(members []valueType) error {
 
 	for _, member := range members {
 		if member.kind == ValueArray {
-			return validationErrorf("variant members must be primitives, schemas, or enums")
+			return validationErrorf("variant members must be primitives or schemas")
 		}
 		switch {
 		case member.enumName != "":
@@ -3287,7 +3287,7 @@ func validateVariantValueTypes(members []valueType) error {
 		case member.kind == ValueString || member.kind == ValueInt || member.kind == ValueFloat || member.kind == ValueHexInt || member.kind == ValueHexFloat || member.kind == ValueBoolean:
 			hasPrimitive = true
 		default:
-			return validationErrorf("variant members must be primitives, schemas, or enums")
+			return validationErrorf("variant members must be primitives or schemas")
 		}
 	}
 

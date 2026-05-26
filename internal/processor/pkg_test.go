@@ -542,7 +542,7 @@ User value = {
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
 type Broken: union[string, int];
 |===|`))
-		tAssert.ErrorContains(err, "union members must be schemas or enums")
+		tAssert.ErrorContains(err, "union members must be schemas")
 	})
 
 	It("rejects union schema composition with conflicting fields", func() {

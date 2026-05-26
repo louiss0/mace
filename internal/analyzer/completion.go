@@ -68,10 +68,6 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 			return items
 		}
 
-		if items, handled := enumMemberCompletionItems(document, uri, position, linePrefix); handled {
-			return items
-		}
-
 		if items, handled := initializerCompletionItems(document, uri, position); handled {
 			return items
 		}
@@ -97,10 +93,6 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 		}
 
 		if items, handled := arrayIndexCompletionItems(document, uri, position, linePrefix, scope); handled {
-			return items
-		}
-
-		if items, handled := enumMemberCompletionItems(document, uri, position, linePrefix); handled {
 			return items
 		}
 	}
@@ -602,73 +594,6 @@ func isDigits(value string) bool {
 	return true
 }
 
-func enumMemberCompletionItems(document document, uri protocol.DocumentUri, position protocol.Position, linePrefix string) ([]protocol.CompletionItem, bool) {
-	enumName, prefix, ok := enumMemberCompletionContext(linePrefix)
-	if !ok {
-		return nil, false
-	}
-
-	model, ok := completionModelAt(document, uri, position, linePrefix)
-	if !ok {
-		return []protocol.CompletionItem{}, true
-	}
-
-	resolved := resolveCompletionType(ast.NamedType{Name: enumName}, model, map[string]struct{}{})
-	if resolved.kind != completionTypeEnum {
-		return []protocol.CompletionItem{}, true
-	}
-
-	items := lo.FilterMap(resolved.enum.members, func(member completionEnumMember, _ int) (protocol.CompletionItem, bool) {
-		if !strings.HasPrefix(member.Name, prefix) {
-			return protocol.CompletionItem{}, false
-		}
-
-		detail := resolved.enum.access(member.Name)
-		if member.Detail != "" {
-			detail = member.Detail
-		}
-
-		return protocol.CompletionItem{
-			Label:  member.Name,
-			Kind:   Ptr(protocol.CompletionItemKindEnumMember),
-			Detail: Ptr(detail),
-		}, true
-	})
-	return sortCompletionItems(items), true
-}
-
-func enumMemberCompletionContext(linePrefix string) (string, string, bool) {
-	trimmedPrefix := strings.TrimRight(linePrefix, " \t")
-	if strings.HasSuffix(trimmedPrefix, "$self.") {
-		return "", "", false
-	}
-
-	segmentEnd := len(trimmedPrefix)
-	segmentStart := segmentEnd
-	for segmentStart > 0 {
-		character := trimmedPrefix[segmentStart-1]
-		if isIdentifierCharacter(character) || character == '.' {
-			segmentStart--
-			continue
-		}
-		break
-	}
-
-	segment := trimmedPrefix[segmentStart:segmentEnd]
-	parts := strings.Split(segment, ".")
-	if len(parts) != 2 {
-		return "", "", false
-	}
-	if parts[0] == "" || parts[1] == "" && !strings.HasSuffix(segment, ".") {
-		return "", "", false
-	}
-	if strings.Contains(parts[0], "$") {
-		return "", "", false
-	}
-
-	return parts[0], parts[1], true
-}
-
 func completionModelAt(document document, uri protocol.DocumentUri, position protocol.Position, linePrefix string) (completionModel, bool) {
 	file := document.analysis.file
 	if file == nil {
@@ -1006,8 +931,6 @@ func importableSymbols(uri protocol.DocumentUri, importRootDir string, importPat
 		switch resolved.kind {
 		case completionTypeSchema:
 			kind = protocol.CompletionItemKindStruct
-		case completionTypeEnum:
-			kind = protocol.CompletionItemKindEnum
 		}
 		symbols = append(symbols, importableSymbol{Name: field.Name, Kind: kind})
 	}
@@ -1564,19 +1487,6 @@ func completionTypeAtPath(typeReference ast.TypeReference, path []string, model 
 func completionItemsForType(typeReference ast.TypeReference, model completionModel, allowSchemaLiteral bool) []protocol.CompletionItem {
 	resolved := resolveCompletionType(typeReference, model, map[string]struct{}{})
 	switch resolved.kind {
-	case completionTypeEnum:
-		return lo.Map(resolved.enum.members, func(member completionEnumMember, _ int) protocol.CompletionItem {
-			detail := member.Detail
-			if detail == "" {
-				detail = resolved.enum.access(member.Name)
-			}
-
-			return protocol.CompletionItem{
-				Label:  resolved.enum.access(member.Name),
-				Kind:   Ptr(protocol.CompletionItemKindEnumMember),
-				Detail: Ptr(detail),
-			}
-		})
 	case completionTypeChoice:
 		return lo.Map(resolved.choice.members, func(member completionChoiceMember, _ int) protocol.CompletionItem {
 			item := protocol.CompletionItem{
@@ -1625,7 +1535,6 @@ func buildCompletionModel(file ast.File, importBaseDir string, importRootDir str
 	model := completionModel{
 		aliases: map[string]ast.TypeReference{},
 		schemas: map[string]ast.RecordType{},
-		enums:   map[string]completionEnum{},
 	}
 
 	for _, item := range fileScriptItems(file) {
@@ -1634,18 +1543,6 @@ func buildCompletionModel(file ast.File, importBaseDir string, importRootDir str
 			model.aliases[declaration.Name] = declaration.Type
 		case ast.SchemaDeclaration:
 			model.schemas[declaration.Name] = declaration.Type
-		case ast.EnumDeclaration:
-			model.enums[declaration.Name] = completionEnumFromDeclaration(declaration)
-		}
-	}
-
-	for _, item := range fileScriptItems(file) {
-		declaration, ok := item.(ast.TypeDeclaration)
-		if !ok {
-			continue
-		}
-		if enumValue, ok := completionUnionEnum(declaration.Name, declaration.Type, model, map[string]struct{}{}); ok {
-			model.enums[declaration.Name] = enumValue
 		}
 	}
 
@@ -1677,8 +1574,6 @@ func buildCompletionModel(file ast.File, importBaseDir string, importRootDir str
 			switch resolved.kind {
 			case completionTypeSchema:
 				model.schemas[localName] = resolved.record
-			case completionTypeEnum:
-				model.enums[localName] = resolved.enum.rename(localName)
 			default:
 				model.aliases[localName] = field.Type
 			}
@@ -1702,7 +1597,6 @@ func importedCompletionModel(path string, importRootDir string, cache map[string
 	cache[path] = completionModel{
 		aliases: map[string]ast.TypeReference{},
 		schemas: map[string]ast.RecordType{},
-		enums:   map[string]completionEnum{},
 	}
 	model := buildCompletionModel(file, filepath.Dir(path), importRootDir, cache)
 	cache[path] = model
@@ -1716,9 +1610,6 @@ func resolveCompletionType(typeReference ast.TypeReference, model completionMode
 	case ast.ArrayType:
 		return completionType{kind: completionTypeArray}
 	case ast.UnionType:
-		if enumValue, ok := completionUnionEnum("", typed, model, seen); ok {
-			return completionType{kind: completionTypeEnum, enum: enumValue}
-		}
 		record, ok := completionUnionRecord(typed.Members, model, seen)
 		if !ok {
 			return completionType{}
@@ -1735,9 +1626,6 @@ func resolveCompletionType(typeReference ast.TypeReference, model completionMode
 	case ast.RecordType:
 		return completionType{kind: completionTypeSchema, record: typed}
 	case ast.NamedType:
-		if enumValue, ok := model.enums[typed.Name]; ok {
-			return completionType{kind: completionTypeEnum, enum: enumValue}
-		}
 		if schemaValue, ok := model.schemas[typed.Name]; ok {
 			return completionType{kind: completionTypeSchema, record: schemaValue}
 		}
@@ -1758,32 +1646,6 @@ func resolveCompletionType(typeReference ast.TypeReference, model completionMode
 	default:
 		return completionType{}
 	}
-}
-
-func completionUnionEnum(name string, typeReference ast.TypeReference, model completionModel, seen map[string]struct{}) (completionEnum, bool) {
-	typed, ok := typeReference.(ast.UnionType)
-	if !ok {
-		return completionEnum{}, false
-	}
-
-	members := []completionEnumMember{}
-	memberIndexes := map[string]int{}
-	for _, member := range typed.Members {
-		resolved := resolveCompletionType(member, model, seen)
-		if resolved.kind != completionTypeEnum {
-			return completionEnum{}, false
-		}
-		for _, enumMember := range resolved.enum.members {
-			if index, exists := memberIndexes[enumMember.Name]; exists {
-				members[index] = enumMember
-				continue
-			}
-			memberIndexes[enumMember.Name] = len(members)
-			members = append(members, enumMember)
-		}
-	}
-
-	return completionEnum{name: name, members: members}, true
 }
 
 func completionChoiceFromMembers(members []ast.Expression, model completionModel, seen map[string]struct{}) (completionChoice, bool) {
@@ -1864,29 +1726,6 @@ func completionUnionRecord(members []ast.TypeReference, model completionModel, s
 	return merged, true
 }
 
-func completionEnumFromDeclaration(declaration ast.EnumDeclaration) completionEnum {
-	members := lo.Map(declaration.Members, func(member ast.EnumMember, index int) completionEnumMember {
-		return completionEnumMember{
-			Name:   member.Name,
-			Detail: completionEnumMemberDetail(declaration, member, index),
-		}
-	})
-
-	return completionEnum{name: declaration.Name, members: members}
-}
-
-func completionEnumMemberDetail(declaration ast.EnumDeclaration, member ast.EnumMember, index int) string {
-	if member.HasValue {
-		return fmt.Sprintf("enum member %s.%s = %s", declaration.Name, member.Name, expressionSummary(member.Value))
-	}
-
-	if implicitValue, ok := implicitEnumMemberValueDetail(declaration.BackingType.Name, member.Name, index); ok {
-		return fmt.Sprintf("enum member %s.%s = %s", declaration.Name, member.Name, implicitValue)
-	}
-
-	return fmt.Sprintf("enum member %s.%s", declaration.Name, member.Name)
-}
-
 func schemaLiteral(record ast.RecordType, model completionModel, seen map[string]struct{}) string {
 	fields := lo.Map(record.Fields, func(field ast.SchemaField, _ int) string {
 		name := field.Name
@@ -1921,11 +1760,6 @@ func defaultLiteralForType(typeReference ast.TypeReference, model completionMode
 		}
 	case completionTypeArray:
 		return "[]"
-	case completionTypeEnum:
-		if len(resolved.enum.members) > 0 {
-			return resolved.enum.access(resolved.enum.members[0].Name)
-		}
-		return `""`
 	case completionTypeChoice:
 		if len(resolved.choice.members) > 0 {
 			return resolved.choice.members[0].Label
@@ -2125,17 +1959,6 @@ type directiveState struct {
 type completionModel struct {
 	aliases map[string]ast.TypeReference
 	schemas map[string]ast.RecordType
-	enums   map[string]completionEnum
-}
-
-type completionEnum struct {
-	name    string
-	members []completionEnumMember
-}
-
-type completionEnumMember struct {
-	Name   string
-	Detail string
 }
 
 type completionChoice struct {
@@ -2147,33 +1970,6 @@ type completionChoiceMember struct {
 	Detail string
 }
 
-func (enum completionEnum) access(memberName string) string {
-	if enum.name == "" {
-		return memberName
-	}
-
-	return enum.name + "." + memberName
-}
-
-func (enum completionEnum) rename(name string) completionEnum {
-	cloned := completionEnum{name: name, members: make([]completionEnumMember, len(enum.members))}
-	copy(cloned.members, enum.members)
-	if enum.name == "" || enum.name == name {
-		return cloned
-	}
-
-	oldPrefix := "enum member " + enum.name + "."
-	newPrefix := "enum member " + name + "."
-	for index, member := range cloned.members {
-		if strings.HasPrefix(member.Detail, oldPrefix) {
-			member.Detail = newPrefix + strings.TrimPrefix(member.Detail, oldPrefix)
-			cloned.members[index] = member
-		}
-	}
-
-	return cloned
-}
-
 type completionTypeKind int
 
 const (
@@ -2181,7 +1977,6 @@ const (
 	completionTypePrimitive
 	completionTypeArray
 	completionTypeSchema
-	completionTypeEnum
 	completionTypeChoice
 	completionTypeVariant
 )
@@ -2190,7 +1985,6 @@ type completionType struct {
 	kind      completionTypeKind
 	primitive string
 	record    ast.RecordType
-	enum      completionEnum
 	choice    completionChoice
 	members   []ast.TypeReference
 }
