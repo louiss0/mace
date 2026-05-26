@@ -7,8 +7,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/samber/lo"
 	protocol "github.com/tliron/glsp/protocol_3_16"
-
-	"github.com/louiss0/mace/internal/parser/ast"
 )
 
 var _ = Describe("completion analysis", func() {
@@ -106,47 +104,10 @@ var _ = Describe("completion analysis", func() {
 		tAssert.Equal([]string{"$self"}, labels)
 	})
 
-	It("resolves enum field types for output schema placeholders", func() {
-		text := `|===|
-enum Fruit: string {
-  Apple,
-  Strawberry = "strawberry",
-};
-schema Basket: { favorite_fruit: Fruit; };
-|===|
-[output = data, schema = Basket]
-{
-  favorite_fruit:
-}`
-
-		file, ok := completionFileWithPlaceholder(text, protocol.Position{
-			Line:      9,
-			Character: uint32(len(`  favorite_fruit: `)),
-		})
-		tAssert.True(ok)
-		if !ok {
-			return
-		}
-
-		model := buildCompletionModel(*file, filepath.Dir("document.mace"), filepath.Dir("document.mace"), map[string]completionModel{})
-		expectedType, path, ok := placeholderOutputCompletionType(*file, model)
-		tAssert.True(ok)
-		tAssert.Equal([]string{"favorite_fruit"}, path)
-
-		namedType, ok := expectedType.(ast.NamedType)
-		tAssert.True(ok)
-		if ok {
-			tAssert.Equal("Fruit", namedType.Name)
-		}
-	})
-
 	It("keeps typed output completions alongside $self in output schema fields", func() {
 		text := `|===|
-enum Fruit: string {
-  Apple,
-  Strawberry = "strawberry",
-};
-schema Basket: { favorite_fruit: Fruit; };
+ type Fruit: choice["Apple", "Strawberry"];
+ schema Basket: { favorite_fruit: Fruit; };
 |===|
 [output = data, schema = Basket]
 {
@@ -154,7 +115,7 @@ schema Basket: { favorite_fruit: Fruit; };
 }`
 
 		position := protocol.Position{
-			Line:      9,
+			Line:      6,
 			Character: uint32(len(`  favorite_fruit: `)),
 		}
 		documentPath := filepath.Join("workspace", "document.mace")
@@ -166,17 +127,14 @@ schema Basket: { favorite_fruit: Fruit; };
 		})
 
 		tAssert.Contains(labels, "$self")
-		tAssert.Contains(labels, "Fruit.Apple")
-		tAssert.Contains(labels, "Fruit.Strawberry")
+		tAssert.Contains(labels, `"Apple"`)
+		tAssert.Contains(labels, `"Strawberry"`)
 	})
 
-	It("suggests enum values for output block schema fields", func() {
+	It("suggests choice values for output block schema fields", func() {
 		text := `|===|
-enum Fruit: string {
-  Apple,
-  Strawberry = "strawberry",
-};
-schema Basket: { favorite_fruit: Fruit; };
+ type Fruit: choice["Apple", "Strawberry"];
+ schema Basket: { favorite_fruit: Fruit; };
 |===|
 [output = data, schema = Basket]
 {
@@ -184,7 +142,7 @@ schema Basket: { favorite_fruit: Fruit; };
 }`
 
 		position := protocol.Position{
-			Line:      9,
+			Line:      6,
 			Character: uint32(len(`  favorite_fruit: `)),
 		}
 		documentPath := filepath.Join("workspace", "document.mace")
@@ -196,29 +154,27 @@ schema Basket: { favorite_fruit: Fruit; };
 		})
 
 		tAssert.Contains(labels, "$self")
-		tAssert.Contains(labels, "Fruit.Apple")
-		tAssert.Contains(labels, "Fruit.Strawberry")
+		tAssert.Contains(labels, `"Apple"`)
+		tAssert.Contains(labels, `"Strawberry"`)
 	})
 
-	It("suggests variant members for nested output schema aliases", func() {
+	It("suggests choice values inside variants while keeping imprecise alternatives", func() {
 		text := `|===|
-enum Role: string {
-  Admin,
-};
-schema User: { name: string; };
-type Identity: variant[Role, User];
-schema Envelope: { value: Identity; };
-schema Response: { payload: Envelope; };
+ type Role: choice["Admin", "Member"];
+ schema User: { name: string; };
+ type Identity: variant[Role, User];
+ schema Envelope: { value: Identity; };
+ schema Response: { payload: Envelope; };
 |===|
 [output = data, schema = Response]
 {
   payload: {
-    value: 
+    value:
   };
 }`
 
 		position := protocol.Position{
-			Line:      12,
+			Line:      10,
 			Character: uint32(len(`    value: `)),
 		}
 		documentPath := filepath.Join("workspace", "document.mace")
@@ -230,169 +186,9 @@ schema Response: { payload: Envelope; };
 		})
 
 		tAssert.Contains(labels, "$self")
-		tAssert.Contains(labels, "Role.Admin")
+		tAssert.Contains(labels, `"Admin"`)
+		tAssert.Contains(labels, `"Member"`)
 		tAssert.Contains(labels, `{ name: "" }`)
-	})
-
-	It("suggests enum values for incomplete enum variable initializers", func() {
-		text := `|===|
-	enum Fruit: string {
-	  Apple,
-	  Strawberry = "strawberry",
-	};
-	Fruit selected =`
-
-		position := protocol.Position{
-			Line:      5,
-			Character: uint32(len(`Fruit selected =`)),
-		}
-		documentPath := filepath.Join("workspace", "document.mace")
-		snapshot := AnalyzeCompletionContext(text, documentPath, position)
-
-		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
-		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
-			return item.Label
-		})
-
-		tAssert.Equal([]string{"Fruit.Apple", "Fruit.Strawberry"}, labels)
-	})
-
-	It("suggests enum members after a dot for local enums", func() {
-		text := `|===|
-	enum Personality: string {
-	  is_type,
-	  has_defaults,
-	};
-	Personality value = Personality.`
-
-		position := protocol.Position{
-			Line:      5,
-			Character: uint32(len(`	Personality value = Personality.`)),
-		}
-		documentPath := filepath.Join("workspace", "document.mace")
-		snapshot := AnalyzeCompletionContext(text, documentPath, position)
-
-		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
-		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
-			return item.Label
-		})
-
-		tAssert.Equal([]string{"has_defaults", "is_type"}, labels)
-		tAssert.Equal(`enum member Personality.has_defaults = "has_defaults"`, lo.FromPtr(items[0].Detail))
-	})
-
-	It("suggests enum members after a dot for union enum aliases", func() {
-		text := `|===|
-	enum Access: int {
-	  Read,
-	  Write,
-	};
-	enum Feature: int {
-	  Write,
-	  Execute,
-	};
-	type Permission: union[Access, Feature];
-	Permission value = Permission.`
-
-		position := protocol.Position{
-			Line:      10,
-			Character: uint32(len(`	Permission value = Permission.`)),
-		}
-		documentPath := filepath.Join("workspace", "document.mace")
-		snapshot := AnalyzeCompletionContext(text, documentPath, position)
-
-		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
-		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
-			return item.Label
-		})
-
-		tAssert.Equal([]string{"Execute", "Read", "Write"}, labels)
-	})
-
-	It("shows implicit int enum values in completion details", func() {
-		text := `|===|
-	enum Status: int {
-	  Pending,
-	  Running,
-	};
-	Status current = Status.`
-
-		position := protocol.Position{
-			Line:      5,
-			Character: uint32(len(`	Status current = Status.`)),
-		}
-		documentPath := filepath.Join("workspace", "document.mace")
-		snapshot := AnalyzeCompletionContext(text, documentPath, position)
-
-		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
-		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
-			return item.Label
-		})
-
-		tAssert.Equal([]string{"Pending", "Running"}, labels)
-		tAssert.Equal("enum member Status.Pending = 0", lo.FromPtr(items[0].Detail))
-		tAssert.Equal("enum member Status.Running = 1", lo.FromPtr(items[1].Detail))
-	})
-
-	It("shows implicit float enum values in completion details", func() {
-		text := `|===|
-	enum Status: float {
-	  Pending,
-	  Running,
-	};
-	Status current = Status.`
-
-		position := protocol.Position{
-			Line:      5,
-			Character: uint32(len(`	Status current = Status.`)),
-		}
-		documentPath := filepath.Join("workspace", "document.mace")
-		snapshot := AnalyzeCompletionContext(text, documentPath, position)
-
-		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
-		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
-			return item.Label
-		})
-
-		tAssert.Equal([]string{"Pending", "Running"}, labels)
-		tAssert.Equal("enum member Status.Pending = 0.0", lo.FromPtr(items[0].Detail))
-		tAssert.Equal("enum member Status.Running = 0.1", lo.FromPtr(items[1].Detail))
-	})
-
-	It("uses imported enum aliases in member completion details", func() {
-		workspace, err := os.MkdirTemp("", "mace-completion-imported-enum-*")
-		tAssert.NoError(err)
-
-		writeAnalysisFile(workspace, "shared.mace", `|===|
-enum InternalStatus: int {
-  Pending,
-  Running,
-};
-|===|
-[output = schema]
-{
-  Status: InternalStatus;
-}`)
-
-		text := `|===|
-from "./shared.mace" import Status;
-Status current = Status.`
-
-		position := protocol.Position{
-			Line:      2,
-			Character: uint32(len(`Status current = Status.`)),
-		}
-		documentPath := filepath.Join(workspace, "consumer.mace")
-		snapshot := AnalyzeCompletionContext(text, documentPath, position)
-
-		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
-		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
-			return item.Label
-		})
-
-		tAssert.Equal([]string{"Pending", "Running"}, labels)
-		tAssert.Equal("enum member Status.Pending = 0", lo.FromPtr(items[0].Detail))
-		tAssert.Equal("enum member Status.Running = 1", lo.FromPtr(items[1].Detail))
 	})
 
 	It("returns correct importable symbol kinds from an exported output block", func() {
@@ -400,9 +196,9 @@ Status current = Status.`
 		tAssert.NoError(err)
 
 		writeAnalysisFile(workspace, "shared.mace", `|===|
-enum Role: string { Admin };
-schema User: { name: string };
-type Alias: string;
+ type Role: choice["Admin"];
+ schema User: { name: string };
+ type Alias: string;
 |===|
 [output = schema]
 {
@@ -423,9 +219,33 @@ type Alias: string;
 		}
 
 		tAssert.Equal(protocol.CompletionItemKindStruct, kinds["user"])
-		tAssert.Equal(protocol.CompletionItemKindEnum, kinds["role"])
+		tAssert.Equal(protocol.CompletionItemKindClass, kinds["role"])
 		tAssert.Equal(protocol.CompletionItemKindClass, kinds["label"])
 		tAssert.Equal(protocol.CompletionItemKindClass, kinds["count"])
+	})
+
+	It("returns choice aliases as type importables from an exported output block", func() {
+		workspace, err := os.MkdirTemp("", "mace-completion-importable-choice-*")
+		tAssert.NoError(err)
+
+		writeAnalysisFile(workspace, "shared.mace", `|===|
+ type Flavor: choice["Vanilla", "Chocolate"];
+|===|
+[output = schema]
+{
+  flavor: Flavor;
+}`)
+
+		documentPath := filepath.Join(workspace, "consumer.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		symbols, ok := importableSymbols(uri, filepath.Dir(documentPath), "./shared.mace")
+		tAssert.True(ok)
+		if !ok || !tAssert.Len(symbols, 1) {
+			return
+		}
+
+		tAssert.Equal("flavor", symbols[0].Name)
+		tAssert.Equal(protocol.CompletionItemKindClass, symbols[0].Kind)
 	})
 
 	It("returns data fields as variables from a data output block", func() {

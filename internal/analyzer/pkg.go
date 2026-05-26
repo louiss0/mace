@@ -24,7 +24,7 @@ var diagnosticPositionPattern = regexp.MustCompile(`at (\d+):(\d+)`)
 
 var keywordDocs = map[string]string{
 	"array":      "Declares an array type like `array<string>`.",
-	"enum":       "Declares a named scalar enum type backed by `string`, `int`, or `float`.",
+	"choice":     "Declares a finite literal choice type like `choice[\"dev\", 1, true]`.",
 	"injectable": "Marks a script variable as overrideable through injections.",
 	"type":       "Declares a reusable type alias.",
 	"union":      "Declares schema composition like `union[Profile, Audit]`.",
@@ -38,7 +38,6 @@ var directiveKeywordDocs = map[string]string{
 }
 
 var declarationKeywordDocs = map[string]string{
-	"enum":   "Declares a reusable enum type.",
 	"schema": "Declares a reusable record schema.",
 }
 
@@ -155,18 +154,7 @@ func DocumentSymbols(text string, snapshot Snapshot) []protocol.DocumentSymbol {
 	symbols := lo.FilterMap(fileScriptItems(file), func(item ast.Declaration, _ int) (protocol.DocumentSymbol, bool) {
 		switch declaration := item.(type) {
 		case ast.TypeDeclaration:
-			return newSymbol(text, declaration.Name, "type", protocol.SymbolKindClass, nil), true
-		case ast.EnumDeclaration:
-			children := lo.Map(declaration.Members, func(member ast.EnumMember, index int) protocol.DocumentSymbol {
-				detail := member.Name
-				if member.HasValue {
-					detail = expressionSummary(member.Value)
-				} else if implicitValue, ok := implicitEnumMemberValueDetail(declaration.BackingType.Name, member.Name, index); ok {
-					detail = implicitValue
-				}
-				return newSymbol(text, member.Name, detail, protocol.SymbolKindEnumMember, nil)
-			})
-			return newSymbol(text, declaration.Name, declaration.BackingType.Name, protocol.SymbolKindEnum, children), true
+			return newSymbol(text, declaration.Name, typeReferenceDetail(declaration.Type), protocol.SymbolKindClass, nil), true
 		case ast.SchemaDeclaration:
 			children := lo.Map(declaration.Type.Fields, func(field ast.SchemaField, _ int) protocol.DocumentSymbol {
 				return newSymbol(text, field.Name, fieldTypeDetail(field.Type), protocol.SymbolKindField, nil)
@@ -307,40 +295,12 @@ func renameTokenMatchesSymbol(snapshot Snapshot, index int, rangeValue protocol.
 		}
 	}
 
-	if tokenInEnumDeclaration(snapshot.tokens, index) {
-		return false
-	}
-
 	location, ok := snapshot.definitionAt(rangeValue.Start)
 	if ok && sameLocation(location, symbol.Definition) {
 		return true
 	}
 
-	return symbol.Kind == protocol.CompletionItemKindVariable && !tokenInEnumDeclaration(snapshot.tokens, index)
-}
-
-func tokenInEnumDeclaration(tokens []lexer.Token, index int) bool {
-	depth := 0
-	for cursor := index; cursor >= 0; cursor-- {
-		switch tokens[cursor].Type {
-		case lexer.TokenRBrace:
-			depth++
-		case lexer.TokenLBrace:
-			if depth == 0 {
-				for check := cursor - 1; check >= 0; check-- {
-					switch tokens[check].Type {
-					case lexer.TokenEnum:
-						return true
-					case lexer.TokenSemicolon, lexer.TokenScriptDelimiter:
-						return false
-					}
-				}
-				return false
-			}
-			depth--
-		}
-	}
-	return false
+	return symbol.Kind == protocol.CompletionItemKindVariable
 }
 
 func sameLocation(left protocol.Location, right protocol.Location) bool {
@@ -523,6 +483,11 @@ func typeReferenceDetail(typeReference ast.TypeReference) string {
 			return typeReferenceDetail(member)
 		})
 		return fmt.Sprintf("variant[%s]", strings.Join(parts, ", "))
+	case ast.ChoiceType:
+		parts := lo.Map(value.Members, func(member ast.Expression, _ int) string {
+			return expressionSummary(member)
+		})
+		return fmt.Sprintf("choice[%s]", strings.Join(parts, ", "))
 	case ast.RecordType:
 		return recordTypeDetail(value)
 	default:

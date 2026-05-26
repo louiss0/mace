@@ -14,12 +14,13 @@ This repository contains:
 ## Status
 
 Mace is actively implemented in this repository. The current language contract
-is documented in [`mace-spec.md`](./mace-spec.md).
+is documented in [the formal specification](./docs/src/content/docs/reference/specification.md).
 
 ## Features
 
-- Typed script declarations for `type`, `schema`, `enum`, and variables
-- Enum member access with `EnumName.MemberName`
+- Typed script declarations for `type`, `schema`, and variables
+- Literal `choice[...]` types for user-selectable value domains
+- Choice-aware editor completions for literal domains and variants
 - Deterministic expression evaluation
 - Output validation against local schemas or external schema files
 - Relative imports between Mace files
@@ -46,12 +47,9 @@ Example:
 |===|
 from "./shared.mace" import User:ProfileUser;
 
-enum Environment: string {
-  Dev,
-  Prod
-}
+type Environment: choice["dev", "prod"];
 
-Environment env = Environment.Prod;
+Environment env = "prod";
 ProfileUser current = {
   name: "Ada",
   age: 27
@@ -70,16 +68,17 @@ not rename the exported key in the imported file.
 
 Mace supports:
 
-- `:` for type declarations (`type`, `schema`, `enum`)
-- `=` for variable initializers and enum member values
+- `:` for type declarations (`type`, `schema`)
+- `=` for variable initializers
 - primitive types: `string`, `int`, `float`, `hex_int`, `hex_float`, `boolean`
 - arrays: `array<T>`
 - unions: `union[T1, T2, ...]`
 - variants: `variant[T1, T2, ...]`
+- choices: `choice["a", 1, true, OtherChoice]`
 - named type aliases
 - schemas
-- enums backed by `string`, `int`, `float`, `hex_int`, or `hex_float`
-- enum member access with `EnumName.MemberName`
+- literal `choice[...]` aliases with mixed scalar members, reusable choice aliases,
+  and variant-friendly autocomplete
 - record, array, arithmetic, logical, merge, and conditional expressions
 - `$self` references inside output evaluation
 - hexadecimal integer and fractional numeric types with canonical string JSON output
@@ -119,7 +118,7 @@ Identity fallback = 42;
 ```
 
 Mace treats unions as composition: schema members are combined into one closed
-record shape, and enum members are combined into one enum alias.
+record shape.
 
 ```mace
 |===|
@@ -137,22 +136,15 @@ User value = {
 }
 ```
 
-Enum unions create merged same-backing enums. Inline enum unions rewrite source
-enum values through an anonymous merged enum in expected-type contexts, while
-named enum union aliases merge under the alias name. Later enum members replace
-earlier members with the same name; duplicate `int` values are reassigned to the
-next available integer, duplicate `float` values are reassigned by `0.1`, and
-duplicate `string` values on different keys are rewritten to the member key
-value. Enum variants remain source alternatives, but
-all keys must be unique and same-backing enum values are shifted through an
-anonymous enum so conflicting values do not collide.
+Choices define finite literal domains directly in the type system.
+Choice aliases can be reused, nested, and embedded inside variants.
 
 ```mace
 |===|
-enum Access: int { Read, Write };
-enum Feature: int { Write, Execute };
-type Permission: union[Access, Feature];
-Permission value = Permission.Execute;
+type Access: choice["read", "write"];
+type Feature: choice["write", "execute"];
+type Permission: choice[Access, Feature];
+Permission value = "execute";
 |===|
 [output = data]
 {
@@ -165,7 +157,7 @@ Hexadecimal values stay distinct from decimal numerics. When emitted through
 `"0xFF"` and `"0x2.8"` so their hexadecimal spelling is preserved.
 
 For the exact rules and currently supported syntax, see
-[`mace-spec.md`](./mace-spec.md).
+[the formal specification](./docs/src/content/docs/reference/specification.md).
 
 ## Installation
 
@@ -329,7 +321,7 @@ mace output ./config.mace
 ```
 
 This is useful for inspecting how the formatter normalizes script delimiters,
-records, enums, enum member access, and expressions.
+records, choice aliases, and expressions.
 
 ### `mace lsp`
 
@@ -458,7 +450,8 @@ go test ./...
 - `internal/analyzer/` - editor analysis, diagnostics, hover, completion,
   definitions, symbols, code actions, and formatting helpers
 - `internal/formatter/` - canonical source formatting
-- `mace-spec.md` - current language specification
+- `docs/src/content/docs/reference/specification.md` - current language
+  specification
 - `mace.ebnf` - grammar reference
 
 ## Notes

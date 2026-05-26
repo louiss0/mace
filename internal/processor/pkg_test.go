@@ -261,10 +261,7 @@ Scalar value = "Ada";
 		Entry("documentation declarations", wrapScriptWithOutput(`|===|
 schema User: { name: string, };
 
-enum Status: string {
-  Pending /# Current state,
-};
-
+type Status: choice["Pending"];
 type Name: string;
 string greeting = "Hello";
 User profile = {
@@ -278,7 +275,7 @@ schema_doc User {
 """,
 };
 
-schema_doc Status {
+gen_doc Status {
   summary: "Represents a status.",
 };
 
@@ -386,7 +383,7 @@ string greeting = "Hello";
 schema_doc greeting {
   summary: "Invalid target.";
 };
-|===|`), "schema_doc target \"greeting\" must reference a schema, enum, or object-valued variable"),
+|===|`), "schema_doc target \"greeting\" must reference a schema or object-valued variable"),
 		Entry("gen_doc rejects object variables", wrapScriptWithOutput(`|===|
 schema User: {
   name: string;
@@ -458,16 +455,7 @@ schema_doc User {
 schema User: {
   name: string;
 };
-|===|`), "must appear after its schema, enum, or object-valued variable declaration"),
-		Entry("schema_doc must appear after its enum declaration", wrapScriptWithOutput(`|===|
-schema_doc Status {
-  summary: "Late-bound docs";
-};
-
-enum Status: string {
-  Pending,
-};
-|===|`), "must appear after its schema, enum, or object-valued variable declaration"),
+|===|`), "must appear after its schema or object-valued variable declaration"),
 		Entry("gen_doc must appear after its type declaration", wrapScriptWithOutput(`|===|
 gen_doc Name {
   summary: "Late-bound docs";
@@ -513,51 +501,6 @@ Value second = "fallback";
 		tAssert.NoError(err)
 	})
 
-	It("accepts same-backing enum variant alternatives", func() {
-		processor := New()
-		_, err := processor.Process(wrapScriptWithOutput(`|===|
-enum Role: string {
-  Admin = "admin",
-};
-enum State: string {
-  Active = "active",
-};
-type Value: variant[Role, State];
-Value first = Role.Admin;
-Value second = State.Active;
-|===|`))
-		tAssert.NoError(err)
-	})
-
-	It("shifts same-backing int enum variant alternatives", func() {
-		processor := New()
-		result, err := processor.Process(`|===|
-enum Access: int {
-  Read,
-  Write,
-};
-enum Feature: int {
-  Share,
-  Execute,
-};
-type Value: variant[Access, Feature];
-Value read = Access.Read;
-Value share = Feature.Share;
-Value execute = Feature.Execute;
-|===|
-[output = data]
-{
-  read: read,
-  share: share,
-  execute: execute
-}`)
-		tAssert.NoError(err)
-
-		assertExpectedValue(requireOutputValue(result, "read"), expectedValue{kind: ValueInt, int64: 0})
-		assertExpectedValue(requireOutputValue(result, "share"), expectedValue{kind: ValueInt, int64: 2})
-		assertExpectedValue(requireOutputValue(result, "execute"), expectedValue{kind: ValueInt, int64: 3})
-	})
-
 	It("accepts nested variant aliases", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
@@ -594,126 +537,12 @@ User value = {
 		}})
 	})
 
-	It("accepts float enum declarations and composition", func() {
-		processor := New()
-		result, err := processor.Process(`|===|
- enum Primary: float {
-   Low,
-   Medium,
- };
- enum Secondary: float {
-   Medium,
-   High,
- };
- type Rating: union[Primary, Secondary];
- Rating low = Rating.Low;
- Rating medium = Rating.Medium;
- Rating high = Rating.High;
- |===|
- [output = data]
- {
-   low: low,
-   medium: medium,
-   high: high
- }`)
-		tAssert.NoError(err)
-
-		assertExpectedValue(requireOutputValue(result, "low"), expectedValue{kind: ValueFloat, float: 0.0})
-		assertExpectedValue(requireOutputValue(result, "medium"), expectedValue{kind: ValueFloat, float: 0.2})
-		assertExpectedValue(requireOutputValue(result, "high"), expectedValue{kind: ValueFloat, float: 0.3})
-	})
-
-	It("accepts union enum composition aliases", func() {
-		processor := New()
-		result, err := processor.Process(`|===|
-enum Access: int {
-  Read,
-  Write,
-};
-enum Feature: int {
-  Write,
-  Execute,
-};
-type Permission: union[Access, Feature];
-Permission read = Permission.Read;
-Permission write = Permission.Write;
-Permission execute = Permission.Execute;
-|===|
-[output = data]
-{
-  read: read,
-  write: write,
-  execute: execute
-}`)
-		tAssert.NoError(err)
-
-		assertExpectedValue(requireOutputValue(result, "read"), expectedValue{kind: ValueInt, int64: 0})
-		assertExpectedValue(requireOutputValue(result, "write"), expectedValue{kind: ValueInt, int64: 2})
-		assertExpectedValue(requireOutputValue(result, "execute"), expectedValue{kind: ValueInt, int64: 3})
-	})
-
-	It("allows string enum union duplicate keys", func() {
-		processor := New()
-		result, err := processor.Process(`|===|
- enum Primary: string {
-   Admin = "admin",
- };
- enum Secondary: string {
-   Admin = "owner",
- };
- type Role: union[Primary, Secondary];
- Role role = Role.Admin;
- |===|
- [output = data]
- {
-   role: role
- }`)
-		tAssert.NoError(err)
-
-		assertExpectedValue(requireOutputValue(result, "role"), expectedValue{kind: ValueString, string: "owner"})
-	})
-
-	It("rewrites string enum union duplicate labels by key", func() {
-		processor := New()
-		result, err := processor.Process(`|===|
- enum Primary: string {
-   Admin = "admin",
- };
- enum Secondary: string {
-   Owner = "admin",
- };
- type Role: union[Primary, Secondary];
- Role role = Role.Owner;
- |===|
- [output = data]
- {
-   role: role
- }`)
-		tAssert.NoError(err)
-
-		assertExpectedValue(requireOutputValue(result, "role"), expectedValue{kind: ValueString, string: "Owner"})
-	})
-
-	It("rejects enum variant duplicate keys", func() {
-		processor := New()
-		_, err := processor.Process(wrapScriptWithOutput(`|===|
- enum Primary: string {
-   Admin = "admin",
- };
- enum Secondary: string {
-   Admin = "owner",
- };
- type Role: variant[Primary, Secondary];
- |===|`))
-		tAssert.ErrorContains(err, "duplicate enum member")
-	})
-
 	It("rejects union schema composition with non-schema members", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
 type Broken: union[string, int];
 |===|`))
-		tAssert.ErrorContains(err, "union members must be schemas or enums")
+		tAssert.ErrorContains(err, "union members must be schemas")
 	})
 
 	It("rejects union schema composition with conflicting fields", func() {
@@ -759,20 +588,6 @@ type Identity: variant[Named, OptionallyNamed];
 Identity value = { id: "u1"; };
 |===|`))
 		tAssert.ErrorContains(err, "exactly one variant member")
-	})
-
-	It("rejects mixed-backing enum variant alternatives", func() {
-		processor := New()
-		_, err := processor.Process(wrapScriptWithOutput(`|===|
-enum Role: string {
-  Admin = "admin",
-};
-enum Status: int {
-  Ready = 1,
-};
-type Value: variant[Role, Status];
-|===|`))
-		tAssert.ErrorContains(err, "same backing type")
 	})
 
 	DescribeTable("accepts schema record literals",
@@ -928,7 +743,7 @@ injectable string env = "dev";
 		tAssert.ErrorContains(err, "unknown injectable")
 	})
 
-	DescribeTable("processes valid enum declarations",
+	DescribeTable("processes valid choice declarations",
 		func(input string, expected expectedValue) {
 			processor := New()
 			result, err := processor.Process(input)
@@ -937,94 +752,71 @@ injectable string env = "dev";
 			actual := requireOutputValue(result, "result")
 			assertExpectedValue(actual, expected)
 		},
-		Entry("string enum with implicit values", `|===|
-enum Fruit: string {
-  Apple,
-  Strawberry,
-};
-Fruit result = Fruit.Apple;
+		Entry("choice string literal", `|===|
+ type Fruit: choice["Apple", "Strawberry"];
+ Fruit result = "Apple";
 |===|
 [output = data]
 {
   result: result;
 }`, expectedValue{kind: ValueString, string: "Apple"}),
-		Entry("int enum with implicit values", `|===|
-enum Status: int {
-  Pending,
-  Running,
-};
-Status result = Status.Running;
+		Entry("choice aliases can be mixed", `|===|
+ type Environment: choice["dev", "prod"];
+ type Numeric: choice[1, 2];
+ type Mode: choice[Environment, Numeric, true];
+ Mode result = 2;
 |===|
 [output = data]
 {
   result: result;
-}`, expectedValue{kind: ValueInt, int64: 1}),
-		Entry("int enum with explicit values", `|===|
-enum Status: int {
-  Pending = 0,
-  Running = 1,
-};
-Status result = Status.Running;
+}`, expectedValue{kind: ValueInt, int64: 2}),
+		Entry("choice float members preserve precision", `|===|
+ type Ratio: choice[1.04, 1.0];
+ Ratio first = 1.04;
+ Ratio second = 1.0;
 |===|
 [output = data]
 {
-  result: result;
-}`, expectedValue{kind: ValueInt, int64: 1}),
+  result: { first: first; second: second; };
+}`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+			"first":  {kind: ValueFloat, float: 1.04},
+			"second": {kind: ValueFloat, float: 1.0},
+		}}),
 	)
 
-	DescribeTable("rejects invalid enum declarations and assignments",
+	DescribeTable("rejects invalid choice declarations and assignments",
 		func(input string, message string) {
 			processor := New()
 			_, err := processor.Process(input)
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, message)
 		},
-		Entry("duplicate enum member name", wrapScriptWithOutput(`|===|
-enum Fruit: string {
-  Apple,
-  Apple,
-};
-|===|`), "duplicate enum member"),
-		Entry("duplicate enum value", wrapScriptWithOutput(`|===|
-enum Fruit: string {
-  Apple = "fruit",
-  Strawberry = "fruit",
-};
-|===|`), "duplicate enum value"),
-		Entry("mixed implicit and explicit enum members", wrapScriptWithOutput(`|===|
-enum Fruit: string {
-  Apple = "apple",
-  Strawberry,
-};
-|===|`), "mixes implicit and explicit"),
-		Entry("enum explicit value type mismatch", wrapScriptWithOutput(`|===|
-enum Status: int {
-  Pending = "pending",
-};
-|===|`), "must use an int literal"),
-		Entry("raw enum backing value is not assignable", `|===|
-enum Fruit: string {
-  Apple,
-  Strawberry,
-};
-Fruit result = "Pear";
+		Entry("unknown choice alias", wrapScriptWithOutput(`|===|
+ type Fruit: choice[MissingChoice];
+|===|`), "unknown choice member"),
+		Entry("non-choice alias in choice members", wrapScriptWithOutput(`|===|
+ type Name: string;
+ type Fruit: choice[Name];
+|===|`), "must resolve to a choice type"),
+		Entry("value outside choice domain", `|===|
+ type Fruit: choice["Apple", "Strawberry"];
+ Fruit result = "Pear";
 |===|
 [output = data]
 {
   result: result;
-}`, "type mismatch: expected Fruit, got string"),
-		Entry("unknown enum member", `|===|
-enum Fruit: string {
-  Apple,
-  Strawberry,
-};
-Fruit result = Fruit.Pear;
+}`, "type mismatch: expected choice[\"Apple\", \"Strawberry\"], got \"Pear\""),
+		Entry("conditional branch outside choice domain", `|===|
+ boolean enabled = true;
+ type Fruit: choice["Apple", "Strawberry"];
+ Fruit result = (enabled ? "Pear" : "Apple");
 |===|
 [output = data]
 {
   result: result;
-}`, "unknown enum member"),
+}`, "type mismatch: expected choice[\"Apple\", \"Strawberry\"], got \"Pear\""),
 	)
+
 })
 
 var _ = Describe("Imports", func() {
@@ -1293,15 +1085,12 @@ schema User: { name: string; };
 		tAssert.ErrorContains(err, `import path "../shared.mace" escapes root:`)
 	})
 
-	It("imports enums exposed through schema output", func() {
-		workspace, err := os.MkdirTemp("", "mace-processor-enum-import-*")
+	It("imports choice aliases exposed through schema output", func() {
+		workspace, err := os.MkdirTemp("", "mace-processor-choice-import-*")
 		tAssert.NoError(err)
 
 		sharedPath := writeFixtureFile(workspace, "shared.mace", `|===|
-enum Fruit: string {
-  Apple,
-  Strawberry,
-};
+ type Fruit: choice["Apple", "Strawberry"];
 |===|
 [output = schema]
 {
@@ -1309,7 +1098,7 @@ enum Fruit: string {
 }`)
 		consumerPath := writeFixtureFile(workspace, "consumer.mace", `|===|
 from "./shared.mace" import Fruit;
-Fruit result = Fruit.Apple;
+Fruit result = "Apple";
 |===|
 [output = data]
 {
@@ -1386,6 +1175,16 @@ schema User: { name: string; };
 }`, map[expectedSchemaField]SchemaType{
 			{name: "value"}: {Kind: SchemaTypeVariant, Members: []SchemaType{schemaPrimitive("string"), schemaPrimitive("int")}},
 		}),
+		Entry("choice fields resolve nested choice aliases", `|===|
+ type Environment: choice["dev", "prod"];
+ type Numeric: choice[1, 2];
+|===|
+[output = schema]
+{
+  mode: choice[Environment, Numeric];
+}`, map[expectedSchemaField]SchemaType{
+			{name: "mode"}: schemaNamed(`choice["dev", "prod", 1, 2]`),
+		}),
 	)
 
 	DescribeTable("accepts output that matches schema",
@@ -1448,24 +1247,12 @@ schema Plot: { points: array<Point>; };
 |===|
 [output = data, schema = Plot]
 { points: [ { x: 1; y: 2; }, { x: 3; } ]; }`, "missing required field"),
-		Entry("enum field requires member access", `|===|
-enum Fruit: string {
-  Apple,
-  Strawberry,
-};
-schema Basket: { favorite: Fruit; };
+		Entry("choice field rejects values outside the domain", `|===|
+ type Fruit: choice["Apple", "Strawberry"];
+ schema Basket: { favorite: Fruit; };
 |===|
 [output = data, schema = Basket]
-{ favorite: "Pear"; }`, "type mismatch: expected Fruit, got string"),
-		Entry("enum field rejects unknown member", `|===|
-enum Fruit: string {
-  Apple,
-  Strawberry,
-};
-schema Basket: { favorite: Fruit; };
-|===|
-[output = data, schema = Basket]
-{ favorite: Fruit.Pear; }`, "unknown enum member"),
+{ favorite: "Pear"; }`, "type mismatch: expected choice[\"Apple\", \"Strawberry\"], got \"Pear\""),
 	)
 
 	DescribeTable("rejects output surface mismatches",
@@ -1773,41 +1560,6 @@ boolean value = 1 == true;
 		Entry("ternary branch mismatch", wrapScriptWithOutputFields(`|===|
 int value = true ? 1 : 2.0;
 |===|`, "value: value;")),
-	)
-
-	DescribeTable("accepts inline enum union arrays with source enum members",
-		func(typeRef string, expected []expectedValue) {
-			processor := New()
-			result, err := processor.Process(wrapScriptWithOutputFields(fmt.Sprintf(`|===|
- enum Access: int {
-   Read,
-   Write,
- };
- enum Feature: int {
-   Write,
-   Execute,
- };
- array<%s> result = [
-   Access.Read,
-   Feature.Write,
-   Feature.Execute
- ];
- |===|`, typeRef), "result: result;"))
-			tAssert.NoError(err)
-
-			actual := requireOutputValue(result, "result")
-			assertExpectedValue(actual, expectedValue{kind: ValueArray, array: expected})
-		},
-		Entry("A before B", "union[Access, Feature]", []expectedValue{
-			{kind: ValueInt, int64: 0},
-			{kind: ValueInt, int64: 2},
-			{kind: ValueInt, int64: 3},
-		}),
-		Entry("B before A", "union[Feature, Access]", []expectedValue{
-			{kind: ValueInt, int64: 2},
-			{kind: ValueInt, int64: 3},
-			{kind: ValueInt, int64: 1},
-		}),
 	)
 
 	DescribeTable("returns array and record results",

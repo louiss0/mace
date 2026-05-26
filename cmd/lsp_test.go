@@ -136,20 +136,6 @@ func completeLabels(server *Server, uri protocol.DocumentUri, line uint32, chara
 	return requireCompletionLabels(resultValue, validMethod, validParams, err)
 }
 
-func completeLabelsWithContext(server *Server, uri protocol.DocumentUri, line uint32, character uint32, context protocol.CompletionContext) []string {
-	resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentCompletion, protocol.CompletionParams{
-		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
-			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
-			Position: protocol.Position{
-				Line:      protocol.UInteger(line),
-				Character: protocol.UInteger(character),
-			},
-		},
-		Context: &context,
-	}, nil)
-	return requireCompletionLabels(resultValue, validMethod, validParams, err)
-}
-
 func requireCompletionLabels(resultValue any, validMethod bool, validParams bool, err error) []string {
 	tAssert.True(validMethod)
 	tAssert.True(validParams)
@@ -493,36 +479,6 @@ int count = 7;
 		if tAssert.Len(notifications, 2) {
 			params := requireDiagnostics(notifications[1])
 			tAssert.Empty(params.Diagnostics)
-		}
-	})
-
-	It("clears enum member parse diagnostics when the member access is fixed", func() {
-		notifications := []capturedNotification{}
-
-		didOpen(server, uri, `|===|
-enum Personality: string {
-  is_type,
-};
-Personality value = Personality.;
-|===|
-[output = data] {}`, &notifications)
-		didChange(server, uri, 2, `|===|
-enum Personality: string {
-  is_type,
-};
-Personality value = Personality.is_type;
-|===|
-[output = data] {}`, &notifications)
-
-		if tAssert.Len(notifications, 2) {
-			params := requireDiagnostics(notifications[0])
-			tAssert.Len(params.Diagnostics, 1)
-			tAssert.Contains(params.Diagnostics[0].Message, `expected identifier after '.' in member access`)
-
-			params = requireDiagnostics(notifications[1])
-			if tAssert.Len(params.Diagnostics, 1) {
-				tAssert.Contains(params.Diagnostics[0].Message, `script variable "value" is never used`)
-			}
 		}
 	})
 
@@ -941,95 +897,15 @@ Us
 		tAssert.NotContains(labels, "string")
 	})
 
-	It("suggests enum in script scope", func() {
+	It("suggests choice in script scope", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
-en
+ch
 |===|
 [output = data] {}`, nil)
 
 		labels := completeLabels(server, uri, 1, 2)
-		tAssert.Contains(labels, "enum")
-	})
-
-	It("suggests enum values when assigning an enum typed variable", func() {
-		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `|===|
-enum Fruit: string {
-  Apple,
-  Strawberry = "strawberry",
-};
-Fruit selected =
-|===|
-[output = data] {}`, nil)
-
-		labels := completeLabels(server, uri, 5, uint32(len(`Fruit selected = `)))
-		tAssert.Equal([]string{"Fruit.Apple", "Fruit.Strawberry"}, labels)
-	})
-
-	It("suggests enum values for assignment-triggered completion requests", func() {
-		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `|===|
-enum Fruit: string {
-  Apple,
-  Strawberry = "strawberry",
-};
-Fruit selected =
-|===|
-[output = data] {}`, nil)
-
-		triggerCharacter := "="
-		labels := completeLabelsWithContext(server, uri, 5, uint32(len(`Fruit selected =`)), protocol.CompletionContext{
-			TriggerKind:      protocol.CompletionTriggerKindTriggerCharacter,
-			TriggerCharacter: &triggerCharacter,
-		})
-		tAssert.Equal([]string{"Fruit.Apple", "Fruit.Strawberry"}, labels)
-	})
-
-	It("suggests enum values when completion is requested on the assignment operator", func() {
-		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `|===|
-enum Fruit: string {
-  Apple,
-  Strawberry = "strawberry",
-};
-Fruit selected =
-|===|
-[output = data] {}`, nil)
-
-		labels := completeLabels(server, uri, 5, uint32(len(`Fruit selected `)))
-		tAssert.Equal([]string{"Fruit.Apple", "Fruit.Strawberry"}, labels)
-	})
-
-	It("suggests enum values when the completion request extends past the final line at eof", func() {
-		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `|===|
-enum Fruit: string {
-  Apple,
-  Strawberry = "strawberry",
-};
-Fruit selected =`, nil)
-
-		labels := completeLabels(server, uri, 5, uint32(len(`Fruit selected = `)))
-		tAssert.Equal([]string{"Fruit.Apple", "Fruit.Strawberry"}, labels)
-	})
-
-	It("suggests enum values for schema fields after a record colon", func() {
-		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `|===|
-enum Fruit: string {
-  Apple,
-  Strawberry = "strawberry",
-};
-schema Basket: { favorite_fruit: Fruit; };
-Basket basket = {
-  favorite_fruit:
-};
-|===|
-[output = data] {}`, nil)
-
-		labels := completeLabels(server, uri, 7, uint32(len(`  favorite_fruit: `)))
-		tAssert.Equal([]string{"Fruit.Apple", "Fruit.Strawberry"}, labels)
+		tAssert.Contains(labels, "choice")
 	})
 
 	It("suggests array indexes for script variables", func() {
@@ -1115,21 +991,6 @@ from "./shared.mace" import names;
 		tAssert.Equal([]string{"0", "1", "2"}, labels)
 	})
 
-	It("suggests enum members after a dot for local enums", func() {
-		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `|===|
-enum Personality: string {
-  is_type,
-  has_defaults,
-};
-Personality value = Personality.
-|===|
-[output = data] {}`, nil)
-
-		labels := completeLabels(server, uri, 5, uint32(len(`Personality value = Personality.`)))
-		tAssert.Equal([]string{"has_defaults", "is_type"}, labels)
-	})
-
 	It("suggests schema record literals for nested schema fields after a record colon", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
@@ -1145,27 +1006,43 @@ Basket basket = {
 		tAssert.Equal([]string{`{ name: "", age?: 0 }`}, labels)
 	})
 
-	It("suggests variant members for nested output schema aliases", func() {
+	It("suggests choice values for output schema fields", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
-enum Role: string {
-  Admin,
-};
-schema User: { name: string; };
-type Identity: variant[Role, User];
-schema Envelope: { value: Identity; };
-schema Response: { payload: Envelope; };
+ type Fruit: choice["Apple", "Strawberry"];
+ schema Basket: { favorite_fruit: Fruit; };
+|===|
+[output = data, schema = Basket]
+{
+  favorite_fruit:
+}`, nil)
+
+		labels := completeLabels(server, uri, 6, uint32(len(`  favorite_fruit: `)))
+		tAssert.Contains(labels, "$self")
+		tAssert.Contains(labels, `"Apple"`)
+		tAssert.Contains(labels, `"Strawberry"`)
+	})
+
+	It("suggests choice values inside variants while keeping imprecise alternatives", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+ type Role: choice["Admin", "Member"];
+ schema User: { name: string; };
+ type Identity: variant[Role, User];
+ schema Envelope: { value: Identity; };
+ schema Response: { payload: Envelope; };
 |===|
 [output = data, schema = Response]
 {
   payload: {
-    value: 
+    value:
   };
 }`, nil)
 
-		labels := completeLabels(server, uri, 12, uint32(len(`    value: `)))
+		labels := completeLabels(server, uri, 10, uint32(len(`    value: `)))
 		tAssert.Contains(labels, "$self")
-		tAssert.Contains(labels, "Role.Admin")
+		tAssert.Contains(labels, `"Admin"`)
+		tAssert.Contains(labels, `"Member"`)
 		tAssert.Contains(labels, `{ name: "" }`)
 	})
 
@@ -1193,41 +1070,18 @@ schema Response: { payload: Envelope; };
 	It("keeps typed output completions alongside $self in output schema fields", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
-enum Fruit: string {
-  Apple,
-  Strawberry = "strawberry",
-};
-schema Basket: { favorite_fruit: Fruit; };
+ type Fruit: choice["Apple", "Strawberry"];
+ schema Basket: { favorite_fruit: Fruit; };
 |===|
 [output = data, schema = Basket]
 {
   favorite_fruit: 
 }`, nil)
 
-		labels := completeLabels(server, uri, 9, uint32(len(`  favorite_fruit: `)))
+		labels := completeLabels(server, uri, 6, uint32(len(`  favorite_fruit: `)))
 		tAssert.Contains(labels, "$self")
-		tAssert.Contains(labels, "Fruit.Apple")
-		tAssert.Contains(labels, "Fruit.Strawberry")
-	})
-
-	It("suggests enum values for output schema fields after a record colon", func() {
-		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `|===|
-enum Fruit: string {
-  Apple,
-  Strawberry = "strawberry",
-};
-schema Basket: { favorite_fruit: Fruit; };
-|===|
-[output = data, schema = Basket]
-{
-  favorite_fruit:
-}`, nil)
-
-		labels := completeLabels(server, uri, 9, uint32(len(`  favorite_fruit: `)))
-		tAssert.Contains(labels, "$self")
-		tAssert.Contains(labels, "Fruit.Apple")
-		tAssert.Contains(labels, "Fruit.Strawberry")
+		tAssert.Contains(labels, `"Apple"`)
+		tAssert.Contains(labels, `"Strawberry"`)
 	})
 
 	It("does not suggest schema directives after output schema and a comma", func() {
@@ -1258,34 +1112,6 @@ schema LocalUser: { id: int; };
 
 		labels := completeLabels(server, uri, 4, uint32(len(`[output = data, schema = `)))
 		tAssert.Equal([]string{"ImportedUser", "LocalUser"}, labels)
-	})
-
-	It("suggests enum members after a dot for imported enums", func() {
-
-		workspace, err := os.MkdirTemp("", "mace-lsp-imported-enum-*")
-		tAssert.NoError(err)
-
-		writeWorkspaceFile(workspace, "shared.mace", `|===|
-enum Personality: string {
-  is_type,
-  has_defaults,
-};
-|===|
-[output = schema]
-{
-  Personality: Personality;
-}`)
-		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
-
-		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `|===|
-from "./shared.mace" import Personality;
-Personality value = Personality.
-|===|
-[output = data] {}`, nil)
-
-		labels := completeLabels(server, uri, 2, uint32(len(`Personality value = Personality.`)))
-		tAssert.Equal([]string{"has_defaults", "is_type"}, labels)
 	})
 
 	It("suggests schema files and excludes files already imported", func() {
@@ -1519,109 +1345,27 @@ schema Profile: { age: int; };
 		if ok {
 			tAssert.Contains(content.Value, "schema composition")
 		}
-	})
 
-	It("returns hover documentation for enum declarations", func() {
-		didOpen(server, uri, `|===|
-enum Fruit: string {
-  Apple,
-};
-|===|
-[output = data] { result: "Apple"; }`, nil)
-
-		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+		resultValue, validMethod, validParams, err = invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
-				Position:     protocol.Position{Line: 1, Character: 2},
+				Position:     protocol.Position{Line: 2, Character: 14},
 			},
 		}, nil)
 		tAssert.True(validMethod)
 		tAssert.True(validParams)
 		tAssert.NoError(err)
 
-		hover, ok := resultValue.(*protocol.Hover)
+		hover, ok = resultValue.(*protocol.Hover)
 		tAssert.True(ok)
 		if !ok || hover == nil {
 			return
 		}
 
-		content, ok := hover.Contents.(protocol.MarkupContent)
+		content, ok = hover.Contents.(protocol.MarkupContent)
 		tAssert.True(ok)
 		if ok {
-			tAssert.Contains(content.Value, "enum type")
-		}
-	})
-
-	It("returns hover details for enum member access", func() {
-		didOpen(server, uri, `|===|
-enum Fruit: string {
-  Apple /# Default apple label,
-  Strawberry = "strawberry",
-};
-Fruit selected = Fruit.Apple;
-|===|
-[output = data]
-{
-  selected: selected;
-}`, nil)
-
-		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
-			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
-				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
-				Position:     protocol.Position{Line: 4, Character: 23},
-			},
-		}, nil)
-		tAssert.True(validMethod)
-		tAssert.True(validParams)
-		tAssert.NoError(err)
-
-		hover, ok := resultValue.(*protocol.Hover)
-		tAssert.True(ok)
-		if !ok || hover == nil {
-			return
-		}
-
-		content, ok := hover.Contents.(protocol.MarkupContent)
-		tAssert.True(ok)
-		if ok {
-			tAssert.Contains(content.Value, `enum member Fruit.Apple = "Apple"`)
-			tAssert.Contains(content.Value, `Default apple label`)
-		}
-	})
-
-	It("returns implicit int values in enum hover details", func() {
-		didOpen(server, uri, `|===|
-enum Status: int {
-  Pending,
-  Running,
-};
-Status current = Status.Running;
-|===|
-[output = data]
-{
-  result: current;
-}`, nil)
-
-		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
-			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
-				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
-				Position:     protocol.Position{Line: 4, Character: 24},
-			},
-		}, nil)
-		tAssert.True(validMethod)
-		tAssert.True(validParams)
-		tAssert.NoError(err)
-
-		hover, ok := resultValue.(*protocol.Hover)
-		tAssert.True(ok)
-		if !ok || hover == nil {
-			return
-		}
-
-		content, ok := hover.Contents.(protocol.MarkupContent)
-		tAssert.True(ok)
-		if ok {
-			tAssert.Contains(content.Value, `enum member Status.Running = 1`)
+			tAssert.Contains(content.Value, "finite literal choice type")
 		}
 	})
 
@@ -1730,6 +1474,42 @@ User user = { name: "Ada"; created_at: "2026-04-09"; };
 		tAssert.True(ok)
 		if ok {
 			tAssert.Contains(content.Value, `union[Profile, Audit] user = record literal`)
+		}
+	})
+
+	It("includes gen_doc details for choice types in hover", func() {
+		didOpen(server, uri, `|===|
+ type Flavor: choice["Vanilla", "Chocolate"];
+ gen_doc Flavor {
+   summary: "Selectable flavor values";
+   description: "Use autocomplete to choose a supported flavor.";
+ };
+ Flavor current = "Vanilla";
+|===|
+[output = data] { result: current; }`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 5, Character: 1},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, `type Flavor: choice["Vanilla", "Chocolate"];`)
+			tAssert.Contains(content.Value, `Selectable flavor values`)
+			tAssert.Contains(content.Value, `Use autocomplete to choose a supported flavor.`)
 		}
 	})
 
@@ -2064,6 +1844,53 @@ int default_age = 30;
 		}
 	})
 
+	It("returns hover details for imported choice declarations", func() {
+
+		workspace, err := os.MkdirTemp("", "mace-lsp-hover-import-choice-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "shared.mace", `|===|
+ type Flavor: choice["Vanilla", "Chocolate"];
+|===|
+[output = schema]
+{
+  Flavor: Flavor;
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `|===|
+from "./shared.mace" import Flavor;
+Flavor current = "Vanilla";
+|===|
+[output = data] { result: current; }`))
+
+		didOpen(server, uri, `|===|
+from "./shared.mace" import Flavor;
+Flavor current = "Vanilla";
+|===|
+[output = data] { result: current; }`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 2, Character: 1},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, `type Flavor: choice["Vanilla", "Chocolate"];`)
+		}
+	})
+
 	It("returns hover details for imported declarations", func() {
 
 		workspace, err := os.MkdirTemp("", "mace-lsp-hover-import-*")
@@ -2391,40 +2218,6 @@ from "./shared.mace" import User;
 		}
 	})
 
-	It("does not rename enum members sharing a variable name", func() {
-		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `|===|
-string name = "Ada";
-enum Field: string { name, title };
-|===|
-[output = data]
-{
-  result: name;
-}`, nil)
-
-		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentRename, protocol.RenameParams{
-			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
-				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
-				Position:     protocol.Position{Line: 6, Character: 11},
-			},
-			NewName: "username",
-		}, nil)
-		tAssert.True(validMethod)
-		tAssert.True(validParams)
-		tAssert.NoError(err)
-
-		edit, ok := resultValue.(*protocol.WorkspaceEdit)
-		tAssert.True(ok)
-		if !ok || !tAssert.NotNil(edit) {
-			return
-		}
-		edits := edit.Changes[uri]
-		tAssert.Len(edits, 2)
-		for _, edit := range edits {
-			tAssert.NotEqual(protocol.Position{Line: 2, Character: 21}, edit.Range.Start)
-		}
-	})
-
 	It("renames local variables from a usage", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
@@ -2594,16 +2387,13 @@ string env = "dev";
 		}
 	})
 
-	It("includes enums in hierarchical document symbols", func() {
+	It("includes choice details in hierarchical document symbols", func() {
 		didOpen(server, uri, `|===|
-enum Fruit: string {
-  Apple,
-  Strawberry = "strawberry",
-};
+ type Flavor: choice["Vanilla", "Chocolate"];
 |===|
 [output = data]
 {
-  result: "Apple";
+  result: "Vanilla";
 }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentDocumentSymbol, protocol.DocumentSymbolParams{
@@ -2619,33 +2409,9 @@ enum Fruit: string {
 			return
 		}
 
-		tAssert.Equal("Fruit", symbols[0].Name)
-		tAssert.Equal(protocol.SymbolKindEnum, symbols[0].Kind)
-		if tAssert.Len(symbols[0].Children, 2) {
-			tAssert.Equal("Apple", symbols[0].Children[0].Name)
-		}
-	})
-
-	It("publishes diagnostics when raw enum backing values are assigned", func() {
-		notifications := []capturedNotification{}
-
-		didOpen(server, uri, `|===|
-enum Fruit: string {
-  Apple,
-  Strawberry,
-};
-Fruit selected = "Pear";
-|===|
-[output = data]
-{
-  selected: selected;
-}`, &notifications)
-
-		if tAssert.Len(notifications, 1) {
-			params := requireDiagnostics(notifications[0])
-			tAssert.Len(params.Diagnostics, 1)
-			tAssert.Equal("mace.type.initializer-type-mismatch", params.Diagnostics[0].Code.Value)
-		}
+		tAssert.Equal("Flavor", symbols[0].Name)
+		tAssert.Equal(protocol.SymbolKindClass, symbols[0].Kind)
+		tAssert.Equal(`choice["Vanilla", "Chocolate"]`, lo.FromPtr(symbols[0].Detail))
 	})
 
 	It("publishes errors for script variables in schema output mode", func() {

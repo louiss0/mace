@@ -173,29 +173,6 @@ int qux = 2;
 		tAssert.Equal(protocol.UInteger(4), definition.Range.Start.Character)
 	})
 
-	It("resolves enum member definitions from usage sites", func() {
-		workspace, err := os.MkdirTemp("", "mace-analysis-enum-member-definition-*")
-		tAssert.NoError(err)
-		documentPath := filepath.Join(workspace, "consumer.mace")
-
-		snapshot := analyzeDocumentAt(`|===|
-enum Fruit: string {
-  Apple,
-  Strawberry = "strawberry",
-};
-Fruit selected = Fruit.Apple;
-|===|
-[output = data]
-{
-  selected: selected;
-}`, documentPath)
-
-		definition := requireDefinition(snapshot, protocol.Position{Line: 5, Character: 23})
-		tAssert.Equal(protocol.DocumentUri(fileURI(documentPath)), definition.URI)
-		tAssert.Equal(protocol.UInteger(2), definition.Range.Start.Line)
-		tAssert.Equal(protocol.UInteger(2), definition.Range.Start.Character)
-	})
-
 	It("translates import path validation into an LSP diagnostic and quick fix", func() {
 		workspace, err := os.MkdirTemp("", "mace-analysis-import-fix-*")
 		tAssert.NoError(err)
@@ -1017,61 +994,6 @@ schema_doc User {
 		tAssert.Contains(moveAction.Edit.Changes[uri][0].NewText, `name: ""`)
 		removeAction := requireCodeAction(snapshot, uri, rangeValue, "Remove conflicting docs")
 		tAssert.NotContains(removeAction.Edit.Changes[uri][0].NewText, `/# inline`)
-	})
-
-	It("offers enum normalization actions", func() {
-		documentPath := filepath.Join("workspace", "document.mace")
-		snapshot := analyzeDocumentAt(`|===|
-enum Status: string { Pending, Done = "done" };
-|===|
-[output = schema]
-{}`, documentPath)
-
-		rangeValue := protocol.Range{Start: protocol.Position{Line: 1, Character: 5}, End: protocol.Position{Line: 1, Character: 11}}
-		uri := protocol.DocumentUri(fileURI(documentPath))
-		explicitAction := requireCodeAction(snapshot, uri, rangeValue, "Convert mixed enum to all-explicit")
-		tAssert.Contains(explicitAction.Edit.Changes[uri][0].NewText, `Pending = "pending"`)
-		implicitAction := requireCodeAction(snapshot, uri, rangeValue, "Convert mixed enum to all-implicit")
-		tAssert.Contains(implicitAction.Edit.Changes[uri][0].NewText, `Pending,`)
-		tAssert.NotContains(implicitAction.Edit.Changes[uri][0].NewText, `Done =`)
-		missingAction := requireCodeAction(snapshot, uri, rangeValue, "Add missing enum member")
-		tAssert.Contains(missingAction.Edit.Changes[uri][0].NewText, `Missing`)
-	})
-
-	It("supports float enum details and normalization actions", func() {
-		text := `|===|
-enum Status: float { Pending, Done = 0.5 };
-|===|
-[output = schema]
-{}`
-		documentPath := filepath.Join("workspace", "document.mace")
-		snapshot := analyzeDocumentAt(text, documentPath)
-
-		rangeValue := protocol.Range{Start: protocol.Position{Line: 1, Character: 5}, End: protocol.Position{Line: 1, Character: 11}}
-		uri := protocol.DocumentUri(fileURI(documentPath))
-		explicitAction := requireCodeAction(snapshot, uri, rangeValue, "Convert mixed enum to all-explicit")
-		tAssert.Contains(explicitAction.Edit.Changes[uri][0].NewText, `Pending = 0.0`)
-		missingAction := requireCodeAction(snapshot, uri, rangeValue, "Add missing enum member")
-		tAssert.Contains(missingAction.Edit.Changes[uri][0].NewText, `Missing = 0.2`)
-
-		hover := Hover(text, snapshot, protocol.Position{Line: 1, Character: 6})
-		tAssert.NotNil(hover)
-		if hover == nil {
-			return
-		}
-
-		content, ok := hover.Contents.(protocol.MarkupContent)
-		tAssert.True(ok)
-		if !ok {
-			return
-		}
-		tAssert.Contains(content.Value, `enum Status: float { Pending = 0.0, Done = 0.5 }`)
-
-		symbols := DocumentSymbols(text, snapshot)
-		if tAssert.Len(symbols, 1) {
-			tAssert.Equal("0.0", lo.FromPtr(symbols[0].Children[0].Detail))
-			tAssert.Equal("0.5", lo.FromPtr(symbols[0].Children[1].Detail))
-		}
 	})
 
 	It("offers string and style actions", func() {

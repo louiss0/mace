@@ -225,8 +225,6 @@ func (p *Parser) parseDeclaration() (ast.Declaration, error) {
 		return p.parseDocDeclaration(ast.DocumentationKindGeneral, lexer.TokenGenDoc, "gen_doc")
 	case lexer.TokenSchemaDoc:
 		return p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
-	case lexer.TokenEnum:
-		return p.parseEnumDeclaration()
 	default:
 		return p.parseVariableDeclaration()
 	}
@@ -437,119 +435,6 @@ func (p *Parser) parseDocDeclaration(kind ast.DocumentationKind, keywordType lex
 	}
 
 	return ast.DocDeclaration{Kind: kind, KeywordToken: keywordToken, TargetToken: targetToken, Target: targetToken.Lexeme, Documentation: documentation}, nil
-}
-
-func (p *Parser) parseEnumDeclaration() (ast.Declaration, error) {
-	if _, err := p.consume(lexer.TokenEnum, "parser: expected 'enum'"); err != nil {
-		return nil, err
-	}
-
-	nameToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier in enum declaration")
-	if err != nil {
-		return nil, err
-	}
-
-	if _, err := p.consume(lexer.TokenColon, "parser: expected ':' in enum declaration"); err != nil {
-		return nil, err
-	}
-
-	backingType, err := p.parseEnumBackingType()
-	if err != nil {
-		return nil, err
-	}
-
-	if _, err := p.consume(lexer.TokenLBrace, "parser: expected '{' to start enum declaration"); err != nil {
-		return nil, err
-	}
-
-	members := []ast.EnumMember{}
-	for !p.isAtEnd() && p.current().Type != lexer.TokenRBrace {
-		member, err := p.parseEnumMember()
-		if err != nil {
-			return nil, err
-		}
-		members = append(members, member)
-
-		if err := p.consumeRecordSeparator("enum member"); err != nil {
-			return nil, err
-		}
-	}
-
-	if _, err := p.consume(lexer.TokenRBrace, "parser: expected '}' to close enum declaration"); err != nil {
-		return nil, err
-	}
-
-	p.consumeOptionalToken(lexer.TokenSemicolon)
-
-	return ast.EnumDeclaration{
-		NameToken:   nameToken,
-		Name:        nameToken.Lexeme,
-		BackingType: backingType,
-		Members:     members,
-	}, nil
-}
-
-func (p *Parser) parseEnumBackingType() (ast.PrimitiveType, error) {
-	switch p.current().Type {
-	case lexer.TokenStringType, lexer.TokenIntType, lexer.TokenFloatType, lexer.TokenHexIntType, lexer.TokenHexFloatType, lexer.TokenBooleanType:
-		token := p.current()
-		p.advance()
-		return ast.PrimitiveType{Name: token.Lexeme}, nil
-	default:
-		return ast.PrimitiveType{}, p.unexpectedTokenError("parser: expected enum backing type")
-	}
-}
-
-func (p *Parser) parseEnumMember() (ast.EnumMember, error) {
-	nameToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier in enum member")
-	if err != nil {
-		return ast.EnumMember{}, err
-	}
-
-	member := ast.EnumMember{
-		NameToken: nameToken,
-		Name:      nameToken.Lexeme,
-	}
-
-	if p.current().Type == lexer.TokenAssign {
-		p.advance()
-
-		value, err := p.parseEnumMemberValue()
-		if err != nil {
-			return ast.EnumMember{}, err
-		}
-
-		member.HasValue = true
-		member.Value = value
-	}
-
-	member.Description = p.parseOptionalInlineDescription()
-	return member, nil
-}
-
-func (p *Parser) parseEnumMemberValue() (ast.Expression, error) {
-	switch token := p.current(); token.Type {
-	case lexer.TokenString:
-		p.advance()
-		return ast.StringLiteral{Lexeme: token.Lexeme}, nil
-	case lexer.TokenInt:
-		p.advance()
-		return ast.IntLiteral{Lexeme: token.Lexeme}, nil
-	case lexer.TokenFloat:
-		p.advance()
-		return ast.FloatLiteral{Lexeme: token.Lexeme}, nil
-	case lexer.TokenHexInt:
-		p.advance()
-		return ast.HexIntLiteral{Lexeme: token.Lexeme}, nil
-	case lexer.TokenHexFloat:
-		p.advance()
-		return ast.HexFloatLiteral{Lexeme: token.Lexeme}, nil
-	case lexer.TokenBoolean:
-		p.advance()
-		return ast.BooleanLiteral{Value: token.Lexeme == "true"}, nil
-	default:
-		return nil, p.unexpectedTokenError("parser: expected enum member value")
-	}
 }
 
 func (p *Parser) parseRecordType() (ast.RecordType, error) {
@@ -906,6 +791,8 @@ func (p *Parser) parseTypeReference() (ast.TypeReference, error) {
 			return nil, err
 		}
 		return ast.VariantType{Members: members}, nil
+	case lexer.TokenChoice:
+		return p.parseChoiceType()
 	case lexer.TokenLBrace:
 		return p.parseRecordType()
 	case lexer.TokenIdentifier:
@@ -914,6 +801,62 @@ func (p *Parser) parseTypeReference() (ast.TypeReference, error) {
 		return ast.NamedType{Name: token.Lexeme}, nil
 	default:
 		return nil, p.unexpectedTokenError("parser: expected type reference")
+	}
+}
+
+func (p *Parser) parseChoiceType() (ast.TypeReference, error) {
+	if _, err := p.consume(lexer.TokenChoice, "parser: expected 'choice'"); err != nil {
+		return nil, err
+	}
+	if _, err := p.consume(lexer.TokenLBracket, "parser: expected '[' after choice type"); err != nil {
+		return nil, err
+	}
+
+	members := []ast.Expression{}
+	for {
+		member, err := p.parseChoiceMember()
+		if err != nil {
+			return nil, err
+		}
+		members = append(members, member)
+		if p.current().Type != lexer.TokenComma {
+			break
+		}
+		p.advance()
+	}
+
+	if _, err := p.consume(lexer.TokenRBracket, "parser: expected ']' after choice type"); err != nil {
+		return nil, err
+	}
+
+	return ast.ChoiceType{Members: members}, nil
+}
+
+func (p *Parser) parseChoiceMember() (ast.Expression, error) {
+	switch token := p.current(); token.Type {
+	case lexer.TokenString:
+		p.advance()
+		return ast.StringLiteral{Lexeme: token.Lexeme}, nil
+	case lexer.TokenInt:
+		p.advance()
+		return ast.IntLiteral{Lexeme: token.Lexeme}, nil
+	case lexer.TokenFloat:
+		p.advance()
+		return ast.FloatLiteral{Lexeme: token.Lexeme}, nil
+	case lexer.TokenHexInt:
+		p.advance()
+		return ast.HexIntLiteral{Lexeme: token.Lexeme}, nil
+	case lexer.TokenHexFloat:
+		p.advance()
+		return ast.HexFloatLiteral{Lexeme: token.Lexeme}, nil
+	case lexer.TokenBoolean:
+		p.advance()
+		return ast.BooleanLiteral{Value: token.Lexeme == "true"}, nil
+	case lexer.TokenIdentifier:
+		p.advance()
+		return ast.Identifier{Name: token.Lexeme}, nil
+	default:
+		return nil, p.unexpectedTokenError("parser: expected literal or choice name")
 	}
 }
 
