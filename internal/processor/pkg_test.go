@@ -383,7 +383,7 @@ string greeting = "Hello";
 schema_doc greeting {
   summary: "Invalid target.";
 };
-|===|`), "schema_doc target \"greeting\" must reference a schema, enum, or object-valued variable"),
+|===|`), "schema_doc target \"greeting\" must reference a schema or object-valued variable"),
 		Entry("gen_doc rejects object variables", wrapScriptWithOutput(`|===|
 schema User: {
   name: string;
@@ -455,7 +455,7 @@ schema_doc User {
 schema User: {
   name: string;
 };
-|===|`), "must appear after its schema, enum, or object-valued variable declaration"),
+|===|`), "must appear after its schema or object-valued variable declaration"),
 		Entry("gen_doc must appear after its type declaration", wrapScriptWithOutput(`|===|
 gen_doc Name {
   summary: "Late-bound docs";

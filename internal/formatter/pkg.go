@@ -190,42 +190,9 @@ func formatDeclaration(declaration ast.Declaration) (string, error) {
 		return fmt.Sprintf("schema %s: %s", typedDeclaration.Name, recordType), nil
 	case ast.DocDeclaration:
 		return formatDocDeclaration(typedDeclaration)
-	case ast.EnumDeclaration:
-		return formatEnumDeclaration(typedDeclaration)
 	default:
 		return "", fmt.Errorf("format declaration: unsupported %T", declaration)
 	}
-}
-
-func formatEnumDeclaration(declaration ast.EnumDeclaration) (string, error) {
-	if len(declaration.Members) == 0 {
-		return fmt.Sprintf("enum %s: %s {}", declaration.Name, declaration.BackingType.Name), nil
-	}
-
-	lines := []string{fmt.Sprintf("enum %s: %s {", declaration.Name, declaration.BackingType.Name)}
-	for index, member := range declaration.Members {
-		value, err := formatEnumMember(member, index < len(declaration.Members)-1)
-		if err != nil {
-			return "", err
-		}
-		lines = append(lines, "  "+value)
-	}
-	lines = append(lines, "}")
-	return strings.Join(lines, "\n"), nil
-}
-
-func formatEnumMember(member ast.EnumMember, trailingComma bool) (string, error) {
-	description := formatInlineDescription(member.Description)
-	if !member.HasValue {
-		return formatTrailingComma(member.Name+description, trailingComma), nil
-	}
-
-	value, err := formatExpressionWithDepth(member.Value, 0)
-	if err != nil {
-		return "", err
-	}
-
-	return formatTrailingComma(fmt.Sprintf("%s = %s%s", member.Name, value, description), trailingComma), nil
 }
 
 func formatTypeReference(typeReference ast.TypeReference) (string, error) {

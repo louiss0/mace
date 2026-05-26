@@ -1313,14 +1313,14 @@ func validateDocDeclaration(declaration ast.DocDeclaration, symbols *symbolTable
 	isObjectVariable := hasVariableType && variableType.kind == ValueRecord
 	if declaration.Kind == ast.DocumentationKindSchema {
 		keyword = "schema_doc"
-		if !declared || (declaredKind != symbolKindSchema && declaredKind != symbolKindEnum && declaredKind != symbolKindVariable) {
-			return validationErrorf("schema_doc target %q must appear after its schema, enum, or object-valued variable declaration", declaration.Target)
+		if !declared || (declaredKind != symbolKindSchema && declaredKind != symbolKindVariable) {
+			return validationErrorf("schema_doc target %q must appear after its schema or object-valued variable declaration", declaration.Target)
 		}
-		if targetKind != symbolKindSchema && targetKind != symbolKindEnum && targetKind != symbolKindVariable {
-			return validationErrorf("schema_doc target %q must reference a schema, enum, or object-valued variable", declaration.Target)
+		if targetKind != symbolKindSchema && targetKind != symbolKindVariable {
+			return validationErrorf("schema_doc target %q must reference a schema or object-valued variable", declaration.Target)
 		}
 		if targetKind == symbolKindVariable && !isObjectVariable {
-			return validationErrorf("schema_doc target %q must reference a schema, enum, or object-valued variable", declaration.Target)
+			return validationErrorf("schema_doc target %q must reference a schema or object-valued variable", declaration.Target)
 		}
 	} else {
 		if !declared || (declaredKind != symbolKindType && declaredKind != symbolKindVariable) {

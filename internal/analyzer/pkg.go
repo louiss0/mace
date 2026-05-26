@@ -155,17 +155,6 @@ func DocumentSymbols(text string, snapshot Snapshot) []protocol.DocumentSymbol {
 		switch declaration := item.(type) {
 		case ast.TypeDeclaration:
 			return newSymbol(text, declaration.Name, typeReferenceDetail(declaration.Type), protocol.SymbolKindClass, nil), true
-		case ast.EnumDeclaration:
-			children := lo.Map(declaration.Members, func(member ast.EnumMember, index int) protocol.DocumentSymbol {
-				detail := member.Name
-				if member.HasValue {
-					detail = expressionSummary(member.Value)
-				} else if implicitValue, ok := implicitEnumMemberValueDetail(declaration.BackingType.Name, member.Name, index); ok {
-					detail = implicitValue
-				}
-				return newSymbol(text, member.Name, detail, protocol.SymbolKindEnumMember, nil)
-			})
-			return newSymbol(text, declaration.Name, declaration.BackingType.Name, protocol.SymbolKindEnum, children), true
 		case ast.SchemaDeclaration:
 			children := lo.Map(declaration.Type.Fields, func(field ast.SchemaField, _ int) protocol.DocumentSymbol {
 				return newSymbol(text, field.Name, fieldTypeDetail(field.Type), protocol.SymbolKindField, nil)

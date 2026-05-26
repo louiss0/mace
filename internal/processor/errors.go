@@ -122,7 +122,7 @@ func inferErrorKind(message string) ErrorKind {
 		return ErrorImport
 	case strings.Contains(message, "directive"):
 		return ErrorDirective
-	case strings.Contains(message, "declaration") || strings.Contains(message, "enum") || strings.Contains(message, "type alias"):
+	case strings.Contains(message, "declaration") || strings.Contains(message, "type alias"):
 		return ErrorDeclaration
 	case strings.Contains(message, "operator") || strings.Contains(message, "operands") || strings.Contains(message, "division by zero") || strings.Contains(message, "exponent") || strings.Contains(message, "shift count"):
 		return ErrorOperator
