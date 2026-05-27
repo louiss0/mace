@@ -1,0 +1,23 @@
+|==================================================|
+type ReadAction: choice["read"];
+type WriteAction: choice["write", "approve"];
+type Permission: choice[ReadAction, WriteAction];
+type Role: choice["admin", "auditor"];
+
+schema AccessGrant: {
+  role: Role,
+  permission: Permission,
+  resource: string,
+};
+
+AccessGrant grant = {
+  role: "admin",
+  permission: "approve",
+  resource: "invoice",
+};
+|==================================================|
+
+[output = data]
+{
+  result: grant,
+}

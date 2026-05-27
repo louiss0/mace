@@ -1,0 +1,22 @@
+|==================================================|
+type PrimaryChannel: choice["email", "sms"];
+type SupportChannel: choice["chat", "phone"];
+type ContactChannel: choice[PrimaryChannel, SupportChannel];
+
+schema ContactPreference: {
+  customer_id: string,
+  preferred: ContactChannel,
+  fallback: ContactChannel,
+};
+
+ContactPreference preference = {
+  customer_id: "CUST-42",
+  preferred: "email",
+  fallback: "chat",
+};
+|==================================================|
+
+[output = data]
+{
+  result: preference,
+}

@@ -513,6 +513,25 @@ Value third = true;
 		tAssert.NoError(err)
 	})
 
+	DescribeTable("accepts choice variants with primitive literal fallbacks",
+		func(choiceType string, primitiveType string, presetValue string, fallbackValue string) {
+			processor := New()
+			_, err := processor.Process(wrapScriptWithOutput(fmt.Sprintf(`|===|
+type Preset: %s;
+type Value: variant[Preset, %s];
+Value preset = %s;
+Value fallback = %s;
+|===|`, choiceType, primitiveType, presetValue, fallbackValue)))
+			tAssert.NoError(err)
+		},
+		Entry("string preset with string fallback", `choice["approved"]`, "string", `"approved"`, `"custom"`),
+		Entry("int preset with int fallback", `choice[1]`, "int", `1`, `2`),
+		Entry("float preset with float fallback", `choice[1.5]`, "float", `1.5`, `2.5`),
+		Entry("hex int preset with hex int fallback", `choice[0x1]`, "hex_int", `0x1`, `0x2`),
+		Entry("hex float preset with hex float fallback", `choice[0x1.8]`, "hex_float", `0x1.8`, `0x2.8`),
+		Entry("boolean preset with boolean fallback", `choice[true]`, "boolean", `true`, `false`),
+	)
+
 	It("accepts union schema composition aliases", func() {
 		processor := New()
 		result, err := processor.Process(`|===|
@@ -960,6 +979,44 @@ from "testdata/imports/metrics.mace" import Hidden;
 		}}),
 		Entry("resolves schema_file relative to file", "testdata/schema_file/consumer.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
 			"name": {kind: ValueString, string: "Ada"},
+		}}),
+	)
+
+	DescribeTable("processes practical choice fixtures",
+		func(path string, expected expectedValue) {
+			processor := New()
+			result, err := processor.ProcessFile(path)
+			tAssert.NoError(err)
+
+			actual := requireOutputValue(result, "result")
+			assertExpectedValue(actual, expected)
+		},
+		Entry("deployment environment choices", "testdata/choices/deployment.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+			"app":         {kind: ValueString, string: "billing-api"},
+			"environment": {kind: ValueString, string: "prod"},
+			"region":      {kind: ValueString, string: "us-east-1"},
+			"replicas":    {kind: ValueInt, int64: 4},
+		}}),
+		Entry("nested permission choices", "testdata/choices/permissions.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+			"role":       {kind: ValueString, string: "admin"},
+			"permission": {kind: ValueString, string: "approve"},
+			"resource":   {kind: ValueString, string: "invoice"},
+		}}),
+		Entry("mixed scalar shipping choices", "testdata/choices/shipping.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+			"order_id":           {kind: ValueString, string: "ORD-1001"},
+			"method":             {kind: ValueString, string: "express"},
+			"package_tier":       {kind: ValueInt, int64: 2},
+			"signature_required": {kind: ValueBoolean, bool: true},
+		}}),
+		Entry("composed contact channel choices", "testdata/choices/mixed_choices.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+			"customer_id": {kind: ValueString, string: "CUST-42"},
+			"preferred":   {kind: ValueString, string: "email"},
+			"fallback":    {kind: ValueString, string: "chat"},
+		}}),
+		Entry("choice nested inside variant", "testdata/choices/choice_variant.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+			"reviewer": {kind: ValueString, string: "ada"},
+			"outcome":  {kind: ValueString, string: "approved"},
+			"note":     {kind: ValueString, string: "ready to ship"},
 		}}),
 	)
 

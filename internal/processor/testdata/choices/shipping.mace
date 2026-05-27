@@ -1,0 +1,24 @@
+|==================================================|
+type ShippingMethod: choice["standard", "express", "overnight"];
+type PackageTier: choice[1, 2, 3];
+type SignatureRequired: choice[true, false];
+
+schema Shipment: {
+  order_id: string,
+  method: ShippingMethod,
+  package_tier: PackageTier,
+  signature_required: SignatureRequired,
+};
+
+Shipment shipment = {
+  order_id: "ORD-1001",
+  method: "express",
+  package_tier: 2,
+  signature_required: true,
+};
+|==================================================|
+
+[output = data]
+{
+  result: shipment,
+}
