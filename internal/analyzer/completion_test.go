@@ -158,6 +158,128 @@ var _ = Describe("completion analysis", func() {
 		tAssert.Contains(labels, `"Strawberry"`)
 	})
 
+	It("suggests choice values for script variable initializers", func() {
+		text := `|===|
+ type Fruit: choice["Apple", "Strawberry"];
+ Fruit favorite =
+|===|
+[output = data] {}`
+
+		position := protocol.Position{
+			Line:      2,
+			Character: uint32(len(` Fruit favorite =`)),
+		}
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+			return item.Label
+		})
+
+		tAssert.Contains(labels, `"Apple"`)
+		tAssert.Contains(labels, `"Strawberry"`)
+	})
+
+	It("suggests unquoted choice values inside script strings", func() {
+		text := `|===|
+ type Fruit: choice["Apple", "Strawberry"];
+ Fruit favorite = "A
+|===|
+[output = data] {}`
+
+		position := protocol.Position{
+			Line:      2,
+			Character: uint32(len(` Fruit favorite = "A`)),
+		}
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+			return item.Label
+		})
+
+		tAssert.Contains(labels, "Apple")
+		tAssert.NotContains(labels, `"Apple"`)
+		tAssert.NotContains(labels, "Strawberry")
+	})
+
+	It("suggests choice values inside script variable variants", func() {
+		text := `|===|
+ type Status: choice["pending", "approved"];
+ type Label: variant[Status, string];
+ Label label =
+|===|
+[output = data] {}`
+
+		position := protocol.Position{
+			Line:      3,
+			Character: uint32(len(` Label label =`)),
+		}
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+			return item.Label
+		})
+
+		tAssert.Contains(labels, `"approved"`)
+		tAssert.Contains(labels, `"pending"`)
+	})
+
+	It("suggests choice values for script variable record fields", func() {
+		text := `|===|
+ type Fruit: choice["Apple", "Strawberry"];
+ schema Basket: { favorite_fruit: Fruit; };
+ Basket basket = {
+   favorite_fruit:
+ };
+|===|
+[output = data] {}`
+
+		position := protocol.Position{
+			Line:      4,
+			Character: uint32(len(`   favorite_fruit: `)),
+		}
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+			return item.Label
+		})
+
+		tAssert.Contains(labels, `"Apple"`)
+		tAssert.Contains(labels, `"Strawberry"`)
+	})
+
+	It("suggests unquoted choice values inside record field strings", func() {
+		text := `|===|
+ type Fruit: choice["Apple", "Strawberry"];
+ schema Basket: { favorite_fruit: Fruit; };
+ Basket basket = {
+   favorite_fruit: "Str
+ };
+|===|
+[output = data] {}`
+
+		position := protocol.Position{
+			Line:      4,
+			Character: uint32(len(`   favorite_fruit: "Str`)),
+		}
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+			return item.Label
+		})
+
+		tAssert.Equal([]string{"Strawberry"}, labels)
+	})
+
 	It("suggests choice values inside variants while keeping imprecise alternatives", func() {
 		text := `|===|
  type Role: choice["Admin", "Member"];

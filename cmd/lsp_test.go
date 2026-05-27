@@ -908,6 +908,78 @@ ch
 		tAssert.Contains(labels, "choice")
 	})
 
+	It("suggests choice values for script variable initializers", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+type Fruit: choice["Apple", "Strawberry"];
+Fruit favorite =
+|===|
+[output = data] {}`, nil)
+
+		labels := completeLabels(server, uri, 2, uint32(len(`Fruit favorite =`)))
+		tAssert.Contains(labels, `"Apple"`)
+		tAssert.Contains(labels, `"Strawberry"`)
+	})
+
+	It("suggests unquoted choice values inside script strings", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+type Fruit: choice["Apple", "Strawberry"];
+Fruit favorite = "A
+|===|
+[output = data] {}`, nil)
+
+		labels := completeLabels(server, uri, 2, uint32(len(`Fruit favorite = "A`)))
+		tAssert.Contains(labels, "Apple")
+		tAssert.NotContains(labels, `"Apple"`)
+		tAssert.NotContains(labels, "Strawberry")
+	})
+
+	It("suggests choice values for script variable variants", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+type Status: choice["pending", "approved"];
+type Label: variant[Status, string];
+Label label =
+|===|
+[output = data] {}`, nil)
+
+		labels := completeLabels(server, uri, 3, uint32(len(`Label label =`)))
+		tAssert.Contains(labels, `"approved"`)
+		tAssert.Contains(labels, `"pending"`)
+	})
+
+	It("suggests choice values for script variable record fields", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+type Fruit: choice["Apple", "Strawberry"];
+schema Basket: { favorite_fruit: Fruit; };
+Basket basket = {
+  favorite_fruit:
+};
+|===|
+[output = data] {}`, nil)
+
+		labels := completeLabels(server, uri, 4, uint32(len(`  favorite_fruit: `)))
+		tAssert.Contains(labels, `"Apple"`)
+		tAssert.Contains(labels, `"Strawberry"`)
+	})
+
+	It("suggests unquoted choice values inside record field strings", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+type Fruit: choice["Apple", "Strawberry"];
+schema Basket: { favorite_fruit: Fruit; };
+Basket basket = {
+  favorite_fruit: "Str
+};
+|===|
+[output = data] {}`, nil)
+
+		labels := completeLabels(server, uri, 4, uint32(len(`  favorite_fruit: "Str`)))
+		tAssert.Equal([]string{"Strawberry"}, labels)
+	})
+
 	It("suggests array indexes for script variables", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|

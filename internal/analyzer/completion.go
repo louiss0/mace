@@ -114,6 +114,10 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 }
 
 func initializerCompletionItems(document document, uri protocol.DocumentUri, position protocol.Position) ([]protocol.CompletionItem, bool) {
+	if items, handled := stringLiteralInitializerCompletionItems(document, uri, position, false); handled {
+		return items, true
+	}
+
 	placeholderPosition, ok := completionPlaceholderPosition(document.text, position, "=:")
 	if !ok {
 		return nil, false
@@ -136,10 +140,14 @@ func initializerCompletionItems(document document, uri protocol.DocumentUri, pos
 		return nil, false
 	}
 
-	return sortCompletionItems(completionItemsForType(expectedType, model, len(path) > 0)), true
+	return sortCompletionItems(completionItemsForType(expectedType, model, completionOptions{allowSchemaLiteral: len(path) > 0})), true
 }
 
 func outputInitializerCompletionItems(document document, uri protocol.DocumentUri, position protocol.Position) ([]protocol.CompletionItem, bool) {
+	if items, handled := stringLiteralInitializerCompletionItems(document, uri, position, true); handled {
+		return items, true
+	}
+
 	placeholderPosition, ok := completionPlaceholderPosition(document.text, position, ":")
 	if !ok {
 		return nil, false
@@ -162,7 +170,48 @@ func outputInitializerCompletionItems(document document, uri protocol.DocumentUr
 		return nil, false
 	}
 
-	return sortCompletionItems(completionItemsForType(expectedType, model, len(path) > 1)), true
+	return sortCompletionItems(completionItemsForType(expectedType, model, completionOptions{allowSchemaLiteral: len(path) > 1})), true
+}
+
+func stringLiteralInitializerCompletionItems(document document, uri protocol.DocumentUri, position protocol.Position, output bool) ([]protocol.CompletionItem, bool) {
+	contextValue, ok := stringLiteralCompletionContext(document.text, position)
+	if !ok {
+		return nil, false
+	}
+
+	file, ok := completionFileWithExpressionPlaceholder(document.text, contextValue.start, contextValue.end)
+	if !ok {
+		return nil, false
+	}
+
+	importBaseDir := filepath.Dir(documentPath(uri))
+	if importBaseDir == "" {
+		importBaseDir = "."
+	}
+
+	importRootDir := completionRoot(document.analysis, uri)
+	model := buildCompletionModel(*file, importBaseDir, importRootDir, map[string]completionModel{})
+	var expectedType ast.TypeReference
+	var path []string
+	if output {
+		expectedType, path, ok = placeholderOutputCompletionType(*file, model)
+	} else {
+		expectedType, path, ok = placeholderCompletionType(*file, model)
+	}
+	if !ok {
+		return nil, false
+	}
+
+	options := completionOptions{
+		allowSchemaLiteral:       len(path) > 0,
+		unquotedStringChoices:    true,
+		unquotedStringChoiceText: contextValue.prefix,
+	}
+	if output {
+		options.allowSchemaLiteral = len(path) > 1
+	}
+
+	return sortCompletionItems(completionItemsForType(expectedType, model, options)), true
 }
 
 func bareSelfCompletionItems(linePrefix string, position protocol.Position) []protocol.CompletionItem {
@@ -848,6 +897,75 @@ func currentLineSuffix(text string, position protocol.Position) string {
 	return text[index : index+lineEnd]
 }
 
+func stringLiteralCompletionContext(text string, position protocol.Position) (stringCompletionContext, bool) {
+	index := positionIndex(text, position)
+	if index < 0 {
+		return stringCompletionContext{}, false
+	}
+
+	lineStart := strings.LastIndexByte(text[:index], '\n') + 1
+	lineEnd := strings.IndexByte(text[index:], '\n')
+	if lineEnd < 0 {
+		lineEnd = len(text)
+	} else {
+		lineEnd += index
+	}
+
+	quoteStart := -1
+	var quote byte
+	escaped := false
+	for cursor := lineStart; cursor < index; cursor++ {
+		character := text[cursor]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if character == '\\' {
+			escaped = true
+			continue
+		}
+		if quote != 0 {
+			if character == quote {
+				quote = 0
+				quoteStart = -1
+			}
+			continue
+		}
+		if character == '"' || character == '\'' {
+			quote = character
+			quoteStart = cursor
+		}
+	}
+
+	if quote == 0 || quoteStart < 0 {
+		return stringCompletionContext{}, false
+	}
+
+	end := index
+	escaped = false
+	for cursor := index; cursor < lineEnd; cursor++ {
+		character := text[cursor]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if character == '\\' {
+			escaped = true
+			continue
+		}
+		if character == quote {
+			end = cursor + 1
+			break
+		}
+	}
+
+	return stringCompletionContext{
+		start:  quoteStart,
+		end:    end,
+		prefix: text[quoteStart+1 : index],
+	}, true
+}
+
 func completionPlaceholderPosition(text string, position protocol.Position, operators string) (protocol.Position, bool) {
 	linePrefix := currentLinePrefix(text, position)
 	trimmedPrefix := strings.TrimSpace(linePrefix)
@@ -1323,6 +1441,30 @@ func completionFileWithPlaceholder(text string, position protocol.Position) (*as
 	return &file, true
 }
 
+func completionFileWithExpressionPlaceholder(text string, start int, end int) (*ast.File, bool) {
+	if start < 0 || end < start || end > len(text) {
+		return nil, false
+	}
+
+	textWithPlaceholder := text[:start] + completionPlaceholderIdentifier + ";" + text[end:]
+	file, err := parseFile(textWithPlaceholder)
+	if err == nil {
+		return &file, true
+	}
+
+	position := positionFromIndex(text, start)
+	if completionScopeAt(text, position) != completionScopeScript {
+		return nil, false
+	}
+
+	file, ok := partialScriptFileWithPlaceholder(textWithPlaceholder, position)
+	if !ok {
+		return nil, false
+	}
+
+	return &file, true
+}
+
 func partialScriptFileWithPlaceholder(text string, position protocol.Position) (ast.File, bool) {
 	index := positionIndex(text, position)
 	if index < 0 {
@@ -1463,22 +1605,30 @@ func completionTypeAtPath(typeReference ast.TypeReference, path []string, model 
 	return current, true
 }
 
-func completionItemsForType(typeReference ast.TypeReference, model completionModel, allowSchemaLiteral bool) []protocol.CompletionItem {
+func completionItemsForType(typeReference ast.TypeReference, model completionModel, options completionOptions) []protocol.CompletionItem {
 	resolved := resolveCompletionType(typeReference, model, map[string]struct{}{})
 	switch resolved.kind {
 	case completionTypeChoice:
-		return lo.Map(resolved.choice.members, func(member completionChoiceMember, _ int) protocol.CompletionItem {
+		return lo.FilterMap(resolved.choice.members, func(member completionChoiceMember, _ int) (protocol.CompletionItem, bool) {
+			label := member.Label
+			if options.unquotedStringChoices {
+				unquoted, ok := unquotedStringChoiceLabel(label)
+				if !ok || !strings.HasPrefix(unquoted, options.unquotedStringChoiceText) {
+					return protocol.CompletionItem{}, false
+				}
+				label = unquoted
+			}
 			item := protocol.CompletionItem{
-				Label: member.Label,
+				Label: label,
 				Kind:  Ptr(protocol.CompletionItemKindValue),
 			}
 			if member.Detail != "" {
 				item.Detail = Ptr(member.Detail)
 			}
-			return item
+			return item, true
 		})
 	case completionTypeSchema:
-		if !allowSchemaLiteral {
+		if !options.allowSchemaLiteral {
 			return nil
 		}
 
@@ -1491,12 +1641,25 @@ func completionItemsForType(typeReference ast.TypeReference, model completionMod
 	case completionTypeVariant:
 		groups := make([][]protocol.CompletionItem, 0, len(resolved.members))
 		for _, member := range resolved.members {
-			groups = append(groups, completionItemsForType(member, model, allowSchemaLiteral))
+			groups = append(groups, completionItemsForType(member, model, options))
 		}
 		return mergeCompletionItems(groups...)
 	default:
 		return nil
 	}
+}
+
+func unquotedStringChoiceLabel(label string) (string, bool) {
+	if len(label) < 2 || label[0] != '"' || label[len(label)-1] != '"' {
+		return "", false
+	}
+
+	value, err := strconv.Unquote(label)
+	if err != nil {
+		return "", false
+	}
+
+	return value, true
 }
 
 func outputSchemaDirective(file ast.File) (string, bool) {
@@ -1947,6 +2110,18 @@ type completionChoice struct {
 type completionChoiceMember struct {
 	Label  string
 	Detail string
+}
+
+type completionOptions struct {
+	allowSchemaLiteral       bool
+	unquotedStringChoices    bool
+	unquotedStringChoiceText string
+}
+
+type stringCompletionContext struct {
+	start  int
+	end    int
+	prefix string
 }
 
 type completionTypeKind int
