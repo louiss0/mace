@@ -30,6 +30,7 @@ var (
 )
 
 const completionPlaceholderIdentifier = "mace_cursor_placeholder"
+const completionArrayPathSegment = "__array_element__"
 
 var globalKeywordCompletions = []completionDefinition{}
 
@@ -1446,23 +1447,95 @@ func completionFileWithExpressionPlaceholder(text string, start int, end int) (*
 		return nil, false
 	}
 
-	textWithPlaceholder := text[:start] + completionPlaceholderIdentifier + ";" + text[end:]
-	file, err := parseFile(textWithPlaceholder)
-	if err == nil {
-		return &file, true
-	}
-
 	position := positionFromIndex(text, start)
-	if completionScopeAt(text, position) != completionScopeScript {
-		return nil, false
+	replacements := []string{completionPlaceholderIdentifier}
+	closers := completionExpressionClosers(text, start)
+	if closers != "" {
+		replacements = append(replacements, completionPlaceholderIdentifier+closers)
+	}
+	replacements = append(replacements, completionPlaceholderIdentifier+";")
+	if closers != "" {
+		replacements = append(replacements, completionPlaceholderIdentifier+closers+";")
 	}
 
-	file, ok := partialScriptFileWithPlaceholder(textWithPlaceholder, position)
-	if !ok {
-		return nil, false
+	for _, replacement := range lo.Uniq(replacements) {
+		textWithPlaceholder := text[:start] + replacement + text[end:]
+		file, err := parseFile(textWithPlaceholder)
+		if err == nil {
+			return &file, true
+		}
+
+		if completionScopeAt(text, position) != completionScopeScript {
+			continue
+		}
+
+		file, ok := partialScriptFileWithPlaceholder(textWithPlaceholder, position)
+		if ok {
+			return &file, true
+		}
 	}
 
-	return &file, true
+	return nil, false
+}
+
+func completionExpressionClosers(text string, index int) string {
+	if index < 0 || index > len(text) {
+		return ""
+	}
+
+	lineStart := strings.LastIndexByte(text[:index], '\n') + 1
+	stack := make([]byte, 0)
+	var quote byte
+	escaped := false
+	for cursor := lineStart; cursor < index; cursor++ {
+		character := text[cursor]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if character == '\\' {
+			escaped = true
+			continue
+		}
+		if quote != 0 {
+			if character == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch character {
+		case '\'', '"':
+			quote = character
+		case '(', '[', '{':
+			stack = append(stack, character)
+		case ')':
+			stack = popCompletionDelimiter(stack, '(')
+		case ']':
+			stack = popCompletionDelimiter(stack, '[')
+		case '}':
+			stack = popCompletionDelimiter(stack, '{')
+		}
+	}
+
+	closers := make([]byte, 0, len(stack))
+	for cursor := len(stack) - 1; cursor >= 0; cursor-- {
+		switch stack[cursor] {
+		case '(':
+			closers = append(closers, ')')
+		case '[':
+			closers = append(closers, ']')
+		case '{':
+			closers = append(closers, '}')
+		}
+	}
+	return string(closers)
+}
+
+func popCompletionDelimiter(stack []byte, expected byte) []byte {
+	if len(stack) == 0 || stack[len(stack)-1] != expected {
+		return stack
+	}
+	return stack[:len(stack)-1]
 }
 
 func partialScriptFileWithPlaceholder(text string, position protocol.Position) (ast.File, bool) {
@@ -1561,7 +1634,7 @@ func placeholderPath(expression ast.Expression) ([]string, bool) {
 		for _, element := range typed.Elements {
 			path, ok := placeholderPath(element)
 			if ok {
-				return path, true
+				return append([]string{completionArrayPathSegment}, path...), true
 			}
 		}
 	case ast.PrefixExpression:
@@ -1588,6 +1661,13 @@ func completionTypeAtPath(typeReference ast.TypeReference, path []string, model 
 	current := typeReference
 	for _, segment := range path {
 		resolved := resolveCompletionType(current, model, map[string]struct{}{})
+		if segment == completionArrayPathSegment {
+			if resolved.kind != completionTypeArray || resolved.element == nil {
+				return nil, false
+			}
+			current = resolved.element
+			continue
+		}
 		if resolved.kind != completionTypeSchema {
 			return nil, false
 		}
@@ -1750,7 +1830,7 @@ func resolveCompletionType(typeReference ast.TypeReference, model completionMode
 	case ast.PrimitiveType:
 		return completionType{kind: completionTypePrimitive, primitive: typed.Name}
 	case ast.ArrayType:
-		return completionType{kind: completionTypeArray}
+		return completionType{kind: completionTypeArray, element: typed.Element}
 	case ast.UnionType:
 		record, ok := completionUnionRecord(typed.Members, model, seen)
 		if !ok {
@@ -2138,6 +2218,7 @@ const (
 type completionType struct {
 	kind      completionTypeKind
 	primitive string
+	element   ast.TypeReference
 	record    ast.RecordType
 	choice    completionChoice
 	members   []ast.TypeReference

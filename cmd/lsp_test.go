@@ -980,6 +980,20 @@ Basket basket = {
 		tAssert.Equal([]string{"Strawberry"}, labels)
 	})
 
+	It("suggests unquoted choice values inside array element strings", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+type Fruit: choice["Apple", "Strawberry"];
+array<Fruit> favorites = ["A
+|===|
+[output = data] {}`, nil)
+
+		labels := completeLabels(server, uri, 2, uint32(len(`array<Fruit> favorites = ["A`)))
+		tAssert.Contains(labels, "Apple")
+		tAssert.NotContains(labels, `"Apple"`)
+		tAssert.NotContains(labels, "Strawberry")
+	})
+
 	It("suggests array indexes for script variables", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|

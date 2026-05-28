@@ -280,6 +280,30 @@ var _ = Describe("completion analysis", func() {
 		tAssert.Equal([]string{"Strawberry"}, labels)
 	})
 
+	It("suggests unquoted choice values inside array element strings", func() {
+		text := `|===|
+ type Fruit: choice["Apple", "Strawberry"];
+ array<Fruit> favorites = ["A
+|===|
+[output = data] {}`
+
+		position := protocol.Position{
+			Line:      2,
+			Character: uint32(len(` array<Fruit> favorites = ["A`)),
+		}
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+			return item.Label
+		})
+
+		tAssert.Contains(labels, "Apple")
+		tAssert.NotContains(labels, `"Apple"`)
+		tAssert.NotContains(labels, "Strawberry")
+	})
+
 	It("suggests choice values inside variants while keeping imprecise alternatives", func() {
 		text := `|===|
  type Role: choice["Admin", "Member"];
