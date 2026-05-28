@@ -1594,14 +1594,9 @@ func validateExpressionAgainstVariantMembers(expression ast.Expression, members 
 		return err
 	}
 
-	matchCount := 0
-	for _, member := range members {
-		if err := ensureAssignable(member, actualType); err != nil {
-			continue
-		}
-		if err := validateExpressionAgainstType(expression, member, variables, symbols, types, schemas, enums); err == nil {
-			matchCount++
-		}
+	matchCount := countVariantChoiceMatchesForExpression(expression, actualType, members, variables, symbols, types, schemas, enums)
+	if matchCount == 0 {
+		matchCount = countVariantMatchesForExpression(expression, actualType, members, variables, symbols, types, schemas, enums)
 	}
 
 	if matchCount == 1 {
@@ -1612,6 +1607,35 @@ func validateExpressionAgainstVariantMembers(expression ast.Expression, members 
 	}
 
 	return validationErrorf("type mismatch: expected exactly one variant member for %s", valueType{members: members}.name())
+}
+
+func countVariantChoiceMatchesForExpression(expression ast.Expression, actualType valueType, members []valueType, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) int {
+	matchCount := 0
+	for _, member := range members {
+		if len(member.choiceValues) == 0 {
+			continue
+		}
+		if err := ensureAssignable(member, actualType); err != nil {
+			continue
+		}
+		if err := validateExpressionAgainstType(expression, member, variables, symbols, types, schemas, enums); err == nil {
+			matchCount++
+		}
+	}
+	return matchCount
+}
+
+func countVariantMatchesForExpression(expression ast.Expression, actualType valueType, members []valueType, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) int {
+	matchCount := 0
+	for _, member := range members {
+		if err := ensureAssignable(member, actualType); err != nil {
+			continue
+		}
+		if err := validateExpressionAgainstType(expression, member, variables, symbols, types, schemas, enums); err == nil {
+			matchCount++
+		}
+	}
+	return matchCount
 }
 
 func validateRecordLiteral(expr ast.RecordLiteral, schemaName string, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
@@ -1790,11 +1814,9 @@ func validateEvaluatedValueAgainstType(value Value, expectedType valueType, symb
 }
 
 func validateEvaluatedValueAgainstVariantMembers(value Value, members []valueType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
-	matchCount := 0
-	for _, member := range members {
-		if err := validateEvaluatedValueAgainstType(value, member, symbols, types, schemas, enums); err == nil {
-			matchCount++
-		}
+	matchCount := countVariantChoiceMatchesForValue(value, members, symbols, types, schemas, enums)
+	if matchCount == 0 {
+		matchCount = countVariantMatchesForValue(value, members, symbols, types, schemas, enums)
 	}
 
 	if matchCount == 1 {
@@ -1805,6 +1827,29 @@ func validateEvaluatedValueAgainstVariantMembers(value Value, members []valueTyp
 	}
 
 	return validationErrorf("type mismatch: expected exactly one variant member for %s", valueType{members: members}.name())
+}
+
+func countVariantChoiceMatchesForValue(value Value, members []valueType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) int {
+	matchCount := 0
+	for _, member := range members {
+		if len(member.choiceValues) == 0 {
+			continue
+		}
+		if err := validateEvaluatedValueAgainstType(value, member, symbols, types, schemas, enums); err == nil {
+			matchCount++
+		}
+	}
+	return matchCount
+}
+
+func countVariantMatchesForValue(value Value, members []valueType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) int {
+	matchCount := 0
+	for _, member := range members {
+		if err := validateEvaluatedValueAgainstType(value, member, symbols, types, schemas, enums); err == nil {
+			matchCount++
+		}
+	}
+	return matchCount
 }
 
 func schemaFieldMap(schema ast.RecordType) map[string]ast.SchemaField {

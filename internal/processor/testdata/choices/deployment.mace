@@ -1,0 +1,23 @@
+|===================================================|
+type Environment: choice["dev", "staging", "prod"];
+type Region: choice["us-east-1", "eu-west-1"];
+
+schema Deployment: {
+  app: string,
+  environment: Environment,
+  region: Region,
+  replicas: int,
+};
+
+Deployment deployment = {
+  app: "billing-api",
+  environment: "prod",
+  region: "us-east-1",
+  replicas: 4,
+};
+|===================================================|
+
+[output = data]
+{
+  result: deployment,
+}
