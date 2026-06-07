@@ -222,13 +222,25 @@ int count = "Ada";
 		}
 	})
 
-	It("does not report diagnostics for an unused injectable without an initializer", func() {
+	It("does not report diagnostics for a used nullable variable", func() {
 		snapshot := analyzeDocument(`|===|
-injectable string env;
+nullable string env = null;
 |===|
-[output = data] {}`)
+[output = data] { value: env; }`)
 
 		tAssert.Empty(snapshot.diagnostics)
+	})
+
+	It("reports direct null output fields", func() {
+		snapshot := analyzeDocument(`[output = data]
+{
+  value: null;
+}`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "null can only be assigned to nullable variables and optional schema fields")
+			tAssert.Equal(string(diagnosticTypeInvalidNullUsage), requireDiagnosticCode(snapshot.diagnostics[0]))
+		}
 	})
 
 	It("reports empty script blocks as syntax errors", func() {
@@ -652,63 +664,6 @@ array<string> values = [1, 2];
 		})
 	})
 
-	Describe("injectable variable actions", func() {
-		documentPath := filepath.Join("workspace", "document.mace")
-		uri := protocol.DocumentUri(fileURI(documentPath))
-		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
-
-		It("converts variables to injectable", func() {
-			snapshot := analyzeDocumentAt(`|===|
-string name;
-|===|
-[output = data]
-{ value: name; }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Convert variable to injectable")
-			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `injectable string name;`)
-		})
-
-		DescribeTable("adds default initializers to injectables by type", func(typeName string, variableName string, literal string) {
-			snapshot := analyzeDocumentAt(`|===|
-injectable `+typeName+` `+variableName+`;
-|===|
-[output = data]
-{ value: `+variableName+`; }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Add default initializer to injectable")
-
-			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `injectable `+typeName+` `+variableName+` = `+literal+`;`)
-		},
-			Entry("string", "string", "name", `""`),
-			Entry("int", "int", "count", "0"),
-			Entry("float", "float", "ratio", "0.0"),
-			Entry("boolean", "boolean", "enabled", "false"),
-			Entry("array", "array<string>", "names", "[]"),
-		)
-
-		It("generates injection config stubs", func() {
-			snapshot := analyzeDocumentAt(`|===|
-injectable string name;
-injectable int count;
-|===|
-[output = data]
-{ value: name; }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Generate injection config stub")
-			text := action.Edit.Changes[uri][0].NewText
-			tAssert.Contains(text, `"name": ""`)
-			tAssert.Contains(text, `"count": 0`)
-		})
-
-		It("finds all injectable variables", func() {
-			snapshot := analyzeDocumentAt(`|===|
-injectable string name;
-injectable int count;
-|===|
-[output = data]
-{ value: name; }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Find all injectable variables")
-			tAssert.Contains(action.Command.Arguments[0], "name, count")
-		})
-	})
-
 	Describe("variable fix actions", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))
@@ -736,16 +691,6 @@ string name;
 { value: name; }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Add missing initializer")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `string name = "";`)
-		})
-
-		It("marks variables injectable", func() {
-			snapshot := analyzeDocumentAt(`|===|
-string name;
-|===|
-[output = data]
-{ value: name; }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Mark variable as injectable")
-			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `injectable string name;`)
 		})
 
 		It("adds placeholder initializers", func() {

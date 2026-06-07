@@ -103,18 +103,8 @@ declaration
 (* ===================================================== *)
 
 variable_declaration
-  = injectable_variable_declaration
-  | initialized_variable_declaration ;
-
-injectable_variable_declaration
-  = "injectable" , ws1 ,
+  = [ "nullable" , ws1 ] ,
     type_reference , ws1 ,
-    identifier ,
-    [ ws0 , "=" , ws0 , expression ] ,
-    ws0 , ";" ;
-
-initialized_variable_declaration
-  = type_reference , ws1 ,
     identifier , ws0 ,
     "=" , ws0 ,
     expression ,
@@ -276,12 +266,18 @@ output_directive
 directive_pair
   = "output" , ws0 , "=" , ws0 , ( "data" | "schema" )
   | "schema_file" , ws0 , "=" , ws0 , string_literal
-  | "schema" , ws0 , "=" , ws0 , identifier ;
+  | "schema" , ws0 , "=" , ws0 , identifier
+  | "parse" , ws0 , "=" , ws0 , identifier
+  | "parse_file" , ws0 , "=" , ws0 , string_literal ;
 
 (* If `output_directive` is omitted, the output mode defaults to `data`.
    `output = schema` must appear alone.
-   `output = data` may appear alone, with `schema = <identifier>`,
-   or with `schema_file = <string_literal>`, but not both. *)
+   `parse = <identifier>` is self-contained: the identifier names the schema to
+   validate host input against; no separate `schema` directive is needed.
+   `parse_file = <string_literal>` loads schema declarations from the referenced
+   file and requires a `schema = <identifier>` directive to select which schema
+   to validate host input against.
+   `parse` and `parse_file` cannot be combined. *)
 
 output_item
   = output_field ;

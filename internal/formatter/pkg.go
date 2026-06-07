@@ -157,6 +157,9 @@ func formatDeclaration(declaration ast.Declaration) (string, error) {
 		if typedDeclaration.Injectable {
 			prefix = "injectable "
 		}
+		if typedDeclaration.Nullable {
+			prefix += "nullable "
+		}
 
 		typeReference, err := formatTypeReference(typedDeclaration.Type)
 		if err != nil {
@@ -310,6 +313,10 @@ func formatOutputDirectives(directives []ast.OutputDirective) (string, error) {
 			parts = append(parts, "schema_file = "+directive.Value)
 		case ast.OutputDirectiveSchema:
 			parts = append(parts, "schema = "+directive.Value)
+		case ast.OutputDirectiveParse:
+			parts = append(parts, "parse = "+directive.Value)
+		case ast.OutputDirectiveParseFile:
+			parts = append(parts, "parse_file = "+directive.Value)
 		default:
 			return "", fmt.Errorf("format output directive: unsupported %d", directive.Kind)
 		}

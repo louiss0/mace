@@ -464,10 +464,18 @@ func keywordToken(lexeme string) (TokenType, bool) {
 		return TokenOutput, true
 	case "schema_file":
 		return TokenSchemaFile, true
+	case "parse":
+		return TokenParse, true
+	case "parse_file":
+		return TokenParseFile, true
 	case "data":
 		return TokenData, true
-	case "injectable":
-		return TokenInjectable, true
+	case "nullable":
+		return TokenNullable, true
+	case "in":
+		return TokenIn, true
+	case "null":
+		return TokenNull, true
 	case "true", "false":
 		return TokenBoolean, true
 	default:

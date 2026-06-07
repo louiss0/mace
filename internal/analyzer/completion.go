@@ -43,8 +43,9 @@ var scriptKeywordCompletions = []completionDefinition{
 	{Label: "hex_int", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
 	{Label: "from", Kind: protocol.CompletionItemKindKeyword, Detail: "import declaration"},
 	{Label: "gen_doc", Kind: protocol.CompletionItemKindKeyword, Detail: "type or variable documentation declaration"},
-	{Label: "injectable", Kind: protocol.CompletionItemKindKeyword, Detail: "variable modifier"},
 	{Label: "int", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
+	{Label: "nullable", Kind: protocol.CompletionItemKindKeyword, Detail: "variable modifier"},
+	{Label: "null", Kind: protocol.CompletionItemKindKeyword, Detail: "null literal"},
 	{Label: "schema", Kind: protocol.CompletionItemKindKeyword, Detail: "schema declaration"},
 	{Label: "schema_doc", Kind: protocol.CompletionItemKindKeyword, Detail: "schema documentation declaration"},
 	{Label: "string", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
@@ -819,14 +820,20 @@ func nextDirectiveDefinitions(parts []string) []completionDefinition {
 		return []completionDefinition{}
 	}
 
-	if state.seenSchema || state.seenSchemaFile {
-		return []completionDefinition{}
+	var options []completionDefinition
+	if !state.seenSchema && !state.seenSchemaFile {
+		options = append(options,
+			completionDefinition{Label: "schema", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
+			completionDefinition{Label: "schema_file", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
+		)
 	}
-
-	return []completionDefinition{
-		{Label: "schema", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
-		{Label: "schema_file", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
+	if !state.seenParse && !state.seenParseFile {
+		options = append(options,
+			completionDefinition{Label: "parse", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
+			completionDefinition{Label: "parse_file", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
+		)
 	}
+	return options
 }
 
 func parseDirectiveState(parts []string) directiveState {
@@ -841,6 +848,10 @@ func parseDirectiveState(parts []string) directiveState {
 			agg.seenSchemaFile = true
 		case strings.HasPrefix(part, "schema"):
 			agg.seenSchema = true
+		case strings.HasPrefix(part, "parse_file"):
+			agg.seenParseFile = true
+		case strings.HasPrefix(part, "parse"):
+			agg.seenParse = true
 		}
 
 		return agg
@@ -2176,6 +2187,8 @@ type directiveState struct {
 	outputMode     string
 	seenSchemaFile bool
 	seenSchema     bool
+	seenParseFile  bool
+	seenParse      bool
 }
 
 type completionModel struct {

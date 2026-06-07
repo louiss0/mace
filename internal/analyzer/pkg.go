@@ -23,18 +23,20 @@ const serverName = "mace"
 var diagnosticPositionPattern = regexp.MustCompile(`at (\d+):(\d+)`)
 
 var keywordDocs = map[string]string{
-	"array":      "Declares an array type like `array<string>`.",
-	"choice":     "Declares a finite literal choice type like `choice[\"dev\", 1, true]`.",
-	"injectable": "Marks a script variable as overrideable through injections.",
-	"type":       "Declares a reusable type alias.",
-	"union":      "Declares schema composition like `union[Profile, Audit]`.",
-	"variant":    "Declares a closed variant type like `variant[string, int]`.",
+	"array":    "Declares an array type like `array<string>`.",
+	"choice":   "Declares a finite literal choice type like `choice[\"dev\", 1, true]`.",
+	"nullable": "Marks a variable as able to evaluate to `null`.",
+	"type":     "Declares a reusable type alias.",
+	"union":    "Declares schema composition like `union[Profile, Audit]`.",
+	"variant":  "Declares a closed variant type like `variant[string, int]`.",
 }
 
 var directiveKeywordDocs = map[string]string{
 	"output":      "Selects the output mode with `output = data` or `output = schema`.",
 	"schema":      "Validates `output = data` against a named local or imported schema. It does not switch output mode.",
 	"schema_file": "Loads declarations from another Mace file for output validation. It does not switch output mode.",
+	"parse":       "Validates the runtime `input` record against the active schema and exposes matching fields as output variables.",
+	"parse_file":  "Loads schema declarations from another Mace file for parse-driven validation. It still parses the runtime `input` record, not external JSON, YAML, or TOML data.",
 }
 
 var declarationKeywordDocs = map[string]string{

@@ -21,6 +21,8 @@ func scalarValueKey(value Value) (string, bool) {
 		return "hex_float:" + strconv.FormatUint(math.Float64bits(value.Float), 16), true
 	case ValueBoolean:
 		return "boolean:" + strconv.FormatBool(value.Boolean), true
+	case ValueNull:
+		return "null", true
 	default:
 		return "", false
 	}
@@ -40,6 +42,8 @@ func scalarValueDisplay(value Value) string {
 		return formatHexFloat(value.Float)
 	case ValueBoolean:
 		return strconv.FormatBool(value.Boolean)
+	case ValueNull:
+		return "null"
 	default:
 		return "unknown"
 	}

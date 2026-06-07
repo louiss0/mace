@@ -90,11 +90,11 @@ hex_float whole = 0x2.0;
 }`, stdout.String())
 		})
 
-		It("accepts injectable values as a Mace record literal", func() {
+		It("accepts parse input as a Mace record literal", func() {
 			path := writeMaceFile(`|===|
-injectable string env = "dev";
+schema Runtime: { env: string; };
 |===|
-[output = data]
+[output = data, parse = Runtime]
 {
   env: env;
 }`)
@@ -103,7 +103,7 @@ injectable string env = "dev";
 			var stderr bytes.Buffer
 
 			command := newRootCommand(&stdout, &stderr)
-			command.SetArgs([]string{"json", path, "--inject", `{ env: "prod"; }`})
+			command.SetArgs([]string{"json", path, "--input", `{ env: "prod"; }`})
 
 			err := command.Execute()
 			tAssert.NoError(err)
@@ -113,11 +113,11 @@ injectable string env = "dev";
 }`, stdout.String())
 		})
 
-		It("fails when an injectable has no runtime value or initializer", func() {
+		It("fails when parse input is missing required fields", func() {
 			path := writeMaceFile(`|===|
-injectable string env;
+schema Runtime: { env: string; };
 |===|
-[output = data]
+[output = data, parse = Runtime]
 {
   env: env;
 }`)
@@ -129,7 +129,7 @@ injectable string env;
 
 			tAssert.Equal(1, exitCode)
 			tAssert.Equal("", stdout.String())
-			tAssert.Contains(stderr.String(), `injectable "env" requires a runtime value`)
+			tAssert.Contains(stderr.String(), `missing required field`)
 		})
 	})
 
