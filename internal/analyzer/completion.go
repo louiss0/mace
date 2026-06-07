@@ -820,20 +820,20 @@ func nextDirectiveDefinitions(parts []string) []completionDefinition {
 		return []completionDefinition{}
 	}
 
-	if state.seenSchema || state.seenSchemaFile {
-		if state.seenParse || state.seenParseFile {
-			return []completionDefinition{}
-		}
-		return []completionDefinition{
-			{Label: "parse", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
-			{Label: "parse_file", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
-		}
+	var options []completionDefinition
+	if !state.seenSchema && !state.seenSchemaFile {
+		options = append(options,
+			completionDefinition{Label: "schema", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
+			completionDefinition{Label: "schema_file", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
+		)
 	}
-
-	return []completionDefinition{
-		{Label: "schema", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
-		{Label: "schema_file", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
+	if !state.seenParse && !state.seenParseFile {
+		options = append(options,
+			completionDefinition{Label: "parse", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
+			completionDefinition{Label: "parse_file", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
+		)
 	}
+	return options
 }
 
 func parseDirectiveState(parts []string) directiveState {
