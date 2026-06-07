@@ -821,14 +821,18 @@ func nextDirectiveDefinitions(parts []string) []completionDefinition {
 	}
 
 	if state.seenSchema || state.seenSchemaFile {
-		return []completionDefinition{}
+		if state.seenParse || state.seenParseFile {
+			return []completionDefinition{}
+		}
+		return []completionDefinition{
+			{Label: "parse", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
+			{Label: "parse_file", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
+		}
 	}
 
 	return []completionDefinition{
 		{Label: "schema", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
 		{Label: "schema_file", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
-		{Label: "parse", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
-		{Label: "parse_file", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
 	}
 }
 
@@ -844,6 +848,10 @@ func parseDirectiveState(parts []string) directiveState {
 			agg.seenSchemaFile = true
 		case strings.HasPrefix(part, "schema"):
 			agg.seenSchema = true
+		case strings.HasPrefix(part, "parse_file"):
+			agg.seenParseFile = true
+		case strings.HasPrefix(part, "parse"):
+			agg.seenParse = true
 		}
 
 		return agg
@@ -2179,6 +2187,8 @@ type directiveState struct {
 	outputMode     string
 	seenSchemaFile bool
 	seenSchema     bool
+	seenParseFile  bool
+	seenParse      bool
 }
 
 type completionModel struct {

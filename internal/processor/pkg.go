@@ -3782,6 +3782,9 @@ func ensureAssignable(expectedType, actualType valueType) error {
 		}
 		return invalidNullUsageError()
 	}
+	if actualType.nullable && !expectedType.nullable {
+		return invalidNullUsageError()
+	}
 	if len(expectedType.members) > 0 {
 		if len(actualType.members) > 0 {
 			for _, actualMember := range actualType.members {
