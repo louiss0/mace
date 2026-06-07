@@ -27,7 +27,6 @@ var (
 	directiveOutputValuePattern = regexp.MustCompile(`^\s*output\s*=\s*([A-Za-z_]*)$`)
 	directiveSchemaPattern      = regexp.MustCompile(`^\s*schema\s*=\s*([A-Za-z_]*)$`)
 	directiveSchemaFilePattern  = regexp.MustCompile(`^\s*schema_file\s*=\s*"([^"]*)$`)
-	directiveParseFilePattern   = regexp.MustCompile(`^\s*parse_file\s*=\s*"([^"]*)$`)
 )
 
 const completionPlaceholderIdentifier = "mace_cursor_placeholder"
