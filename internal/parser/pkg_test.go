@@ -694,9 +694,9 @@ string greeting = "Hello $(name)" /# Rendered greeting;
 			tAssert.ErrorContains(err, "inline descriptions are not allowed on variable declarations")
 		})
 
-		It("parses injectable declarations without an initializer", func() {
+		It("parses nullable declarations with null initializers", func() {
 			input := `|===|
-injectable string env;
+nullable string env = null;
 |===|
 [output = data] {}`
 
@@ -707,10 +707,11 @@ injectable string env;
 				varDecl, ok := file.Script.Items[0].(ast.VariableDeclaration)
 				tAssert.True(ok)
 				if ok {
-					tAssert.True(varDecl.Injectable)
+					tAssert.True(varDecl.Nullable)
 					tAssert.Equal("env", varDecl.Name)
-					tAssert.False(varDecl.HasValue)
-					tAssert.Nil(varDecl.Value)
+					tAssert.True(varDecl.HasValue)
+					_, ok := varDecl.Value.(ast.NullLiteral)
+					tAssert.True(ok)
 				}
 			}
 		})
@@ -991,7 +992,7 @@ schema User: {
 			file, err := parseFileInput(`|===|
 from "./shared.mace" import Name, User;
 type Alias: string;
-injectable string env;
+nullable string env = null;
 schema User: {
   name: string,
 };

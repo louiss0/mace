@@ -62,6 +62,10 @@ type BooleanLiteral struct {
 
 func (BooleanLiteral) expressionNode() {}
 
+type NullLiteral struct{}
+
+func (NullLiteral) expressionNode() {}
+
 type ArrayLiteral struct {
 	Elements []Expression
 }
@@ -156,6 +160,7 @@ type Declaration interface {
 
 type VariableDeclaration struct {
 	Injectable bool
+	Nullable   bool
 	HasValue   bool
 	Type       TypeReference
 	NameToken  lexer.Token
@@ -266,6 +271,8 @@ const (
 	OutputDirectiveOutput OutputDirectiveKind = iota
 	OutputDirectiveSchemaFile
 	OutputDirectiveSchema
+	OutputDirectiveParse
+	OutputDirectiveParseFile
 )
 
 type OutputDirective struct {

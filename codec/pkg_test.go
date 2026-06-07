@@ -189,11 +189,11 @@ hex_float whole = 0x2.0;
 		}, result.Data)
 	})
 
-	It("applies injectable values from a Go map", func() {
-		result, err := ParseWithInjections(`|===|
-injectable string env = "dev";
+	It("applies parse input values from a Go map", func() {
+		result, err := ParseWithInput(`|===|
+schema Runtime: { env: string; };
 |===|
-[output = data]
+[output = data, schema = Runtime, parse = input]
 {
   env: env;
 }`, map[string]any{
@@ -1526,12 +1526,12 @@ var _ = Describe("Unmarshal", func() {
 		tAssert.Error(err)
 	})
 
-	It("uses injectable values during unmarshal", func() {
+	It("uses parse input values during unmarshal", func() {
 		var target map[string]any
-		err := UnmarshalWithInjections(`|===|
-injectable string env = "dev";
+		err := UnmarshalWithInput(`|===|
+schema Runtime: { env: string; };
 |===|
-[output = data]
+[output = data, schema = Runtime, parse = input]
 {
   env: env;
 }`, map[string]any{

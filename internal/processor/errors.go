@@ -30,6 +30,7 @@ const (
 	CodeImportFileFailedParse    ErrorCode = "import-file-failed-parse"
 	CodeImportFileNotFound       ErrorCode = "import-file-not-found"
 	CodeInternal                 ErrorCode = "internal"
+	CodeInvalidNullUsage         ErrorCode = "invalid-null-usage"
 	CodeInvalidOutputSchemaField ErrorCode = "invalid-output-schema-field"
 	CodeMissingInjectable        ErrorCode = "missing-injectable"
 	CodeMissingRequiredField     ErrorCode = "missing-required-field"
@@ -84,6 +85,15 @@ func typeMismatchError(expected string, actual string) error {
 		"type mismatch: expected %s, got %s",
 		expected,
 		actual,
+	)
+}
+
+func invalidNullUsageError() error {
+	return diagnosticErrorf(
+		ErrorType,
+		CodeInvalidNullUsage,
+		DiagnosticFields{},
+		"null can only be assigned to nullable variables and optional schema fields",
 	)
 }
 

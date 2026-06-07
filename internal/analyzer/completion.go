@@ -27,6 +27,7 @@ var (
 	directiveOutputValuePattern = regexp.MustCompile(`^\s*output\s*=\s*([A-Za-z_]*)$`)
 	directiveSchemaPattern      = regexp.MustCompile(`^\s*schema\s*=\s*([A-Za-z_]*)$`)
 	directiveSchemaFilePattern  = regexp.MustCompile(`^\s*schema_file\s*=\s*"([^"]*)$`)
+	directiveParseFilePattern   = regexp.MustCompile(`^\s*parse_file\s*=\s*"([^"]*)$`)
 )
 
 const completionPlaceholderIdentifier = "mace_cursor_placeholder"
@@ -43,8 +44,9 @@ var scriptKeywordCompletions = []completionDefinition{
 	{Label: "hex_int", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
 	{Label: "from", Kind: protocol.CompletionItemKindKeyword, Detail: "import declaration"},
 	{Label: "gen_doc", Kind: protocol.CompletionItemKindKeyword, Detail: "type or variable documentation declaration"},
-	{Label: "injectable", Kind: protocol.CompletionItemKindKeyword, Detail: "variable modifier"},
 	{Label: "int", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
+	{Label: "nullable", Kind: protocol.CompletionItemKindKeyword, Detail: "variable modifier"},
+	{Label: "null", Kind: protocol.CompletionItemKindKeyword, Detail: "null literal"},
 	{Label: "schema", Kind: protocol.CompletionItemKindKeyword, Detail: "schema declaration"},
 	{Label: "schema_doc", Kind: protocol.CompletionItemKindKeyword, Detail: "schema documentation declaration"},
 	{Label: "string", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
@@ -826,6 +828,8 @@ func nextDirectiveDefinitions(parts []string) []completionDefinition {
 	return []completionDefinition{
 		{Label: "schema", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
 		{Label: "schema_file", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
+		{Label: "parse", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
+		{Label: "parse_file", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
 	}
 }
 

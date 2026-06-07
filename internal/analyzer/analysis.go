@@ -2787,6 +2787,12 @@ func semanticDiagnosticFromError(file ast.File, tokens []lexer.Token, err error)
 	}
 
 	if hasDiagnosticError {
+		if diagnostic, ok := nullUsageDiagnostic(tokens, diagnosticError); ok {
+			return diagnostic, true
+		}
+	}
+
+	if hasDiagnosticError {
 		if diagnostic, ok := missingInjectableDiagnostic(file, tokens, diagnosticError); ok {
 			return diagnostic, true
 		}
@@ -2870,6 +2876,21 @@ func variableTypeMismatchDiagnostic(file ast.File, tokens []lexer.Token, diagnos
 		}
 
 		return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticTypeInitializerMismatch, diagnosticError.Message), true
+	}
+
+	return protocol.Diagnostic{}, false
+}
+
+func nullUsageDiagnostic(tokens []lexer.Token, diagnosticError processor.DiagnosticError) (protocol.Diagnostic, bool) {
+	if diagnosticError.Code != processor.CodeInvalidNullUsage {
+		return protocol.Diagnostic{}, false
+	}
+
+	for _, token := range tokens {
+		if token.Type != lexer.TokenNull {
+			continue
+		}
+		return diagnosticWithCode(tokenProtocolRange(token), protocol.DiagnosticSeverityError, diagnosticTypeInvalidNullUsage, diagnosticError.Message), true
 	}
 
 	return protocol.Diagnostic{}, false
@@ -3581,8 +3602,8 @@ func expressionSummary(expression ast.Expression) string {
 
 func variableDeclarationDetail(declaration ast.VariableDeclaration) string {
 	detail := fmt.Sprintf("%s %s", typeReferenceDetail(declaration.Type), declaration.Name)
-	if declaration.Injectable {
-		detail = "injectable " + detail
+	if declaration.Nullable {
+		detail = "nullable " + detail
 	}
 	if !declaration.HasValue {
 		return detail

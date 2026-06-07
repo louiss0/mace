@@ -24,7 +24,7 @@ is documented in [the formal specification](./docs/src/content/docs/reference/sp
 - Deterministic expression evaluation
 - Output validation against local schemas or external schema files
 - Relative imports between Mace files
-- Runtime injectables for environment-specific values
+- Schema-validated runtime input through `parse = input` and `parse_file`
 - Canonical source formatting
 - Language Server Protocol support over stdio
 - Go bindings for parsing, unmarshalling, and marshalling
@@ -200,20 +200,20 @@ Evaluates a Mace file and prints the computed output block as JSON.
 mace json ./config.mace
 ```
 
-You can provide injectable values with `--inject` using a Mace record literal:
+You can provide runtime parse input with `--input` using a Mace record literal:
 
 ```bash
-mace json ./config.mace --inject '{ env: "prod", token: "abc" }'
+mace json ./config.mace --input '{ env: "prod", token: "abc" }'
 ```
 
 Example input:
 
 ```mace
 |===|
-injectable string env;
+schema Runtime: { env: string; };
 int base = 2 + 2;
 |===|
-[output = data]
+[output = data, schema = Runtime, parse = input]
 {
   env: env,
   base: base
@@ -370,13 +370,13 @@ func main() {
 }
 ```
 
-### Parse with injections
+### Parse with runtime input
 
 ```go
-result, err := codec.ParseWithInjections(`|===|
-injectable string env;
+result, err := codec.ParseWithInput(`|===|
+schema Runtime: { env: string; };
 |===|
-[output = data]
+[output = data, schema = Runtime, parse = input]
 {
   env: env
 }`, map[string]any{

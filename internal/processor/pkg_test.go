@@ -245,8 +245,8 @@ string first = 'Ada';
 string second = """Hello
 World""";
 |===|`)),
-		Entry("injectable without initializer when unused", wrapScriptWithOutput(`|===|
-injectable string env;
+		Entry("nullable variable with null initializer", wrapScriptWithOutput(`|===|
+nullable string env = null;
 |===|`)),
 		Entry("imports and script block", `|===|
 from "testdata/imports/base.mace" import Name;
@@ -626,8 +626,8 @@ array<Point> points = [
   { x: 3; y: 4; }
 ];
 |===|`)),
-		Entry("injectable fallback initializer", wrapScriptWithOutput(`|===|
-injectable string env = "dev";
+		Entry("nullable string initializer", wrapScriptWithOutput(`|===|
+nullable string env = "dev";
 |===|`)),
 	)
 
@@ -684,15 +684,15 @@ User user = {
 		tAssert.NoError(err)
 	})
 
-	It("uses injected values for injectable variables", func() {
-		processor := NewWithInjections(map[string]Value{
+	It("uses parse input to expose schema fields in the output block", func() {
+		processor := NewWithInput(map[string]Value{
 			"env": {Kind: ValueString, String: "prod"},
 		})
 
 		result, err := processor.Process(`|===|
-injectable string env = "dev";
+schema Runtime: { env: string; };
 |===|
-[output = data]
+[output = data, schema = Runtime, parse = input]
 {
   env: env;
 }`)
@@ -702,64 +702,80 @@ injectable string env = "dev";
 		assertExpectedValue(actual, expectedValue{kind: ValueString, string: "prod"})
 	})
 
-	It("uses an initializer when an injectable value is not provided", func() {
+	It("omits output fields that evaluate to null through nullable variables", func() {
 		processor := New()
 
 		result, err := processor.Process(`|===|
-injectable string env = "dev";
+nullable string env = null;
 |===|
 [output = data]
 {
   env: env;
 }`)
 		tAssert.NoError(err)
-
-		actual := requireOutputValue(result, "env")
-		assertExpectedValue(actual, expectedValue{kind: ValueString, string: "dev"})
+		tAssert.Empty(result.Output)
 	})
 
-	It("rejects injectables without a provided value or initializer", func() {
+	It("accepts null for optional schema fields", func() {
+		processor := New()
+
+		result, err := processor.Process(`|===|
+schema User: { nickname?: string; };
+User user = { nickname: null; };
+|===|
+[output = data]
+{
+  user: user;
+}`)
+		tAssert.NoError(err)
+
+		actual := requireOutputValue(result, "user")
+		assertExpectedValue(actual, expectedValue{kind: ValueRecord, record: map[string]expectedValue{}})
+	})
+
+	It("rejects direct null output fields", func() {
+		processor := New()
+
+		_, err := processor.Process(`[output = data]
+{
+  env: null;
+}`)
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, "null can only be assigned to nullable variables and optional schema fields")
+	})
+
+	It("rejects parse directives without required input fields", func() {
 		processor := New()
 
 		_, err := processor.Process(`|===|
-injectable string env;
+schema Runtime: { env: string; };
 |===|
-[output = data]
+[output = data, schema = Runtime, parse = input]
 {
   env: env;
 }`)
 		tAssert.Error(err)
-		tAssert.ErrorContains(err, "injectable")
-		tAssert.ErrorContains(err, "requires a runtime value")
+		tAssert.ErrorContains(err, "missing required field")
 	})
 
-	It("rejects missing injectables before self field fallback", func() {
+	It("rejects null assignments to non-nullable variables", func() {
 		processor := New()
 
-		_, err := processor.Process(`|===|
-injectable string token;
-|===|
-[output = data]
-{
-  token: "x";
-  next: token;
-}`)
+		_, err := processor.Process(wrapScriptWithOutput(`|===|
+string env = null;
+|===|`))
 		tAssert.Error(err)
-		tAssert.ErrorContains(err, "injectable")
-		tAssert.ErrorContains(err, "requires a runtime value")
+		tAssert.ErrorContains(err, "null can only be assigned to nullable variables and optional schema fields")
 	})
 
-	It("rejects unknown injected values", func() {
-		processor := NewWithInjections(map[string]Value{
-			"missing": {Kind: ValueString, String: "prod"},
+	It("rejects parse directives without a schema", func() {
+		processor := NewWithInput(map[string]Value{
+			"env": {Kind: ValueString, String: "prod"},
 		})
 
-		_, err := processor.Process(`|===|
-injectable string env = "dev";
-|===|
-[output = data] {}`)
+		_, err := processor.Process(`[output = data, parse = input] {}`)
 		tAssert.Error(err)
-		tAssert.ErrorContains(err, "unknown injectable")
+		tAssert.ErrorContains(err, "require a schema directive")
 	})
 
 	DescribeTable("processes valid choice declarations",

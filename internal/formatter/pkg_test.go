@@ -44,7 +44,7 @@ from "./base.mace" import User, Config;
 type Name: string;
 type Fruit: choice["Apple", "strawberry"];
 schema User: { name: string; age?: int; };
-injectable string user = "Ada";
+string user = "Ada";
 |===|
 [output = data, schema = User]
 { name: user; age: 1 + 2 * 3; }`)
@@ -60,7 +60,7 @@ schema User: {
   name: string,
   age?: int
 }
-injectable string user = "Ada";
+string user = "Ada";
 |==========================================|
 [output = data, schema = User]
 {

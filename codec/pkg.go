@@ -53,11 +53,11 @@ type SchemaType struct {
 }
 
 func Parse(input string) (Result, error) {
-	return ParseWithInjections(input, nil)
+	return ParseWithInput(input, nil)
 }
 
-func ParseWithInjections(input string, injections map[string]any) (Result, error) {
-	processed, err := newProcessor(injections).Process(input)
+func ParseWithInput(input string, values map[string]any) (Result, error) {
+	processed, err := newProcessor(values).Process(input)
 	if err != nil {
 		return Result{}, err
 	}
@@ -66,11 +66,11 @@ func ParseWithInjections(input string, injections map[string]any) (Result, error
 }
 
 func ParseFile(path string) (Result, error) {
-	return ParseFileWithInjections(path, nil)
+	return ParseFileWithInput(path, nil)
 }
 
-func ParseFileWithInjections(path string, injections map[string]any) (Result, error) {
-	processed, err := newProcessor(injections).ProcessFile(path)
+func ParseFileWithInput(path string, values map[string]any) (Result, error) {
+	processed, err := newProcessor(values).ProcessFile(path)
 	if err != nil {
 		return Result{}, err
 	}
@@ -83,15 +83,15 @@ func OutputMap(result Result) map[string]any {
 }
 
 func Unmarshal(input string, target any) error {
-	return UnmarshalWithInjections(input, nil, target)
+	return UnmarshalWithInput(input, nil, target)
 }
 
-func UnmarshalWithInjections(input string, injections map[string]any, target any) error {
+func UnmarshalWithInput(input string, values map[string]any, target any) error {
 	if target == nil {
 		return fmt.Errorf("unmarshal mace: target is required")
 	}
 
-	result, err := newProcessor(injections).Process(input)
+	result, err := newProcessor(values).Process(input)
 	if err != nil {
 		return err
 	}
@@ -269,17 +269,29 @@ func newResult(processed processor.Result) Result {
 	}
 }
 
-func newProcessor(injections map[string]any) *processor.Processor {
-	if len(injections) == 0 {
+func ParseWithInjections(input string, injections map[string]any) (Result, error) {
+	return ParseWithInput(input, injections)
+}
+
+func ParseFileWithInjections(path string, injections map[string]any) (Result, error) {
+	return ParseFileWithInput(path, injections)
+}
+
+func UnmarshalWithInjections(input string, injections map[string]any, target any) error {
+	return UnmarshalWithInput(input, injections, target)
+}
+
+func newProcessor(values map[string]any) *processor.Processor {
+	if len(values) == 0 {
 		return processor.New()
 	}
 
-	converted := make(map[string]processor.Value, len(injections))
-	for name, value := range injections {
+	converted := make(map[string]processor.Value, len(values))
+	for name, value := range values {
 		converted[name] = toProcessorValue(value)
 	}
 
-	return processor.NewWithInjections(converted)
+	return processor.NewWithInput(converted)
 }
 
 func valuesToMap(values map[string]processor.Value) map[string]any {

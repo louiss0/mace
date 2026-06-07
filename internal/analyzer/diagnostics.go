@@ -60,6 +60,7 @@ const (
 	diagnosticTypeRecordDoesNotMatchSchema          diagnosticCode = "mace.type.record-does-not-match-schema"
 	diagnosticTypeOutputValueIncompatibleSchema     diagnosticCode = "mace.type.output-value-incompatible-schema"
 	diagnosticTypeInvalidOutputSchemaField          diagnosticCode = "mace.type.invalid-output-schema-field"
+	diagnosticTypeInvalidNullUsage                  diagnosticCode = "mace.type.invalid-null-usage"
 	diagnosticDirectiveDuplicateKey                 diagnosticCode = "mace.directive.duplicate-key"
 	diagnosticDirectiveUnknownKey                   diagnosticCode = "mace.directive.unknown-key"
 	diagnosticDirectiveInvalidOutputValue           diagnosticCode = "mace.directive.invalid-output-value"
@@ -166,6 +167,8 @@ func classifyProcessorDiagnostic(message string) diagnosticCode {
 		return diagnosticTypeInvalidUnaryOperator
 	case strings.Contains(message, "expected numeric operands") || strings.Contains(message, "expected int operands") || strings.Contains(message, "expected boolean operands") || strings.Contains(message, "incompatible equality comparison") || strings.Contains(message, "merge operands") || strings.Contains(message, "expected ") && strings.Contains(message, " operands"):
 		return diagnosticTypeInvalidBinaryOperator
+	case strings.Contains(message, "null can only be assigned to nullable variables and optional schema fields"):
+		return diagnosticTypeInvalidNullUsage
 	case strings.Contains(message, "type mismatch"):
 		return diagnosticTypeInitializerMismatch
 	case strings.Contains(message, "missing required field") || strings.Contains(message, "unknown field") || strings.Contains(message, "is not optional in schema"):
@@ -190,6 +193,8 @@ func diagnosticCodeFromProcessorError(err processor.DiagnosticError) diagnosticC
 	switch err.Code {
 	case processor.CodeArrayIndexOutOfRange, processor.CodeArrayValueRequired:
 		return diagnosticTypeInvalidArrayAccess
+	case processor.CodeInvalidNullUsage:
+		return diagnosticTypeInvalidNullUsage
 	case processor.CodeInvalidOutputSchemaField:
 		return diagnosticTypeInvalidOutputSchemaField
 	case processor.CodeMissingInjectable:
