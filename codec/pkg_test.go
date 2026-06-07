@@ -193,7 +193,7 @@ hex_float whole = 0x2.0;
 		result, err := ParseWithInput(`|===|
 schema Runtime: { env: string; };
 |===|
-[output = data, schema = Runtime, parse = input]
+[output = data, parse = Runtime]
 {
   env: env;
 }`, map[string]any{
@@ -1531,7 +1531,7 @@ var _ = Describe("Unmarshal", func() {
 		err := UnmarshalWithInput(`|===|
 schema Runtime: { env: string; };
 |===|
-[output = data, schema = Runtime, parse = input]
+[output = data, parse = Runtime]
 {
   env: env;
 }`, map[string]any{

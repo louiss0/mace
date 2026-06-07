@@ -272,8 +272,12 @@ directive_pair
 
 (* If `output_directive` is omitted, the output mode defaults to `data`.
    `output = schema` must appear alone.
-   `parse = input` and `parse_file = <string_literal>` require
-   `schema = <identifier>`. *)
+   `parse = <identifier>` is self-contained: the identifier names the schema to
+   validate host input against; no separate `schema` directive is needed.
+   `parse_file = <string_literal>` loads schema declarations from the referenced
+   file and requires a `schema = <identifier>` directive to select which schema
+   to validate host input against.
+   `parse` and `parse_file` cannot be combined. *)
 
 output_item
   = output_field ;

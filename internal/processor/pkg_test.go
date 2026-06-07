@@ -692,7 +692,7 @@ User user = {
 		result, err := processor.Process(`|===|
 schema Runtime: { env: string; };
 |===|
-[output = data, schema = Runtime, parse = input]
+[output = data, parse = Runtime]
 {
   env: env;
 }`)
@@ -750,7 +750,7 @@ User user = { nickname: null; };
 		_, err := processor.Process(`|===|
 schema Runtime: { env: string; };
 |===|
-[output = data, schema = Runtime, parse = input]
+[output = data, parse = Runtime]
 {
   env: env;
 }`)
@@ -768,14 +768,22 @@ string env = null;
 		tAssert.ErrorContains(err, "null can only be assigned to nullable variables and optional schema fields")
 	})
 
-	It("rejects parse directives without a schema", func() {
+	It("rejects parse directives with an unknown schema", func() {
 		processor := NewWithInput(map[string]Value{
 			"env": {Kind: ValueString, String: "prod"},
 		})
 
-		_, err := processor.Process(`[output = data, parse = input] {}`)
+		_, err := processor.Process(`[output = data, parse = MissingSchema] {}`)
 		tAssert.Error(err)
-		tAssert.ErrorContains(err, "require a schema directive")
+		tAssert.ErrorContains(err, "unknown schema")
+	})
+
+	It("rejects parse_file without a schema directive", func() {
+		processor := New()
+
+		_, err := processor.Process(`[output = data, parse_file = "./missing.mace"] {}`)
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, "parse_file directive requires a schema directive")
 	})
 
 	DescribeTable("processes valid choice declarations",

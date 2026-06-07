@@ -94,7 +94,7 @@ hex_float whole = 0x2.0;
 			path := writeMaceFile(`|===|
 schema Runtime: { env: string; };
 |===|
-[output = data, schema = Runtime, parse = input]
+[output = data, parse = Runtime]
 {
   env: env;
 }`)
@@ -117,7 +117,7 @@ schema Runtime: { env: string; };
 			path := writeMaceFile(`|===|
 schema Runtime: { env: string; };
 |===|
-[output = data, schema = Runtime, parse = input]
+[output = data, parse = Runtime]
 {
   env: env;
 }`)

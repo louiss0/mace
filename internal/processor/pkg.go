@@ -494,12 +494,16 @@ func prepareOutputContext(output ast.OutputBlock, context processContext) (proce
 }
 
 func (p *Processor) applyParsedOutputInput(output ast.OutputBlock, context *processContext) error {
-	schemaName, hasSchema := outputSchemaName(output.Directives)
-	if !hasSchema {
-		return nil
-	}
-
-	if !outputParseInput(output.Directives) && !hasParseFile(output.Directives) {
+	var schemaName string
+	if parseName, ok := outputParseSchemeName(output.Directives); ok {
+		schemaName = parseName
+	} else if hasParseFile(output.Directives) {
+		name, ok := outputSchemaName(output.Directives)
+		if !ok {
+			return nil
+		}
+		schemaName = name
+	} else {
 		return nil
 	}
 
@@ -1386,9 +1390,6 @@ func validateOutputDirectiveStructure(output ast.OutputBlock) error {
 			if output.Mode == ast.OutputModeSchema {
 				return validationErrorf("parse directive is invalid when output mode is schema")
 			}
-			if directive.Value != "input" {
-				return validationErrorf("parse directive must be 'parse = input'")
-			}
 		case ast.OutputDirectiveParseFile:
 			hasParseFile = true
 			if output.Mode == ast.OutputModeSchema {
@@ -1399,8 +1400,8 @@ func validateOutputDirectiveStructure(output ast.OutputBlock) error {
 		}
 	}
 
-	if (hasParse || hasParseFile) && !hasSchema {
-		return validationErrorf("parse directives require a schema directive")
+	if hasParseFile && !hasSchema {
+		return validationErrorf("parse_file directive requires a schema directive")
 	}
 	if hasParse && hasParseFile {
 		return validationErrorf("parse and parse_file directives cannot be used together")
@@ -1415,7 +1416,7 @@ func validateOutputDirectiveStructure(output ast.OutputBlock) error {
 
 func validateOutputDirectiveReferences(output ast.OutputBlock, symbols *symbolTable) error {
 	for _, directive := range output.Directives {
-		if directive.Kind != ast.OutputDirectiveSchema {
+		if directive.Kind != ast.OutputDirectiveSchema && directive.Kind != ast.OutputDirectiveParse {
 			continue
 		}
 
@@ -1476,13 +1477,13 @@ func outputSchemaName(directives []ast.OutputDirective) (string, bool) {
 	return "", false
 }
 
-func outputParseInput(directives []ast.OutputDirective) bool {
+func outputParseSchemeName(directives []ast.OutputDirective) (string, bool) {
 	for _, directive := range directives {
 		if directive.Kind == ast.OutputDirectiveParse {
-			return true
+			return directive.Value, true
 		}
 	}
-	return false
+	return "", false
 }
 
 func hasParseFile(directives []ast.OutputDirective) bool {

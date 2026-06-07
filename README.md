@@ -24,7 +24,7 @@ is documented in [the formal specification](./docs/src/content/docs/reference/sp
 - Deterministic expression evaluation
 - Output validation against local schemas or external schema files
 - Relative imports between Mace files
-- Schema-validated runtime input through `parse = input` and `parse_file`
+- Schema-validated runtime input through `parse = <Schema>` and `parse_file = "<path>"`
 - Canonical source formatting
 - Language Server Protocol support over stdio
 - Go bindings for parsing, unmarshalling, and marshalling
@@ -213,7 +213,7 @@ Example input:
 schema Runtime: { env: string; };
 int base = 2 + 2;
 |===|
-[output = data, schema = Runtime, parse = input]
+[output = data, parse = Runtime]
 {
   env: env,
   base: base
@@ -376,10 +376,10 @@ func main() {
 result, err := codec.ParseWithInput(`|===|
 schema Runtime: { env: string; };
 |===|
-[output = data, schema = Runtime, parse = input]
+[output = data, parse = Runtime]
 {
   env: env
-}`, map[string]any{
+|}`, map[string]any{
 	"env": "prod",
 })
 ```
@@ -460,7 +460,6 @@ A few language areas are intentionally still in progress. At the time of
 writing, the specification lists these as not yet implemented:
 
 - explicit export declarations
-- runtime injection beyond the processor and CLI injection mechanisms
 
 ## License
 
