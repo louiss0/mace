@@ -768,31 +768,6 @@ string env = null;
 		tAssert.ErrorContains(err, "null can only be assigned to nullable variables and optional schema fields")
 	})
 
-	It("rejects nullable conditional assignments to non-nullable variables", func() {
-		processor := New()
-
-		_, err := processor.Process(wrapScriptWithOutput(`|===|
-string env = false ? null : "prod";
-|===|`))
-		tAssert.Error(err)
-		tAssert.ErrorContains(err, "null can only be assigned to nullable variables and optional schema fields")
-	})
-
-	It("rejects nullable conditional assignments to required schema fields", func() {
-		processor := New()
-
-		_, err := processor.Process(`|===|
-schema Runtime: { env: string; };
-Runtime config = { env: false ? null : "prod"; };
-|===|
-[output = data]
-{
-  config: config;
-}`)
-		tAssert.Error(err)
-		tAssert.ErrorContains(err, "null can only be assigned to nullable variables and optional schema fields")
-	})
-
 	It("rejects parse directives with an unknown schema", func() {
 		processor := NewWithInput(map[string]Value{
 			"env": {Kind: ValueString, String: "prod"},

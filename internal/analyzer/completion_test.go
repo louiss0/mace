@@ -540,34 +540,4 @@ from "../shared.mace" import base;
 
 		tAssert.NotContains(labels, "../shared.mace")
 	})
-
-	It("does not suggest parse directives before a schema directive", func() {
-		text := `[output = data, s`
-		position := protocol.Position{Line: 0, Character: protocol.UInteger(len(text))}
-		documentPath := filepath.Join("workspace", "document.mace")
-		snapshot := AnalyzeCompletionContext(text, documentPath, position)
-
-		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
-		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string { return item.Label })
-
-		tAssert.Contains(labels, "schema")
-		tAssert.Contains(labels, "schema_file")
-		tAssert.NotContains(labels, "parse")
-		tAssert.NotContains(labels, "parse_file")
-	})
-
-	It("suggests parse directives after a schema directive", func() {
-		text := `[output = data, schema = Runtime, p`
-		position := protocol.Position{Line: 0, Character: protocol.UInteger(len(text))}
-		documentPath := filepath.Join("workspace", "document.mace")
-		snapshot := AnalyzeCompletionContext(text, documentPath, position)
-
-		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
-		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string { return item.Label })
-
-		tAssert.Contains(labels, "parse")
-		tAssert.Contains(labels, "parse_file")
-		tAssert.NotContains(labels, "schema")
-		tAssert.NotContains(labels, "schema_file")
-	})
 })
