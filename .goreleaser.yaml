@@ -1,5 +1,6 @@
-version: 2
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
 
+version: 2
 project_name: mace
 
 before:
@@ -7,8 +8,8 @@ before:
     - go mod tidy
 
 builds:
-  - id: mace
-    main: ./cmd
+  - main: ./cmd
+    id: mace
     binary: mace
     env:
       - CGO_ENABLED=0
@@ -18,60 +19,78 @@ builds:
       - -X main.commit={{.Commit}}
       - -X main.date={{.Date}}
     goos:
-      - darwin
       - linux
+      - darwin
       - windows
     goarch:
       - amd64
       - arm64
 
 archives:
-  - id: mace
-    formats:
-      - tar.gz
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
-        formats:
-          - zip
-    files:
-      - README.md
-      - docs/**
-      - LICENSE*
+        formats: [zip]
 
 checksum:
   name_template: "checksums.txt"
+  algorithm: sha256
 
 changelog:
-  sort: asc
   filters:
     exclude:
-      - '^docs:'
-      - '^test:'
+      - '^docs(\(.*\))?:'
+      - '^chore(\(.*\))?:'
+      - '^style(\(.*\))?:'
+      - '^refactor(\(.*\))?:'
+      - "^Merge"
+      - '^(build|ci)\(deps'
+      - '^(build|ci)\(.*\): bump'
+  groups:
+    - title: "Features"
+      regexp: '^feat(\(.*\))?:'
+      order: 0
+    - title: "Bug Fixes"
+      regexp: '^fix(\(.*\))?:'
+      order: 1
+    - title: "Tests"
+      regexp: '^test(\(.*\))?:'
+      order: 2
+    - title: "Performance"
+      regexp: '^perf(\(.*\))?:'
+      order: 3
+    - title: "CI/Build"
+      regexp: '^(build|ci)(\(.*\))?:'
+      order: 4
+    - title: "Others"
+      order: 999
+  sort: asc
 
-brews:
-  - repository:
-      owner: louiss0
-      name: homebrew-tap
-      token: "{{ .Env.GH_PAT }}"
-    directory: Formula
-    homepage: https://github.com/louiss0/mace
-    description: Deterministic typed configuration language and Go toolkit
-    license: MIT
+release:
+  github:
+    owner: louiss0
     name: mace
-    install: |
-      bin.install "mace"
 
 winget:
   - name: mace
-    package_identifier: louiss0.Mace
     publisher: louiss0
+    short_description: "Deterministic typed configuration language and Go toolkit."
+    homepage: "https://github.com/louiss0/mace"
+    path: "manifests/l/louiss0/mace/{{ .Version }}"
     license: MIT
-    homepage: https://github.com/louiss0/mace
-    short_description: Deterministic typed configuration language and Go toolkit
+    publisher_url: https://github.com/louiss0
+    publisher_support_url: "https://github.com/louiss0/mace/issues/new"
+    package_identifier: louiss0.mace
+    commit_author:
+      name: louiss0
+      email: louisshelton0@gmail.com
+    commit_msg_template: "{{ .PackageIdentifier }}: {{ .Tag }}"
+    release_notes: "{{.Changelog}}"
     repository:
       owner: louiss0
       name: winget-pkgs
-      branch: "mace-{{.Version}}"
+      branch: "{{ .ProjectName }}-{{ .Version }}"
       token: "{{ .Env.GH_PAT }}"
       pull_request:
         enabled: true
@@ -80,25 +99,52 @@ winget:
           name: winget-pkgs
           branch: master
 
-# Zed extension is released separately from louiss0/zed-extension-mace.
-# See .github/workflows/release-zed-extension.yml.
+homebrew_casks:
+  - name: mace
+    binaries:
+      - mace
+    commit_author:
+      name: louiss0
+      email: louisshelton0@gmail.com
+    commit_msg_template: "Brew cask update for {{ .ProjectName }} version {{ .Tag }}"
+    homepage: "https://github.com/louiss0/mace"
+    description: "Deterministic typed configuration language and Go toolkit."
+    repository:
+      owner: louiss0
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.GH_PAT }}"
+
+scoops:
+  - name: mace
+    commit_author:
+      name: louiss0
+      email: louisshelton0@gmail.com
+    commit_msg_template: "Scoop update for {{ .ProjectName }} version {{ .Tag }}"
+    goamd64: v3
+    homepage: "https://github.com/louiss0/mace"
+    directory: bucket
+    license: MIT
+    description: "Deterministic typed configuration language and Go toolkit."
+    repository:
+      owner: louiss0
+      name: mace-buckets
+      branch: main
+      token: "{{ .Env.GH_PAT }}"
 
 nix:
   - name: mace
+    goamd64: v1
+    commit_author:
+      name: louiss0
+      email: louisshelton0@gmail.com
+    commit_msg_template: "{{ .ProjectName }}: {{ .Tag }}"
+    path: "pkgs/{{ .ProjectName }}/default.nix"
+    homepage: "https://github.com/louiss0/mace"
+    description: "Deterministic typed configuration language and Go toolkit."
+    license: "mit"
     repository:
       owner: louiss0
       name: nur
-      branch: "mace-{{.Version}}"
+      branch: main
       token: "{{ .Env.GH_PAT }}"
-      pull_request:
-        enabled: true
-        base:
-          owner: louiss0
-          name: nur
-          branch: master
-    homepage: https://github.com/louiss0/mace
-    description: Deterministic typed configuration language and Go toolkit
-    license: MIT
-    path: pkgs/mace/default.nix
-    extra_install: |
-      installShellCompletion ./completions/*
