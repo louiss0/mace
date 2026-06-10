@@ -88,16 +88,12 @@ winget:
     commit_msg_template: "{{ .PackageIdentifier }}: {{ .Tag }}"
     release_notes: "{{.Changelog}}"
     repository:
-      owner: louiss0
+      owner: Sheltons-CLI-Projects
       name: winget-pkgs
       branch: "{{ .ProjectName }}-{{ .Version }}"
-      token: "{{ .Env.GH_PAT }}"
-      pull_request:
-        enabled: true
-        base:
-          owner: microsoft
-          name: winget-pkgs
-          branch: master
+      git:
+        url: git@github.com:Sheltons-CLI-Projects/winget-pkgs.git
+        private_key: "{{ .Env.GORELEASER_WINGET_DEPLOY_KEY_PATH }}"
 
 homebrew_casks:
   - name: mace
@@ -110,10 +106,12 @@ homebrew_casks:
     homepage: "https://github.com/louiss0/mace"
     description: "Deterministic typed configuration language and Go toolkit."
     repository:
-      owner: louiss0
-      name: homebrew-tap
+      owner: Sheltons-CLI-Projects
+      name: homebrew-the-code-fixer-23
       branch: main
-      token: "{{ .Env.GH_PAT }}"
+      git:
+        url: git@github.com:Sheltons-CLI-Projects/homebrew-the-code-fixer-23.git
+        private_key: "{{ .Env.GORELEASER_HOMEBREW_DEPLOY_KEY_PATH }}"
 
 scoops:
   - name: mace
@@ -128,9 +126,11 @@ scoops:
     description: "Deterministic typed configuration language and Go toolkit."
     repository:
       owner: louiss0
-      name: mace-buckets
+      name: the-code-fixer-23-buckets
       branch: main
-      token: "{{ .Env.GH_PAT }}"
+      git:
+        url: git@github.com:louiss0/the-code-fixer-23-buckets.git
+        private_key: "{{ .Env.SCOOP_PRIVATE_KEY_PATH }}"
 
 nix:
   - name: mace
@@ -144,7 +144,9 @@ nix:
     description: "Deterministic typed configuration language and Go toolkit."
     license: "mit"
     repository:
-      owner: louiss0
-      name: nur
+      owner: Sheltons-CLI-Projects
+      name: the-code-fixer-23-nur
       branch: main
-      token: "{{ .Env.GH_PAT }}"
+      git:
+        url: "git@github.com:Sheltons-CLI-Projects/the-code-fixer-23-nur.git"
+        private_key: "{{ .Env.GORELEASER_NIX_DEPLOY_KEY_PATH }}"
