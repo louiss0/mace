@@ -2,6 +2,8 @@ package processor
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1216,6 +1218,98 @@ Fruit result = "Apple";
 		tAssert.NoError(err)
 		assertExpectedValue(requireOutputValue(result, "result"), expectedValue{kind: ValueString, string: "Apple"})
 		tAssert.FileExists(sharedPath)
+	})
+
+	It("imports remote mace files over http", func() {
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			switch request.URL.Path {
+			case "/shared.mace":
+				_, _ = writer.Write([]byte(`[output = data]
+{
+  value: "Ada";
+}`))
+			default:
+				http.NotFound(writer, request)
+			}
+		}))
+		defer server.Close()
+
+		input := fmt.Sprintf(`|===|
+from %q import value;
+|===|
+[output = data]
+{
+  result: value;
+}`, server.URL+"/shared.mace")
+
+		processor := New()
+		result, err := processor.Process(input)
+		tAssert.NoError(err)
+		assertExpectedValue(requireOutputValue(result, "result"), expectedValue{kind: ValueString, string: "Ada"})
+	})
+
+	It("loads remote schema_file declarations over http", func() {
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			switch request.URL.Path {
+			case "/schema.mace":
+				_, _ = writer.Write([]byte(`|===|
+schema User: { name: string; };
+|===|
+[output = schema]
+{
+  User: User;
+}`))
+			default:
+				http.NotFound(writer, request)
+			}
+		}))
+		defer server.Close()
+
+		input := fmt.Sprintf(`[output = data, schema = User, schema_file = %q]
+{
+  name: "Ada";
+}`, server.URL+"/schema.mace")
+
+		processor := New()
+		result, err := processor.Process(input)
+		tAssert.NoError(err)
+		assertExpectedValue(requireOutputValue(result, "name"), expectedValue{kind: ValueString, string: "Ada"})
+	})
+
+	It("resolves relative imports inside remote mace files", func() {
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			switch request.URL.Path {
+			case "/shared/base.mace":
+				_, _ = writer.Write([]byte(`[output = data]
+{
+  value: "Ada";
+}`))
+			case "/entry.mace":
+				_, _ = writer.Write([]byte(`|===|
+from "./shared/base.mace" import value;
+|===|
+[output = data]
+{
+  result: value;
+}`))
+			default:
+				http.NotFound(writer, request)
+			}
+		}))
+		defer server.Close()
+
+		input := fmt.Sprintf(`|===|
+from %q import result;
+|===|
+[output = data]
+{
+  result: result;
+}`, server.URL+"/entry.mace")
+
+		processor := New()
+		result, err := processor.Process(input)
+		tAssert.NoError(err)
+		assertExpectedValue(requireOutputValue(result, "result"), expectedValue{kind: ValueString, string: "Ada"})
 	})
 })
 

@@ -2,8 +2,12 @@ package processor
 
 import (
 	"fmt"
+	"io"
 	"math"
+	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -614,6 +618,16 @@ func parseImportPath(literal ast.StringLiteral) (string, error) {
 }
 
 func resolveImportPath(importBaseDir string, importPath string) (string, error) {
+	if remoteURL, ok := parseRemoteURL(importPath); ok {
+		return remoteURL.String(), nil
+	}
+	if baseURL, ok := parseRemoteURL(importBaseDir); ok {
+		resolvedURL, err := baseURL.Parse(importPath)
+		if err != nil {
+			return "", validationErrorf("unable to resolve path %q", importPath)
+		}
+		return resolvedURL.String(), nil
+	}
 	if filepath.IsAbs(importPath) {
 		return "", validationErrorf("import path %q must be relative: base=%q", importPath, importBaseDir)
 	}
@@ -635,6 +649,9 @@ func resolveBoundedPath(importBaseDir string, importRootDir string, importPath s
 	if err != nil {
 		return "", validationErrorf("import path %q must be relative: root=%q, base=%q", importPath, formatImportRoot(importRootDir), importBaseDir)
 	}
+	if _, ok := parseRemoteURL(resolvedPath); ok {
+		return resolveBoundedRemotePath(importBaseDir, importRootDir, importPath, resolvedPath)
+	}
 
 	cleanPath := filepath.Clean(filepath.FromSlash(importPath))
 	if cleanPath == ".." || strings.HasPrefix(cleanPath, ".."+string(filepath.Separator)) {
@@ -652,9 +669,40 @@ func resolveBoundedPath(importBaseDir string, importRootDir string, importPath s
 	return resolvedPath, nil
 }
 
+func resolveBoundedRemotePath(importBaseDir string, importRootDir string, importPath string, resolvedPath string) (string, error) {
+	rootURL, ok := parseRemoteURL(importRootDir)
+	if !ok {
+		return resolvedPath, nil
+	}
+	resolvedURL, ok := parseRemoteURL(resolvedPath)
+	if !ok {
+		return "", validationErrorf("import path %q escapes root: root=%q, base=%q, resolved=%q", importPath, formatImportRoot(importRootDir), importBaseDir, resolvedPath)
+	}
+	if resolvedURL.Scheme != rootURL.Scheme || resolvedURL.Host != rootURL.Host {
+		return "", validationErrorf("import path %q escapes root: root=%q, base=%q, resolved=%q", importPath, formatImportRoot(importRootDir), importBaseDir, resolvedPath)
+	}
+
+	rootPath := rootURL.EscapedPath()
+	resolvedPathValue := resolvedURL.EscapedPath()
+	if rootPath == "" {
+		rootPath = "/"
+	}
+	if !strings.HasSuffix(rootPath, "/") {
+		rootPath = path.Dir(rootPath) + "/"
+	}
+	if resolvedPathValue != strings.TrimSuffix(rootPath, "/") && !strings.HasPrefix(resolvedPathValue, rootPath) {
+		return "", validationErrorf("import path %q escapes root: root=%q, base=%q, resolved=%q", importPath, formatImportRoot(importRootDir), importBaseDir, resolvedPath)
+	}
+
+	return resolvedPath, nil
+}
+
 func formatImportRoot(importRootDir string) string {
 	if importRootDir == "" || importRootDir == "." {
 		return "./"
+	}
+	if _, ok := parseRemoteURL(importRootDir); ok {
+		return importRootDir
 	}
 
 	cleanRoot := filepath.Clean(importRootDir)
@@ -663,6 +711,58 @@ func formatImportRoot(importRootDir string) string {
 		return filepath.ToSlash(cleanRoot)
 	}
 	return label + "/"
+}
+
+func parseRemoteURL(raw string) (*url.URL, bool) {
+	parsedURL, err := url.Parse(raw)
+	if err != nil || parsedURL == nil {
+		return nil, false
+	}
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return nil, false
+	}
+	if parsedURL.Host == "" {
+		return nil, false
+	}
+	return parsedURL, true
+}
+
+func basePathDir(sourcePath string) string {
+	if parsedURL, ok := parseRemoteURL(sourcePath); ok {
+		parsedURL.Path = path.Dir(parsedURL.Path)
+		if !strings.HasSuffix(parsedURL.Path, "/") {
+			parsedURL.Path += "/"
+		}
+		parsedURL.RawPath = ""
+		parsedURL.RawQuery = ""
+		parsedURL.Fragment = ""
+		return parsedURL.String()
+	}
+	return filepath.Dir(sourcePath)
+}
+
+func readMaceSource(sourcePath string) (string, error) {
+	if _, ok := parseRemoteURL(sourcePath); !ok {
+		contents, err := os.ReadFile(sourcePath)
+		if err != nil {
+			return "", err
+		}
+		return string(contents), nil
+	}
+
+	response, err := http.Get(sourcePath)
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return "", fmt.Errorf("unexpected status %d", response.StatusCode)
+	}
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
 }
 
 func loadImportExports(path string, importRootDir string, enforceImportRoot bool, cache map[string]map[string]importedDeclaration, stack map[string]struct{}) (map[string]importedDeclaration, error) {
@@ -676,12 +776,12 @@ func loadImportExports(path string, importRootDir string, enforceImportRoot bool
 	stack[path] = struct{}{}
 	defer delete(stack, path)
 
-	contents, err := os.ReadFile(path)
+	contents, err := readMaceSource(path)
 	if err != nil {
 		return nil, validationErrorf("unable to read import file %q", path)
 	}
 
-	tokens, err := lex(string(contents))
+	tokens, err := lex(contents)
 	if err != nil {
 		return nil, err
 	}
@@ -694,7 +794,7 @@ func loadImportExports(path string, importRootDir string, enforceImportRoot bool
 	context, err := buildProcessContextWithState(
 		file.Imports,
 		file.Script,
-		filepath.Dir(path),
+		basePathDir(path),
 		importRootDir,
 		enforceImportRoot,
 		map[string]Value{},
@@ -781,12 +881,12 @@ func loadSchemaFileDeclarations(path string, importRootDir string, cache map[str
 	stack[path] = struct{}{}
 	defer delete(stack, path)
 
-	contents, err := os.ReadFile(path)
+	contents, err := readMaceSource(path)
 	if err != nil {
 		return nil, validationErrorf("unable to read import file %q", path)
 	}
 
-	tokens, err := lex(string(contents))
+	tokens, err := lex(contents)
 	if err != nil {
 		return nil, err
 	}
@@ -802,7 +902,7 @@ func loadSchemaFileDeclarations(path string, importRootDir string, cache map[str
 			return nil, err
 		}
 
-		resolvedPath, err := resolveBoundedPath(filepath.Dir(path), importRootDir, importPath)
+		resolvedPath, err := resolveBoundedPath(basePathDir(path), importRootDir, importPath)
 		if err != nil {
 			return nil, err
 		}

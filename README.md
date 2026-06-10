@@ -23,8 +23,8 @@ is documented in [the formal specification](./docs/src/content/docs/reference/sp
 - Choice-aware editor completions for literal domains and variants
 - Deterministic expression evaluation
 - Output validation against local schemas or external schema files
-- Relative imports between Mace files
-- Schema-validated runtime input through `parse = <Schema>` and `parse_file = "<path>"`
+- Relative imports between Mace files and remote imports over HTTP(S)
+- Schema-validated runtime input through `parse = <Schema>` and `parse_file = "<path>"`, including remote schema files over HTTP(S)
 - Canonical source formatting
 - Language Server Protocol support over stdio
 - Go bindings for parsing, unmarshalling, and marshalling
