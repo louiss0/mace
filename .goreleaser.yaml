@@ -1,0 +1,101 @@
+version: 2
+
+project_name: mace
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: mace
+    main: ./cmd
+    binary: mace
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: mace
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - README.md
+      - docs/**
+      - LICENSE*
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+
+brews:
+  - repository:
+      owner: louiss0
+      name: homebrew-tap
+      token: "{{ .Env.GH_PAT }}"
+    directory: Formula
+    homepage: https://github.com/louiss0/mace
+    description: Deterministic typed configuration language and Go toolkit
+    license: MIT
+    name: mace
+    install: |
+      bin.install "mace"
+
+winget:
+  - name: mace
+    package_identifier: louiss0.Mace
+    publisher: louiss0
+    license: MIT
+    homepage: https://github.com/louiss0/mace
+    short_description: Deterministic typed configuration language and Go toolkit
+    repository:
+      owner: louiss0
+      name: winget-pkgs
+      branch: "mace-{{.Version}}"
+      token: "{{ .Env.GH_PAT }}"
+      pull_request:
+        enabled: true
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
+
+nix:
+  - name: mace
+    repository:
+      owner: louiss0
+      name: nur
+      branch: "mace-{{.Version}}"
+      token: "{{ .Env.GH_PAT }}"
+      pull_request:
+        enabled: true
+        base:
+          owner: louiss0
+          name: nur
+          branch: master
+    homepage: https://github.com/louiss0/mace
+    description: Deterministic typed configuration language and Go toolkit
+    license: MIT
+    path: pkgs/mace/default.nix
+    extra_install: |
+      installShellCompletion ./completions/*

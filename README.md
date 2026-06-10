@@ -173,6 +173,8 @@ go build ./cmd
 go install github.com/louiss0/mace/cmd@latest
 ```
 
+Package managers will also be supported through Homebrew, Winget, and Nix.
+
 If you are working on this repository directly, you can also run:
 
 ```bash
