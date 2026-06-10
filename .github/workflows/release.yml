@@ -93,3 +93,21 @@ jobs:
           args: release --clean --config .goreleaser.yaml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release-zed-extension:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Publish Zed extension release
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --repo louiss0/zed-extension-mace \
+            --title "${GITHUB_REF_NAME}" \
+            --notes "Mace Zed extension for ${GITHUB_REF_NAME}" \
+            zed-extension-mace/extension.toml \
+            zed-extension-mace/extension.wasm \
+            zed-extension-mace/README.md
