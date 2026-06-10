@@ -3777,6 +3777,9 @@ func typesEqual(leftType, rightType valueType) bool {
 }
 
 func ensureAssignable(expectedType, actualType valueType) error {
+	if actualType.nullable && !expectedType.nullable {
+		return invalidNullUsageError()
+	}
 	if actualType.kind == ValueNull {
 		if expectedType.nullable {
 			return nil
