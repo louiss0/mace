@@ -1311,6 +1311,23 @@ from %q import result;
 		tAssert.NoError(err)
 		assertExpectedValue(requireOutputValue(result, "result"), expectedValue{kind: ValueString, string: "Ada"})
 	})
+
+	It("rejects remote import urls without a .mace suffix", func() {
+		processor := New()
+		_, err := processor.Process(`|===|
+from "https://example.com/shared" import value;
+|===|
+[output = data] {}`)
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, "must end in .mace")
+	})
+
+	It("rejects remote schema_file urls without a .mace suffix", func() {
+		processor := New()
+		_, err := processor.Process(`[output = data, schema = User, schema_file = "https://example.com/schema"] {}`)
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, "must end in .mace")
+	})
 })
 
 var _ = Describe("Output block", func() {

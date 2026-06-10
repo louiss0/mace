@@ -205,6 +205,32 @@ from "./shared" import name;
 		}
 	})
 
+	It("rejects remote directive urls without a .mace suffix in LSP diagnostics", func() {
+		workspace, err := os.MkdirTemp("", "mace-analysis-directive-url-fix-*")
+		tAssert.NoError(err)
+
+		documentPath := filepath.Join(workspace, "consumer.mace")
+		snapshot := analyzeDocumentAt(`[output = data, schema = User, schema_file = "https://example.com/schema"]
+{
+  name: "Ada";
+}`, documentPath)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "must end in .mace")
+			tAssert.Equal(string(diagnosticImportPathNotMace), requireDiagnosticCode(snapshot.diagnostics[0]))
+		}
+
+		action := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), protocol.Range{
+			Start: protocol.Position{Line: 0, Character: 0},
+			End:   protocol.Position{Line: 0, Character: 74},
+		}, "Append .mace to import path")
+
+		edits := action.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
+		if tAssert.Len(edits, 1) {
+			tAssert.Equal(`"https://example.com/schema.mace"`, edits[0].NewText)
+		}
+	})
+
 	It("translates processor type mismatch errors into token-scoped diagnostics", func() {
 		snapshot := analyzeDocument(`|===|
 int count = "Ada";

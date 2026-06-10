@@ -575,6 +575,9 @@ func resolveImportsWithState(file ast.File, importBaseDir string, importRootDir 
 		if err != nil {
 			return nil, err
 		}
+		if err := validateMaceSourcePath(path); err != nil {
+			return nil, err
+		}
 
 		resolvedPath, err := resolveImportPathInScope(importBaseDir, importRootDir, path, enforceImportRoot)
 		if err != nil {
@@ -741,6 +744,13 @@ func basePathDir(sourcePath string) string {
 	return filepath.Dir(sourcePath)
 }
 
+func validateMaceSourcePath(sourcePath string) error {
+	if !strings.HasSuffix(sourcePath, ".mace") {
+		return validationErrorf("import path %q must end in .mace", sourcePath)
+	}
+	return nil
+}
+
 func readMaceSource(sourcePath string) (string, error) {
 	if _, ok := parseRemoteURL(sourcePath); !ok {
 		contents, err := os.ReadFile(sourcePath)
@@ -838,6 +848,9 @@ func resolveSchemaFileDeclarations(directives []ast.OutputDirective, importBaseD
 
 	if path == "" {
 		return nil, nil
+	}
+	if err := validateMaceSourcePath(path); err != nil {
+		return nil, err
 	}
 
 	resolvedPath, err := resolveBoundedPath(importBaseDir, importRootDir, path)
