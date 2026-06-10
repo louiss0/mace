@@ -80,6 +80,9 @@ winget:
           name: winget-pkgs
           branch: master
 
+# Zed extension is released separately from louiss0/zed-extension-mace.
+# See .github/workflows/release-zed-extension.yml.
+
 nix:
   - name: mace
     repository:
