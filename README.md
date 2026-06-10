@@ -379,7 +379,7 @@ schema Runtime: { env: string; };
 [output = data, parse = Runtime]
 {
   env: env
-|}`, map[string]any{
+}`, map[string]any{
 	"env": "prod",
 })
 ```
