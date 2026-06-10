@@ -827,7 +827,7 @@ func nextDirectiveDefinitions(parts []string) []completionDefinition {
 			completionDefinition{Label: "schema_file", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
 		)
 	}
-	if !state.seenParse && !state.seenParseFile {
+	if state.seenSchema && !state.seenParse && !state.seenParseFile {
 		options = append(options,
 			completionDefinition{Label: "parse", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
 			completionDefinition{Label: "parse_file", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},

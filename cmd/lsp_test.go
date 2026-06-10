@@ -1226,6 +1226,28 @@ from "./shared.mace" import ImportedUser;
 		tAssert.Contains(labels, "./other.mace")
 	})
 
+	It("does not suggest parse directives before a schema directive", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data, s`, nil)
+
+		labels := completeLabels(server, uri, 0, uint32(len(`[output = data, s`)))
+		tAssert.Contains(labels, "schema")
+		tAssert.Contains(labels, "schema_file")
+		tAssert.NotContains(labels, "parse")
+		tAssert.NotContains(labels, "parse_file")
+	})
+
+	It("suggests parse directives after a schema directive", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data, schema = Runtime, p`, nil)
+
+		labels := completeLabels(server, uri, 0, uint32(len(`[output = data, schema = Runtime, p`)))
+		tAssert.Contains(labels, "parse")
+		tAssert.Contains(labels, "parse_file")
+		tAssert.NotContains(labels, "schema")
+		tAssert.NotContains(labels, "schema_file")
+	})
+
 	It("suggests $self in an empty output expression", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = data]
