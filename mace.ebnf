@@ -2,96 +2,67 @@
 (* 1. LEXICAL STRUCTURE                                  *)
 (* ===================================================== *)
 
-whitespace        = " " | "\t" | newline ;
-newline           = "\n" | "\r\n" ;
+whitespace = " " | "\t" | newline ;
+newline = "\n" | "\r\n" ;
 
-comment
-   = line_comment | block_comment ;
+comment = line_comment | block_comment ;
 
-block_comment
-  = "/*" newline ? any character except \ and * ? "*/" newline ;
-
-line_comment
-  = "//" ? any character except \ ? newline ;
+block_comment = "/*" , { ? any character except end of comment ? } , "*/" ;
+line_comment = "//" , { ? any character except newline ? } , newline ;
 
 inline_description = "/#" , ws0 , description_text ;
-description_text   = ? any character sequence up to but not including ',' ';' or newline ? ;
+description_text = ? any character sequence up to but not including ',' ';' or newline ? ;
 
-(* `;` terminates completed declaration entities in Mace. object-style fields
-   may use `,` or `;` separators, and inline descriptions may appear
-   immediately before or after that separator. *)
+ws0 = { whitespace | comment } ;
+ws1 = ( whitespace | comment ) , ws0 ;
 
-ws0                = { whitespace | comment } ;
-ws1                = ( whitespace | comment ) , ws0 ;
+letter = "A"…"Z" | "a"…"z" ;
+digit = "0"…"9" ;
+hex_digit = digit | "a"…"f" | "A"…"F" ;
 
-letter             = "A"…"Z" | "a"…"z" ;
-digit              = "0"…"9" ;
+identifier = letter , { letter | digit | "_" } ;
 
-identifier         = letter , { letter | digit | "_" } ;
+character = ? any Unicode scalar value ? ;
+single_character = ? any character except ' or newline or backslash ? | escape_sequence ;
+double_part = ? any character except " or newline or backslash or start of "$(" ? | escape_sequence | interpolation ;
+block_part = ? any character sequence not containing '"""' or start of "$(" ? | escape_sequence | interpolation ;
 
-string_literal     = single_string | double_string | block_string ;
-single_string      = "'" , { single_character } , "'" ;
-double_string      = '"' , { double_part } , '"' ;
-block_string       = '"""' , { block_part } , '"""' ;
-int_literal        = digit , { digit } ;
-float_literal      = digit , { digit } , "." , digit , { digit } ;
-hex_int_literal    = ( "0x" | "0X" ) , hex_digit , { hex_digit } ;
-hex_float_literal  = ( "0x" | "0X" ) , hex_digit , { hex_digit } , "." , hex_digit , { hex_digit } ;
-boolean_literal    = "true" | "false" ;
+string_literal = single_string | double_string | block_string ;
+single_string = "'" , { single_character } , "'" ;
+double_string = '"' , { double_part } , '"' ;
+block_string = '"""' , { block_part } , '"""' ;
+escape_sequence = "\\" , ( "\\" | "'" | '"' | "n" | "r" | "t" ) ;
+interpolation = "$" , "(" , expression , ")" ;
 
-hex_digit          = digit | "a"…"f" | "A"…"F" ;
-
-character          = ? any Unicode scalar value ? ;
-single_character   = ? any character except ' or newline or backslash ? | escape_sequence ;
-double_part        = ? any character except " or newline or backslash or start of "$ (" ? | escape_sequence | interpolation ;
-block_part         = ? any character sequence not containing '"""' or start of "$ (" ? | escape_sequence | interpolation ;
-escape_sequence    = "\\" , ( "\\" | "'" | '"' | "n" | "r" | "t" ) ;
-interpolation      = "$" , "(" , expression , ")" ;
+int_literal = digit , { digit } ;
+float_literal = digit , { digit } , "." , digit , { digit } ;
+hex_int_literal = ( "0x" | "0X" ) , hex_digit , { hex_digit } ;
+hex_float_literal = ( "0x" | "0X" ) , hex_digit , { hex_digit } , "." , hex_digit , { hex_digit } ;
+boolean_literal = "true" | "false" ;
 
 (* ===================================================== *)
 (* 2. TOP-LEVEL STRUCTURE                                *)
 (* ===================================================== *)
 
-mace_file
-  = ws0 ,
-    [ script_block , ws0 ] ,
-    output_block ,
-    ws0 ;
+mace_file = ws0 , [ script_block , ws0 ] , output_block , ws0 ;
 
 (* ===================================================== *)
-(* 3. IMPORTS                                           *)
+(* 3. IMPORTS                                            *)
 (* ===================================================== *)
 
-import_declaration
-  = "from" , ws1 , string_literal , ws1 ,
-    "import" , ws1 , import_list ,
-    ws0 , ";" ;
-
-import_list
-  = imported_identifier , { ws0 , "," , ws0 , imported_identifier } ;
-
-imported_identifier
-  = identifier , [ ws0 , ":" , ws0 , identifier ] ;
+import_declaration = "from" , ws1 , string_literal , ws1 , "import" , ws1 , import_list , ws0 , ";" ;
+import_list = imported_identifier , { ws0 , "," , ws0 , imported_identifier } ;
+imported_identifier = identifier , [ ws0 , ":" , ws0 , identifier ] ;
 
 (* ===================================================== *)
-(* 4. SCRIPT BLOCK                                      *)
+(* 4. SCRIPT BLOCK                                       *)
 (* ===================================================== *)
 
-script_block
-  = script_delimiter ,
-    ws0 ,
-    { import_declaration , ws0 } ,
-    { script_item , ws0 } ,
-    script_delimiter ;
+script_block = script_delimiter , ws0 , { import_declaration , ws0 } , { script_item , ws0 } , script_delimiter ;
+script_delimiter = "|" , "=" , "=" , "=" , { "=" } , "|" ;
+script_item = declaration ;
 
-script_delimiter
-  = "|" , "=" , "=" , "=" , { "=" } , "|" ;
-
-script_item
-  = declaration ;
-
-declaration
-  = variable_declaration
+declaration = variable_declaration
   | type_declaration
   | enum_declaration
   | schema_declaration
@@ -99,325 +70,109 @@ declaration
   | schema_doc_declaration ;
 
 (* ===================================================== *)
-(* 5. VARIABLE DECLARATIONS                             *)
+(* 5. VARIABLE DECLARATIONS                              *)
 (* ===================================================== *)
 
-variable_declaration
-  = [ "nullable" , ws1 ] ,
-    type_reference , ws1 ,
-    identifier , ws0 ,
-    "=" , ws0 ,
-    expression ,
-    ws0 , ";" ;
+variable_declaration = [ "injectable" , ws1 ] , type_reference , ws1 , identifier , [ ws0 , "=" , ws0 , expression ] , ws0 , ";" ;
 
 (* ===================================================== *)
-(* 6. TYPE DECLARATIONS                                 *)
+(* 6. TYPE DECLARATIONS                                  *)
 (* ===================================================== *)
 
-type_declaration
-  = "type" , ws1 ,
-    identifier , ws0 ,
-    ":" , ws0 ,
-    type_reference ,
-    [ ws0 , inline_description ] ,
-    ws0 , ";" ;
+type_declaration = "type" , ws1 , identifier , ws0 , ":" , ws0 , type_reference , [ ws0 , inline_description ] , ws0 , ";" ;
 
-gen_doc_declaration
-  = "gen_doc" , ws1 ,
-    identifier , ws0 ,
-    "{" , ws0 ,
-    { gen_doc_entry , ws0 } ,
-    "}" ;
+gen_doc_declaration = "gen_doc" , ws1 , identifier , ws0 , "{" , ws0 , { gen_doc_entry , ws0 } , "}" ;
+schema_doc_declaration = "schema_doc" , ws1 , identifier , ws0 , "{" , ws0 , { schema_doc_entry , ws0 } , "}" ;
 
-schema_doc_declaration
-  = "schema_doc" , ws1 ,
-    identifier , ws0 ,
-    "{" , ws0 ,
-    { schema_doc_entry , ws0 } ,
-    "}" ;
-
-(* `gen_doc` must appear after the target `type` declaration or a variable
-   declaration whose value is not an object.
-   `schema_doc` must appear after the target `schema` declaration, `enum`
-   declaration, or a variable declaration whose value is an object. *)
-
-gen_doc_entry
-  = "summary" , ws0 , ":" , ws0 , string_literal , ws0 , pair_separator
+gen_doc_entry = "summary" , ws0 , ":" , ws0 , string_literal , ws0 , pair_separator
   | "description" , ws0 , ":" , ws0 , block_string , ws0 , pair_separator ;
 
-schema_doc_entry
-  = "summary" , ws0 , ":" , ws0 , string_literal , ws0 , pair_separator
+schema_doc_entry = "summary" , ws0 , ":" , ws0 , string_literal , ws0 , pair_separator
   | "description" , ws0 , ":" , ws0 , block_string , ws0 , pair_separator
   | "fields" , ws0 , ":" , ws0 , "{" , ws0 , { field_entry , ws0 } , "}" , ws0 , pair_separator ;
 
-field_entry
-  = identifier , ws0 , ":" , ws0 , string_literal , ws0 , pair_separator ;
+field_entry = identifier , ws0 , ":" , ws0 , string_literal , ws0 , pair_separator ;
 
 (* ===================================================== *)
-(* 7. ENUM DECLARATIONS                                 *)
+(* 7. ENUM DECLARATIONS                                  *)
 (* ===================================================== *)
 
-enum_declaration
-  = "enum" , ws1 ,
-    identifier , ws0 ,
-    ":" , ws0 ,
-    enum_backing_type , ws0 ,
-    "{" , ws0 ,
-    [ enum_member , { ws0 , "," , ws0 , enum_member } , [ ws0 , "," ] ] ,
-    ws0 , "}" , ws0 , ";" ;
-
-enum_backing_type
-  = primitive_type ;
-
-enum_member
-  = identifier ,
-    [ ws0 , "=" , ws0 , enum_member_value ] ,
-    [ ws0 , inline_description ] ;
-
-enum_member_value
-  = string_literal
-  | int_literal
-  | float_literal
-  | hex_int_literal
-  | hex_float_literal
-  | boolean_literal ;
-
-(* The current implementation accepts primitive backing-type syntax but
-   validates only `string` and `int`. String and int enums may use implicit
-   values. Implicit int values use zero-based declaration order. *)
+enum_declaration = "enum" , ws1 , identifier , ws0 , ":" , ws0 , enum_backing_type , ws0 , "{" , ws0 , [ enum_member , { ws0 , "," , ws0 , enum_member } , [ ws0 , "," ] ] , ws0 , "}" , ws0 , ";" ;
+enum_backing_type = primitive_type ;
+enum_member = identifier , [ ws0 , "=" , ws0 , enum_member_value ] , [ ws0 , inline_description ] ;
+enum_member_value = string_literal | int_literal | float_literal | hex_int_literal | hex_float_literal | boolean_literal ;
 
 (* ===================================================== *)
-(* 8. SCHEMA DECLARATIONS                               *)
+(* 8. SCHEMA DECLARATIONS                                *)
 (* ===================================================== *)
 
-schema_declaration
-  = "schema" , ws1 ,
-    identifier , ws0 ,
-    ":" , ws0 ,
-    record_type ,
-    ws0 , ";" ;
-
-record_type
-  = "{" , ws0 ,
-    { schema_field , ws0 } ,
-    "}" ;
-
-schema_field
-  = identifier , [ "?" ] , ws0 ,
-    ":" , ws0 ,
-    type_reference ,
-    field_terminator ;
-
-field_terminator
-  = ws0 , pair_separator , [ ws0 , inline_description ]
-  | [ ws0 , inline_description ] , [ ws0 , pair_separator ] ;
-
-pair_separator
-  = "," | ";" ;
+schema_declaration = "schema" , ws1 , identifier , ws0 , ":" , ws0 , record_type , ws0 , ";" ;
+record_type = "{" , ws0 , { schema_field , ws0 } , "}" ;
+schema_field = identifier , [ "?" ] , ws0 , ":" , ws0 , type_reference , field_terminator ;
+field_terminator = ws0 , pair_separator , [ ws0 , inline_description ] | [ ws0 , inline_description ] , [ ws0 , pair_separator ] ;
+pair_separator = "," | ";" ;
 
 (* ===================================================== *)
-(* 9. TYPE REFERENCES                                   *)
+(* 9. TYPE REFERENCES                                    *)
 (* ===================================================== *)
 
-type_reference
-  = primitive_type
-  | array_type
-  | union_type
-  | variant_type
-  | identifier ;
-
-primitive_type
-  = "string" | "int" | "float" | "hex_int" | "hex_float" | "boolean" ;
-
-array_type
-  = "array" , ws0 , "<" , ws0 ,
-    type_reference ,
-    ws0 , ">" ;
-
-union_type
-  = "union" , ws0 , "[" , ws0 ,
-    type_reference , { ws0 , "," , ws0 , type_reference } ,
-    ws0 , "]" ;
-
-variant_type
-  = "variant" , ws0 , "[" , ws0 ,
-    type_reference , { ws0 , "," , ws0 , type_reference } ,
-    ws0 , "]" ;
+type_reference = primitive_type | array_type | union_type | variant_type | choice_type | identifier ;
+primitive_type = "string" | "int" | "float" | "hex_int" | "hex_float" | "boolean" ;
+array_type = "array" , ws0 , "<" , ws0 , type_reference , ws0 , ">" ;
+union_type = "union" , ws0 , "[" , ws0 , type_reference , { ws0 , "," , ws0 , type_reference } , ws0 , "]" ;
+variant_type = "variant" , ws0 , "[" , ws0 , type_reference , { ws0 , "," , ws0 , type_reference } , ws0 , "]" ;
+choice_type = "choice" , ws0 , "[" , ws0 , choice_member , { ws0 , "," , ws0 , choice_member } , ws0 , "]" ;
+choice_member = string_literal | int_literal | float_literal | hex_int_literal | hex_float_literal | boolean_literal | identifier ;
 
 (* ===================================================== *)
 (* 10. OUTPUT BLOCK                                      *)
 (* ===================================================== *)
 
-output_block
-  = [ output_directive , ws0 , [ inline_doc_block , ws0 ] ] ,
-    ws0 ,
-    "{" , ws0 ,
-    { output_item , ws0 } ,
-    "}" ;
+output_block = [ output_directive , ws0 , [ inline_doc_block , ws0 ] ] , ws0 , "{" , ws0 , { output_item , ws0 } , "}" ;
+inline_doc_block = block_string ;
 
-inline_doc_block
-  = block_string ;
-
-output_directive
-  = "[" , ws0 ,
-    directive_pair , { ws0 , "," , ws0 , directive_pair } ,
-    ws0 , "]" ;
-
-directive_pair
-  = "output" , ws0 , "=" , ws0 , ( "data" | "schema" )
+output_directive = "[" , ws0 , directive_pair , { ws0 , "," , ws0 , directive_pair } , ws0 , "]" ;
+directive_pair = "output" , ws0 , "=" , ws0 , ( "data" | "schema" )
   | "schema_file" , ws0 , "=" , ws0 , string_literal
   | "schema" , ws0 , "=" , ws0 , identifier
   | "parse" , ws0 , "=" , ws0 , identifier
   | "parse_file" , ws0 , "=" , ws0 , string_literal ;
 
-(* If `output_directive` is omitted, the output mode defaults to `data`.
-   `output = schema` must appear alone.
-   `parse = <identifier>` is self-contained: the identifier names the schema to
-   validate host input against; no separate `schema` directive is needed.
-   `parse_file = <string_literal>` loads schema declarations from the referenced
-   file and requires a `schema = <identifier>` directive to select which schema
-   to validate host input against.
-   `parse` and `parse_file` cannot be combined. *)
-
-output_item
-  = output_field ;
-
-output_field
-  = identifier , [ "?" ] , ws0 ,
-    ":" , ws0 ,
-    expression ,
-    field_terminator ;
-
-output_schema_field
-  = identifier , [ "?" ] , ws0 ,
-    ":" , ws0 ,
-    type_reference ,
-    field_terminator ;
+output_item = output_field ;
+output_field = identifier , [ "?" ] , ws0 , ":" , ws0 , expression , field_terminator ;
+output_schema_field = identifier , [ "?" ] , ws0 , ":" , ws0 , type_reference , field_terminator ;
 
 (* ===================================================== *)
-(* 11. EXPRESSIONS (JS-LIKE, PURE, WITH PRECEDENCE)      *)
+(* 11. EXPRESSIONS                                       *)
 (* ===================================================== *)
 
-expression
-  = conditional_expression ;
-
-primary_expression
-  = postfix_expression
-  | int_literal
-  | float_literal
-  | string_literal
-  | boolean_literal
-  | array_literal
-  | record_literal ;
-
-postfix_expression
-  = postfix_target , { postfix_suffix } ;
-
-postfix_target
-  = identifier
-  | self_reference
-  | "(" , expression , ")" ;
-
-postfix_suffix
-  = member_access_suffix
-  | array_access_suffix ;
-
-member_access_suffix
-  = "." , identifier ;
-
-array_access_suffix
-  = "[" , ws0 , int_literal , ws0 , "]" ;
-
-self_reference
-  = "$self" , "." , identifier , { "." , identifier } ;
-
-unary_expression
-  = primary_expression
-  | "!" unary_expression
-  | "~" unary_expression
-  | "+" unary_expression
-  | "-" unary_expression ;
-
-exponent_expression
-  = unary_expression
-  | unary_expression "**" exponent_expression ;
-
-multiplicative_expression
-  = exponent_expression
-  | multiplicative_expression "*" exponent_expression
-  | multiplicative_expression "/" exponent_expression
-  | multiplicative_expression "%" exponent_expression ;
-
-additive_expression
-  = multiplicative_expression
-  | additive_expression "+" multiplicative_expression
-  | additive_expression "-" multiplicative_expression ;
-
-shift_expression
-  = additive_expression
-  | shift_expression "<<" additive_expression
-  | shift_expression ">>" additive_expression
-  | shift_expression ">>>" additive_expression ;
-
-relational_expression
-  = shift_expression
-  | relational_expression "<" shift_expression
-  | relational_expression "<=" shift_expression
-  | relational_expression ">" shift_expression
-  | relational_expression ">=" shift_expression ;
-
-equality_expression
-  = relational_expression
-  | equality_expression "==" relational_expression
-  | equality_expression "!=" relational_expression ;
-
-bitwise_and_expression
-  = equality_expression
-  | bitwise_and_expression "&" equality_expression ;
-
-bitwise_xor_expression
-  = bitwise_and_expression
-  | bitwise_xor_expression "^" bitwise_and_expression ;
-
-bitwise_or_expression
-  = bitwise_xor_expression
-  | bitwise_or_expression "|" bitwise_xor_expression ;
-
-logical_and_expression
-  = bitwise_or_expression
-  | logical_and_expression "&&" bitwise_or_expression ;
-
-logical_or_expression
-  = logical_and_expression
-  | logical_or_expression "||" logical_and_expression ;
-
-conditional_expression
-  = logical_or_expression
-  | logical_or_expression , ws0 , "?" , ws0 ,
-    expression , ws0 , ":" , ws0 ,
-    conditional_expression ;
-
-merge_expression
-  = (array_literal | record_literal) ,
-    { ws0 , "<>" , ws0 , (array_literal | record_literal) } ,
-    ws0 ;
+expression = conditional_expression ;
+primary_expression = postfix_expression | int_literal | float_literal | string_literal | boolean_literal | array_literal | record_literal ;
+postfix_expression = postfix_target , { postfix_suffix } ;
+postfix_target = identifier | self_reference | "(" , expression , ")" ;
+postfix_suffix = member_access_suffix | array_access_suffix ;
+member_access_suffix = "." , identifier ;
+array_access_suffix = "[" , ws0 , int_literal , ws0 , "]" ;
+self_reference = "$self" , "." , identifier , { "." , identifier } ;
+unary_expression = primary_expression | "!" unary_expression | "~" unary_expression | "+" unary_expression | "-" unary_expression ;
+exponent_expression = unary_expression | unary_expression "**" exponent_expression ;
+multiplicative_expression = exponent_expression | multiplicative_expression "*" exponent_expression | multiplicative_expression "/" exponent_expression | multiplicative_expression "%" exponent_expression ;
+additive_expression = multiplicative_expression | additive_expression "+" multiplicative_expression | additive_expression "-" multiplicative_expression ;
+shift_expression = additive_expression | shift_expression "<<" additive_expression | shift_expression ">>" additive_expression | shift_expression ">>>" additive_expression ;
+relational_expression = shift_expression | relational_expression "<" shift_expression | relational_expression "<=" shift_expression | relational_expression ">" shift_expression | relational_expression ">=" shift_expression ;
+equality_expression = relational_expression | equality_expression "==" relational_expression | equality_expression "!=" relational_expression ;
+bitwise_and_expression = equality_expression | bitwise_and_expression "&" equality_expression ;
+bitwise_xor_expression = bitwise_and_expression | bitwise_xor_expression "^" bitwise_and_expression ;
+bitwise_or_expression = bitwise_xor_expression | bitwise_or_expression "|" bitwise_xor_expression ;
+logical_and_expression = bitwise_or_expression | logical_and_expression "&&" bitwise_or_expression ;
+logical_or_expression = logical_and_expression | logical_or_expression "||" logical_and_expression ;
+conditional_expression = logical_or_expression | logical_or_expression , ws0 , "?" , ws0 , expression , ws0 , ":" , ws0 , conditional_expression ;
+merge_expression = ( array_literal | record_literal ) , { ws0 , "<>" , ws0 , ( array_literal | record_literal ) } , ws0 ;
 
 (* ===================================================== *)
-(* 12. LITERALS                                         *)
+(* 12. LITERALS                                          *)
 (* ===================================================== *)
 
-array_literal
-  = "[" , ws0 ,
-    [ expression , { ws0 , "," , ws0 , expression } ] ,
-    ws0 , "]" ;
-
-record_literal
-  = "{" , ws0 ,
-    { record_field , ws0 } ,
-    "}" ;
-
-record_field
-  = identifier , [ "?" ] , ws0 ,
-    ":" , ws0 ,
-    expression ,
-    field_terminator ;
+array_literal = "[" , ws0 , [ expression , { ws0 , "," , ws0 , expression } ] , ws0 , "]" ;
+record_literal = "{" , ws0 , { record_field , ws0 } , "}" ;
+record_field = identifier , [ "?" ] , ws0 , ":" , ws0 , expression , field_terminator ;
