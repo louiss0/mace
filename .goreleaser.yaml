@@ -74,17 +74,16 @@ release:
 
 winget:
   - name: mace
-    publisher: Shelton Louis
-    author: Shelton Louis
+    publisher: the-code-fixer-23
     short_description: "Deterministic typed configuration language and Go toolkit."
     homepage: "https://github.com/louiss0/mace"
     path: "manifests/l/louiss0/mace/{{ .Version }}"
     license: MIT
     publisher_url: https://github.com/louiss0
     publisher_support_url: "https://github.com/louiss0/mace/issues/new"
-    package_identifier: louiss0.mace
+    package_identifier: the-code-fixer-23.mace
     commit_author:
-      name: Shelton Louis
+      name: louis0
       email: louisshelton0@gmail.com
     commit_msg_template: "{{ .PackageIdentifier }}: {{ .Tag }}"
     release_notes: "{{.Changelog}}"
@@ -105,7 +104,7 @@ homebrew_casks:
     binaries:
       - mace
     commit_author:
-      name: Shelton Louis
+      name: louiss0
       email: louisshelton0@gmail.com
     commit_msg_template: "Brew cask update for {{ .ProjectName }} version {{ .Tag }}"
     homepage: "https://github.com/louiss0/mace"
@@ -119,7 +118,7 @@ homebrew_casks:
 scoops:
   - name: mace
     commit_author:
-      name: Shelton Louis
+      name: louiss0
       email: louisshelton0@gmail.com
     commit_msg_template: "Scoop update for {{ .ProjectName }} version {{ .Tag }}"
     goamd64: v3
@@ -137,7 +136,7 @@ nix:
   - name: mace
     goamd64: v1
     commit_author:
-      name: Shelton Louis
+      name: louiss0
       email: louisshelton0@gmail.com
     commit_msg_template: "{{ .ProjectName }}: {{ .Tag }}"
     path: "pkgs/{{ .ProjectName }}/default.nix"
