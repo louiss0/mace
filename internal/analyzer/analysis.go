@@ -919,11 +919,6 @@ func variableFixTextCodeActions(text string, documentPath string) []analysisCode
 	}); ok {
 		addTextAction("Add missing initializer", updated)
 	}
-	if updated, ok := replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*)([A-Za-z_][A-Za-z0-9_]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*;`), func(matches []string) string {
-		return matches[1] + "injectable " + matches[2] + " " + matches[3] + ";"
-	}); ok {
-		addTextAction("Mark variable as injectable", updated)
-	}
 	if updated, ok := replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*)(int)\s+([A-Za-z_][A-Za-z0-9_]*)\s*;`), func(matches []string) string {
 		return matches[1] + matches[2] + " " + matches[3] + " = 0;"
 	}); ok {
@@ -948,58 +943,7 @@ func variableFixTextCodeActions(text string, documentPath string) []analysisCode
 	if updated, ok := extractOutputExpressionText(text); ok {
 		addTextAction("Extract output expression into script variable", updated)
 	}
-	if updated, ok := convertVariableToInjectableText(text); ok {
-		addTextAction("Convert variable to injectable", updated)
-	}
-	if updated, ok := addDefaultInitializerToInjectableText(text); ok {
-		addTextAction("Add default initializer to injectable", updated)
-	}
-	if stub, ok := injectionConfigStubText(text); ok {
-		addTextAction("Generate injection config stub", text+"\n"+stub)
-	}
-	if names, ok := injectableVariableNames(text); ok {
-		actions = append(actions, analysisCodeActionCandidate{Range: targetRange, Action: protocol.CodeAction{Title: "Find all injectable variables", Kind: Ptr(protocol.CodeActionKindRefactor), Command: &protocol.Command{Title: "Find all injectable variables", Command: "mace.findInjectables", Arguments: []any{strings.Join(names, ", ")}}}})
-	}
 	return actions
-}
-
-func convertVariableToInjectableText(text string) (string, bool) {
-	return replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*)([A-Za-z_][A-Za-z0-9_]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*;`), func(matches []string) string {
-		return matches[1] + "injectable " + matches[2] + " " + matches[3] + ";"
-	})
-}
-
-func addDefaultInitializerToInjectableText(text string) (string, bool) {
-	return replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*injectable\s+)([A-Za-z_][A-Za-z0-9_]*(?:<[^>]+>)?)\s+([A-Za-z_][A-Za-z0-9_]*)\s*;`), func(matches []string) string {
-		return matches[1] + matches[2] + " " + matches[3] + " = " + defaultLiteralForTypeName(matches[2]) + ";"
-	})
-}
-
-func injectionConfigStubText(text string) (string, bool) {
-	names, ok := injectableVariableNames(text)
-	if !ok {
-		return "", false
-	}
-	pattern := regexp.MustCompile(`(?m)^\s*injectable\s+([A-Za-z_][A-Za-z0-9_]*(?:<[^>]+>)?)\s+([A-Za-z_][A-Za-z0-9_]*)`)
-	entries := lo.FilterMap(pattern.FindAllStringSubmatch(text, -1), func(matches []string, _ int) (string, bool) {
-		if len(matches) < 3 {
-			return "", false
-		}
-		return "  \"" + matches[2] + "\": " + defaultLiteralForTypeName(matches[1]), true
-	})
-	_ = names
-	return "/# injection config stub\n{\n" + strings.Join(entries, ",\n") + "\n}\n#/", true
-}
-
-func injectableVariableNames(text string) ([]string, bool) {
-	pattern := regexp.MustCompile(`(?m)^\s*injectable\s+[A-Za-z_][A-Za-z0-9_]*\s+([A-Za-z_][A-Za-z0-9_]*)`)
-	names := lo.FilterMap(pattern.FindAllStringSubmatch(text, -1), func(matches []string, _ int) (string, bool) {
-		if len(matches) < 2 {
-			return "", false
-		}
-		return matches[1], true
-	})
-	return names, len(names) > 0
 }
 
 func defaultLiteralForTypeName(name string) string {
@@ -2602,7 +2546,7 @@ func unusedDeclarationAnalysis(text string, file ast.File, tokens []lexer.Token,
 	for _, item := range file.Script.Items {
 		switch declaration := item.(type) {
 		case ast.VariableDeclaration:
-			if file.Output.Mode == ast.OutputModeSchema || declaration.Injectable && !declaration.HasValue {
+			if file.Output.Mode == ast.OutputModeSchema {
 				continue
 			}
 			if _, used := usedVariables[declaration.Name]; used {
@@ -2838,12 +2782,6 @@ func semanticDiagnosticFromError(file ast.File, tokens []lexer.Token, err error)
 		}
 	}
 
-	if hasDiagnosticError {
-		if diagnostic, ok := missingInjectableDiagnostic(file, tokens, diagnosticError); ok {
-			return diagnostic, true
-		}
-	}
-
 	if diagnostic, ok := mixedArrayLiteralDiagnostic(file, tokens, message); ok {
 		return diagnostic, true
 	}
@@ -2940,19 +2878,6 @@ func nullUsageDiagnostic(tokens []lexer.Token, diagnosticError processor.Diagnos
 	}
 
 	return protocol.Diagnostic{}, false
-}
-
-func missingInjectableDiagnostic(file ast.File, tokens []lexer.Token, diagnosticError processor.DiagnosticError) (protocol.Diagnostic, bool) {
-	if file.Script == nil || diagnosticError.Code != processor.CodeMissingInjectable {
-		return protocol.Diagnostic{}, false
-	}
-
-	rangeValue, found := tokenRange(tokens, diagnosticError.Fields.Name)
-	if !found {
-		return protocol.Diagnostic{}, false
-	}
-
-	return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticDeclarationVariableMissingInitializer, diagnosticError.Message), true
 }
 
 func mixedArrayLiteralDiagnostic(file ast.File, tokens []lexer.Token, message string) (protocol.Diagnostic, bool) {

@@ -2092,35 +2092,22 @@ type Value struct {
 }
 
 type valueEnvironment struct {
-	values             map[string]Value
-	missingInjectables map[string]struct{}
+	values map[string]Value
 }
 
 func newValueEnvironment() *valueEnvironment {
 	return &valueEnvironment{
-		values:             map[string]Value{},
-		missingInjectables: map[string]struct{}{},
+		values: map[string]Value{},
 	}
 }
 
 func (environment *valueEnvironment) Add(name string, value Value) {
 	environment.values[name] = value
-	delete(environment.missingInjectables, name)
-}
-
-func (environment *valueEnvironment) AddMissingInjectable(name string) {
-	delete(environment.values, name)
-	environment.missingInjectables[name] = struct{}{}
 }
 
 func (environment *valueEnvironment) Get(name string) (Value, bool) {
 	value, ok := environment.values[name]
 	return value, ok
-}
-
-func (environment *valueEnvironment) IsMissingInjectable(name string) bool {
-	_, ok := environment.missingInjectables[name]
-	return ok
 }
 
 func (environment *valueEnvironment) Values() map[string]Value {
@@ -2135,9 +2122,6 @@ func (environment *valueEnvironment) Values() map[string]Value {
 func (environment *valueEnvironment) Clone() *valueEnvironment {
 	cloned := newValueEnvironment()
 	cloned.values = environment.Values()
-	for name := range environment.missingInjectables {
-		cloned.missingInjectables[name] = struct{}{}
-	}
 
 	return cloned
 }

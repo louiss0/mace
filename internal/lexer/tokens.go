@@ -28,7 +28,6 @@ const (
 	TokenParse
 	TokenParseFile
 	TokenData
-	TokenInjectable
 	TokenNullable
 	TokenIn
 	TokenNull
