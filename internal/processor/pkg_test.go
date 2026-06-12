@@ -2,6 +2,8 @@ package processor
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -245,8 +247,8 @@ string first = 'Ada';
 string second = """Hello
 World""";
 |===|`)),
-		Entry("injectable without initializer when unused", wrapScriptWithOutput(`|===|
-injectable string env;
+		Entry("nullable variable with null initializer", wrapScriptWithOutput(`|===|
+nullable string env = null;
 |===|`)),
 		Entry("imports and script block", `|===|
 from "testdata/imports/base.mace" import Name;
@@ -513,6 +515,25 @@ Value third = true;
 		tAssert.NoError(err)
 	})
 
+	DescribeTable("accepts choice variants with primitive literal fallbacks",
+		func(choiceType string, primitiveType string, presetValue string, fallbackValue string) {
+			processor := New()
+			_, err := processor.Process(wrapScriptWithOutput(fmt.Sprintf(`|===|
+type Preset: %s;
+type Value: variant[Preset, %s];
+Value preset = %s;
+Value fallback = %s;
+|===|`, choiceType, primitiveType, presetValue, fallbackValue)))
+			tAssert.NoError(err)
+		},
+		Entry("string preset with string fallback", `choice["approved"]`, "string", `"approved"`, `"custom"`),
+		Entry("int preset with int fallback", `choice[1]`, "int", `1`, `2`),
+		Entry("float preset with float fallback", `choice[1.5]`, "float", `1.5`, `2.5`),
+		Entry("hex int preset with hex int fallback", `choice[0x1]`, "hex_int", `0x1`, `0x2`),
+		Entry("hex float preset with hex float fallback", `choice[0x1.8]`, "hex_float", `0x1.8`, `0x2.8`),
+		Entry("boolean preset with boolean fallback", `choice[true]`, "boolean", `true`, `false`),
+	)
+
 	It("accepts union schema composition aliases", func() {
 		processor := New()
 		result, err := processor.Process(`|===|
@@ -607,8 +628,8 @@ array<Point> points = [
   { x: 3; y: 4; }
 ];
 |===|`)),
-		Entry("injectable fallback initializer", wrapScriptWithOutput(`|===|
-injectable string env = "dev";
+		Entry("nullable string initializer", wrapScriptWithOutput(`|===|
+nullable string env = "dev";
 |===|`)),
 	)
 
@@ -665,15 +686,15 @@ User user = {
 		tAssert.NoError(err)
 	})
 
-	It("uses injected values for injectable variables", func() {
-		processor := NewWithInjections(map[string]Value{
+	It("uses parse input to expose schema fields in the output block", func() {
+		processor := NewWithInput(map[string]Value{
 			"env": {Kind: ValueString, String: "prod"},
 		})
 
 		result, err := processor.Process(`|===|
-injectable string env = "dev";
+schema Runtime: { env: string; };
 |===|
-[output = data]
+[output = data, parse = Runtime]
 {
   env: env;
 }`)
@@ -683,64 +704,113 @@ injectable string env = "dev";
 		assertExpectedValue(actual, expectedValue{kind: ValueString, string: "prod"})
 	})
 
-	It("uses an initializer when an injectable value is not provided", func() {
+	It("omits output fields that evaluate to null through nullable variables", func() {
 		processor := New()
 
 		result, err := processor.Process(`|===|
-injectable string env = "dev";
+nullable string env = null;
 |===|
 [output = data]
 {
   env: env;
 }`)
 		tAssert.NoError(err)
-
-		actual := requireOutputValue(result, "env")
-		assertExpectedValue(actual, expectedValue{kind: ValueString, string: "dev"})
+		tAssert.Empty(result.Output)
 	})
 
-	It("rejects injectables without a provided value or initializer", func() {
+	It("accepts null for optional schema fields", func() {
+		processor := New()
+
+		result, err := processor.Process(`|===|
+schema User: { nickname?: string; };
+User user = { nickname: null; };
+|===|
+[output = data]
+{
+  user: user;
+}`)
+		tAssert.NoError(err)
+
+		actual := requireOutputValue(result, "user")
+		assertExpectedValue(actual, expectedValue{kind: ValueRecord, record: map[string]expectedValue{}})
+	})
+
+	It("rejects direct null output fields", func() {
+		processor := New()
+
+		_, err := processor.Process(`[output = data]
+{
+  env: null;
+}`)
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, "null can only be assigned to nullable variables and optional schema fields")
+	})
+
+	It("rejects parse directives without required input fields", func() {
 		processor := New()
 
 		_, err := processor.Process(`|===|
-injectable string env;
+schema Runtime: { env: string; };
 |===|
-[output = data]
+[output = data, parse = Runtime]
 {
   env: env;
 }`)
 		tAssert.Error(err)
-		tAssert.ErrorContains(err, "injectable")
-		tAssert.ErrorContains(err, "requires a runtime value")
+		tAssert.ErrorContains(err, "missing required field")
 	})
 
-	It("rejects missing injectables before self field fallback", func() {
+	It("rejects null assignments to non-nullable variables", func() {
+		processor := New()
+
+		_, err := processor.Process(wrapScriptWithOutput(`|===|
+string env = null;
+|===|`))
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, "null can only be assigned to nullable variables and optional schema fields")
+	})
+
+	It("rejects nullable conditional assignments to non-nullable variables", func() {
+		processor := New()
+
+		_, err := processor.Process(wrapScriptWithOutput(`|===|
+string env = false ? null : "prod";
+|===|`))
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, "null can only be assigned to nullable variables and optional schema fields")
+	})
+
+	It("rejects nullable conditional assignments to required schema fields", func() {
 		processor := New()
 
 		_, err := processor.Process(`|===|
-injectable string token;
+schema Runtime: { env: string; };
+Runtime config = { env: false ? null : "prod"; };
 |===|
 [output = data]
 {
-  token: "x";
-  next: token;
+  config: config;
 }`)
 		tAssert.Error(err)
-		tAssert.ErrorContains(err, "injectable")
-		tAssert.ErrorContains(err, "requires a runtime value")
+		tAssert.ErrorContains(err, "null can only be assigned to nullable variables and optional schema fields")
 	})
 
-	It("rejects unknown injected values", func() {
-		processor := NewWithInjections(map[string]Value{
-			"missing": {Kind: ValueString, String: "prod"},
+	It("rejects parse directives with an unknown schema", func() {
+		processor := NewWithInput(map[string]Value{
+			"env": {Kind: ValueString, String: "prod"},
 		})
 
-		_, err := processor.Process(`|===|
-injectable string env = "dev";
-|===|
-[output = data] {}`)
+		_, err := processor.Process(`[output = data, parse = MissingSchema] {}`)
 		tAssert.Error(err)
-		tAssert.ErrorContains(err, "unknown injectable")
+		tAssert.ErrorContains(err, "unknown schema")
+	})
+
+	It("rejects parse_file without a schema directive", func() {
+		processor := New()
+
+		_, err := processor.Process(`[output = data, parse_file = "./missing.mace"] {}`)
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, "parse_file directive requires a schema directive")
 	})
 
 	DescribeTable("processes valid choice declarations",
@@ -963,6 +1033,44 @@ from "testdata/imports/metrics.mace" import Hidden;
 		}}),
 	)
 
+	DescribeTable("processes practical choice fixtures",
+		func(path string, expected expectedValue) {
+			processor := New()
+			result, err := processor.ProcessFile(path)
+			tAssert.NoError(err)
+
+			actual := requireOutputValue(result, "result")
+			assertExpectedValue(actual, expected)
+		},
+		Entry("deployment environment choices", "testdata/choices/deployment.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+			"app":         {kind: ValueString, string: "billing-api"},
+			"environment": {kind: ValueString, string: "prod"},
+			"region":      {kind: ValueString, string: "us-east-1"},
+			"replicas":    {kind: ValueInt, int64: 4},
+		}}),
+		Entry("nested permission choices", "testdata/choices/permissions.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+			"role":       {kind: ValueString, string: "admin"},
+			"permission": {kind: ValueString, string: "approve"},
+			"resource":   {kind: ValueString, string: "invoice"},
+		}}),
+		Entry("mixed scalar shipping choices", "testdata/choices/shipping.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+			"order_id":           {kind: ValueString, string: "ORD-1001"},
+			"method":             {kind: ValueString, string: "express"},
+			"package_tier":       {kind: ValueInt, int64: 2},
+			"signature_required": {kind: ValueBoolean, bool: true},
+		}}),
+		Entry("composed contact channel choices", "testdata/choices/mixed_choices.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+			"customer_id": {kind: ValueString, string: "CUST-42"},
+			"preferred":   {kind: ValueString, string: "email"},
+			"fallback":    {kind: ValueString, string: "chat"},
+		}}),
+		Entry("choice nested inside variant", "testdata/choices/choice_variant.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+			"reviewer": {kind: ValueString, string: "ada"},
+			"outcome":  {kind: ValueString, string: "approved"},
+			"note":     {kind: ValueString, string: "ready to ship"},
+		}}),
+	)
+
 	It("processes nested variable array access fixtures", func() {
 		processor := New()
 		result, err := processor.ProcessFile("testdata/array_access/nested_variable_access.mace")
@@ -1110,6 +1218,115 @@ Fruit result = "Apple";
 		tAssert.NoError(err)
 		assertExpectedValue(requireOutputValue(result, "result"), expectedValue{kind: ValueString, string: "Apple"})
 		tAssert.FileExists(sharedPath)
+	})
+
+	It("imports remote mace files over http", func() {
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			switch request.URL.Path {
+			case "/shared.mace":
+				_, _ = writer.Write([]byte(`[output = data]
+{
+  value: "Ada";
+}`))
+			default:
+				http.NotFound(writer, request)
+			}
+		}))
+		defer server.Close()
+
+		input := fmt.Sprintf(`|===|
+from %q import value;
+|===|
+[output = data]
+{
+  result: value;
+}`, server.URL+"/shared.mace")
+
+		processor := New()
+		result, err := processor.Process(input)
+		tAssert.NoError(err)
+		assertExpectedValue(requireOutputValue(result, "result"), expectedValue{kind: ValueString, string: "Ada"})
+	})
+
+	It("loads remote schema_file declarations over http", func() {
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			switch request.URL.Path {
+			case "/schema.mace":
+				_, _ = writer.Write([]byte(`|===|
+schema User: { name: string; };
+|===|
+[output = schema]
+{
+  User: User;
+}`))
+			default:
+				http.NotFound(writer, request)
+			}
+		}))
+		defer server.Close()
+
+		input := fmt.Sprintf(`[output = data, schema = User, schema_file = %q]
+{
+  name: "Ada";
+}`, server.URL+"/schema.mace")
+
+		processor := New()
+		result, err := processor.Process(input)
+		tAssert.NoError(err)
+		assertExpectedValue(requireOutputValue(result, "name"), expectedValue{kind: ValueString, string: "Ada"})
+	})
+
+	It("resolves relative imports inside remote mace files", func() {
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			switch request.URL.Path {
+			case "/shared/base.mace":
+				_, _ = writer.Write([]byte(`[output = data]
+{
+  value: "Ada";
+}`))
+			case "/entry.mace":
+				_, _ = writer.Write([]byte(`|===|
+from "./shared/base.mace" import value;
+|===|
+[output = data]
+{
+  result: value;
+}`))
+			default:
+				http.NotFound(writer, request)
+			}
+		}))
+		defer server.Close()
+
+		input := fmt.Sprintf(`|===|
+from %q import result;
+|===|
+[output = data]
+{
+  result: result;
+}`, server.URL+"/entry.mace")
+
+		processor := New()
+		result, err := processor.Process(input)
+		tAssert.NoError(err)
+		assertExpectedValue(requireOutputValue(result, "result"), expectedValue{kind: ValueString, string: "Ada"})
+	})
+
+	It("rejects remote import urls without a .mace suffix", func() {
+		processor := New()
+		_, err := processor.Process(`|===|
+from "https://example.com/shared" import value;
+|===|
+[output = data] {}`)
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, "must end in .mace")
+	})
+
+	It("rejects remote schema_file urls without a .mace suffix", func() {
+		processor := New()
+		_, err := processor.Process(`[output = data, schema = User, schema_file = "https://example.com/schema"] {}`)
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, "must end in .mace")
 	})
 })
 

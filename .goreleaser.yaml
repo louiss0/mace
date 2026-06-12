@@ -1,0 +1,152 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+
+version: 2
+project_name: mace
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: ./cmd
+    id: mace
+    binary: mace
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+changelog:
+  filters:
+    exclude:
+      - '^docs(\(.*\))?:'
+      - '^chore(\(.*\))?:'
+      - '^style(\(.*\))?:'
+      - '^refactor(\(.*\))?:'
+      - "^Merge"
+      - '^(build|ci)\(deps'
+      - '^(build|ci)\(.*\): bump'
+  groups:
+    - title: "Features"
+      regexp: '^feat(\(.*\))?:'
+      order: 0
+    - title: "Bug Fixes"
+      regexp: '^fix(\(.*\))?:'
+      order: 1
+    - title: "Tests"
+      regexp: '^test(\(.*\))?:'
+      order: 2
+    - title: "Performance"
+      regexp: '^perf(\(.*\))?:'
+      order: 3
+    - title: "CI/Build"
+      regexp: '^(build|ci)(\(.*\))?:'
+      order: 4
+    - title: "Others"
+      order: 999
+  sort: asc
+
+release:
+  github:
+    owner: louiss0
+    name: mace
+
+winget:
+  - name: mace
+    publisher: the-code-fixer-23
+    short_description: "Deterministic typed configuration language and Go toolkit."
+    homepage: "https://github.com/louiss0/mace"
+    path: "manifests/l/louiss0/mace/{{ .Version }}"
+    license: MIT
+    publisher_url: https://github.com/louiss0
+    publisher_support_url: "https://github.com/louiss0/mace/issues/new"
+    package_identifier: the-code-fixer-23.mace
+    commit_author:
+      name: louis0
+      email: louisshelton0@gmail.com
+    commit_msg_template: "{{ .PackageIdentifier }}: {{ .Tag }}"
+    release_notes: "{{.Changelog}}"
+    repository:
+      owner: Sheltons-CLI-Projects
+      name: winget-pkgs
+      branch: "{{ .ProjectName }}-{{ .Version }}"
+      git:
+        url: git@github.com:Sheltons-CLI-Projects/winget-pkgs.git
+        private_key: "{{ .Env.GORELEASER_WINGET_DEPLOY_KEY_PATH }}"
+
+homebrew_casks:
+  - name: mace
+    binaries:
+      - mace
+    commit_author:
+      name: louiss0
+      email: louisshelton0@gmail.com
+    commit_msg_template: "Brew cask update for {{ .ProjectName }} version {{ .Tag }}"
+    homepage: "https://github.com/louiss0/mace"
+    description: "Deterministic typed configuration language and Go toolkit."
+    repository:
+      owner: Sheltons-CLI-Projects
+      name: homebrew-the-code-fixer-23
+      branch: main
+      git:
+        url: git@github.com:Sheltons-CLI-Projects/homebrew-the-code-fixer-23.git
+        private_key: "{{ .Env.GORELEASER_HOMEBREW_DEPLOY_KEY_PATH }}"
+
+scoops:
+  - name: mace
+    commit_author:
+      name: louiss0
+      email: louisshelton0@gmail.com
+    commit_msg_template: "Scoop update for {{ .ProjectName }} version {{ .Tag }}"
+    goamd64: v3
+    homepage: "https://github.com/louiss0/mace"
+    directory: bucket
+    license: MIT
+    description: "Deterministic typed configuration language and Go toolkit."
+    repository:
+      owner: louiss0
+      name: the-code-fixer-23-buckets
+      branch: main
+      git:
+        url: git@github.com:louiss0/the-code-fixer-23-buckets.git
+        private_key: "{{ .Env.SCOOP_PRIVATE_KEY_PATH }}"
+
+nix:
+  - name: mace
+    goamd64: v1
+    commit_author:
+      name: louiss0
+      email: louisshelton0@gmail.com
+    commit_msg_template: "{{ .ProjectName }}: {{ .Tag }}"
+    path: "pkgs/{{ .ProjectName }}/default.nix"
+    homepage: "https://github.com/louiss0/mace"
+    description: "Deterministic typed configuration language and Go toolkit."
+    license: "mit"
+    repository:
+      owner: Sheltons-CLI-Projects
+      name: the-code-fixer-23-nur
+      branch: main
+      git:
+        url: "git@github.com:Sheltons-CLI-Projects/the-code-fixer-23-nur.git"
+        private_key: "{{ .Env.GORELEASER_NIX_DEPLOY_KEY_PATH }}"

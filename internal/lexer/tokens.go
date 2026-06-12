@@ -25,8 +25,13 @@ const (
 	TokenBooleanType
 	TokenOutput
 	TokenSchemaFile
+	TokenParse
+	TokenParseFile
 	TokenData
 	TokenInjectable
+	TokenNullable
+	TokenIn
+	TokenNull
 
 	TokenString
 	TokenInt

@@ -1,0 +1,21 @@
+|=======================================================|
+type Status: choice["pending", "approved", "rejected"];
+type ReviewValue: variant[Status, string];
+
+schema Review: {
+  reviewer: string,
+  outcome: ReviewValue,
+  note: ReviewValue,
+};
+
+Review review = {
+  reviewer: "ada",
+  outcome: "approved",
+  note: "ready to ship",
+};
+|=======================================================|
+
+[output = data]
+{
+  result: review,
+}

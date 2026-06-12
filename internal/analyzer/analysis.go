@@ -526,6 +526,10 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 		return *result.action, true
 	})
 
+	directiveDiagnostics, directiveActions := directivePathDiagnostics(file, tokens, documentPath)
+	diagnostics = append(diagnostics, directiveDiagnostics...)
+	actions = append(actions, directiveActions...)
+
 	hasSchemaFileConflict := false
 	if diagnostic, candidates, ok := schemaFileConflictAnalysis(text, file, documentPath); ok {
 		diagnostics = append(diagnostics, diagnostic)
@@ -547,6 +551,48 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 	actions = append(actions, documentationCodeActions(text, file, tokens, documentPath)...)
 	actions = append(actions, editorRefactorCodeActions(text, file, tokens, documentPath)...)
 	diagnostics = append(diagnostics, schemaOutputVariableDiagnostics(file, tokens)...)
+
+	return diagnostics, actions
+}
+
+func directivePathDiagnostics(file ast.File, tokens []lexer.Token, documentPath string) ([]protocol.Diagnostic, []analysisCodeActionCandidate) {
+	if documentPath == "" {
+		return nil, nil
+	}
+
+	uri := protocol.DocumentUri(fileURI(documentPath))
+	diagnostics := []protocol.Diagnostic{}
+	actions := []analysisCodeActionCandidate{}
+
+	for _, directive := range file.Output.Directives {
+		if directive.Kind != ast.OutputDirectiveSchemaFile && directive.Kind != ast.OutputDirectiveParseFile {
+			continue
+		}
+
+		pathValue, err := strconv.Unquote(directive.Value)
+		if err != nil {
+			continue
+		}
+		if strings.HasSuffix(pathValue, ".mace") {
+			continue
+		}
+
+		rangeValue, found := tokenRangeByType(tokens, lexer.TokenString, directive.Value)
+		if !found {
+			continue
+		}
+
+		message := fmt.Sprintf("import path %q must end in .mace", pathValue)
+		diagnostics = append(diagnostics, diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticImportPathNotMace, message))
+		actions = append(actions, analysisCodeActionCandidate{
+			Range: rangeValue,
+			Action: protocol.CodeAction{
+				Title: "Append .mace to import path",
+				Kind:  Ptr(protocol.CodeActionKindQuickFix),
+				Edit:  &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: {{Range: rangeValue, NewText: strconv.Quote(pathValue + ".mace")}}}},
+			},
+		})
+	}
 
 	return diagnostics, actions
 }
@@ -2787,6 +2833,12 @@ func semanticDiagnosticFromError(file ast.File, tokens []lexer.Token, err error)
 	}
 
 	if hasDiagnosticError {
+		if diagnostic, ok := nullUsageDiagnostic(tokens, diagnosticError); ok {
+			return diagnostic, true
+		}
+	}
+
+	if hasDiagnosticError {
 		if diagnostic, ok := missingInjectableDiagnostic(file, tokens, diagnosticError); ok {
 			return diagnostic, true
 		}
@@ -2870,6 +2922,21 @@ func variableTypeMismatchDiagnostic(file ast.File, tokens []lexer.Token, diagnos
 		}
 
 		return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticTypeInitializerMismatch, diagnosticError.Message), true
+	}
+
+	return protocol.Diagnostic{}, false
+}
+
+func nullUsageDiagnostic(tokens []lexer.Token, diagnosticError processor.DiagnosticError) (protocol.Diagnostic, bool) {
+	if diagnosticError.Code != processor.CodeInvalidNullUsage {
+		return protocol.Diagnostic{}, false
+	}
+
+	for _, token := range tokens {
+		if token.Type != lexer.TokenNull {
+			continue
+		}
+		return diagnosticWithCode(tokenProtocolRange(token), protocol.DiagnosticSeverityError, diagnosticTypeInvalidNullUsage, diagnosticError.Message), true
 	}
 
 	return protocol.Diagnostic{}, false
@@ -3581,8 +3648,8 @@ func expressionSummary(expression ast.Expression) string {
 
 func variableDeclarationDetail(declaration ast.VariableDeclaration) string {
 	detail := fmt.Sprintf("%s %s", typeReferenceDetail(declaration.Type), declaration.Name)
-	if declaration.Injectable {
-		detail = "injectable " + detail
+	if declaration.Nullable {
+		detail = "nullable " + detail
 	}
 	if !declaration.HasValue {
 		return detail

@@ -1,0 +1,169 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          install_url: https://releases.nixos.org/nix/nix-2.18.1/install
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Verify Nix installation
+        run: |
+          nix --version
+          echo "PATH=$PATH" >> "$GITHUB_ENV"
+          echo "NIX_PATH=$NIX_PATH" >> "$GITHUB_ENV"
+          if [ -n "${NIX_PROFILES:-}" ]; then
+            echo "NIX_PROFILES=$NIX_PROFILES" >> "$GITHUB_ENV"
+          fi
+          if [ -n "${NIX_SSL_CERT_FILE:-}" ]; then
+            echo "NIX_SSL_CERT_FILE=$NIX_SSL_CERT_FILE" >> "$GITHUB_ENV"
+          fi
+
+      - name: Ensure nix-prefetch-url is available
+        run: |
+          export PATH="$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$PATH"
+          echo "PATH=$PATH" >> "$GITHUB_ENV"
+          which nix
+          which nix-prefetch-url || true
+
+      - name: Write GoReleaser deploy keys
+        env:
+          GORELEASER_WINGET_DEPLOY_KEY_B64: ${{ secrets.GORELEASER_WINGET_DEPLOY_KEY_B64 }}
+          GORELEASER_HOMEBREW_DEPLOY_KEY_B64: ${{ secrets.GORELEASER_HOMEBREW_DEPLOY_KEY_B64 }}
+          GORELEASER_NIX_DEPLOY_KEY_B64: ${{ secrets.GORELEASER_NIX_DEPLOY_KEY_B64 }}
+          SCOOP_PRIVATE_KEY_B64: ${{ secrets.SCOOP_PRIVATE_KEY_B64 }}
+        run: |
+          write_base64_key() {
+            key_path="$1"
+            key_value="$2"
+
+            umask 077
+            printf '%s' "$key_value" | tr -d '\r\n' | base64 --decode > "$key_path"
+            chmod 600 "$key_path"
+          }
+
+          winget_key_path="$RUNNER_TEMP/goreleaser-winget"
+          homebrew_key_path="$RUNNER_TEMP/goreleaser-homebrew"
+          nix_key_path="$RUNNER_TEMP/goreleaser-nix"
+          scoop_key_path="$RUNNER_TEMP/goreleaser-scoop"
+
+          write_base64_key "$winget_key_path" "$GORELEASER_WINGET_DEPLOY_KEY_B64"
+          write_base64_key "$homebrew_key_path" "$GORELEASER_HOMEBREW_DEPLOY_KEY_B64"
+          write_base64_key "$nix_key_path" "$GORELEASER_NIX_DEPLOY_KEY_B64"
+          write_base64_key "$scoop_key_path" "$SCOOP_PRIVATE_KEY_B64"
+
+          {
+            echo "GORELEASER_WINGET_DEPLOY_KEY_PATH=$winget_key_path"
+            echo "GORELEASER_HOMEBREW_DEPLOY_KEY_PATH=$homebrew_key_path"
+            echo "GORELEASER_NIX_DEPLOY_KEY_PATH=$nix_key_path"
+            echo "SCOOP_PRIVATE_KEY_PATH=$scoop_key_path"
+          } >> "$GITHUB_ENV"
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean --config .goreleaser.yaml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Clone Zed extension repository
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          git -c http.extraheader="AUTHORIZATION: bearer ${GH_TOKEN}" clone https://github.com/louiss0/zed-extension-mace.git "$RUNNER_TEMP/zed-extension-mace"
+
+      - name: Sync bundled Mace binaries into Zed extension repository
+        run: |
+          set -euo pipefail
+
+          zed_repo="$RUNNER_TEMP/zed-extension-mace"
+          bin_dir="$zed_repo/bin"
+          extract_dir="$RUNNER_TEMP/mace-release-binaries"
+
+          rm -rf "$extract_dir"
+          mkdir -p "$bin_dir" "$extract_dir"
+
+          extract_archive() {
+            archive_path="$1"
+            output_path="$2"
+            stage_dir="$extract_dir/stage"
+
+            rm -rf "$stage_dir"
+            mkdir -p "$stage_dir"
+
+            case "$archive_path" in
+              *.tar.gz)
+                tar -xzf "$archive_path" -C "$stage_dir"
+                ;;
+              *.zip)
+                unzip -q "$archive_path" -d "$stage_dir"
+                ;;
+              *)
+                echo "unsupported archive format: $archive_path" >&2
+                exit 1
+                ;;
+            esac
+
+            binary_path=$(find "$stage_dir" -type f \( -name mace -o -name 'mace.exe' \) | head -n 1)
+            if [ -z "$binary_path" ]; then
+              echo "unable to find mace binary in $archive_path" >&2
+              exit 1
+            fi
+
+            cp "$binary_path" "$output_path"
+            chmod 755 "$output_path" || true
+          }
+
+          extract_archive dist/mace_*_darwin_amd64.tar.gz "$bin_dir/mace-darwin-amd64"
+          extract_archive dist/mace_*_darwin_arm64.tar.gz "$bin_dir/mace-darwin-arm64"
+          extract_archive dist/mace_*_linux_amd64.tar.gz "$bin_dir/mace-linux-amd64"
+          extract_archive dist/mace_*_linux_arm64.tar.gz "$bin_dir/mace-linux-arm64"
+          extract_archive dist/mace_*_windows_amd64.zip "$bin_dir/mace-windows-amd64.exe"
+          extract_archive dist/mace_*_windows_arm64.zip "$bin_dir/mace-windows-arm64.exe"
+
+      - name: Commit bundled Mace binaries to Zed extension repository
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          cd "$RUNNER_TEMP/zed-extension-mace"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bin
+
+          if git diff --cached --quiet; then
+            echo "No bundled Mace binary changes to commit"
+            exit 0
+          fi
+
+          git commit -m "chore(release): sync bundled mace binaries for ${GITHUB_REF_NAME}"
+          git push
