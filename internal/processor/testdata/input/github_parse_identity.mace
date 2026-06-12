@@ -1,0 +1,35 @@
+|===|
+type ReportSource: string;
+type RolloutState: string;
+
+schema AuditTrail: {
+  source: ReportSource,
+  owner: string,
+  state: RolloutState,
+};
+
+AuditTrail audit_trail = {
+  source: "github-raw",
+  owner: "input-fixtures",
+  state: "active",
+};
+
+schema SupportContact: {
+  channel: string,
+  handle: string,
+};
+
+SupportContact support_contact = {
+  channel: "email",
+  handle: "platform@example.com",
+};
+|===|
+[output = data, schema = SessionInput, parse_file = "https://raw.githubusercontent.com/louiss0/mace/main/internal/processor/testdata/input/fixtures/runtime_identity.mace"]
+{
+  environment: env,
+  region: region,
+  user_id: profile.id,
+  user_name: profile.name,
+  team: profile.team,
+  contact: profile.email,
+}

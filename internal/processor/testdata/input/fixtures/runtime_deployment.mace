@@ -1,0 +1,38 @@
+|===|
+type ServiceName: string;
+type RegionCode: string;
+type OwnerHandle: string;
+
+schema ReleaseFlags: {
+  canary: boolean,
+  approval: string,
+};
+
+schema DeploymentInput: {
+  service: ServiceName,
+  env: string,
+  region: RegionCode,
+  replicas: int,
+  owner: OwnerHandle,
+  flags: ReleaseFlags,
+};
+
+ReleaseFlags preview_flags = {
+  canary: true,
+  approval: "manual",
+};
+
+DeploymentInput preview_deployment = {
+  service: "billing-api",
+  env: "staging",
+  region: "us-west-2",
+  replicas: 2,
+  owner: "platform-oncall",
+  flags: preview_flags,
+};
+|===|
+[output = schema]
+{
+  ReleaseFlags: ReleaseFlags,
+  DeploymentInput: DeploymentInput,
+}
