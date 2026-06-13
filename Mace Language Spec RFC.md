@@ -1121,7 +1121,8 @@ the initializer expression is evaluated, and then the value is validated
 against the declared type before being added to the value environment.
 
 Runtime input is introduced through `parse = <Schema>` or `parse_file = "<path>"`.
-When `parse_file` is used without `parse` or `schema`, the referenced file MUST expose exactly one schema in its output block, and that schema becomes the active parse schema.
+`parse = <Schema>` selects an already-available schema from the current file, imports, or declarations loaded by other directives. It does not load files on its own.
+`parse_file = "<path>"` loads schema declarations from another Mace file. When `parse_file` is used without `parse` or `schema`, the referenced file MUST expose exactly one schema in its output block, and that schema becomes the active parse schema.
 The host-provided record is validated against the selected schema before its
 fields are introduced into output evaluation.
 
@@ -1191,6 +1192,11 @@ against the named schema before evaluation where possible, the fields are
 evaluated, and the final record is validated against the schema. Data mode may
 combine `schema_file` with `schema` so the named schema can come from the
 loaded schema file.
+
+Parse directives prepare runtime input validation. `parse = Name` selects a
+schema that is already available in the current evaluation context. If
+`parse_file = "path"` is present, the parse schema context is loaded from the
+referenced file before runtime input validation.
 
 ### Schema Output Evaluation
 
