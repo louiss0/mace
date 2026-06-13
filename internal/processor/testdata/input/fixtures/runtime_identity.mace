@@ -1,4 +1,4 @@
-|===|
+|=======================|
 type UserID: string;
 type TeamSlug: string;
 type Email: string;
@@ -16,19 +16,8 @@ schema SessionInput: {
   profile: UserProfile,
 };
 
-UserProfile example_user = {
-  id: "USR-100",
-  name: "Ada Lovelace",
-  email: "ada@example.com",
-  team: "platform",
-};
 
-SessionInput example_session = {
-  env: "prod",
-  region: "us-east-1",
-  profile: example_user,
-};
-|===|
+|=======================|
 [output = schema]
 {
   UserProfile: UserProfile,
