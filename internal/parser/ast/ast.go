@@ -134,6 +134,7 @@ func (i ImportedIdentifier) LocalName() string {
 type ImportDeclaration struct {
 	Path        StringLiteral
 	Identifiers []ImportedIdentifier
+	ImportAs    *ImportedIdentifier
 }
 
 type ScriptBlock struct {
@@ -212,6 +213,12 @@ type ArrayType struct {
 }
 
 func (ArrayType) typeReferenceNode() {}
+
+type RecordMapType struct {
+	Value TypeReference
+}
+
+func (RecordMapType) typeReferenceNode() {}
 
 type UnionType struct {
 	Members []TypeReference

@@ -1,0 +1,11 @@
+[output=schema]
+{
+  project: {
+    name: string,
+    root: string,
+  },
+  workspace: {
+    name: string,
+    root: string,
+  },
+}

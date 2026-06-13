@@ -134,6 +134,29 @@ func (p *Parser) parseImportDeclaration() (ast.ImportDeclaration, error) {
 		return ast.ImportDeclaration{}, err
 	}
 
+	if p.current().Type == lexer.TokenMinus {
+		p.advance()
+		asToken, err := p.consume(lexer.TokenIdentifier, "parser: expected 'as' after 'import-'")
+		if err != nil {
+			return ast.ImportDeclaration{}, err
+		}
+		if asToken.Lexeme != "as" {
+			return ast.ImportDeclaration{}, p.unexpectedTokenError("parser: expected 'as' after 'import-'")
+		}
+		aliasToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier after 'import-as'")
+		if err != nil {
+			return ast.ImportDeclaration{}, err
+		}
+		if err := p.consumeImportSeparator(); err != nil {
+			return ast.ImportDeclaration{}, err
+		}
+		imported := ast.ImportedIdentifier{Name: aliasToken.Lexeme}
+		return ast.ImportDeclaration{
+			Path:     ast.StringLiteral{Lexeme: pathToken.Lexeme},
+			ImportAs: &imported,
+		}, nil
+	}
+
 	firstIdentifier, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier in import list")
 	if err != nil {
 		return ast.ImportDeclaration{}, err
@@ -168,7 +191,7 @@ func (p *Parser) parseImportDeclaration() (ast.ImportDeclaration, error) {
 		identifiers = append(identifiers, imported)
 	}
 
-	if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after import declaration"); err != nil {
+	if err := p.consumeImportSeparator(); err != nil {
 		return ast.ImportDeclaration{}, err
 	}
 
@@ -176,6 +199,16 @@ func (p *Parser) parseImportDeclaration() (ast.ImportDeclaration, error) {
 		Path:        ast.StringLiteral{Lexeme: pathToken.Lexeme},
 		Identifiers: identifiers,
 	}, nil
+}
+
+func (p *Parser) consumeImportSeparator() error {
+	if p.consumeOptionalToken(lexer.TokenSemicolon) {
+		return nil
+	}
+	if p.current().Type == lexer.TokenScriptDelimiter {
+		return nil
+	}
+	return p.unexpectedTokenError("parser: expected ';' after import declaration")
 }
 
 func (p *Parser) parseScriptBlock() (ast.ScriptBlock, error) {
@@ -742,10 +775,11 @@ func (p *Parser) parseOptionalInlineDescription() string {
 }
 
 func (p *Parser) parseFieldHeader(context string) (lexer.Token, string, bool, error) {
-	nameToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier in "+context)
-	if err != nil {
-		return lexer.Token{}, "", false, err
+	nameToken := p.current()
+	if !isFieldNameToken(nameToken.Type) {
+		return lexer.Token{}, "", false, p.unexpectedTokenError("parser: expected identifier in " + context)
 	}
+	p.advance()
 
 	optional := false
 	if p.current().Type == lexer.TokenQuestion {
@@ -758,6 +792,15 @@ func (p *Parser) parseFieldHeader(context string) (lexer.Token, string, bool, er
 	}
 
 	return nameToken, nameToken.Lexeme, optional, nil
+}
+
+func isFieldNameToken(tokenType lexer.TokenType) bool {
+	switch tokenType {
+	case lexer.TokenIdentifier, lexer.TokenTypeKeyword, lexer.TokenSchema, lexer.TokenOutput, lexer.TokenParse, lexer.TokenParseFile, lexer.TokenSchemaFile, lexer.TokenData, lexer.TokenFrom, lexer.TokenImport, lexer.TokenRecord:
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *Parser) parseTypeReference() (ast.TypeReference, error) {
@@ -779,6 +822,19 @@ func (p *Parser) parseTypeReference() (ast.TypeReference, error) {
 			return nil, err
 		}
 		return ast.ArrayType{Element: element}, nil
+	case lexer.TokenRecord:
+		p.advance()
+		if _, err := p.consume(lexer.TokenLess, "parser: expected '<' after record type"); err != nil {
+			return nil, err
+		}
+		valueType, err := p.parseTypeReference()
+		if err != nil {
+			return nil, err
+		}
+		if err := p.consumeTypeCloser("parser: expected '>' after record type"); err != nil {
+			return nil, err
+		}
+		return ast.RecordMapType{Value: valueType}, nil
 	case lexer.TokenUnion:
 		p.advance()
 		if _, err := p.consume(lexer.TokenLBracket, "parser: expected '[' after union type"); err != nil {
@@ -825,7 +881,7 @@ func (p *Parser) parseTypeReference() (ast.TypeReference, error) {
 		return p.parseChoiceType()
 	case lexer.TokenLBrace:
 		return p.parseRecordType()
-	case lexer.TokenIdentifier:
+	case lexer.TokenIdentifier, lexer.TokenTypeKeyword:
 		token := p.current()
 		p.advance()
 		return ast.NamedType{Name: token.Lexeme}, nil
@@ -882,7 +938,7 @@ func (p *Parser) parseChoiceMember() (ast.Expression, error) {
 	case lexer.TokenBoolean:
 		p.advance()
 		return ast.BooleanLiteral{Value: token.Lexeme == "true"}, nil
-	case lexer.TokenIdentifier:
+	case lexer.TokenIdentifier, lexer.TokenTypeKeyword:
 		p.advance()
 		return ast.Identifier{Name: token.Lexeme}, nil
 	default:
@@ -941,7 +997,7 @@ func (p *Parser) parseExpression(precedence int) (ast.Expression, error) {
 
 func (p *Parser) parsePrefix(token lexer.Token) (ast.Expression, error) {
 	switch token.Type {
-	case lexer.TokenIdentifier:
+	case lexer.TokenIdentifier, lexer.TokenTypeKeyword:
 		p.advance()
 		return ast.Identifier{Name: token.Lexeme}, nil
 	case lexer.TokenString:

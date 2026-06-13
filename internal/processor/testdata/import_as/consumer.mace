@@ -1,0 +1,10 @@
+|===|
+from "package_json.mace" import-as Package
+|===|
+
+[parse=Package]
+{
+  name: name,
+  version: version,
+  type: type,
+}
