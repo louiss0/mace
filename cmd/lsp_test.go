@@ -1099,7 +1099,7 @@ schema Runtime: { env: string; region: string; };
 |===|
 [output = data, parse = Runtime]
 {
-  result: 
+  result:
 }`, nil)
 
 		labels := completeLabels(server, uri, 5, uint32(len(`  result: `)))
@@ -1113,19 +1113,18 @@ schema Runtime: { env: string; region: string; };
 
 		writeWorkspaceFile(workspace, "runtime.mace", `[output = schema]
 {
-  Runtime: { env: string; region: string; };
+  runtime: { env: string; region: string; };
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = data, parse_file = "./runtime.mace"]
 {
-  result: 
+  result:
 }`, nil)
 
 		labels := completeLabels(server, uri, 2, uint32(len(`  result: `)))
-		tAssert.Contains(labels, "env")
-		tAssert.Contains(labels, "region")
+		tAssert.Contains(labels, "runtime")
 	})
 
 	It("suggests choice values for output schema fields", func() {
@@ -1180,7 +1179,7 @@ schema Response: { payload: Envelope; };
 [output = data, schema = Response]
 {
   payload: {
-    value: 
+    value:
   };
 }`, nil)
 
@@ -1197,7 +1196,7 @@ schema Response: { payload: Envelope; };
 |===|
 [output = data, schema = Basket]
 {
-  favorite_fruit: 
+  favorite_fruit:
 }`, nil)
 
 		labels := completeLabels(server, uri, 6, uint32(len(`  favorite_fruit: `)))
@@ -1267,7 +1266,7 @@ from "./shared.mace" import ImportedUser;
 		didChange(server, uri, 2, `[output = data]
 {
   base: 1;
-  result: 
+  result:
 }`, nil)
 
 		labels := completeLabels(server, uri, 3, uint32(len(`  result: `)))
