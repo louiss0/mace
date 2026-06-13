@@ -1,4 +1,4 @@
-|===|
+|====================================|
 type ReportName: string;
 type ContactHandle: string;
 
@@ -23,8 +23,8 @@ EscalationPath escalation_path = {
   primary: "platform-oncall",
   backup: "sre-manager",
 };
-|===|
-[output = data, schema = DeploymentInput, parse_file = "https://raw.githubusercontent.com/louiss0/mace/main/internal/processor/testdata/input/fixtures/runtime_deployment.mace"]
+|====================================|
+[output = data, parse_file = "https://raw.githubusercontent.com/louiss0/mace/main/internal/processor/testdata/input/fixtures/runtime_deployment.mace"]
 {
   service: service,
   environment: env,

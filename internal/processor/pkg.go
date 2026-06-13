@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -498,16 +499,11 @@ func prepareOutputContext(output ast.OutputBlock, context processContext) (proce
 }
 
 func (p *Processor) applyParsedOutputInput(output ast.OutputBlock, context *processContext) error {
-	var schemaName string
-	if parseName, ok := outputParseSchemeName(output.Directives); ok {
-		schemaName = parseName
-	} else if hasParseFile(output.Directives) {
-		name, ok := outputSchemaName(output.Directives)
-		if !ok {
-			return nil
-		}
-		schemaName = name
-	} else {
+	schemaName, ok, err := outputParseSchemaName(output.Directives, *context)
+	if err != nil {
+		return err
+	}
+	if !ok {
 		return nil
 	}
 
@@ -1475,7 +1471,6 @@ func validateOutputDirectiveStructure(output ast.OutputBlock) error {
 	}
 
 	var outputValue string
-	hasSchema := false
 	hasParse := false
 	hasParseFile := false
 	seenKinds := map[ast.OutputDirectiveKind]struct{}{}
@@ -1490,7 +1485,6 @@ func validateOutputDirectiveStructure(output ast.OutputBlock) error {
 		case ast.OutputDirectiveOutput:
 			outputValue = directive.Value
 		case ast.OutputDirectiveSchema:
-			hasSchema = true
 			if output.Mode == ast.OutputModeSchema {
 				return validationErrorf("schema directive is invalid when output mode is schema")
 			}
@@ -1513,9 +1507,6 @@ func validateOutputDirectiveStructure(output ast.OutputBlock) error {
 		}
 	}
 
-	if hasParseFile && !hasSchema {
-		return validationErrorf("parse_file directive requires a schema directive")
-	}
 	if hasParse && hasParseFile {
 		return validationErrorf("parse and parse_file directives cannot be used together")
 	}
@@ -1597,6 +1588,74 @@ func outputParseSchemeName(directives []ast.OutputDirective) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func outputParseSchemaName(directives []ast.OutputDirective, context processContext) (string, bool, error) {
+	if parseName, ok := outputParseSchemeName(directives); ok {
+		return parseName, true, nil
+	}
+	if !hasParseFile(directives) {
+		return "", false, nil
+	}
+	if schemaName, ok := outputSchemaName(directives); ok {
+		return schemaName, true, nil
+	}
+
+	schemaNames, err := resolveParseFileExportedSchemaNames(directives, context.importBaseDir, context.importRootDir)
+	if err != nil {
+		return "", false, err
+	}
+	if len(schemaNames) == 1 {
+		return schemaNames[0], true, nil
+	}
+	if len(schemaNames) == 0 {
+		return "", false, validationErrorf("parse_file directive requires exactly one exported schema")
+	}
+
+	return "", false, validationErrorf("parse_file directive is ambiguous without a schema directive")
+}
+
+func resolveParseFileExportedSchemaNames(directives []ast.OutputDirective, importBaseDir string, importRootDir string) ([]string, error) {
+	var path string
+	for _, directive := range directives {
+		if directive.Kind != ast.OutputDirectiveParseFile {
+			continue
+		}
+
+		parsedPath, err := parseStaticString(directive.Value)
+		if err != nil {
+			return nil, err
+		}
+
+		path = parsedPath.String
+		break
+	}
+	if path == "" {
+		return nil, nil
+	}
+	if err := validateMaceSourcePath(path); err != nil {
+		return nil, err
+	}
+
+	resolvedPath, err := resolveBoundedPath(importBaseDir, importRootDir, path)
+	if err != nil {
+		return nil, err
+	}
+
+	exports, err := loadImportExports(resolvedPath, importRootDir, true, map[string]map[string]importedDeclaration{}, map[string]struct{}{})
+	if err != nil {
+		return nil, err
+	}
+
+	schemaNames := make([]string, 0, len(exports))
+	for _, declaration := range exports {
+		if declaration.kind == symbolKindSchema {
+			schemaNames = append(schemaNames, declaration.name)
+		}
+	}
+
+	slices.Sort(schemaNames)
+	return schemaNames, nil
 }
 
 func hasParseFile(directives []ast.OutputDirective) bool {

@@ -20,6 +20,5 @@ schema SessionInput: {
 |=======================|
 [output = schema]
 {
-  UserProfile: UserProfile,
   SessionInput: SessionInput,
 }

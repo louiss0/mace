@@ -20,6 +20,5 @@ schema DeploymentInput: {
 |=========================|
 [output = schema]
 {
-  ReleaseFlags: ReleaseFlags,
   DeploymentInput: DeploymentInput,
 }

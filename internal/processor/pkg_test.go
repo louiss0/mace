@@ -805,12 +805,54 @@ Runtime config = { env: false ? null : "prod"; };
 		tAssert.ErrorContains(err, "unknown schema")
 	})
 
-	It("rejects parse_file without a schema directive", func() {
-		processor := New()
+	It("uses parse_file without a schema directive when one schema is available", func() {
+		workspace, err := os.MkdirTemp("", "mace-parse-file-fixture-*")
+		tAssert.NoError(err)
+		defer os.RemoveAll(workspace)
 
-		_, err := processor.Process(`[output = data, parse_file = "./missing.mace"] {}`)
+		writeFixtureFile(workspace, "runtime.mace", `|===|
+schema Runtime: { env: string; };
+schema Meta: { source: string; };
+|===|
+[output = schema]
+{
+  Runtime: Runtime;
+}`)
+
+		processor := NewWithInput(map[string]Value{
+			"env": {Kind: ValueString, String: "prod"},
+		})
+
+		result, err := processor.ProcessInDir(`[output = data, parse_file = "./runtime.mace"]
+{
+  env: env;
+}`, workspace)
+		tAssert.NoError(err)
+		assertExpectedValue(requireOutputValue(result, "env"), expectedValue{kind: ValueString, string: "prod"})
+	})
+
+	It("rejects parse_file without a schema directive when multiple schemas are available", func() {
+		workspace, err := os.MkdirTemp("", "mace-parse-file-ambiguous-*")
+		tAssert.NoError(err)
+		defer os.RemoveAll(workspace)
+
+		writeFixtureFile(workspace, "runtime.mace", `|===|
+schema Runtime: { env: string; };
+schema Backup: { env: string; };
+|===|
+[output = schema]
+{
+  Runtime: Runtime;
+  Backup: Backup;
+}`)
+
+		processor := NewWithInput(map[string]Value{
+			"env": {Kind: ValueString, String: "prod"},
+		})
+
+		_, err = processor.ProcessInDir(`[output = data, parse_file = "./runtime.mace"] {}`, workspace)
 		tAssert.Error(err)
-		tAssert.ErrorContains(err, "parse_file directive requires a schema directive")
+		tAssert.ErrorContains(err, "parse_file directive is ambiguous without a schema directive")
 	})
 
 	DescribeTable("processes valid choice declarations",

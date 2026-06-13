@@ -1121,6 +1121,7 @@ the initializer expression is evaluated, and then the value is validated
 against the declared type before being added to the value environment.
 
 Runtime input is introduced through `parse = <Schema>` or `parse_file = "<path>"`.
+When `parse_file` is used without `parse` or `schema`, the referenced file MUST expose exactly one schema in its output block, and that schema becomes the active parse schema.
 The host-provided record is validated against the selected schema before its
 fields are introduced into output evaluation.
 
@@ -2723,6 +2724,7 @@ Runtime input must not be allowed to:
     
 
 Before evaluation continues, runtime input must be checked against the declared Mace schema selected by `parse` or `parse_file`.
+If `parse_file` is used alone, the active schema is inferred from the referenced file only when that file exposes exactly one schema.
 
 The runtime value for `env` is a string value. Even if the provided value looks like a path, import, directive, expression, or command, it remains a string.
 
