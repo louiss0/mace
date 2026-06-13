@@ -1092,6 +1092,42 @@ Basket basket = {
 		tAssert.Equal([]string{`{ name: "", age?: 0 }`}, labels)
 	})
 
+	It("suggests parse schema fields as output variables", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+schema Runtime: { env: string; region: string; };
+|===|
+[output = data, parse = Runtime]
+{
+  result: 
+}`, nil)
+
+		labels := completeLabels(server, uri, 5, uint32(len(`  result: `)))
+		tAssert.Contains(labels, "env")
+		tAssert.Contains(labels, "region")
+	})
+
+	It("suggests parse_file schema fields as output variables", func() {
+		workspace, err := os.MkdirTemp("", "mace-lsp-parse-file-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "runtime.mace", `[output = schema]
+{
+  Runtime: { env: string; region: string; };
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data, parse_file = "./runtime.mace"]
+{
+  result: 
+}`, nil)
+
+		labels := completeLabels(server, uri, 2, uint32(len(`  result: `)))
+		tAssert.Contains(labels, "env")
+		tAssert.Contains(labels, "region")
+	})
+
 	It("suggests choice values for output schema fields", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|

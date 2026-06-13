@@ -131,6 +131,62 @@ var _ = Describe("completion analysis", func() {
 		tAssert.Contains(labels, `"Strawberry"`)
 	})
 
+	It("suggests parse schema fields as output variables", func() {
+		text := `|===|
+schema Runtime: { env: string; region: string; };
+|===|
+[output = data, parse = Runtime]
+{
+  result: 
+}`
+
+		position := protocol.Position{
+			Line:      5,
+			Character: uint32(len(`  result: `)),
+		}
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+			return item.Label
+		})
+
+		tAssert.Contains(labels, "env")
+		tAssert.Contains(labels, "region")
+	})
+
+	It("suggests parse_file schema fields as output variables", func() {
+		workspace, err := os.MkdirTemp("", "mace-analyzer-parse-file-*")
+		tAssert.NoError(err)
+		defer os.RemoveAll(workspace)
+
+		runtimePath := filepath.Join(workspace, "runtime.mace")
+		tAssert.NoError(os.WriteFile(runtimePath, []byte(`[output = schema]
+{
+  Runtime: { env: string; region: string; };
+}`), 0o644))
+		documentPath := filepath.Join(workspace, "document.mace")
+		text := `[output = data, parse_file = "./runtime.mace"]
+{
+  result: 
+}`
+		tAssert.NoError(os.WriteFile(documentPath, []byte(text), 0o644))
+		position := protocol.Position{
+			Line:      2,
+			Character: uint32(len(`  result: `)),
+		}
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+			return item.Label
+		})
+
+		tAssert.Contains(labels, "env")
+		tAssert.Contains(labels, "region")
+	})
+
 	It("suggests choice values for output block schema fields", func() {
 		text := `|===|
  type Fruit: choice["Apple", "Strawberry"];

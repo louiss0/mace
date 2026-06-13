@@ -27,6 +27,8 @@ var (
 	directiveOutputValuePattern = regexp.MustCompile(`^\s*output\s*=\s*([A-Za-z_]*)$`)
 	directiveSchemaPattern      = regexp.MustCompile(`^\s*schema\s*=\s*([A-Za-z_]*)$`)
 	directiveSchemaFilePattern  = regexp.MustCompile(`^\s*schema_file\s*=\s*"([^"]*)$`)
+	directiveParsePattern       = regexp.MustCompile(`^\s*parse\s*=\s*([A-Za-z_]*)$`)
+	directiveParseFilePattern   = regexp.MustCompile(`^\s*parse_file\s*=\s*"([^"]*)$`)
 )
 
 const completionPlaceholderIdentifier = "mace_cursor_placeholder"
@@ -83,7 +85,7 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 		}
 
 		if items, handled := outputInitializerCompletionItems(document, uri, position); handled {
-			return mergeCompletionItems(items, bareSelfItems)
+			return mergeCompletionItems(items, bareSelfItems, itemsFromDeclarations(declarations, identifierPrefixAt(document.text, position)))
 		}
 
 		if items, handled := selfKeywordCompletionItems(linePrefix, position); handled {
@@ -166,13 +168,21 @@ func outputInitializerCompletionItems(document document, uri protocol.DocumentUr
 	}
 
 	importRootDir := completionRoot(document.analysis, uri)
+	prefix := identifierPrefixAt(document.text, position)
+	declarations := mergeDeclarationDefinitions(collectDeclarations(*file, nil, importBaseDir), parseInputDeclarationDefinitions(*file, importBaseDir, importRootDir))
+	declarationItems := itemsFromDeclarations(declarations, prefix)
+
 	model := buildCompletionModel(*file, importBaseDir, importRootDir, map[string]completionModel{})
 	expectedType, path, ok := placeholderOutputCompletionType(*file, model)
 	if !ok {
-		return nil, false
+		if len(declarationItems) == 0 {
+			return nil, false
+		}
+		return declarationItems, true
 	}
 
-	return sortCompletionItems(completionItemsForType(expectedType, model, completionOptions{allowSchemaLiteral: len(path) > 1})), true
+	items := completionItemsForType(expectedType, model, completionOptions{allowSchemaLiteral: len(path) > 1})
+	return sortCompletionItems(mergeCompletionItems(items, declarationItems)), true
 }
 
 func stringLiteralInitializerCompletionItems(document document, uri protocol.DocumentUri, position protocol.Position, output bool) ([]protocol.CompletionItem, bool) {
@@ -292,8 +302,15 @@ func completionDeclarations(
 	linePrefix string,
 	scope completionScope,
 ) []declarationDefinition {
+	importBaseDir := filepath.Dir(documentPath(uri))
+	importRootDir := completionRoot(document.analysis, uri)
+
 	if len(document.analysis.declarations) > 0 {
-		return document.analysis.declarations
+		if scope != completionScopeOutput || document.analysis.file == nil {
+			return document.analysis.declarations
+		}
+
+		return mergeDeclarationDefinitions(document.analysis.declarations, parseInputDeclarationDefinitions(*document.analysis.file, importBaseDir, importRootDir))
 	}
 
 	switch scope {
@@ -303,14 +320,14 @@ func completionDeclarations(
 			return nil
 		}
 
-		return collectDeclarations(file, nil, filepath.Dir(documentPath(uri)))
+		return collectDeclarations(file, nil, importBaseDir)
 	case completionScopeOutput:
 		file := completionFile(document, linePrefix)
 		if file == nil {
 			return nil
 		}
 
-		return collectDeclarations(*file, nil, filepath.Dir(documentPath(uri)))
+		return mergeDeclarationDefinitions(collectDeclarations(*file, nil, importBaseDir), parseInputDeclarationDefinitions(*file, importBaseDir, importRootDir))
 	default:
 		return nil
 	}
@@ -797,6 +814,20 @@ func directiveCompletionItems(document document, uri protocol.DocumentUri, lineP
 	}
 
 	if matches := directiveSchemaFilePattern.FindStringSubmatch(lastPart); len(matches) == 2 {
+		if state.outputMode == "schema" {
+			return []protocol.CompletionItem{}, true
+		}
+		return schemaFileItems(document, uri, linePrefix, matches[1]), true
+	}
+
+	if matches := directiveParsePattern.FindStringSubmatch(lastPart); len(matches) == 2 {
+		if state.outputMode == "schema" {
+			return []protocol.CompletionItem{}, true
+		}
+		return schemaReferenceItems(document, uri, linePrefix, matches[1]), true
+	}
+
+	if matches := directiveParseFilePattern.FindStringSubmatch(lastPart); len(matches) == 2 {
 		if state.outputMode == "schema" {
 			return []protocol.CompletionItem{}, true
 		}
@@ -1813,7 +1844,144 @@ func buildCompletionModel(file ast.File, importBaseDir string, importRootDir str
 		}
 	}
 
+	mergeDirectiveCompletionModels(&model, file.Output.Directives, importBaseDir, importRootDir, cache)
 	return model
+}
+
+func mergeDirectiveCompletionModels(model *completionModel, directives []ast.OutputDirective, importBaseDir string, importRootDir string, cache map[string]completionModel) {
+	for _, directive := range directives {
+		if directive.Kind != ast.OutputDirectiveSchemaFile && directive.Kind != ast.OutputDirectiveParseFile {
+			continue
+		}
+
+		pathValue, ok := stringLiteralValue(ast.StringLiteral{Lexeme: directive.Value})
+		if !ok {
+			continue
+		}
+
+		resolvedPath, err := resolveBoundedPathInRoot(importBaseDir, importRootDir, pathValue)
+		if err != nil {
+			continue
+		}
+
+		importedModel, importedFile, ok := importedCompletionModel(resolvedPath, importRootDir, cache)
+		if !ok {
+			continue
+		}
+
+		for _, field := range importedFile.Output.SchemaFields {
+			resolved := resolveCompletionType(field.Type, importedModel, map[string]struct{}{})
+			switch resolved.kind {
+			case completionTypeSchema:
+				model.schemas[field.Name] = resolved.record
+			default:
+				model.aliases[field.Name] = field.Type
+			}
+		}
+	}
+}
+
+func parseInputDeclarationDefinitions(file ast.File, importBaseDir string, importRootDir string) []declarationDefinition {
+	cache := map[string]completionModel{}
+	model := buildCompletionModel(file, importBaseDir, importRootDir, cache)
+	record, ok := parseInputCompletionRecord(file, model, importBaseDir, importRootDir, cache)
+	if !ok {
+		return nil
+	}
+
+	return lo.Map(record.Fields, func(field ast.SchemaField, _ int) declarationDefinition {
+		return declarationDefinition{
+			Name:   field.Name,
+			Kind:   protocol.CompletionItemKindVariable,
+			Detail: "parsed input field",
+		}
+	})
+}
+
+func parseInputCompletionRecord(file ast.File, model completionModel, importBaseDir string, importRootDir string, cache map[string]completionModel) (ast.RecordType, bool) {
+	if name, ok := outputDirectiveValue(file.Output.Directives, ast.OutputDirectiveParse); ok {
+		record, ok := model.schemas[name]
+		return record, ok
+	}
+	if !hasOutputDirective(file.Output.Directives, ast.OutputDirectiveParseFile) {
+		return ast.RecordType{}, false
+	}
+	if name, ok := outputDirectiveValue(file.Output.Directives, ast.OutputDirectiveSchema); ok {
+		record, ok := model.schemas[name]
+		return record, ok
+	}
+
+	exportedRecords := parseFileExportedSchemaRecords(file.Output.Directives, importBaseDir, importRootDir, cache)
+	if len(exportedRecords) != 1 {
+		return ast.RecordType{}, false
+	}
+	for _, record := range exportedRecords {
+		return record, true
+	}
+
+	return ast.RecordType{}, false
+}
+
+func parseFileExportedSchemaRecords(directives []ast.OutputDirective, importBaseDir string, importRootDir string, cache map[string]completionModel) map[string]ast.RecordType {
+	records := map[string]ast.RecordType{}
+	for _, directive := range directives {
+		if directive.Kind != ast.OutputDirectiveParseFile {
+			continue
+		}
+
+		pathValue, ok := stringLiteralValue(ast.StringLiteral{Lexeme: directive.Value})
+		if !ok {
+			continue
+		}
+
+		resolvedPath, err := resolveBoundedPathInRoot(importBaseDir, importRootDir, pathValue)
+		if err != nil {
+			continue
+		}
+
+		importedModel, importedFile, ok := importedCompletionModel(resolvedPath, importRootDir, cache)
+		if !ok {
+			continue
+		}
+
+		for _, field := range importedFile.Output.SchemaFields {
+			resolved := resolveCompletionType(field.Type, importedModel, map[string]struct{}{})
+			if resolved.kind == completionTypeSchema {
+				records[field.Name] = resolved.record
+			}
+		}
+	}
+	return records
+}
+
+func outputDirectiveValue(directives []ast.OutputDirective, kind ast.OutputDirectiveKind) (string, bool) {
+	for _, directive := range directives {
+		if directive.Kind == kind {
+			return directive.Value, true
+		}
+	}
+	return "", false
+}
+
+func hasOutputDirective(directives []ast.OutputDirective, kind ast.OutputDirectiveKind) bool {
+	_, ok := outputDirectiveValue(directives, kind)
+	return ok
+}
+
+func mergeDeclarationDefinitions(base []declarationDefinition, extras []declarationDefinition) []declarationDefinition {
+	merged := append([]declarationDefinition{}, base...)
+	seen := map[string]struct{}{}
+	for _, declaration := range merged {
+		seen[declaration.Name] = struct{}{}
+	}
+	for _, declaration := range extras {
+		if _, ok := seen[declaration.Name]; ok {
+			continue
+		}
+		seen[declaration.Name] = struct{}{}
+		merged = append(merged, declaration)
+	}
+	return merged
 }
 
 func importedCompletionModel(path string, importRootDir string, cache map[string]completionModel) (completionModel, ast.File, bool) {
