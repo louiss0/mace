@@ -90,6 +90,25 @@ type Mode: choice[Environment, 1, true];
 }`, output)
 	})
 
+	It("formats import-as declarations", func() {
+		file, err := parseMaceFile(`|===|
+from "./base.mace" import-as Base;
+|===|
+[output = data]
+{ name: Base.name; }`)
+		tAssert.NoError(err)
+
+		output, err := FormatFile(file)
+		tAssert.NoError(err)
+		tAssert.Equal(`|==================================|
+from "./base.mace" import-as Base;
+|==================================|
+[output = data]
+{
+  name: Base.name
+}`, output)
+	})
+
 	It("formats script imports without duplicating flattened file imports", func() {
 		file, err := parseMaceFile(`|===|
 from "./shared.mace" import User;
@@ -292,6 +311,29 @@ type Value: union[Profile, Audit];
 [output = schema]
 {
   value: union[Profile, Audit]
+}`, output)
+	})
+
+	It("formats record map type references", func() {
+		file, err := parseMaceFile(`|===|
+type Dependencies: record<string>;
+record<array<string>> groups = {};
+|===|
+[output = schema]
+{
+  deps: record<string>;
+}`)
+		tAssert.NoError(err)
+
+		output, err := FormatFile(file)
+		tAssert.NoError(err)
+		tAssert.Equal(`|==================================|
+type Dependencies: record<string>;
+record<array<string>> groups = {};
+|==================================|
+[output = schema]
+{
+  deps: record<string>
 }`, output)
 	})
 })

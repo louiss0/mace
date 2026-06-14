@@ -42,6 +42,15 @@ func (f *formatter) writeFile(file ast.File) error {
 }
 
 func formatImportDeclaration(importDeclaration ast.ImportDeclaration) string {
+	if importDeclaration.ImportAs != nil {
+		imported := importDeclaration.ImportAs.Name
+		if importDeclaration.ImportAs.Alias != "" {
+			imported += ":" + importDeclaration.ImportAs.Alias
+		}
+
+		return "from " + importDeclaration.Path.Lexeme + " import-as " + imported + ";"
+	}
+
 	parts := make([]string, 0, len(importDeclaration.Identifiers))
 	for _, id := range importDeclaration.Identifiers {
 		if id.Alias != "" {
@@ -209,6 +218,13 @@ func formatTypeReference(typeReference ast.TypeReference) (string, error) {
 		}
 
 		return fmt.Sprintf("array<%s>", element), nil
+	case ast.RecordMapType:
+		value, err := formatTypeReference(typedReference.Value)
+		if err != nil {
+			return "", err
+		}
+
+		return fmt.Sprintf("record<%s>", value), nil
 	case ast.UnionType:
 		members := make([]string, 0, len(typedReference.Members))
 		for _, member := range typedReference.Members {
