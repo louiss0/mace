@@ -1,6 +1,6 @@
 [parse_file='nx_inputs.mace']
 {
-  name:
+  name: project.name,
   root: project.root,
   cwd: workspace.root,
 }
