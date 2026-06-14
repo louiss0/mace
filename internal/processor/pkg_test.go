@@ -1959,6 +1959,22 @@ schema PackageJSON: {
 		}})
 	})
 
+	It("infers arbitrary record member access from the record value type", func() {
+		input := `|===|
+record<string> deps = {
+  foo: "bar",
+};
+string foo = deps.foo;
+|===|
+[output = data]
+{
+  foo: foo,
+}`
+		result, err := New().Process(input)
+		tAssert.NoError(err)
+		assertExpectedValue(result.Output["foo"], expectedValue{kind: ValueString, string: "bar"})
+	})
+
 	It("rejects record values that do not match the record value type", func() {
 		input := `|===|
 type Dependencies: record<string>;

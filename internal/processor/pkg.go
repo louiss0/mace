@@ -3638,6 +3638,9 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 		if targetType.kind != ValueRecord {
 			return valueType{}, validationErrorf("member access requires a record value")
 		}
+		if targetType.element != nil {
+			return *targetType.element, nil
+		}
 		if targetType.record == nil {
 			if targetType.schemaName == "" {
 				return valueType{kind: ValueUnknown}, nil
