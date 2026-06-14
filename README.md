@@ -39,7 +39,7 @@ A Mace file can contain:
 
 Imports use `from ... import ...;` and must appear at the top of the script
 block before other declarations. Imported names may optionally define a
-local alias with `Name:Alias`.
+local alias with `Name:Alias`. Use `from "./schema.mace" import-as Name` to import an output schema file as a single schema or an output data file as a single record variable.
 
 Example:
 
@@ -72,6 +72,7 @@ Mace supports:
 - `=` for variable initializers
 - primitive types: `string`, `int`, `float`, `hex_int`, `hex_float`, `boolean`
 - arrays: `array<T>`
+- open records: `record<T>` for arbitrary keys whose values must match `T`
 - unions: `union[T1, T2, ...]`
 - variants: `variant[T1, T2, ...]`
 - choices: `choice["a", 1, true, OtherChoice]`

@@ -69,6 +69,48 @@ string user = "Ada";
 }`, output)
 	})
 
+	It("formats import-as declarations", func() {
+		file, err := parseMaceFile(`|===|
+from "./base.mace" import-as Base;
+|===|
+[output = data]
+{ result: Base.name; }`)
+		tAssert.NoError(err)
+
+		output, err := FormatFile(file)
+		tAssert.NoError(err)
+		tAssert.Equal(`|==================================|
+from "./base.mace" import-as Base;
+|==================================|
+[output = data]
+{
+  result: Base.name
+}`, output)
+	})
+
+	It("formats record map type references", func() {
+		file, err := parseMaceFile(`|===|
+type Dependencies: record<string>;
+record<string> deps = { foo: "bar"; };
+|===|
+[output = schema]
+{ dependencies: record<string>; }`)
+		tAssert.NoError(err)
+
+		output, err := FormatFile(file)
+		tAssert.NoError(err)
+		tAssert.Equal(`|==================================|
+type Dependencies: record<string>;
+record<string> deps = {
+  foo: "bar"
+};
+|==================================|
+[output = schema]
+{
+  dependencies: record<string>
+}`, output)
+	})
+
 	It("formats choice type declarations", func() {
 		file, err := parseMaceFile(`|===|
  type Environment: choice["dev", "prod"];
