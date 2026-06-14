@@ -1139,7 +1139,7 @@ schema Runtime: { env: string; region: string; };
 |===|
 [output = data, parse = Runtime]
 {
-  result: 
+  result:
 }`, nil)
 
 		labels := completeLabels(server, uri, 5, uint32(len(`  result: `)))
@@ -1160,10 +1160,159 @@ schema Runtime: { env: string; region: string; };
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = data, parse_file = "./runtime.mace"]
 {
-  result: 
+  result:
 }`, nil)
 
 		labels := completeLabels(server, uri, 2, uint32(len(`  result: `)))
+		tAssert.Contains(labels, "env")
+		tAssert.Contains(labels, "region")
+	})
+
+	It("only suggests top-level parse schema fields as output variables", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+schema Runtime: {
+  env: string;
+  profile: { name: string; email: string; };
+};
+|===|
+[output = data, parse = Runtime]
+{
+  result:
+}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentCompletion, protocol.CompletionParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position: protocol.Position{
+					Line:      8,
+					Character: uint32(len(`  result: `)),
+				},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		items, ok := resultValue.([]protocol.CompletionItem)
+		tAssert.True(ok)
+		if !ok {
+			return
+		}
+
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string { return item.Label })
+		details := map[string]string{}
+		for _, item := range items {
+			if item.Detail != nil {
+				details[item.Label] = *item.Detail
+			}
+		}
+
+		tAssert.Contains(labels, "env")
+		tAssert.Contains(labels, "profile")
+		tAssert.NotContains(labels, "name")
+		tAssert.NotContains(labels, "email")
+		tAssert.Equal("string", details["env"])
+		tAssert.Equal("{ name: string, email: string }", details["profile"])
+	})
+
+	It("only suggests top-level parse_file schema fields as output variables", func() {
+		workspace, err := os.MkdirTemp("", "mace-lsp-parse-file-top-level-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "runtime.mace", `[output = schema]
+{
+  Runtime: {
+    env: string;
+    profile: { name: string; email: string; };
+  };
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data, parse_file = "./runtime.mace"]
+{
+  result:
+}`, nil)
+
+		labels := completeLabels(server, uri, 2, uint32(len(`  result: `)))
+		tAssert.Contains(labels, "env")
+		tAssert.Contains(labels, "profile")
+		tAssert.NotContains(labels, "name")
+		tAssert.NotContains(labels, "email")
+	})
+
+	It("does not suggest schema names as output expressions", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+schema Runtime: { env: string; };
+|===|
+[output = data]
+{
+  result:
+}`, nil)
+
+		labels := completeLabels(server, uri, 5, uint32(len(`  result: `)))
+		tAssert.NotContains(labels, "Runtime")
+	})
+
+	It("does not suggest imported schema names as output expressions", func() {
+		workspace, err := os.MkdirTemp("", "mace-lsp-output-schema-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
+{
+  Runtime: { env: string; };
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+from "./shared.mace" import Runtime;
+|===|
+[output = data]
+{
+  result:
+}`, nil)
+
+		labels := completeLabels(server, uri, 5, uint32(len(`  result: `)))
+		tAssert.NotContains(labels, "Runtime")
+	})
+
+	It("suggests parse variables when previous output fields use commas", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+schema Runtime: { env: string; region: string; };
+|===|
+[output = data, parse = Runtime]
+{
+  name: "mace",
+  result:
+}`, nil)
+
+		labels := completeLabels(server, uri, 6, uint32(len(`  result: `)))
+		tAssert.Contains(labels, "env")
+		tAssert.Contains(labels, "region")
+	})
+
+	It("suggests parse_file variables when previous output fields use commas", func() {
+		workspace, err := os.MkdirTemp("", "mace-lsp-parse-commas-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "runtime.mace", `[output = schema]
+{
+  Runtime: { env: string; region: string; };
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data, parse_file = "./runtime.mace"]
+{
+  name: "mace",
+  result:
+}`, nil)
+
+		labels := completeLabels(server, uri, 3, uint32(len(`  result: `)))
 		tAssert.Contains(labels, "env")
 		tAssert.Contains(labels, "region")
 	})
@@ -1220,7 +1369,7 @@ schema Response: { payload: Envelope; };
 [output = data, schema = Response]
 {
   payload: {
-    value: 
+    value:
   };
 }`, nil)
 
@@ -1237,7 +1386,7 @@ schema Response: { payload: Envelope; };
 |===|
 [output = data, schema = Basket]
 {
-  favorite_fruit: 
+  favorite_fruit:
 }`, nil)
 
 		labels := completeLabels(server, uri, 6, uint32(len(`  favorite_fruit: `)))
@@ -1307,7 +1456,7 @@ from "./shared.mace" import ImportedUser;
 		didChange(server, uri, 2, `[output = data]
 {
   base: 1;
-  result: 
+  result:
 }`, nil)
 
 		labels := completeLabels(server, uri, 3, uint32(len(`  result: `)))

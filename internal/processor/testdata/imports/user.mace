@@ -1,9 +1,8 @@
-|==================================================|
+|=====================================================|
 from "./profile.mace" import Profile, Age;
 
 type Name: string;
 
-injectable string name;
 
 type Personality: choice["friendly", "nice", "rude"];
 
@@ -22,7 +21,7 @@ Age default_age = 30;
 
 int num = 1 + 45;
 
-|==================================================|
+|=====================================================|
 
 [output = data]
 {

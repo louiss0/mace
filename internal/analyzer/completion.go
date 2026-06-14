@@ -168,7 +168,7 @@ func outputInitializerCompletionItems(document document, uri protocol.DocumentUr
 	}
 
 	importRootDir := completionRoot(document.analysis, uri)
-	declarations := mergeDeclarationDefinitions(collectDeclarations(*file, nil, importBaseDir), parseInputDeclarationDefinitions(*file, importBaseDir, importRootDir))
+	declarations := filterOutputDeclarationDefinitions(mergeDeclarationDefinitions(collectDeclarations(*file, nil, importBaseDir), parseInputDeclarationDefinitions(*file, importBaseDir, importRootDir)))
 	declarationItems := itemsFromDeclarations(declarations, identifierPrefixAt(document.text, position))
 
 	model := buildCompletionModel(*file, importBaseDir, importRootDir, map[string]completionModel{})
@@ -309,7 +309,7 @@ func completionDeclarations(
 			return document.analysis.declarations
 		}
 
-		return mergeDeclarationDefinitions(document.analysis.declarations, parseInputDeclarationDefinitions(*document.analysis.file, importBaseDir, importRootDir))
+		return filterOutputDeclarationDefinitions(mergeDeclarationDefinitions(document.analysis.declarations, parseInputDeclarationDefinitions(*document.analysis.file, importBaseDir, importRootDir)))
 	}
 
 	switch scope {
@@ -326,7 +326,7 @@ func completionDeclarations(
 			return nil
 		}
 
-		return mergeDeclarationDefinitions(collectDeclarations(*file, nil, importBaseDir), parseInputDeclarationDefinitions(*file, importBaseDir, importRootDir))
+		return filterOutputDeclarationDefinitions(mergeDeclarationDefinitions(collectDeclarations(*file, nil, importBaseDir), parseInputDeclarationDefinitions(*file, importBaseDir, importRootDir)))
 	default:
 		return nil
 	}
@@ -1888,13 +1888,26 @@ func parseInputDeclarationDefinitions(file ast.File, importBaseDir string, impor
 		return nil
 	}
 
-	return lo.Map(record.Fields, func(field ast.SchemaField, _ int) declarationDefinition {
+	definitions := lo.Map(record.Fields, func(field ast.SchemaField, _ int) declarationDefinition {
 		return declarationDefinition{
 			Name:   field.Name,
 			Kind:   protocol.CompletionItemKindVariable,
-			Detail: "parsed input field",
+			Detail: fieldTypeDetail(field.Type),
 		}
 	})
+
+	if hasOutputDirective(file.Output.Directives, ast.OutputDirectiveParseFile) && !hasOutputDirective(file.Output.Directives, ast.OutputDirectiveSchema) {
+		exportedRecords := parseFileExportedSchemaRecords(file.Output.Directives, importBaseDir, importRootDir, cache)
+		for name, exportedRecord := range exportedRecords {
+			definitions = append(definitions, declarationDefinition{
+				Name:   name,
+				Kind:   protocol.CompletionItemKindVariable,
+				Detail: recordTypeDetail(exportedRecord),
+			})
+		}
+	}
+
+	return definitions
 }
 
 func parseInputCompletionRecord(file ast.File, model completionModel, importBaseDir string, importRootDir string, cache map[string]completionModel) (ast.RecordType, bool) {
@@ -1981,6 +1994,17 @@ func mergeDeclarationDefinitions(base []declarationDefinition, extras []declarat
 		merged = append(merged, declaration)
 	}
 	return merged
+}
+
+func filterOutputDeclarationDefinitions(definitions []declarationDefinition) []declarationDefinition {
+	return lo.Filter(definitions, func(definition declarationDefinition, _ int) bool {
+		switch definition.Kind {
+		case protocol.CompletionItemKindVariable, protocol.CompletionItemKindProperty:
+			return true
+		default:
+			return false
+		}
+	})
 }
 
 func importedCompletionModel(path string, importRootDir string, cache map[string]completionModel) (completionModel, ast.File, bool) {
