@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -131,7 +132,8 @@ var _ = Describe("completion analysis", func() {
 		tAssert.Contains(labels, `"Strawberry"`)
 	})
 
-	It("suggests parse schema fields as output variables", func() {
+	Describe("Parse completions", func() {
+		It("suggests parse schema fields as output variables", func() {
 		text := `|===|
 schema Runtime: { env: string; region: string; };
 |===|
@@ -383,7 +385,44 @@ schema Runtime: { env: string; region: string; };
 
 		tAssert.Contains(labels, "env")
 		tAssert.Contains(labels, "region")
-	})
+		})
+
+		DescribeTable("completes recursive schema fields via member access chain on parse variables",
+			func(cursorExpr string) {
+				text := fmt.Sprintf(`|===|
+schema User: {
+  name: string;
+  manager?: User;
+};
+|===|
+
+[output = data, parse = User]
+{
+  result: %s
+}`, cursorExpr)
+
+				position := protocol.Position{
+					Line:      9,
+					Character: uint32(len("  result: ") + len(cursorExpr)),
+				}
+				documentPath := filepath.Join("workspace", "document.mace")
+				snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+				items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+				labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+					return item.Label
+				})
+
+				tAssert.Contains(labels, "name")
+				tAssert.Contains(labels, "manager")
+			},
+			Entry("completes fields on recursive parsed record", "manager."),
+			Entry("completes fields on second recursive level", "manager.manager."),
+			Entry("completes fields on third recursive level", "manager.manager.manager."),
+			Entry("completes fields on fourth recursive level", "manager.manager.manager.manager."),
+			Entry("completes fields on fifth recursive level without infinite traversal", "manager.manager.manager.manager.manager."),
+		)
+	}) // end Describe("Parse completions")
 
 	It("suggests choice values for output block schema fields", func() {
 		text := `|===|

@@ -96,6 +96,10 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 			return items
 		}
 
+		if items, handled := parsedVariableMemberCompletionItems(document, uri, linePrefix, position); handled {
+			return items
+		}
+
 		if items, handled := arrayIndexCompletionItems(document, uri, position, linePrefix, scope); handled {
 			return items
 		}
@@ -330,6 +334,114 @@ func completionDeclarations(
 	default:
 		return nil
 	}
+}
+
+func outputMemberAccessContext(linePrefix string) ([]string, bool) {
+	trimmed := strings.TrimRight(linePrefix, " \t")
+	if !strings.HasSuffix(trimmed, ".") {
+		return nil, false
+	}
+
+	dotEnd := len(trimmed) - 1
+
+	chainStart := dotEnd
+	for chainStart > 0 {
+		c := trimmed[chainStart-1]
+		if c == '.' || isIdentifierCharacter(c) {
+			chainStart--
+		} else {
+			break
+		}
+	}
+
+	if chainStart >= dotEnd {
+		return nil, false
+	}
+
+	chain := trimmed[chainStart:dotEnd]
+	if chain[0] == '.' {
+		return nil, false
+	}
+	if strings.HasPrefix(chain, "$") {
+		return nil, false
+	}
+
+	segments := lo.Filter(strings.Split(chain, "."), func(s string, _ int) bool { return s != "" })
+	if len(segments) == 0 {
+		return nil, false
+	}
+
+	return segments, true
+}
+
+func parsedVariableMemberCompletionItems(document document, uri protocol.DocumentUri, linePrefix string, position protocol.Position) ([]protocol.CompletionItem, bool) {
+	chain, ok := outputMemberAccessContext(linePrefix)
+	if !ok {
+		return nil, false
+	}
+
+	index := positionIndex(document.text, position)
+	if index < 0 {
+		return nil, false
+	}
+
+	// Build a parseable file by replacing the rest of the current line with a placeholder.
+	// This preserves the script block (schemas, directives) needed to resolve types.
+	suffix := document.text[index:]
+	var afterLine string
+	if lineEnd := strings.IndexByte(suffix, '\n'); lineEnd >= 0 {
+		afterLine = suffix[lineEnd:]
+	}
+
+	textWithPlaceholder := document.text[:index] + completionPlaceholderIdentifier + ";" + afterLine
+	file, err := parseFile(textWithPlaceholder)
+	if err != nil {
+		return nil, false
+	}
+
+	importBaseDir := filepath.Dir(documentPath(uri))
+	if importBaseDir == "" {
+		importBaseDir = "."
+	}
+	importRootDir := completionRoot(document.analysis, uri)
+	cache := map[string]completionModel{}
+	model := buildCompletionModel(file, importBaseDir, importRootDir, cache)
+
+	record, ok := parseInputCompletionRecord(file, model, importBaseDir, importRootDir, cache)
+	if !ok {
+		return nil, false
+	}
+
+	// Walk the explicit access chain through the schema type model.
+	// resolveCompletionType is safe for recursive schemas: NamedType resolution
+	// is a direct map lookup in model.schemas with no recursive expansion.
+	var currentType ast.TypeReference = record
+	for _, segment := range chain {
+		resolved := resolveCompletionType(currentType, model, map[string]struct{}{})
+		if resolved.kind != completionTypeSchema {
+			return nil, false
+		}
+		field, found := lo.Find(resolved.record.Fields, func(f ast.SchemaField) bool {
+			return f.Name == segment
+		})
+		if !found {
+			return nil, false
+		}
+		currentType = field.Type
+	}
+
+	resolved := resolveCompletionType(currentType, model, map[string]struct{}{})
+	if resolved.kind != completionTypeSchema {
+		return []protocol.CompletionItem{}, true
+	}
+
+	items := lo.Map(resolved.record.Fields, func(field ast.SchemaField, _ int) protocol.CompletionItem {
+		return protocol.CompletionItem{
+			Label: field.Name,
+			Kind:  Ptr(protocol.CompletionItemKindField),
+		}
+	})
+	return sortCompletionItems(items), true
 }
 
 func selfCompletionContext(linePrefix string) ([]string, string, bool) {
