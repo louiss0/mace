@@ -1991,7 +1991,7 @@ string foo = deps.foo;
 	It("resolves imported types in parse_file output schemas", func() {
 		dir, err := os.MkdirTemp("", "mace-parse-file-*")
 		tAssert.NoError(err)
-		defer os.RemoveAll(dir)
+		defer func() { _ = os.RemoveAll(dir) }()
 		tAssert.NoError(os.WriteFile(filepath.Join(dir, "shared.mace"), []byte(`[output = schema]
 {
   User: { name: string; };
