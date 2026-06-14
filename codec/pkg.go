@@ -42,6 +42,7 @@ const (
 	SchemaTypeRecord
 	SchemaTypeUnion
 	SchemaTypeVariant
+	SchemaTypeRecordMap
 )
 
 type SchemaType struct {

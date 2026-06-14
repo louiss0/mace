@@ -805,12 +805,12 @@ Runtime config = { env: false ? null : "prod"; };
 		tAssert.ErrorContains(err, "unknown schema")
 	})
 
-	It("rejects parse_file without a schema directive", func() {
+	It("rejects parse_file with a missing schema file", func() {
 		processor := New()
 
 		_, err := processor.Process(`[output = data, parse_file = "./missing.mace"] {}`)
 		tAssert.Error(err)
-		tAssert.ErrorContains(err, "parse_file directive requires a schema directive")
+		tAssert.ErrorContains(err, "unable to read import file")
 	})
 
 	DescribeTable("processes valid choice declarations",
@@ -1338,10 +1338,6 @@ var _ = Describe("Output block", func() {
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, message)
 		},
-		Entry("missing output directive", `|===|
-schema User: { name: string; };
-|===|
-[schema = User] {}`, "missing output directive"),
 		Entry("duplicate output directive", "[output = data, output = schema] {}", "duplicate output directive"),
 		Entry("unknown schema in directive", "[output = data, schema = Missing] {}", "unknown schema"),
 		Entry("schema directive is invalid in schema mode", "[output = schema, schema = User] {}", "schema directive"),
@@ -2018,4 +2014,135 @@ array<array<int>> result = [[1], ["two"]];
 |===|
 [output = data] { result: result; }`),
 	)
+
+	It("imports a schema output as a named schema with import-as", func() {
+		processor := NewWithInput(map[string]Value{
+			"name":    {Kind: ValueString, String: "@code-fixer-23/cn-efs"},
+			"version": {Kind: ValueString, String: "1.0.0"},
+			"type":    {Kind: ValueString, String: "commonjs"},
+		})
+		result, err := processor.ProcessFile("testdata/import_as/consumer.mace")
+		tAssert.NoError(err)
+		assertExpectedValue(result.Output["name"], expectedValue{kind: ValueString, string: "@code-fixer-23/cn-efs"})
+		assertExpectedValue(result.Output["version"], expectedValue{kind: ValueString, string: "1.0.0"})
+		assertExpectedValue(result.Output["type"], expectedValue{kind: ValueString, string: "commonjs"})
+	})
+
+	It("surfaces only top-level parsed schema fields as variables", func() {
+		processor := NewWithInput(map[string]Value{
+			"project": {Kind: ValueRecord, Record: map[string]Value{
+				"name": {Kind: ValueString, String: "pi-prompt-form"},
+				"root": {Kind: ValueString, String: "libs/pi-prompt-form"},
+			}},
+			"workspace": {Kind: ValueRecord, Record: map[string]Value{
+				"name": {Kind: ValueString, String: "workspace"},
+				"root": {Kind: ValueString, String: "."},
+			}},
+		})
+		result, err := processor.ProcessFile("testdata/import_as/nx_consumer.mace")
+		tAssert.NoError(err)
+		assertExpectedValue(result.Output["name"], expectedValue{kind: ValueString, string: "pi-prompt-form"})
+		assertExpectedValue(result.Output["root"], expectedValue{kind: ValueString, string: "libs/pi-prompt-form"})
+		assertExpectedValue(result.Output["cwd"], expectedValue{kind: ValueString, string: "."})
+	})
+
+	It("validates arbitrary record keys against a record value type", func() {
+		input := `|===|
+type Dependencies: record<string>;
+schema PackageJSON: {
+  name: string,
+  dependencies: Dependencies,
+}
+|===|
+[schema=PackageJSON]
+{
+  name: "pkg",
+  dependencies: {
+    pi_prompt_guard: "^1.0.0",
+    pi_prompt_form: "^1.0.0",
+  },
+}`
+		result, err := New().Process(input)
+		tAssert.NoError(err)
+		assertExpectedValue(result.Output["dependencies"], expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+			"pi_prompt_guard": {kind: ValueString, string: "^1.0.0"},
+			"pi_prompt_form":  {kind: ValueString, string: "^1.0.0"},
+		}})
+	})
+
+	It("allows record keyword schema fields to be referenced as values", func() {
+		processor := NewWithInput(map[string]Value{
+			"record": {Kind: ValueString, String: "value"},
+		})
+		result, err := processor.Process(`|===|
+schema Input: { record: string; };
+|===|
+[output = data, parse = Input]
+{
+  record: record;
+}`)
+		tAssert.NoError(err)
+		assertExpectedValue(result.Output["record"], expectedValue{kind: ValueString, string: "value"})
+	})
+
+	It("infers member access types for record map values", func() {
+		input := `|===|
+record<string> deps = { foo: "bar"; };
+string foo = deps.foo;
+|===|
+[output = data]
+{
+  foo: foo;
+}`
+		result, err := New().Process(input)
+		tAssert.NoError(err)
+		assertExpectedValue(result.Output["foo"], expectedValue{kind: ValueString, string: "bar"})
+	})
+
+	It("resolves imported types in parse_file output schemas", func() {
+		dir, err := os.MkdirTemp("", "mace-parse-file-*")
+		tAssert.NoError(err)
+		defer func() { _ = os.RemoveAll(dir) }()
+		tAssert.NoError(os.WriteFile(filepath.Join(dir, "shared.mace"), []byte(`[output = schema]
+{
+  User: { name: string; };
+}`), 0o644))
+		tAssert.NoError(os.WriteFile(filepath.Join(dir, "schema.mace"), []byte(`|===|
+from "./shared.mace" import User;
+|===|
+[output = schema]
+{
+  user: User;
+}`), 0o644))
+
+		processor := NewWithInput(map[string]Value{
+			"user": {Kind: ValueRecord, Record: map[string]Value{
+				"name": {Kind: ValueString, String: "Ada"},
+			}},
+		})
+		result, err := processor.ProcessInDir(`[output = data, parse_file = "./schema.mace"]
+{
+  name: user.name;
+}`, dir)
+		tAssert.NoError(err)
+		assertExpectedValue(result.Output["name"], expectedValue{kind: ValueString, string: "Ada"})
+	})
+
+	It("rejects record values that do not match the record value type", func() {
+		input := `|===|
+type Dependencies: record<string>;
+schema PackageJSON: {
+  dependencies: Dependencies,
+}
+|===|
+[schema=PackageJSON]
+{
+  dependencies: {
+    pi_prompt_guard: 1,
+  },
+}`
+		_, err := New().Process(input)
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, "type mismatch")
+	})
 })

@@ -448,6 +448,8 @@ func keywordToken(lexeme string) (TokenType, bool) {
 		return TokenVariant, true
 	case "choice":
 		return TokenChoice, true
+	case "record":
+		return TokenRecord, true
 	case "string":
 		return TokenStringType, true
 	case "int":
