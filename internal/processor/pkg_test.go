@@ -2128,6 +2128,109 @@ from "./shared.mace" import User;
 		assertExpectedValue(result.Output["name"], expectedValue{kind: ValueString, string: "Ada"})
 	})
 
+	Describe("optional field presence guards", func() {
+		const guardSchema = `|===|
+schema User: {
+  name: string;
+  manager?: User;
+};
+|===|
+`
+
+		It("evaluates 'in' expression to true when optional field exists in input", func() {
+			processor := NewWithInput(map[string]Value{
+				"name":    {Kind: ValueString, String: "Ada"},
+				"manager": {Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Bob"}}},
+			})
+			result, err := processor.Process(guardSchema + `[output = data, parse = User]
+{
+  has_manager: "manager" in input,
+}`)
+			tAssert.NoError(err)
+			assertExpectedValue(result.Output["has_manager"], expectedValue{kind: ValueBoolean, bool: true})
+		})
+
+		It("evaluates 'in' expression to false when optional field is absent from input", func() {
+			processor := NewWithInput(map[string]Value{
+				"name": {Kind: ValueString, String: "Ada"},
+			})
+			result, err := processor.Process(guardSchema + `[output = data, parse = User]
+{
+  has_manager: "manager" in input,
+}`)
+			tAssert.NoError(err)
+			assertExpectedValue(result.Output["has_manager"], expectedValue{kind: ValueBoolean, bool: false})
+		})
+
+		It("rejects unguarded member access on optional parse variable", func() {
+			processor := NewWithInput(map[string]Value{
+				"name":    {Kind: ValueString, String: "Ada"},
+				"manager": {Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Bob"}}},
+			})
+			_, err := processor.Process(guardSchema + `[output = data, parse = User]
+{
+  result: manager.name,
+}`)
+			tAssert.Error(err)
+			tAssert.ErrorContains(err, "optional field")
+			tAssert.ErrorContains(err, "manager")
+		})
+
+		It("allows member access on optional parse variable inside 'in' guard", func() {
+			processor := NewWithInput(map[string]Value{
+				"name":    {Kind: ValueString, String: "Ada"},
+				"manager": {Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Bob"}}},
+			})
+			result, err := processor.Process(guardSchema + `[output = data, parse = User]
+{
+  result: "manager" in input ? manager.name : "none",
+}`)
+			tAssert.NoError(err)
+			assertExpectedValue(result.Output["result"], expectedValue{kind: ValueString, string: "Bob"})
+		})
+
+		It("uses the else branch when the guarded optional field is absent", func() {
+			processor := NewWithInput(map[string]Value{
+				"name": {Kind: ValueString, String: "Ada"},
+			})
+			result, err := processor.Process(guardSchema + `[output = data, parse = User]
+{
+  result: "manager" in input ? manager.name : "none",
+}`)
+			tAssert.NoError(err)
+			assertExpectedValue(result.Output["result"], expectedValue{kind: ValueString, string: "none"})
+		})
+
+		It("supports 'in' guards with the lowercase schema-name variable", func() {
+			processor := NewWithInput(map[string]Value{
+				"name":    {Kind: ValueString, String: "Ada"},
+				"manager": {Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Bob"}}},
+			})
+			result, err := processor.Process(guardSchema + `[output = data, parse = User]
+{
+  result: "manager" in user ? manager.name : "none",
+}`)
+			tAssert.NoError(err)
+			assertExpectedValue(result.Output["result"], expectedValue{kind: ValueString, string: "Bob"})
+		})
+
+		It("validates nested optional access with nested 'in' guards via &&", func() {
+			processor := NewWithInput(map[string]Value{
+				"name": {Kind: ValueString, String: "Ada"},
+				"manager": {Kind: ValueRecord, Record: map[string]Value{
+					"name":    {Kind: ValueString, String: "Bob"},
+					"manager": {Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Carol"}}},
+				}},
+			})
+			result, err := processor.Process(guardSchema + `[output = data, parse = User]
+{
+  result: "manager" in input && "manager" in manager ? manager.manager.name : "none",
+}`)
+			tAssert.NoError(err)
+			assertExpectedValue(result.Output["result"], expectedValue{kind: ValueString, string: "Carol"})
+		})
+	})
+
 	It("rejects record values that do not match the record value type", func() {
 		input := `|===|
 type Dependencies: record<string>;

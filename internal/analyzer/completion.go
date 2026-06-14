@@ -336,6 +336,83 @@ func completionDeclarations(
 	}
 }
 
+// outputGuardedNames parses the line prefix for patterns like:
+//
+//	"field" in identifier ?  → guards "field"
+//	"a" in x && "b" in y ?  → guards "a" and "b"
+//
+// It only returns guards when a '?' (ternary then-branch) follows.
+func outputGuardedNames(linePrefix string) map[string]struct{} {
+	guarded := map[string]struct{}{}
+	// Find the last unquoted '?' — if present we are in a then-branch.
+	qIdx := lastUnquotedByteInPrefix(linePrefix, '?')
+	if qIdx < 0 {
+		return guarded
+	}
+	// Scan everything before the '?' for "field" in ... patterns.
+	condPart := linePrefix[:qIdx]
+	i := 0
+	for i < len(condPart) {
+		// Skip non-quote, non-" characters until we hit a string literal.
+		if condPart[i] != '"' && condPart[i] != '\'' {
+			i++
+			continue
+		}
+		quote := condPart[i]
+		i++
+		start := i
+		// Read the field name inside the quotes.
+		for i < len(condPart) && condPart[i] != quote {
+			i++
+		}
+		fieldName := condPart[start:i]
+		if i < len(condPart) {
+			i++ // skip closing quote
+		}
+		// Skip whitespace.
+		for i < len(condPart) && (condPart[i] == ' ' || condPart[i] == '\t') {
+			i++
+		}
+		// Check for "in" keyword followed by a non-identifier char.
+		if i+2 <= len(condPart) && condPart[i:i+2] == "in" {
+			after := i + 2
+			if after >= len(condPart) || !isIdentifierCharacter(condPart[after]) {
+				guarded[fieldName] = struct{}{}
+			}
+		}
+	}
+	return guarded
+}
+
+// lastUnquotedByteInPrefix returns the index of the last occurrence of target
+// that is not inside a single- or double-quoted string literal.
+func lastUnquotedByteInPrefix(text string, target byte) int {
+	last := -1
+	inString := false
+	var quote byte
+	for i := 0; i < len(text); i++ {
+		if inString {
+			if text[i] == '\\' && i+1 < len(text) {
+				i++ // skip escaped character
+				continue
+			}
+			if text[i] == quote {
+				inString = false
+			}
+			continue
+		}
+		if text[i] == '"' || text[i] == '\'' {
+			inString = true
+			quote = text[i]
+			continue
+		}
+		if text[i] == target {
+			last = i
+		}
+	}
+	return last
+}
+
 func outputMemberAccessContext(linePrefix string) ([]string, bool) {
 	trimmed := strings.TrimRight(linePrefix, " \t")
 	if !strings.HasSuffix(trimmed, ".") {
@@ -393,10 +470,17 @@ func parsedVariableMemberCompletionItems(document document, uri protocol.Documen
 		afterLine = suffix[lineEnd:]
 	}
 
+	// Try to build a parseable file. When the cursor is inside the then-branch of an
+	// incomplete ternary (cond ? expr.), we need to complete it with ': ""' first.
 	textWithPlaceholder := document.text[:index] + completionPlaceholderIdentifier + ";" + afterLine
 	file, err := parseFile(textWithPlaceholder)
 	if err != nil {
-		return nil, false
+		// Retry with a default else branch to close open ternary expressions.
+		textWithPlaceholder = document.text[:index] + completionPlaceholderIdentifier + ` : "";` + afterLine
+		file, err = parseFile(textWithPlaceholder)
+		if err != nil {
+			return nil, false
+		}
 	}
 
 	importBaseDir := filepath.Dir(documentPath(uri))
@@ -415,6 +499,7 @@ func parsedVariableMemberCompletionItems(document document, uri protocol.Documen
 	// Walk the explicit access chain through the schema type model.
 	// resolveCompletionType is safe for recursive schemas: NamedType resolution
 	// is a direct map lookup in model.schemas with no recursive expansion.
+	guardedNames := outputGuardedNames(linePrefix)
 	var currentType ast.TypeReference = record
 	for _, segment := range chain {
 		resolved := resolveCompletionType(currentType, model, map[string]struct{}{})
@@ -426,6 +511,12 @@ func parsedVariableMemberCompletionItems(document document, uri protocol.Documen
 		})
 		if !found {
 			return nil, false
+		}
+		// Optional fields require a presence guard before member access.
+		if field.Optional {
+			if _, guarded := guardedNames[segment]; !guarded {
+				return []protocol.CompletionItem{}, true
+			}
 		}
 		currentType = field.Type
 	}

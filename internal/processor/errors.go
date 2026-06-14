@@ -35,6 +35,7 @@ const (
 	CodeMissingInjectable        ErrorCode = "missing-injectable"
 	CodeMissingRequiredField     ErrorCode = "missing-required-field"
 	CodeOutputValueDeclaration   ErrorCode = "output-value-declaration"
+	CodeOptionalFieldAccess      ErrorCode = "optional-field-access"
 	CodeSelfReferenceUnknown     ErrorCode = "self-reference-unknown"
 	CodeTypeMismatch             ErrorCode = "type-mismatch"
 )

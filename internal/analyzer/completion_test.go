@@ -389,10 +389,12 @@ schema Runtime: { env: string; region: string; };
 
 		DescribeTable("completes recursive schema fields via member access chain on parse variables",
 			func(cursorExpr string) {
+				// manager is non-optional here so the optional-guard check does not apply;
+				// these tests exercise the infinite-recursion-safety of the type walker.
 				text := fmt.Sprintf(`|===|
 schema User: {
   name: string;
-  manager?: User;
+  manager: User;
 };
 |===|
 
@@ -574,8 +576,59 @@ schema User: {
 				return item.Label
 			})
 
-			tAssert.Contains(labels, "street")
+		tAssert.Contains(labels, "street")
 			tAssert.Contains(labels, "city")
+		})
+
+		It("returns no completions for unguarded optional parse field member access", func() {
+			text := `|===|
+schema User: {
+  name: string;
+  manager?: User;
+};
+|===|
+
+[output = data, parse = User]
+{
+  result: manager.
+}`
+			position := protocol.Position{
+				Line:      9,
+				Character: uint32(len("  result: manager.")),
+			}
+			documentPath := filepath.Join("workspace", "document.mace")
+			snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+			items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+			tAssert.Empty(items)
+		})
+
+		It("provides completions for optional parse field member access inside 'in' guard", func() {
+			text := `|===|
+schema User: {
+  name: string;
+  manager?: User;
+};
+|===|
+
+[output = data, parse = User]
+{
+  result: "manager" in input ? manager.
+}`
+			position := protocol.Position{
+				Line:      9,
+				Character: uint32(len(`  result: "manager" in input ? manager.`)),
+			}
+			documentPath := filepath.Join("workspace", "document.mace")
+			snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+			items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+			labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+				return item.Label
+			})
+
+			tAssert.Contains(labels, "name")
+			tAssert.Contains(labels, "manager")
 		})
 	}) // end Describe("Parse completions")
 
