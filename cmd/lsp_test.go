@@ -623,6 +623,46 @@ array<string> names = ['Kyle', 'Tyrone', 'Luke'];
 		}
 	})
 
+	It("ignores parse validation diagnostics", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+schema Package: { name: string; project: string; };
+|===|
+[output = data, parse = Package]
+{
+  result: "ok";
+}`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			tAssert.Empty(params.Diagnostics)
+		}
+	})
+
+	It("ignores parse_file validation diagnostics", func() {
+		notifications := []capturedNotification{}
+		workspace, err := os.MkdirTemp("", "mace-lsp-parse-ignore-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "runtime.mace", `[output = schema]
+{
+  Package: { project: string; };
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data, parse_file = "./runtime.mace"]
+{
+  result: "ok";
+}`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			tAssert.Empty(params.Diagnostics)
+		}
+	})
+
 	It("publishes processor diagnostics for invalid output data structures", func() {
 		notifications := []capturedNotification{}
 

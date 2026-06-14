@@ -257,6 +257,36 @@ nullable string env = null;
 		tAssert.Empty(snapshot.diagnostics)
 	})
 
+	It("ignores parse validation errors in diagnostics", func() {
+		snapshot := analyzeDocument(`|===|
+schema Package: { name: string; project: string; };
+|===|
+[output = data, parse = Package]
+{
+  result: "ok";
+}`)
+
+		tAssert.Empty(snapshot.diagnostics)
+	})
+
+	It("ignores parse_file validation errors in diagnostics", func() {
+		workspace, err := os.MkdirTemp("", "mace-analysis-parse-file-*")
+		tAssert.NoError(err)
+		defer os.RemoveAll(workspace)
+
+		writeAnalysisFile(workspace, "runtime.mace", `[output = schema]
+{
+  Package: { project: string; };
+}`)
+		documentPath := filepath.Join(workspace, "consumer.mace")
+		snapshot := analyzeDocumentAt(`[output = data, parse_file = "./runtime.mace"]
+{
+  result: "ok";
+}`, documentPath)
+
+		tAssert.Empty(snapshot.diagnostics)
+	})
+
 	It("reports direct null output fields", func() {
 		snapshot := analyzeDocument(`[output = data]
 {

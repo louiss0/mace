@@ -377,6 +377,12 @@ func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir str
 	result, processErr := processorInstance.ProcessInScope(text, importBaseDir, importRootDir)
 	if processErr != nil {
 		snapshot.diagnostics = append(snapshot.diagnostics, fileDiagnostics...)
+		if shouldIgnoreParseValidationError(file, processErr) {
+			unusedDiagnostics, unusedActions := unusedDeclarationAnalysis(text, file, tokens, documentPath)
+			snapshot.diagnostics = append(snapshot.diagnostics, unusedDiagnostics...)
+			snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, unusedActions...)
+			return snapshot
+		}
 		if semanticDiagnostic, ok := semanticDiagnosticFromError(file, tokens, processErr); ok {
 			snapshot.diagnostics = append(snapshot.diagnostics, semanticDiagnostic)
 			snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, semanticCodeActions(text, file, tokens, documentPath, semanticDiagnostic, processErr.Error())...)
@@ -2819,6 +2825,37 @@ func schemaFileConflictAnalysis(text string, file ast.File, documentPath string)
 	}
 
 	return diagnostic, actions, true
+}
+
+func shouldIgnoreParseValidationError(file ast.File, err error) bool {
+	var diagnosticError processor.DiagnosticError
+	if !errors.As(err, &diagnosticError) {
+		return false
+	}
+	if !hasParseValidationDirective(file.Output.Directives) {
+		return false
+	}
+
+	if diagnosticError.Code == processor.CodeMissingRequiredField {
+		return true
+	}
+
+	message := diagnosticError.Message
+	if strings.Contains(message, "unknown field") || strings.Contains(message, "is not optional in schema") {
+		return true
+	}
+
+	return false
+}
+
+func hasParseValidationDirective(directives []ast.OutputDirective) bool {
+	for _, directive := range directives {
+		if directive.Kind == ast.OutputDirectiveParse || directive.Kind == ast.OutputDirectiveParseFile {
+			return true
+		}
+	}
+
+	return false
 }
 
 func semanticDiagnosticFromError(file ast.File, tokens []lexer.Token, err error) (protocol.Diagnostic, bool) {
