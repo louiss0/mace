@@ -422,6 +422,161 @@ schema User: {
 			Entry("completes fields on fourth recursive level", "manager.manager.manager.manager."),
 			Entry("completes fields on fifth recursive level without infinite traversal", "manager.manager.manager.manager.manager."),
 		)
+
+		It("completes nested record fields via member access on parse variable", func() {
+			text := `|===|
+schema Address: {
+  street: string;
+  city: string;
+};
+schema User: {
+  name: string;
+  home: Address;
+};
+|===|
+
+[output = data, parse = User]
+{
+  result: home.
+}`
+
+			position := protocol.Position{
+				Line:      13,
+				Character: uint32(len("  result: home.")),
+			}
+			documentPath := filepath.Join("workspace", "document.mace")
+			snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+			items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+			labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+				return item.Label
+			})
+
+			tAssert.Contains(labels, "street")
+			tAssert.Contains(labels, "city")
+			tAssert.NotContains(labels, "name")
+			tAssert.NotContains(labels, "home")
+		})
+
+		It("completes fields through multi-hop member access on parse variables", func() {
+			text := `|===|
+schema Location: {
+  lat: float;
+  lon: float;
+};
+schema Address: {
+  street: string;
+  location: Location;
+};
+schema User: {
+  name: string;
+  home: Address;
+};
+|===|
+
+[output = data, parse = User]
+{
+  result: home.location.
+}`
+
+			position := protocol.Position{
+				Line:      17,
+				Character: uint32(len("  result: home.location.")),
+			}
+			documentPath := filepath.Join("workspace", "document.mace")
+			snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+			items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+			labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+				return item.Label
+			})
+
+			tAssert.Contains(labels, "lat")
+			tAssert.Contains(labels, "lon")
+			tAssert.NotContains(labels, "street")
+			tAssert.NotContains(labels, "name")
+		})
+
+		It("returns no completions for member access on a primitive parse variable field", func() {
+			text := `|===|
+schema User: {
+  name: string;
+  age: int;
+};
+|===|
+
+[output = data, parse = User]
+{
+  result: name.
+}`
+
+			position := protocol.Position{
+				Line:      9,
+				Character: uint32(len("  result: name.")),
+			}
+			documentPath := filepath.Join("workspace", "document.mace")
+			snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+			items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+
+			tAssert.Empty(items)
+		})
+
+		It("returns no completions for member access on an array parse variable field", func() {
+			text := `|===|
+schema User: {
+  name: string;
+  tags: array<string>;
+};
+|===|
+
+[output = data, parse = User]
+{
+  result: tags.
+}`
+
+			position := protocol.Position{
+				Line:      9,
+				Character: uint32(len("  result: tags.")),
+			}
+			documentPath := filepath.Join("workspace", "document.mace")
+			snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+			items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+
+			tAssert.Empty(items)
+		})
+
+		It("completes parse_file schema fields via member access chain", func() {
+			workspace, err := os.MkdirTemp("", "mace-analyzer-parse-file-member-*")
+			tAssert.NoError(err)
+			defer os.RemoveAll(workspace)
+
+			tAssert.NoError(os.WriteFile(filepath.Join(workspace, "schema.mace"), []byte(`[output = schema]
+{
+  User: { name: string; home: { street: string; city: string; }; };
+}`), 0o644))
+			documentPath := filepath.Join(workspace, "document.mace")
+			text := `[output = data, parse_file = "./schema.mace"]
+{
+  result: home.
+}`
+			tAssert.NoError(os.WriteFile(documentPath, []byte(text), 0o644))
+
+			position := protocol.Position{
+				Line:      2,
+				Character: uint32(len("  result: home.")),
+			}
+			snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+			items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+			labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+				return item.Label
+			})
+
+			tAssert.Contains(labels, "street")
+			tAssert.Contains(labels, "city")
+		})
 	}) // end Describe("Parse completions")
 
 	It("suggests choice values for output block schema fields", func() {
