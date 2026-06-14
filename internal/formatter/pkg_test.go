@@ -111,6 +111,25 @@ string name = "Ada";
 }`, output)
 	})
 
+	It("formats import-as declarations", func() {
+		file, err := parseMaceFile(`|===|
+from "./config.mace" import-as Config;
+|===|
+[output = data]
+{ result: Config; }`)
+		tAssert.NoError(err)
+
+		output, err := FormatFile(file)
+		tAssert.NoError(err)
+		tAssert.Equal(`|======================================|
+from "./config.mace" import-as Config;
+|======================================|
+[output = data]
+{
+  result: Config
+}`, output)
+	})
+
 	It("formats documentation declarations and inline output docs", func() {
 		file, err := parseMaceFile(`|===|
 schema User: { name: string; };

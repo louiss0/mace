@@ -42,6 +42,10 @@ func (f *formatter) writeFile(file ast.File) error {
 }
 
 func formatImportDeclaration(importDeclaration ast.ImportDeclaration) string {
+	if importDeclaration.ImportAs != nil {
+		return "from " + importDeclaration.Path.Lexeme + " import-as " + importDeclaration.ImportAs.Name + ";"
+	}
+
 	parts := make([]string, 0, len(importDeclaration.Identifiers))
 	for _, id := range importDeclaration.Identifiers {
 		if id.Alias != "" {
