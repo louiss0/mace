@@ -874,7 +874,7 @@ func resolveSchemaFileDeclarations(directives []ast.OutputDirective, importBaseD
 	}
 
 	if hasParseFile(directives) {
-		record, err := loadOutputSchemaRecord(resolvedPath)
+		record, err := loadOutputSchemaRecord(resolvedPath, importRootDir)
 		if err != nil {
 			return nil, err
 		}
@@ -888,7 +888,7 @@ func resolveSchemaFileDeclarations(directives []ast.OutputDirective, importBaseD
 	return outputDeclarations, nil
 }
 
-func loadOutputSchemaRecord(path string) (ast.RecordType, error) {
+func loadOutputSchemaRecord(path string, importRootDir string) (ast.RecordType, error) {
 	contents, err := os.ReadFile(path)
 	if err != nil {
 		return ast.RecordType{}, validationErrorf("unable to read import file %q", path)
@@ -904,11 +904,19 @@ func loadOutputSchemaRecord(path string) (ast.RecordType, error) {
 	if file.Output.Mode != ast.OutputModeSchema {
 		return ast.RecordType{}, validationErrorf("parse_file target %q must output a schema", path)
 	}
+	context, err := buildProcessContext(file.Imports, file.Script, filepath.Dir(path), importRootDir, true, nil)
+	if err != nil {
+		return ast.RecordType{}, err
+	}
+	if err := validateSchemaOutputFields(file.Output.SchemaFields, context.symbols, context.types, context.schemas, nil); err != nil {
+		return ast.RecordType{}, err
+	}
+
 	fields := make([]ast.SchemaField, 0, len(file.Output.SchemaFields))
 	for _, field := range file.Output.SchemaFields {
 		fields = append(fields, ast.SchemaField{Name: field.Name, Optional: field.Optional, Type: field.Type, Description: field.Description})
 	}
-	return ast.RecordType{Fields: fields}, nil
+	return resolveExportedRecordType(ast.RecordType{Fields: fields}, context.types, context.schemas, map[string]struct{}{}, map[string]struct{}{})
 }
 
 func loadSchemaFileDeclarations(path string, importRootDir string, cache map[string]map[string]ast.Declaration, stack map[string]struct{}) (map[string]ast.Declaration, error) {
@@ -3637,6 +3645,9 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 		}
 		if targetType.kind != ValueRecord {
 			return valueType{}, validationErrorf("member access requires a record value")
+		}
+		if targetType.element != nil {
+			return *targetType.element, nil
 		}
 		if targetType.record == nil {
 			if targetType.schemaName == "" {

@@ -938,7 +938,7 @@ func (p *Parser) parseChoiceMember() (ast.Expression, error) {
 	case lexer.TokenBoolean:
 		p.advance()
 		return ast.BooleanLiteral{Value: token.Lexeme == "true"}, nil
-	case lexer.TokenIdentifier, lexer.TokenTypeKeyword:
+	case lexer.TokenIdentifier, lexer.TokenTypeKeyword, lexer.TokenRecord:
 		p.advance()
 		return ast.Identifier{Name: token.Lexeme}, nil
 	default:
@@ -997,7 +997,7 @@ func (p *Parser) parseExpression(precedence int) (ast.Expression, error) {
 
 func (p *Parser) parsePrefix(token lexer.Token) (ast.Expression, error) {
 	switch token.Type {
-	case lexer.TokenIdentifier, lexer.TokenTypeKeyword:
+	case lexer.TokenIdentifier, lexer.TokenTypeKeyword, lexer.TokenRecord:
 		p.advance()
 		return ast.Identifier{Name: token.Lexeme}, nil
 	case lexer.TokenString:

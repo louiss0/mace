@@ -1959,6 +1959,64 @@ schema PackageJSON: {
 		}})
 	})
 
+	It("allows record keyword schema fields to be referenced as values", func() {
+		processor := NewWithInput(map[string]Value{
+			"record": {Kind: ValueString, String: "value"},
+		})
+		result, err := processor.Process(`|===|
+schema Input: { record: string; };
+|===|
+[output = data, parse = Input]
+{
+  record: record;
+}`)
+		tAssert.NoError(err)
+		assertExpectedValue(result.Output["record"], expectedValue{kind: ValueString, string: "value"})
+	})
+
+	It("infers member access types for record map values", func() {
+		input := `|===|
+record<string> deps = { foo: "bar"; };
+string foo = deps.foo;
+|===|
+[output = data]
+{
+  foo: foo;
+}`
+		result, err := New().Process(input)
+		tAssert.NoError(err)
+		assertExpectedValue(result.Output["foo"], expectedValue{kind: ValueString, string: "bar"})
+	})
+
+	It("resolves imported types in parse_file output schemas", func() {
+		dir, err := os.MkdirTemp("", "mace-parse-file-*")
+		tAssert.NoError(err)
+		defer os.RemoveAll(dir)
+		tAssert.NoError(os.WriteFile(filepath.Join(dir, "shared.mace"), []byte(`[output = schema]
+{
+  User: { name: string; };
+}`), 0o644))
+		tAssert.NoError(os.WriteFile(filepath.Join(dir, "schema.mace"), []byte(`|===|
+from "./shared.mace" import User;
+|===|
+[output = schema]
+{
+  user: User;
+}`), 0o644))
+
+		processor := NewWithInput(map[string]Value{
+			"user": {Kind: ValueRecord, Record: map[string]Value{
+				"name": {Kind: ValueString, String: "Ada"},
+			}},
+		})
+		result, err := processor.ProcessInDir(`[output = data, parse_file = "./schema.mace"]
+{
+  name: user.name;
+}`, dir)
+		tAssert.NoError(err)
+		assertExpectedValue(result.Output["name"], expectedValue{kind: ValueString, string: "Ada"})
+	})
+
 	It("rejects record values that do not match the record value type", func() {
 		input := `|===|
 type Dependencies: record<string>;
