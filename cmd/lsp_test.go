@@ -926,6 +926,16 @@ Us
 		tAssert.Equal([]string{"output"}, labels)
 	})
 
+	It("assumes output data when suggesting additional directives", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output, p`, nil)
+
+		labels := completeLabels(server, uri, 0, uint32(len(`[output, p`)))
+		tAssert.Contains(labels, "parse")
+		tAssert.Contains(labels, "parse_file")
+		tAssert.NotContains(labels, "output")
+	})
+
 	It("does not suggest script keywords in the output block", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = data]
@@ -1265,6 +1275,41 @@ schema Runtime: {
 		tAssert.Contains(labels, "home")
 	})
 
+	It("only suggests exported parse_file props as output variables", func() {
+		workspace, err := os.MkdirTemp("", "mace-lsp-parse-file-exports-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "nx_inputs.mace", `|===|
+schema Project: {
+  name: string;
+  root: string;
+};
+schema Workspace: {
+  name: string;
+  root: string;
+};
+|===|
+[output = schema]
+{
+  project: Project;
+  workspace: Workspace;
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data, parse_file = "./nx_inputs.mace"]
+{
+  
+}`, nil)
+
+		labels := completeLabels(server, uri, 2, 2)
+		tAssert.Contains(labels, "project")
+		tAssert.Contains(labels, "workspace")
+		tAssert.NotContains(labels, "name")
+		tAssert.NotContains(labels, "root")
+		tAssert.NotContains(labels, "cwd")
+	})
+
 	It("does not suggest schema names as output expressions", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
@@ -1500,6 +1545,21 @@ from "./shared.mace" import ImportedUser;
 }`, nil)
 
 		labels := completeLabels(server, uri, 3, uint32(len(`  result: `)))
+		tAssert.Contains(labels, "$self")
+	})
+
+	It("does not suggest previous output fields without self access", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data]
+{
+  base: 1;
+  profile: { name: "Ada"; };
+  result:
+}`, nil)
+
+		labels := completeLabels(server, uri, 3, uint32(len(`  result: `)))
+		tAssert.NotContains(labels, "base")
+		tAssert.NotContains(labels, "profile")
 		tAssert.Contains(labels, "$self")
 	})
 
