@@ -194,7 +194,10 @@ func outputInitializerCompletionItems(document document, uri protocol.DocumentUr
 			}
 		}
 		if record, recordOk := parseInputCompletionRecord(*file, model, importBaseDir, importRootDir, map[string]completionModel{}); recordOk {
-			expectedType, typeOk := completionTypeAtPath(ast.RecordType{Fields: record.Fields}, memberPath, model)
+			expectedType, typeOk, guarded := parseMemberCompletionType(ast.RecordType{Fields: record.Fields}, memberPath, model, outputGuardedNames(currentLinePrefix(document.text, position)))
+			if guarded {
+				return []protocol.CompletionItem{}, true
+			}
 			if typeOk {
 				items := completionItemsForMemberTarget(expectedType, model)
 				return sortCompletionItems(items), true
@@ -2217,6 +2220,10 @@ func mergeDirectiveCompletionModels(model *completionModel, directives []ast.Out
 func parseInputDeclarationDefinitions(file ast.File, importBaseDir string, importRootDir string) []declarationDefinition {
 	cache := map[string]completionModel{}
 	model := buildCompletionModel(file, importBaseDir, importRootDir, cache)
+	if hasOutputDirective(file.Output.Directives, ast.OutputDirectiveParseFile) && !hasOutputDirective(file.Output.Directives, ast.OutputDirectiveSchema) {
+		return parseFileOutputDeclarationDefinitions(file.Output.Directives, importBaseDir, importRootDir, cache)
+	}
+
 	record, ok := parseInputCompletionRecord(file, model, importBaseDir, importRootDir, cache)
 	if !ok {
 		return nil
@@ -2229,6 +2236,29 @@ func parseInputDeclarationDefinitions(file ast.File, importBaseDir string, impor
 			Detail: fieldTypeDetail(field.Type),
 		}
 	})
+}
+
+func parseMemberCompletionType(typeReference ast.TypeReference, path []string, model completionModel, guardedNames map[string]struct{}) (ast.TypeReference, bool, bool) {
+	current := typeReference
+	for _, segment := range path {
+		resolved := resolveCompletionType(current, model, map[string]struct{}{})
+		if resolved.kind != completionTypeSchema {
+			return nil, false, false
+		}
+		field, found := lo.Find(resolved.record.Fields, func(f ast.SchemaField) bool {
+			return f.Name == segment
+		})
+		if !found {
+			return nil, false, false
+		}
+		if field.Optional {
+			if _, guarded := guardedNames[segment]; !guarded {
+				return nil, false, true
+			}
+		}
+		current = field.Type
+	}
+	return current, true, false
 }
 
 func parseInputCompletionRecord(file ast.File, model completionModel, importBaseDir string, importRootDir string, cache map[string]completionModel) (ast.RecordType, bool) {
@@ -2245,6 +2275,43 @@ func parseInputCompletionRecord(file ast.File, model completionModel, importBase
 	}
 
 	return parseFileOutputSchemaRecord(file.Output.Directives, importBaseDir, importRootDir, cache)
+}
+
+func parseFileOutputDeclarationDefinitions(directives []ast.OutputDirective, importBaseDir string, importRootDir string, cache map[string]completionModel) []declarationDefinition {
+	for _, directive := range directives {
+		if directive.Kind != ast.OutputDirectiveParseFile {
+			continue
+		}
+
+		pathValue, ok := stringLiteralValue(ast.StringLiteral{Lexeme: directive.Value})
+		if !ok {
+			continue
+		}
+
+		resolvedPath, err := resolveBoundedPathInRoot(importBaseDir, importRootDir, pathValue)
+		if err != nil {
+			continue
+		}
+
+		importedModel, importedFile, ok := importedCompletionModel(resolvedPath, importRootDir, cache)
+		if !ok {
+			continue
+		}
+
+		return lo.Map(importedFile.Output.SchemaFields, func(field ast.OutputSchemaField, _ int) declarationDefinition {
+			detail := fieldTypeDetail(field.Type)
+			resolved := resolveCompletionType(field.Type, importedModel, map[string]struct{}{})
+			if resolved.kind == completionTypeSchema {
+				detail = recordTypeDetail(resolved.record)
+			}
+			return declarationDefinition{
+				Name:   field.Name,
+				Kind:   protocol.CompletionItemKindVariable,
+				Detail: detail,
+			}
+		})
+	}
+	return nil
 }
 
 func parseFileOutputSchemaRecord(directives []ast.OutputDirective, importBaseDir string, importRootDir string, cache map[string]completionModel) (ast.RecordType, bool) {

@@ -1806,7 +1806,7 @@ func outputParseSchemaName(directives []ast.OutputDirective, context processCont
 		return schemaNames[0], true, nil
 	}
 	if len(schemaNames) == 0 {
-		return "", false, validationErrorf("parse_file directive requires exactly one exported schema")
+		return "__parse_file", true, nil
 	}
 
 	return "", false, validationErrorf("parse_file directive is ambiguous without a schema directive")
@@ -1839,15 +1839,27 @@ func resolveParseFileExportedSchemaNames(directives []ast.OutputDirective, impor
 		return nil, err
 	}
 
-	exports, err := loadImportExports(resolvedPath, importRootDir, true, map[string]map[string]importedDeclaration{}, map[string]struct{}{})
+	contents, err := readMaceSource(resolvedPath)
+	if err != nil {
+		return nil, validationErrorf("unable to read import file %q", resolvedPath)
+	}
+	tokens, err := lex(contents)
 	if err != nil {
 		return nil, err
 	}
+	file, err := parser.New(tokens).ParseFile()
+	if err != nil {
+		return nil, validationErrorf("unable to parse import file %q: %s", resolvedPath, err)
+	}
+	if file.Output.Mode != ast.OutputModeSchema {
+		return nil, validationErrorf("parse_file target %q must output a schema", resolvedPath)
+	}
 
-	schemaNames := make([]string, 0, len(exports))
-	for _, declaration := range exports {
-		if declaration.kind == symbolKindSchema {
-			schemaNames = append(schemaNames, declaration.name)
+	schemaNames := make([]string, 0, len(file.Output.SchemaFields))
+	for _, field := range file.Output.SchemaFields {
+		named, ok := field.Type.(ast.NamedType)
+		if ok && field.Name == named.Name {
+			schemaNames = append(schemaNames, field.Name)
 		}
 	}
 

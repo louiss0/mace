@@ -1164,9 +1164,9 @@ schema Runtime: { env: string; region: string; };
 }`, nil)
 
 		labels := completeLabels(server, uri, 2, uint32(len(`  result: `)))
-		tAssert.Contains(labels, "env")
-		tAssert.Contains(labels, "region")
-		tAssert.NotContains(labels, "Runtime")
+		tAssert.NotContains(labels, "env")
+		tAssert.NotContains(labels, "region")
+		tAssert.Contains(labels, "Runtime")
 	})
 
 	It("only suggests top-level parse schema fields as output variables", func() {
@@ -1237,11 +1237,11 @@ schema Runtime: {
 }`, nil)
 
 		labels := completeLabels(server, uri, 2, uint32(len(`  result: `)))
-		tAssert.Contains(labels, "env")
-		tAssert.Contains(labels, "profile")
+		tAssert.NotContains(labels, "env")
+		tAssert.NotContains(labels, "profile")
 		tAssert.NotContains(labels, "name")
 		tAssert.NotContains(labels, "email")
-		tAssert.NotContains(labels, "Runtime")
+		tAssert.Contains(labels, "Runtime")
 	})
 
 	It("suggests parse_file output schema field members as output variables", func() {
@@ -1336,8 +1336,9 @@ schema Runtime: { env: string; region: string; };
 }`, nil)
 
 		labels := completeLabels(server, uri, 3, uint32(len(`  result: `)))
-		tAssert.Contains(labels, "env")
-		tAssert.Contains(labels, "region")
+		tAssert.NotContains(labels, "env")
+		tAssert.NotContains(labels, "region")
+		tAssert.Contains(labels, "Runtime")
 	})
 
 	It("suggests choice values for output schema fields", func() {
