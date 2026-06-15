@@ -1107,13 +1107,14 @@ schema Runtime: { env: string; region: string; };
 		tAssert.Contains(labels, "region")
 	})
 
-	It("suggests parse_file schema fields as output variables", func() {
+	It("suggests parse_file output schema fields as output variables", func() {
 		workspace, err := os.MkdirTemp("", "mace-lsp-parse-file-*")
 		tAssert.NoError(err)
 
 		writeWorkspaceFile(workspace, "runtime.mace", `[output = schema]
 {
-  runtime: { env: string; region: string; };
+  user: { name: string; home: { street: string; city: string; }; };
+  app: { env: string; region: string; };
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
@@ -1124,7 +1125,31 @@ schema Runtime: { env: string; region: string; };
 }`, nil)
 
 		labels := completeLabels(server, uri, 2, uint32(len(`  result: `)))
-		tAssert.Contains(labels, "runtime")
+		tAssert.Contains(labels, "user")
+		tAssert.Contains(labels, "app")
+		tAssert.NotContains(labels, "name")
+		tAssert.NotContains(labels, "home")
+	})
+
+	It("suggests parse_file output schema field members as output variables", func() {
+		workspace, err := os.MkdirTemp("", "mace-lsp-parse-file-members-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "runtime.mace", `[output = schema]
+{
+  user: { name: string; home: { street: string; city: string; }; };
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data, parse_file = "./runtime.mace"]
+{
+  result: user.
+}`, nil)
+
+		labels := completeLabels(server, uri, 2, uint32(len(`  result: user.`)))
+		tAssert.Contains(labels, "name")
+		tAssert.Contains(labels, "home")
 	})
 
 	It("suggests choice values for output schema fields", func() {

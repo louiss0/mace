@@ -85,6 +85,9 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 		}
 
 		if items, handled := outputInitializerCompletionItems(document, uri, position); handled {
+			if _, ok := trailingMemberAccessPath(linePrefix); ok {
+				return items
+			}
 			return mergeCompletionItems(items, bareSelfItems, itemsFromDeclarations(declarations, identifierPrefixAt(document.text, position)))
 		}
 
@@ -151,8 +154,11 @@ func outputInitializerCompletionItems(document document, uri protocol.DocumentUr
 	if items, handled := stringLiteralInitializerCompletionItems(document, uri, position, true); handled {
 		return items, true
 	}
+	if strings.Contains(currentLinePrefix(document.text, position), "$self.") {
+		return nil, false
+	}
 
-	placeholderPosition, ok := completionPlaceholderPosition(document.text, position, ":")
+	placeholderPosition, ok := completionPlaceholderPosition(document.text, position, ":.")
 	if !ok {
 		return nil, false
 	}
@@ -173,8 +179,29 @@ func outputInitializerCompletionItems(document document, uri protocol.DocumentUr
 	declarationItems := itemsFromDeclarations(declarations, prefix)
 
 	model := buildCompletionModel(*file, importBaseDir, importRootDir, map[string]completionModel{})
+	if memberPath, ok := trailingMemberAccessPath(currentLinePrefix(document.text, position)); ok {
+		if schemaName, schemaOk := outputSchemaDirective(*file); schemaOk {
+			expectedType, typeOk := completionTypeAtPath(ast.NamedType{Name: schemaName}, memberPath, model)
+			if typeOk {
+				items := completionItemsForMemberTarget(expectedType, model)
+				return sortCompletionItems(items), true
+			}
+		}
+		if record, recordOk := parseInputCompletionRecord(*file, model, importBaseDir, importRootDir, map[string]completionModel{}); recordOk {
+			expectedType, typeOk := completionTypeAtPath(ast.RecordType{Fields: record.Fields}, memberPath, model)
+			if typeOk {
+				items := completionItemsForMemberTarget(expectedType, model)
+				return sortCompletionItems(items), true
+			}
+		}
+	}
 	expectedType, path, ok := placeholderOutputCompletionType(*file, model)
 	if !ok {
+		expectedType, path, ok = placeholderParseInputCompletionType(*file, model, importBaseDir, importRootDir)
+		if ok {
+			items := completionItemsForType(expectedType, model, completionOptions{allowSchemaLiteral: len(path) > 1})
+			return sortCompletionItems(mergeCompletionItems(items, declarationItems)), true
+		}
 		if len(declarationItems) == 0 {
 			return nil, false
 		}
@@ -1462,7 +1489,7 @@ func completionFileWithPlaceholder(text string, position protocol.Position) (*as
 	linePrefix := currentLinePrefix(text, position)
 	replacement := completionPlaceholderIdentifier
 	trimmedPrefix := strings.TrimSpace(linePrefix)
-	if strings.HasSuffix(trimmedPrefix, "=") || strings.HasSuffix(trimmedPrefix, ":") {
+	if strings.HasSuffix(trimmedPrefix, "=") || strings.HasSuffix(trimmedPrefix, ":") || strings.HasSuffix(trimmedPrefix, ".") {
 		replacement += ";"
 	}
 
@@ -1658,11 +1685,46 @@ func placeholderOutputCompletionType(file ast.File, model completionModel) (ast.
 	return nil, nil, false
 }
 
+func placeholderParseInputCompletionType(file ast.File, model completionModel, importBaseDir string, importRootDir string) (ast.TypeReference, []string, bool) {
+	if file.Output.Mode != ast.OutputModeData {
+		return nil, nil, false
+	}
+
+	record, ok := parseInputCompletionRecord(file, model, importBaseDir, importRootDir, map[string]completionModel{})
+	if !ok {
+		return nil, nil, false
+	}
+
+	rootType := ast.RecordType{Fields: record.Fields}
+	for _, field := range file.Output.DataFields {
+		path, ok := placeholderPath(field.Value)
+		if !ok || len(path) == 0 {
+			continue
+		}
+
+		expectedType, ok := completionTypeAtPath(rootType, path, model)
+		if !ok {
+			return nil, nil, false
+		}
+
+		return expectedType, path, true
+	}
+
+	return nil, nil, false
+}
+
 func placeholderPath(expression ast.Expression) ([]string, bool) {
 	switch typed := expression.(type) {
 	case ast.Identifier:
 		if typed.Name == completionPlaceholderIdentifier {
 			return []string{}, true
+		}
+	case ast.MemberAccess:
+		if typed.Name == completionPlaceholderIdentifier {
+			return expressionPath(typed.Target)
+		}
+		if path, ok := placeholderPath(typed.Target); ok {
+			return append(path, typed.Name), true
 		}
 	case ast.RecordLiteral:
 		for _, field := range typed.Fields {
@@ -1697,6 +1759,53 @@ func placeholderPath(expression ast.Expression) ([]string, bool) {
 	}
 
 	return nil, false
+}
+
+func expressionPath(expression ast.Expression) ([]string, bool) {
+	switch typed := expression.(type) {
+	case ast.Identifier:
+		if typed.Name == "" {
+			return nil, false
+		}
+		return []string{typed.Name}, true
+	case ast.MemberAccess:
+		path, ok := expressionPath(typed.Target)
+		if !ok || typed.Name == "" {
+			return nil, false
+		}
+		return append(path, typed.Name), true
+	}
+	return nil, false
+}
+
+func trailingMemberAccessPath(linePrefix string) ([]string, bool) {
+	trimmed := strings.TrimRight(linePrefix, " \t")
+	if !strings.HasSuffix(trimmed, ".") {
+		return nil, false
+	}
+	trimmed = strings.TrimSuffix(trimmed, ".")
+	end := len(trimmed)
+	start := end
+	for start > 0 {
+		character := trimmed[start-1]
+		if !isIdentifierCharacter(character) && character != '.' {
+			break
+		}
+		start--
+	}
+	if start == end {
+		return nil, false
+	}
+	if start > 0 && trimmed[start-1] == '$' {
+		return nil, false
+	}
+	segments := strings.Split(trimmed[start:end], ".")
+	for _, segment := range segments {
+		if segment == "" || (!((segment[0] >= 'a' && segment[0] <= 'z') || (segment[0] >= 'A' && segment[0] <= 'Z') || segment[0] == '_')) {
+			return nil, false
+		}
+	}
+	return segments, true
 }
 
 func completionTypeAtPath(typeReference ast.TypeReference, path []string, model completionModel) (ast.TypeReference, bool) {
@@ -1769,6 +1878,19 @@ func completionItemsForType(typeReference ast.TypeReference, model completionMod
 	default:
 		return nil
 	}
+}
+
+func completionItemsForMemberTarget(typeReference ast.TypeReference, model completionModel) []protocol.CompletionItem {
+	resolved := resolveCompletionType(typeReference, model, map[string]struct{}{})
+	if resolved.kind != completionTypeSchema {
+		return completionItemsForType(typeReference, model, completionOptions{})
+	}
+	return lo.Map(resolved.record.Fields, func(field ast.SchemaField, _ int) protocol.CompletionItem {
+		return protocol.CompletionItem{
+			Label: field.Name,
+			Kind:  Ptr(protocol.CompletionItemKindField),
+		}
+	})
 }
 
 func unquotedStringChoiceLabel(label string) (string, bool) {
@@ -1911,19 +2033,11 @@ func parseInputCompletionRecord(file ast.File, model completionModel, importBase
 		return record, ok
 	}
 
-	exportedRecords := parseFileExportedSchemaRecords(file.Output.Directives, importBaseDir, importRootDir, cache)
-	if len(exportedRecords) != 1 {
-		return ast.RecordType{}, false
-	}
-	for _, record := range exportedRecords {
-		return record, true
-	}
-
-	return ast.RecordType{}, false
+	return parseFileOutputSchemaRecord(file.Output.Directives, importBaseDir, importRootDir, cache)
 }
 
-func parseFileExportedSchemaRecords(directives []ast.OutputDirective, importBaseDir string, importRootDir string, cache map[string]completionModel) map[string]ast.RecordType {
-	records := map[string]ast.RecordType{}
+func parseFileOutputSchemaRecord(directives []ast.OutputDirective, importBaseDir string, importRootDir string, cache map[string]completionModel) (ast.RecordType, bool) {
+	fields := []ast.SchemaField{}
 	for _, directive := range directives {
 		if directive.Kind != ast.OutputDirectiveParseFile {
 			continue
@@ -1947,11 +2061,17 @@ func parseFileExportedSchemaRecords(directives []ast.OutputDirective, importBase
 		for _, field := range importedFile.Output.SchemaFields {
 			resolved := resolveCompletionType(field.Type, importedModel, map[string]struct{}{})
 			if resolved.kind == completionTypeSchema {
-				records[field.Name] = resolved.record
+				fields = append(fields, ast.SchemaField{
+					Name: field.Name,
+					Type: ast.NamedType{Name: field.Name},
+				})
 			}
 		}
 	}
-	return records
+	if len(fields) == 0 {
+		return ast.RecordType{}, false
+	}
+	return ast.RecordType{Fields: fields}, true
 }
 
 func outputDirectiveValue(directives []ast.OutputDirective, kind ast.OutputDirectiveKind) (string, bool) {
