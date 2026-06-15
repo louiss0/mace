@@ -158,9 +158,6 @@ func formatDeclaration(declaration ast.Declaration) (string, error) {
 	switch typedDeclaration := declaration.(type) {
 	case ast.VariableDeclaration:
 		prefix := ""
-		if typedDeclaration.Injectable {
-			prefix = "injectable "
-		}
 		if typedDeclaration.Nullable {
 			prefix += "nullable "
 		}

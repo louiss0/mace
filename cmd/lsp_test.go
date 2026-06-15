@@ -1147,7 +1147,7 @@ schema Runtime: { env: string; region: string; };
 		tAssert.Contains(labels, "region")
 	})
 
-	It("suggests parse_file schema fields as output variables", func() {
+	It("suggests parse_file output schema fields as output variables", func() {
 		workspace, err := os.MkdirTemp("", "mace-lsp-parse-file-*")
 		tAssert.NoError(err)
 
@@ -1166,6 +1166,7 @@ schema Runtime: { env: string; region: string; };
 		labels := completeLabels(server, uri, 2, uint32(len(`  result: `)))
 		tAssert.Contains(labels, "env")
 		tAssert.Contains(labels, "region")
+		tAssert.NotContains(labels, "Runtime")
 	})
 
 	It("only suggests top-level parse schema fields as output variables", func() {
@@ -1240,6 +1241,28 @@ schema Runtime: {
 		tAssert.Contains(labels, "profile")
 		tAssert.NotContains(labels, "name")
 		tAssert.NotContains(labels, "email")
+		tAssert.NotContains(labels, "Runtime")
+	})
+
+	It("suggests parse_file output schema field members as output variables", func() {
+		workspace, err := os.MkdirTemp("", "mace-lsp-parse-file-members-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "runtime.mace", `[output = schema]
+{
+  Runtime: { user: { name: string; home: { street: string; city: string; }; }; };
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data, parse_file = "./runtime.mace"]
+{
+  result: user.
+}`, nil)
+
+		labels := completeLabels(server, uri, 2, uint32(len(`  result: user.`)))
+		tAssert.Contains(labels, "name")
+		tAssert.Contains(labels, "home")
 	})
 
 	It("does not suggest schema names as output expressions", func() {
@@ -1330,6 +1353,22 @@ schema Runtime: { env: string; region: string; };
 
 		labels := completeLabels(server, uri, 6, uint32(len(`  favorite_fruit: `)))
 		tAssert.Contains(labels, "$self")
+		tAssert.Contains(labels, `"Apple"`)
+		tAssert.Contains(labels, `"Strawberry"`)
+	})
+
+	It("suggests choice values after earlier self member access", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+ type Fruit: choice["Apple", "Strawberry"];
+ schema Basket: { previous: Fruit; favorite_fruit: Fruit; };
+|===|
+[output = data, schema = Basket]
+{
+  favorite_fruit: true ? $self.previous :
+}`, nil)
+
+		labels := completeLabels(server, uri, 6, uint32(len(`  favorite_fruit: true ? $self.previous : `)))
 		tAssert.Contains(labels, `"Apple"`)
 		tAssert.Contains(labels, `"Strawberry"`)
 	})

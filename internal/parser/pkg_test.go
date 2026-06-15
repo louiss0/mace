@@ -455,7 +455,6 @@ string user = "Ada";
 				varDecl, ok := file.Script.Items[2].(ast.VariableDeclaration)
 				tAssert.True(ok)
 				if ok {
-					tAssert.False(varDecl.Injectable)
 					tAssert.Equal("user", varDecl.Name)
 					tAssert.Equal(5, varDecl.NameToken.Line)
 					tAssert.Equal(8, varDecl.NameToken.Column)

@@ -197,8 +197,6 @@ func diagnosticCodeFromProcessorError(err processor.DiagnosticError) diagnosticC
 		return diagnosticTypeInvalidNullUsage
 	case processor.CodeInvalidOutputSchemaField:
 		return diagnosticTypeInvalidOutputSchemaField
-	case processor.CodeMissingInjectable:
-		return diagnosticDeclarationVariableMissingInitializer
 	case processor.CodeMissingRequiredField:
 		return diagnosticTypeRecordDoesNotMatchSchema
 	case processor.CodeOutputValueDeclaration:

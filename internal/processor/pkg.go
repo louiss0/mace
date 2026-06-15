@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -507,16 +508,11 @@ func prepareOutputContext(output ast.OutputBlock, context processContext) (proce
 }
 
 func (p *Processor) applyParsedOutputInput(output ast.OutputBlock, context *processContext) error {
-	var schemaName string
-	if parseName, ok := outputParseSchemeName(output.Directives); ok {
-		schemaName = parseName
-	} else if hasParseFile(output.Directives) {
-		name, ok := outputSchemaName(output.Directives)
-		if !ok {
-			name = "__parse_file"
-		}
-		schemaName = name
-	} else {
+	schemaName, ok, err := outputParseSchemaName(output.Directives, *context)
+	if err != nil {
+		return err
+	}
+	if !ok {
 		return nil
 	}
 
@@ -889,7 +885,9 @@ func readMaceSource(sourcePath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer response.Body.Close()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return "", fmt.Errorf("unexpected status %d", response.StatusCode)
 	}
@@ -1789,6 +1787,74 @@ func outputParseSchemeName(directives []ast.OutputDirective) (string, bool) {
 	return "", false
 }
 
+func outputParseSchemaName(directives []ast.OutputDirective, context processContext) (string, bool, error) {
+	if parseName, ok := outputParseSchemeName(directives); ok {
+		return parseName, true, nil
+	}
+	if !hasParseFile(directives) {
+		return "", false, nil
+	}
+	if schemaName, ok := outputSchemaName(directives); ok {
+		return schemaName, true, nil
+	}
+
+	schemaNames, err := resolveParseFileExportedSchemaNames(directives, context.importBaseDir, context.importRootDir)
+	if err != nil {
+		return "", false, err
+	}
+	if len(schemaNames) == 1 {
+		return schemaNames[0], true, nil
+	}
+	if len(schemaNames) == 0 {
+		return "", false, validationErrorf("parse_file directive requires exactly one exported schema")
+	}
+
+	return "", false, validationErrorf("parse_file directive is ambiguous without a schema directive")
+}
+
+func resolveParseFileExportedSchemaNames(directives []ast.OutputDirective, importBaseDir string, importRootDir string) ([]string, error) {
+	var path string
+	for _, directive := range directives {
+		if directive.Kind != ast.OutputDirectiveParseFile {
+			continue
+		}
+
+		parsedPath, err := parseStaticString(directive.Value)
+		if err != nil {
+			return nil, err
+		}
+
+		path = parsedPath.String
+		break
+	}
+	if path == "" {
+		return nil, nil
+	}
+	if err := validateMaceSourcePath(path); err != nil {
+		return nil, err
+	}
+
+	resolvedPath, err := resolveBoundedPath(importBaseDir, importRootDir, path)
+	if err != nil {
+		return nil, err
+	}
+
+	exports, err := loadImportExports(resolvedPath, importRootDir, true, map[string]map[string]importedDeclaration{}, map[string]struct{}{})
+	if err != nil {
+		return nil, err
+	}
+
+	schemaNames := make([]string, 0, len(exports))
+	for _, declaration := range exports {
+		if declaration.kind == symbolKindSchema {
+			schemaNames = append(schemaNames, declaration.name)
+		}
+	}
+
+	slices.Sort(schemaNames)
+	return schemaNames, nil
+}
+
 func hasParseFile(directives []ast.OutputDirective) bool {
 	for _, directive := range directives {
 		if directive.Kind == ast.OutputDirectiveParseFile {
@@ -2350,35 +2416,22 @@ type Value struct {
 }
 
 type valueEnvironment struct {
-	values             map[string]Value
-	missingInjectables map[string]struct{}
+	values map[string]Value
 }
 
 func newValueEnvironment() *valueEnvironment {
 	return &valueEnvironment{
-		values:             map[string]Value{},
-		missingInjectables: map[string]struct{}{},
+		values: map[string]Value{},
 	}
 }
 
 func (environment *valueEnvironment) Add(name string, value Value) {
 	environment.values[name] = value
-	delete(environment.missingInjectables, name)
-}
-
-func (environment *valueEnvironment) AddMissingInjectable(name string) {
-	delete(environment.values, name)
-	environment.missingInjectables[name] = struct{}{}
 }
 
 func (environment *valueEnvironment) Get(name string) (Value, bool) {
 	value, ok := environment.values[name]
 	return value, ok
-}
-
-func (environment *valueEnvironment) IsMissingInjectable(name string) bool {
-	_, ok := environment.missingInjectables[name]
-	return ok
 }
 
 func (environment *valueEnvironment) Values() map[string]Value {
@@ -2393,9 +2446,6 @@ func (environment *valueEnvironment) Values() map[string]Value {
 func (environment *valueEnvironment) Clone() *valueEnvironment {
 	cloned := newValueEnvironment()
 	cloned.values = environment.Values()
-	for name := range environment.missingInjectables {
-		cloned.missingInjectables[name] = struct{}{}
-	}
 
 	return cloned
 }

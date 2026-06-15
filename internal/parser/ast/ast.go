@@ -160,13 +160,12 @@ type Declaration interface {
 }
 
 type VariableDeclaration struct {
-	Injectable bool
-	Nullable   bool
-	HasValue   bool
-	Type       TypeReference
-	NameToken  lexer.Token
-	Name       string
-	Value      Expression
+	Nullable  bool
+	HasValue  bool
+	Type      TypeReference
+	NameToken lexer.Token
+	Name      string
+	Value     Expression
 }
 
 func (VariableDeclaration) declarationNode() {}

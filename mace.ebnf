@@ -73,7 +73,7 @@ declaration = variable_declaration
 (* 5. VARIABLE DECLARATIONS                              *)
 (* ===================================================== *)
 
-variable_declaration = [ "injectable" , ws1 ] , type_reference , ws1 , identifier , [ ws0 , "=" , ws0 , expression ] , ws0 , ";" ;
+variable_declaration = type_reference , ws1 , identifier , ws0 , "=" , ws0 , expression , ws0 , ";" ;
 
 (* ===================================================== *)
 (* 6. TYPE DECLARATIONS                                  *)

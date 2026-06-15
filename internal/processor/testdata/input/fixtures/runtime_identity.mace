@@ -1,0 +1,24 @@
+|=======================|
+type UserID: string;
+type TeamSlug: string;
+type Email: string;
+
+schema UserProfile: {
+  id: UserID,
+  name: string,
+  email: Email,
+  team: TeamSlug,
+};
+
+schema SessionInput: {
+  env: string,
+  region: string,
+  profile: UserProfile,
+};
+
+
+|=======================|
+[output = schema]
+{
+  SessionInput: SessionInput,
+}

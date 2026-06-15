@@ -1,0 +1,24 @@
+|=========================|
+type ServiceName: string;
+type RegionCode: string;
+type OwnerHandle: string;
+
+schema ReleaseFlags: {
+  canary: boolean,
+  approval: string,
+};
+
+schema DeploymentInput: {
+  service: ServiceName,
+  env: string,
+  region: RegionCode,
+  replicas: int,
+  owner: OwnerHandle,
+  flags: ReleaseFlags,
+};
+
+|=========================|
+[output = schema]
+{
+  DeploymentInput: DeploymentInput,
+}
