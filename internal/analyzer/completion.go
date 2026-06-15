@@ -29,6 +29,7 @@ var (
 	directiveSchemaFilePattern  = regexp.MustCompile(`^\s*schema_file\s*=\s*"([^"]*)$`)
 	directiveParsePattern       = regexp.MustCompile(`^\s*parse\s*=\s*([A-Za-z_]*)$`)
 	directiveParseFilePattern   = regexp.MustCompile(`^\s*parse_file\s*=\s*"([^"]*)$`)
+	selfMemberAccessPattern     = regexp.MustCompile(`(?:^|[^A-Za-z0-9_$.])\$self(?:\.[A-Za-z_][A-Za-z0-9_]*)*\.$`)
 )
 
 const completionPlaceholderIdentifier = "mace_cursor_placeholder"
@@ -154,7 +155,7 @@ func outputInitializerCompletionItems(document document, uri protocol.DocumentUr
 	if items, handled := stringLiteralInitializerCompletionItems(document, uri, position, true); handled {
 		return items, true
 	}
-	if strings.Contains(currentLinePrefix(document.text, position), "$self.") {
+	if selfMemberAccessPattern.MatchString(strings.TrimRight(currentLinePrefix(document.text, position), " \t")) {
 		return nil, false
 	}
 
@@ -2043,7 +2044,8 @@ func parseInputCompletionRecord(file ast.File, model completionModel, importBase
 }
 
 func parseFileOutputSchemaRecord(directives []ast.OutputDirective, importBaseDir string, importRootDir string, cache map[string]completionModel) (ast.RecordType, bool) {
-	fields := []ast.SchemaField{}
+	var selectedRecord ast.RecordType
+	exportedSchemaCount := 0
 	for _, directive := range directives {
 		if directive.Kind != ast.OutputDirectiveParseFile {
 			continue
@@ -2066,18 +2068,17 @@ func parseFileOutputSchemaRecord(directives []ast.OutputDirective, importBaseDir
 
 		for _, field := range importedFile.Output.SchemaFields {
 			resolved := resolveCompletionType(field.Type, importedModel, map[string]struct{}{})
-			if resolved.kind == completionTypeSchema {
-				fields = append(fields, ast.SchemaField{
-					Name: field.Name,
-					Type: ast.NamedType{Name: field.Name},
-				})
+			if resolved.kind != completionTypeSchema {
+				continue
 			}
+			exportedSchemaCount++
+			selectedRecord = resolved.record
 		}
 	}
-	if len(fields) == 0 {
+	if exportedSchemaCount != 1 {
 		return ast.RecordType{}, false
 	}
-	return ast.RecordType{Fields: fields}, true
+	return selectedRecord, true
 }
 
 func outputDirectiveValue(directives []ast.OutputDirective, kind ast.OutputDirectiveKind) (string, bool) {

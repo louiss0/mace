@@ -1113,8 +1113,7 @@ schema Runtime: { env: string; region: string; };
 
 		writeWorkspaceFile(workspace, "runtime.mace", `[output = schema]
 {
-  user: { name: string; home: { street: string; city: string; }; };
-  app: { env: string; region: string; };
+  Runtime: { env: string; region: string; };
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
@@ -1125,10 +1124,9 @@ schema Runtime: { env: string; region: string; };
 }`, nil)
 
 		labels := completeLabels(server, uri, 2, uint32(len(`  result: `)))
-		tAssert.Contains(labels, "user")
-		tAssert.Contains(labels, "app")
-		tAssert.NotContains(labels, "name")
-		tAssert.NotContains(labels, "home")
+		tAssert.Contains(labels, "env")
+		tAssert.Contains(labels, "region")
+		tAssert.NotContains(labels, "Runtime")
 	})
 
 	It("suggests parse_file output schema field members as output variables", func() {
@@ -1137,7 +1135,7 @@ schema Runtime: { env: string; region: string; };
 
 		writeWorkspaceFile(workspace, "runtime.mace", `[output = schema]
 {
-  user: { name: string; home: { street: string; city: string; }; };
+  Runtime: { user: { name: string; home: { street: string; city: string; }; }; };
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
@@ -1165,6 +1163,22 @@ schema Runtime: { env: string; region: string; };
 
 		labels := completeLabels(server, uri, 6, uint32(len(`  favorite_fruit: `)))
 		tAssert.Contains(labels, "$self")
+		tAssert.Contains(labels, `"Apple"`)
+		tAssert.Contains(labels, `"Strawberry"`)
+	})
+
+	It("suggests choice values after earlier self member access", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+ type Fruit: choice["Apple", "Strawberry"];
+ schema Basket: { previous: Fruit; favorite_fruit: Fruit; };
+|===|
+[output = data, schema = Basket]
+{
+  favorite_fruit: true ? $self.previous : 
+}`, nil)
+
+		labels := completeLabels(server, uri, 6, uint32(len(`  favorite_fruit: true ? $self.previous : `)))
 		tAssert.Contains(labels, `"Apple"`)
 		tAssert.Contains(labels, `"Strawberry"`)
 	})
