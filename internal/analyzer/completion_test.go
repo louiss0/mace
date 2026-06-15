@@ -156,10 +156,12 @@ schema Runtime: { env: string; region: string; };
 		tAssert.Contains(labels, "region")
 	})
 
-	It("suggests parse_file schema fields as output variables", func() {
+	It("suggests parse_file output schema fields as output variables", func() {
 		workspace, err := os.MkdirTemp("", "mace-analyzer-parse-file-*")
 		tAssert.NoError(err)
-		defer os.RemoveAll(workspace)
+		defer func() {
+			_ = os.RemoveAll(workspace)
+		}()
 
 		runtimePath := filepath.Join(workspace, "runtime.mace")
 		tAssert.NoError(os.WriteFile(runtimePath, []byte(`[output = schema]
@@ -185,6 +187,40 @@ schema Runtime: { env: string; region: string; };
 
 		tAssert.Contains(labels, "env")
 		tAssert.Contains(labels, "region")
+		tAssert.NotContains(labels, "Runtime")
+	})
+
+	It("suggests parse_file output schema field members as output variables", func() {
+		workspace, err := os.MkdirTemp("", "mace-analyzer-parse-file-members-*")
+		tAssert.NoError(err)
+		defer func() {
+			_ = os.RemoveAll(workspace)
+		}()
+
+		runtimePath := filepath.Join(workspace, "runtime.mace")
+		tAssert.NoError(os.WriteFile(runtimePath, []byte(`[output = schema]
+{
+  Runtime: { user: { name: string; home: { street: string; city: string; }; }; };
+}`), 0o644))
+		documentPath := filepath.Join(workspace, "document.mace")
+		text := `[output = data, parse_file = "./runtime.mace"]
+{
+  result: user.
+}`
+		tAssert.NoError(os.WriteFile(documentPath, []byte(text), 0o644))
+		position := protocol.Position{
+			Line:      2,
+			Character: uint32(len(`  result: user.`)),
+		}
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+			return item.Label
+		})
+
+		tAssert.Contains(labels, "name")
+		tAssert.Contains(labels, "home")
 	})
 
 	It("suggests choice values for output block schema fields", func() {
@@ -210,6 +246,32 @@ schema Runtime: { env: string; region: string; };
 		})
 
 		tAssert.Contains(labels, "$self")
+		tAssert.Contains(labels, `"Apple"`)
+		tAssert.Contains(labels, `"Strawberry"`)
+	})
+
+	It("suggests choice values after earlier self member access", func() {
+		text := `|===|
+ type Fruit: choice["Apple", "Strawberry"];
+ schema Basket: { previous: Fruit; favorite_fruit: Fruit; };
+|===|
+[output = data, schema = Basket]
+{
+  favorite_fruit: true ? $self.previous : 
+}`
+
+		position := protocol.Position{
+			Line:      6,
+			Character: uint32(len(`  favorite_fruit: true ? $self.previous : `)),
+		}
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+			return item.Label
+		})
+
 		tAssert.Contains(labels, `"Apple"`)
 		tAssert.Contains(labels, `"Strawberry"`)
 	})

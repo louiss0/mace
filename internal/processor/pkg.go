@@ -760,7 +760,9 @@ func readMaceSource(sourcePath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer response.Body.Close()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return "", fmt.Errorf("unexpected status %d", response.StatusCode)
 	}
