@@ -159,7 +159,9 @@ schema Runtime: { env: string; region: string; };
 	It("suggests parse_file output schema fields as output variables", func() {
 		workspace, err := os.MkdirTemp("", "mace-analyzer-parse-file-*")
 		tAssert.NoError(err)
-		defer os.RemoveAll(workspace)
+		defer func() {
+			_ = os.RemoveAll(workspace)
+		}()
 
 		runtimePath := filepath.Join(workspace, "runtime.mace")
 		tAssert.NoError(os.WriteFile(runtimePath, []byte(`[output = schema]
@@ -193,7 +195,9 @@ schema Runtime: { env: string; region: string; };
 	It("suggests parse_file output schema field members as output variables", func() {
 		workspace, err := os.MkdirTemp("", "mace-analyzer-parse-file-members-*")
 		tAssert.NoError(err)
-		defer os.RemoveAll(workspace)
+		defer func() {
+			_ = os.RemoveAll(workspace)
+		}()
 
 		runtimePath := filepath.Join(workspace, "runtime.mace")
 		tAssert.NoError(os.WriteFile(runtimePath, []byte(`[output = schema]

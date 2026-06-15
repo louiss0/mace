@@ -1801,11 +1801,17 @@ func trailingMemberAccessPath(linePrefix string) ([]string, bool) {
 	}
 	segments := strings.Split(trimmed[start:end], ".")
 	for _, segment := range segments {
-		if segment == "" || (!((segment[0] >= 'a' && segment[0] <= 'z') || (segment[0] >= 'A' && segment[0] <= 'Z') || segment[0] == '_')) {
+		if segment == "" || !isIdentifierStartCharacter(segment[0]) {
 			return nil, false
 		}
 	}
 	return segments, true
+}
+
+func isIdentifierStartCharacter(value byte) bool {
+	return value == '_' ||
+		(value >= 'a' && value <= 'z') ||
+		(value >= 'A' && value <= 'Z')
 }
 
 func completionTypeAtPath(typeReference ast.TypeReference, path []string, model completionModel) (ast.TypeReference, bool) {

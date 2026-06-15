@@ -808,7 +808,9 @@ Runtime config = { env: false ? null : "prod"; };
 	It("uses parse_file without a schema directive when one schema is available", func() {
 		workspace, err := os.MkdirTemp("", "mace-parse-file-fixture-*")
 		tAssert.NoError(err)
-		defer os.RemoveAll(workspace)
+		defer func() {
+			_ = os.RemoveAll(workspace)
+		}()
 
 		writeFixtureFile(workspace, "runtime.mace", `|===|
 schema Runtime: { env: string; };
@@ -834,7 +836,9 @@ schema Meta: { source: string; };
 	It("rejects parse_file without a schema directive when multiple schemas are available", func() {
 		workspace, err := os.MkdirTemp("", "mace-parse-file-ambiguous-*")
 		tAssert.NoError(err)
-		defer os.RemoveAll(workspace)
+		defer func() {
+			_ = os.RemoveAll(workspace)
+		}()
 
 		writeFixtureFile(workspace, "runtime.mace", `|===|
 schema Runtime: { env: string; };
