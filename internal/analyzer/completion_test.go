@@ -422,18 +422,24 @@ schema Runtime: { env: string; region: string; };
 				return item.Label
 			})
 
-			tAssert.Contains(labels, "env")
-			tAssert.Contains(labels, "region")
+			tAssert.Contains(labels, "Runtime")
 		})
 
-		DescribeTable("completes recursive schema fields via member access chain on parse variables",
-			func(cursorExpr string) {
-				// manager is non-optional here so the optional-guard check does not apply;
-				// these tests exercise the infinite-recursion-safety of the type walker.
+		DescribeTable("completes recursive nested parse values through member access",
+			func(cursorExpr string, expectedLabels []string) {
 				text := fmt.Sprintf(`|===|
+schema Contact: {
+  email: string;
+  phone: string;
+};
+schema Profile: {
+  title: string;
+  contact: Contact;
+};
 schema User: {
   name: string;
   manager: User;
+  profile: Profile;
 };
 |===|
 
@@ -443,7 +449,7 @@ schema User: {
 }`, cursorExpr)
 
 				position := protocol.Position{
-					Line:      9,
+					Line:      18,
 					Character: uint32(len("  result: ") + len(cursorExpr)),
 				}
 				documentPath := filepath.Join("workspace", "document.mace")
@@ -454,14 +460,15 @@ schema User: {
 					return item.Label
 				})
 
-				tAssert.Contains(labels, "name")
-				tAssert.Contains(labels, "manager")
+				for _, label := range expectedLabels {
+					tAssert.Contains(labels, label)
+				}
 			},
-			Entry("completes fields on recursive parsed record", "manager."),
-			Entry("completes fields on second recursive level", "manager.manager."),
-			Entry("completes fields on third recursive level", "manager.manager.manager."),
-			Entry("completes fields on fourth recursive level", "manager.manager.manager.manager."),
-			Entry("completes fields on fifth recursive level without infinite traversal", "manager.manager.manager.manager.manager."),
+			Entry("completes fields on recursive parsed record", "manager.", []string{"manager", "name", "profile"}),
+			Entry("completes fields on second recursive level", "manager.manager.", []string{"manager", "name", "profile"}),
+			Entry("completes nested profile fields on recursive parsed record", "manager.profile.", []string{"contact", "title"}),
+			Entry("completes nested contact fields on second recursive level", "manager.manager.profile.contact.", []string{"email", "phone"}),
+			Entry("completes nested contact fields on deep recursive level without infinite traversal", "manager.manager.manager.manager.profile.contact.", []string{"email", "phone"}),
 		)
 
 		It("completes nested record fields via member access on parse variable", func() {
@@ -600,13 +607,13 @@ schema User: {
 			documentPath := filepath.Join(workspace, "document.mace")
 			text := `[output = data, parse_file = "./schema.mace"]
 {
-  result: home.
+  result: User.home.
 }`
 			tAssert.NoError(os.WriteFile(documentPath, []byte(text), 0o644))
 
 			position := protocol.Position{
 				Line:      2,
-				Character: uint32(len("  result: home.")),
+				Character: uint32(len("  result: User.home.")),
 			}
 			snapshot := AnalyzeCompletionContext(text, documentPath, position)
 
@@ -617,6 +624,50 @@ schema User: {
 
 			tAssert.Contains(labels, "street")
 			tAssert.Contains(labels, "city")
+		})
+
+		It("completes members for exported parse_file props", func() {
+			workspace, err := os.MkdirTemp("", "mace-analyzer-parse-file-export-members-*")
+			tAssert.NoError(err)
+			defer os.RemoveAll(workspace)
+
+			tAssert.NoError(os.WriteFile(filepath.Join(workspace, "schema.mace"), []byte(`|===|
+schema Project: {
+  name: string;
+  root: string;
+};
+schema Workspace: {
+  name: string;
+  root: string;
+};
+|===|
+[output = schema]
+{
+  project: Project;
+  workspace: Workspace;
+}`), 0o644))
+			documentPath := filepath.Join(workspace, "document.mace")
+			text := `[output = data, parse_file = "./schema.mace"]
+{
+  result: project.
+}`
+			tAssert.NoError(os.WriteFile(documentPath, []byte(text), 0o644))
+
+			position := protocol.Position{
+				Line:      2,
+				Character: uint32(len("  result: project.")),
+			}
+			snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+			items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+			labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+				return item.Label
+			})
+
+			tAssert.Contains(labels, "name")
+			tAssert.Contains(labels, "root")
+			tAssert.NotContains(labels, "project")
+			tAssert.NotContains(labels, "workspace")
 		})
 
 		It("returns no completions for unguarded optional parse field member access", func() {

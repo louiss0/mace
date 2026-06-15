@@ -1275,6 +1275,33 @@ schema Runtime: {
 		tAssert.Contains(labels, "home")
 	})
 
+	It("completes recursive nested parse values through member access", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+schema Contact: {
+  email: string;
+  phone: string;
+};
+schema Profile: {
+  title: string;
+  contact: Contact;
+};
+schema User: {
+  name: string;
+  manager: User;
+  profile: Profile;
+};
+|===|
+[output = data, parse = User]
+{
+  result: manager.manager.profile.contact.
+}`, nil)
+
+		labels := completeLabels(server, uri, 17, uint32(len(`  result: manager.manager.profile.contact.`)))
+		tAssert.Contains(labels, "email")
+		tAssert.Contains(labels, "phone")
+	})
+
 	It("only suggests exported parse_file props as output variables", func() {
 		workspace, err := os.MkdirTemp("", "mace-lsp-parse-file-exports-*")
 		tAssert.NoError(err)
@@ -1308,6 +1335,40 @@ schema Workspace: {
 		tAssert.NotContains(labels, "name")
 		tAssert.NotContains(labels, "root")
 		tAssert.NotContains(labels, "cwd")
+	})
+
+	It("completes members for exported parse_file props", func() {
+		workspace, err := os.MkdirTemp("", "mace-lsp-parse-file-export-members-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "nx_inputs.mace", `|===|
+schema Project: {
+  name: string;
+  root: string;
+};
+schema Workspace: {
+  name: string;
+  root: string;
+};
+|===|
+[output = schema]
+{
+  project: Project;
+  workspace: Workspace;
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data, parse_file = "./nx_inputs.mace"]
+{
+  result: project.
+}`, nil)
+
+		labels := completeLabels(server, uri, 2, uint32(len(`  result: project.`)))
+		tAssert.Contains(labels, "name")
+		tAssert.Contains(labels, "root")
+		tAssert.NotContains(labels, "project")
+		tAssert.NotContains(labels, "workspace")
 	})
 
 	It("does not suggest schema names as output expressions", func() {

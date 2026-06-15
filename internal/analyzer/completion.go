@@ -201,26 +201,16 @@ func outputInitializerCompletionItems(document document, uri protocol.DocumentUr
 		if schemaName, schemaOk := outputSchemaDirective(*file); schemaOk {
 			expectedType, typeOk := completionTypeAtPath(ast.NamedType{Name: schemaName}, memberPath, model)
 			if typeOk {
-				items := completionItemsForMemberTarget(expectedType, model)
+				items := completionItemsForValueMembers(syntheticCompletionValue(expectedType, model, 8))
 				return sortCompletionItems(items), true
 			}
 		}
-		if record, recordOk := parseInputCompletionRecord(*file, model, importBaseDir, importRootDir, map[string]completionModel{}); recordOk {
-			expectedType, typeOk, guarded := parseMemberCompletionType(ast.RecordType{Fields: record.Fields}, memberPath, model, outputGuardedNames(currentLinePrefix(document.text, position)))
+		if expectedType, typeOk, guarded := parseInputMemberCompletionRootType(*file, model, memberPath, importBaseDir, importRootDir, cache, outputGuardedNames(currentLinePrefix(document.text, position))); typeOk || guarded {
 			if guarded {
 				return []protocol.CompletionItem{}, true
 			}
-			if typeOk {
-				items := completionItemsForMemberTarget(expectedType, model)
-				if hasOutputDirective(file.Output.Directives, ast.OutputDirectiveParseFile) {
-					parseFileItems := itemsFromDeclarations(
-						parseFileOutputDeclarationDefinitions(file.Output.Directives, importBaseDir, importRootDir, cache),
-						prefix,
-					)
-					return sortCompletionItems(mergeCompletionItems(items, parseFileItems)), true
-				}
-				return sortCompletionItems(items), true
-			}
+			items := completionItemsForValueMembers(syntheticCompletionValue(expectedType, model, 8))
+			return sortCompletionItems(items), true
 		}
 	}
 	expectedType, path, ok := placeholderOutputCompletionType(*file, model)
@@ -543,47 +533,15 @@ func parsedVariableMemberCompletionItems(document document, uri protocol.Documen
 	cache := map[string]completionModel{}
 	model := buildCompletionModel(file, importBaseDir, importRootDir, cache)
 
-	record, ok := parseInputCompletionRecord(file, model, importBaseDir, importRootDir, cache)
+	rootType, ok, guarded := parseInputMemberCompletionRootType(file, model, chain, importBaseDir, importRootDir, cache, outputGuardedNames(linePrefix))
+	if guarded {
+		return []protocol.CompletionItem{}, true
+	}
 	if !ok {
 		return nil, false
 	}
 
-	// Walk the explicit access chain through the schema type model.
-	// resolveCompletionType is safe for recursive schemas: NamedType resolution
-	// is a direct map lookup in model.schemas with no recursive expansion.
-	guardedNames := outputGuardedNames(linePrefix)
-	var currentType ast.TypeReference = record
-	for _, segment := range chain {
-		resolved := resolveCompletionType(currentType, model, map[string]struct{}{})
-		if resolved.kind != completionTypeSchema {
-			return nil, false
-		}
-		field, found := lo.Find(resolved.record.Fields, func(f ast.SchemaField) bool {
-			return f.Name == segment
-		})
-		if !found {
-			return nil, false
-		}
-		// Optional fields require a presence guard before member access.
-		if field.Optional {
-			if _, guarded := guardedNames[segment]; !guarded {
-				return []protocol.CompletionItem{}, true
-			}
-		}
-		currentType = field.Type
-	}
-
-	resolved := resolveCompletionType(currentType, model, map[string]struct{}{})
-	if resolved.kind != completionTypeSchema {
-		return []protocol.CompletionItem{}, true
-	}
-
-	items := lo.Map(resolved.record.Fields, func(field ast.SchemaField, _ int) protocol.CompletionItem {
-		return protocol.CompletionItem{
-			Label: field.Name,
-			Kind:  Ptr(protocol.CompletionItemKindField),
-		}
-	})
+	items := completionItemsForValueMembers(syntheticCompletionValue(rootType, model, 8))
 	return sortCompletionItems(items), true
 }
 
@@ -2131,6 +2089,65 @@ func completionItemsForMemberTarget(typeReference ast.TypeReference, model compl
 	})
 }
 
+func completionItemsForValueMembers(value processor.Value) []protocol.CompletionItem {
+	if value.Kind != processor.ValueRecord {
+		return []protocol.CompletionItem{}
+	}
+
+	names := sortStrings(lo.Keys(value.Record))
+	return lo.Map(names, func(name string, _ int) protocol.CompletionItem {
+		return protocol.CompletionItem{
+			Label: name,
+			Kind:  Ptr(protocol.CompletionItemKindField),
+		}
+	})
+}
+
+func syntheticCompletionValue(typeReference ast.TypeReference, model completionModel, depth int) processor.Value {
+	if depth <= 0 {
+		return processor.Value{}
+	}
+
+	resolved := resolveCompletionType(typeReference, model, map[string]struct{}{})
+	switch resolved.kind {
+	case completionTypeSchema:
+		fields := make(map[string]processor.Value, len(resolved.record.Fields))
+		for _, field := range resolved.record.Fields {
+			fields[field.Name] = syntheticCompletionValue(field.Type, model, depth-1)
+		}
+		return processor.Value{Kind: processor.ValueRecord, Record: fields}
+	case completionTypeArray:
+		return processor.Value{
+			Kind:  processor.ValueArray,
+			Array: []processor.Value{syntheticCompletionValue(resolved.element, model, depth-1)},
+		}
+	case completionTypeChoice:
+		return processor.Value{Kind: processor.ValueString, String: ""}
+	case completionTypePrimitive:
+		switch resolved.primitive {
+		case "string":
+			return processor.Value{Kind: processor.ValueString, String: ""}
+		case "int", "hex_int":
+			return processor.Value{Kind: processor.ValueInt, Int: 0}
+		case "float", "hex_float":
+			return processor.Value{Kind: processor.ValueFloat, Float: 0}
+		case "boolean":
+			return processor.Value{Kind: processor.ValueBoolean, Boolean: false}
+		default:
+			return processor.Value{}
+		}
+	case completionTypeVariant:
+		for _, member := range resolved.members {
+			value := syntheticCompletionValue(member, model, depth-1)
+			if value.Kind != processor.ValueUnknown {
+				return value
+			}
+		}
+	}
+
+	return processor.Value{}
+}
+
 func unquotedStringChoiceLabel(label string) (string, bool) {
 	if len(label) < 2 || label[0] != '"' || label[len(label)-1] != '"' {
 		return "", false
@@ -2262,6 +2279,21 @@ func parseInputDeclarationDefinitions(file ast.File, importBaseDir string, impor
 	})
 }
 
+func parseInputMemberCompletionRootType(file ast.File, model completionModel, path []string, importBaseDir string, importRootDir string, cache map[string]completionModel, guardedNames map[string]struct{}) (ast.TypeReference, bool, bool) {
+	if record, ok := parseInputCompletionRecord(file, model, importBaseDir, importRootDir, cache); ok {
+		if rootType, typeOk, guarded := parseMemberCompletionType(ast.RecordType{Fields: record.Fields}, path, model, guardedNames); typeOk || guarded {
+			return rootType, typeOk, guarded
+		}
+	}
+
+	exportedRecord, ok := parseFileOutputExportedRecord(file.Output.Directives, importBaseDir, importRootDir, cache)
+	if !ok {
+		return nil, false, false
+	}
+
+	return parseMemberCompletionType(ast.RecordType{Fields: exportedRecord.Fields}, path, model, guardedNames)
+}
+
 func parseMemberCompletionType(typeReference ast.TypeReference, path []string, model completionModel, guardedNames map[string]struct{}) (ast.TypeReference, bool, bool) {
 	current := typeReference
 	for _, segment := range path {
@@ -2382,6 +2414,49 @@ func parseFileOutputSchemaRecord(directives []ast.OutputDirective, importBaseDir
 		return ast.RecordType{}, false
 	}
 	return selectedRecord, true
+}
+
+func parseFileOutputExportedRecord(directives []ast.OutputDirective, importBaseDir string, importRootDir string, cache map[string]completionModel) (ast.RecordType, bool) {
+	for _, directive := range directives {
+		if directive.Kind != ast.OutputDirectiveParseFile {
+			continue
+		}
+
+		pathValue, ok := stringLiteralValue(ast.StringLiteral{Lexeme: directive.Value})
+		if !ok {
+			continue
+		}
+
+		resolvedPath, err := resolveBoundedPathInRoot(importBaseDir, importRootDir, pathValue)
+		if err != nil {
+			continue
+		}
+
+		importedModel, importedFile, ok := importedCompletionModel(resolvedPath, importRootDir, cache)
+		if !ok {
+			continue
+		}
+
+		fields := lo.Map(importedFile.Output.SchemaFields, func(field ast.OutputSchemaField, _ int) ast.SchemaField {
+			fieldType := field.Type
+			if resolved := resolveCompletionType(field.Type, importedModel, map[string]struct{}{}); resolved.kind == completionTypeSchema {
+				fieldType = resolved.record
+			}
+			return ast.SchemaField{
+				Name:        field.Name,
+				Optional:    field.Optional,
+				Type:        fieldType,
+				Description: field.Description,
+			}
+		})
+		if len(fields) == 0 {
+			return ast.RecordType{}, false
+		}
+
+		return ast.RecordType{Fields: fields}, true
+	}
+
+	return ast.RecordType{}, false
 }
 
 func outputDirectiveValue(directives []ast.OutputDirective, kind ast.OutputDirectiveKind) (string, bool) {
