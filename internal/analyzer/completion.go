@@ -192,7 +192,7 @@ func outputInitializerCompletionItems(document document, uri protocol.DocumentUr
 	importRootDir := completionRoot(document.analysis, uri)
 	prefix := identifierPrefixAt(document.text, position)
 	cache := map[string]completionModel{}
-	declarations := filterOutputDeclarationDefinitions(collectDeclarations(*file, nil, importBaseDir))
+	declarations := filterOutputDeclarationDefinitions(collectDeclarationsExcludingParsed(*file, nil, importBaseDir))
 	declarationItems := itemsFromDeclarations(declarations, prefix)
 	parseInputItems := itemsFromDeclarations(parseInputDeclarationDefinitions(*file, importBaseDir, importRootDir), prefix)
 
@@ -369,14 +369,14 @@ func completionDeclarations(
 			return nil
 		}
 
-		return collectDeclarations(file, nil, importBaseDir)
+		return collectDeclarationsExcludingParsed(file, nil, importBaseDir)
 	case completionScopeOutput:
 		file := completionFile(document, linePrefix)
 		if file == nil {
 			return nil
 		}
 
-		return filterOutputDeclarationDefinitions(collectDeclarations(*file, nil, importBaseDir))
+		return filterOutputDeclarationDefinitions(collectDeclarationsExcludingParsed(*file, nil, importBaseDir))
 	default:
 		return nil
 	}

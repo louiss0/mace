@@ -25,6 +25,7 @@ const (
 	symbolOriginLocal  symbolOrigin = "local"
 	symbolOriginImport symbolOrigin = "import"
 	symbolOriginOutput symbolOrigin = "output"
+	symbolOriginParsed symbolOrigin = "parsed"
 )
 
 type semanticSymbol struct {
@@ -65,6 +66,9 @@ func (snapshot analysisSnapshot) symbol(name string) (semanticSymbol, bool) {
 func (snapshot analysisSnapshot) symbolAt(position protocol.Position) (semanticSymbol, bool) {
 	for index := len(snapshot.symbols) - 1; index >= 0; index-- {
 		symbol := snapshot.symbols[index]
+		if !symbolHasRange(symbol) {
+			continue
+		}
 		if comparePositions(symbol.Range.Start, position) <= 0 && comparePositions(position, symbol.Range.End) <= 0 {
 			return symbol, true
 		}
@@ -114,6 +118,7 @@ func (snapshot analysisSnapshot) definitionAt(position protocol.Position) (proto
 func (snapshot analysisSnapshot) documentSymbolAt(position protocol.Position) (semanticSymbol, bool) {
 	return findLastSymbol(snapshot.symbols, func(symbol semanticSymbol) bool {
 		return symbol.Definition.URI == snapshot.documentURI &&
+			symbolHasRange(symbol) &&
 			comparePositions(symbol.Range.Start, position) <= 0 &&
 			comparePositions(position, symbol.Range.End) <= 0
 	})
@@ -3213,6 +3218,14 @@ func collectDeclarations(file ast.File, result *processor.Result, importBaseDir 
 	return declarationsFromSymbols(collectSemanticSymbols(file, nil, result, filepath.Join(importBaseDir, "document.mace")))
 }
 
+func collectDeclarationsExcludingParsed(file ast.File, result *processor.Result, importBaseDir string) []declarationDefinition {
+	symbols := collectSemanticSymbols(file, nil, result, filepath.Join(importBaseDir, "document.mace"))
+	symbols = lo.Filter(symbols, func(symbol semanticSymbol, _ int) bool {
+		return symbol.Origin != symbolOriginParsed
+	})
+	return declarationsFromSymbols(symbols)
+}
+
 func declarationsFromSymbols(symbols []semanticSymbol) []declarationDefinition {
 	return lo.Map(symbols, func(symbol semanticSymbol, _ int) declarationDefinition {
 		return declarationDefinition{
@@ -3243,6 +3256,8 @@ func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *process
 			}
 		})...)
 	}
+
+	symbols = append(symbols, parsedSemanticSymbols(file, documentPath)...)
 
 	symbols = append(symbols, lo.Map(file.Output.SchemaFields, func(field ast.OutputSchemaField, _ int) semanticSymbol {
 		return newOutputSymbol(field.NameToken, documentURI, field.Name, fmt.Sprintf("output %s: %s", field.Name, fieldTypeDetail(field.Type)), inlineDescriptionDocumentation(field.Description))
@@ -3362,6 +3377,89 @@ func stringLiteralMarkdown(literal ast.StringLiteral) string {
 	default:
 		return lexeme
 	}
+}
+
+func parsedSemanticSymbols(file ast.File, documentPath string) []semanticSymbol {
+	if documentPath == "" {
+		return nil
+	}
+
+	importBaseDir := filepath.Dir(documentPath)
+	model := buildCompletionModel(file, importBaseDir, importBaseDir, map[string]completionModel{})
+	record, ok := parseInputCompletionRecord(file, model, importBaseDir, importBaseDir, map[string]completionModel{})
+	if !ok {
+		return nil
+	}
+
+	symbols := lo.Map(record.Fields, func(field ast.SchemaField, _ int) semanticSymbol {
+		return semanticSymbol{
+			Name:   field.Name,
+			Kind:   protocol.CompletionItemKindVariable,
+			Detail: fmt.Sprintf("parse %s: %s", field.Name, fieldTypeDetail(field.Type)),
+			Origin: symbolOriginParsed,
+		}
+	})
+
+	rootDetail := fmt.Sprintf("parse input: %s", recordTypeDetail(record))
+	symbols = append(symbols, semanticSymbol{
+		Name:   "input",
+		Kind:   protocol.CompletionItemKindVariable,
+		Detail: rootDetail,
+		Origin: symbolOriginParsed,
+	})
+
+	if schemaName, ok := parseInputSemanticSchemaName(file, importBaseDir); ok {
+		aliasName := strings.ToLower(schemaName)
+		if aliasName != "input" {
+			symbols = append(symbols, semanticSymbol{
+				Name:   aliasName,
+				Kind:   protocol.CompletionItemKindVariable,
+				Detail: fmt.Sprintf("parse %s: %s", aliasName, recordTypeDetail(record)),
+				Origin: symbolOriginParsed,
+			})
+		}
+	}
+
+	return dedupeSymbols(symbols)
+}
+
+func parseInputSemanticSchemaName(file ast.File, importBaseDir string) (string, bool) {
+	if name, ok := outputDirectiveValue(file.Output.Directives, ast.OutputDirectiveParse); ok {
+		return name, true
+	}
+	if !hasOutputDirective(file.Output.Directives, ast.OutputDirectiveParseFile) {
+		return "", false
+	}
+	if name, ok := outputDirectiveValue(file.Output.Directives, ast.OutputDirectiveSchema); ok {
+		return name, true
+	}
+
+	for _, directive := range file.Output.Directives {
+		if directive.Kind != ast.OutputDirectiveParseFile {
+			continue
+		}
+
+		pathValue, ok := stringLiteralValue(ast.StringLiteral{Lexeme: directive.Value})
+		if !ok {
+			return "", false
+		}
+
+		resolvedPath, err := resolveBoundedPathInRoot(importBaseDir, importBaseDir, pathValue)
+		if err != nil {
+			return "", false
+		}
+
+		_, importedFile, _, ok := parsedFile(resolvedPath)
+		if !ok {
+			return "", false
+		}
+
+		if len(importedFile.Output.SchemaFields) == 1 {
+			return importedFile.Output.SchemaFields[0].Name, true
+		}
+	}
+
+	return "", false
 }
 
 func importedSemanticSymbols(file ast.File, documentPath string) []semanticSymbol {
@@ -3658,6 +3756,10 @@ func variableDeclarationDetail(declaration ast.VariableDeclaration) string {
 	}
 
 	return detail + " = " + expressionSummary(declaration.Value)
+}
+
+func symbolHasRange(symbol semanticSymbol) bool {
+	return comparePositions(symbol.Range.Start, symbol.Range.End) < 0
 }
 
 func indexSymbols(symbols []semanticSymbol) map[string]semanticSymbol {

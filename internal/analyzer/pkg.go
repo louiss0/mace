@@ -194,7 +194,8 @@ func CodeActions(snapshot Snapshot, uri protocol.DocumentUri, targetRange protoc
 }
 
 func PrepareRename(snapshot Snapshot, position protocol.Position) (protocol.Range, bool) {
-	if _, ok := snapshot.symbolAt(position); !ok {
+	symbol, ok := snapshot.symbolAt(position)
+	if !ok || symbol.Origin == symbolOriginParsed {
 		return protocol.Range{}, false
 	}
 
@@ -203,7 +204,7 @@ func PrepareRename(snapshot Snapshot, position protocol.Position) (protocol.Rang
 
 func Rename(text string, snapshot Snapshot, uri protocol.DocumentUri, position protocol.Position, newName string) (*protocol.WorkspaceEdit, bool) {
 	symbol, ok := snapshot.symbolAt(position)
-	if !ok || newName == "" {
+	if !ok || newName == "" || symbol.Origin == symbolOriginParsed {
 		return nil, false
 	}
 

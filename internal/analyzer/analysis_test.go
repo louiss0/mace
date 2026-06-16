@@ -63,6 +63,60 @@ func requireDiagnosticCode(diagnostic protocol.Diagnostic) string {
 }
 
 var _ = Describe("LSP analysis", func() {
+	It("surfaces parsed variables as LSP-visible declarations", func() {
+		workspace, err := os.MkdirTemp("", "mace-analysis-parse-declarations-*")
+		tAssert.NoError(err)
+
+		documentPath := filepath.Join(workspace, "consumer.mace")
+		snapshot := analyzeDocumentAt(`|===|
+		schema Runtime: {
+		  env: string;
+		  profile: { name: string; };
+		};
+		|===|
+		[output = data, parse = Runtime]
+		{
+		  result: profile.name;
+		}`, documentPath)
+
+		names := declarationNames(snapshot)
+		tAssert.Contains(names, "env")
+		tAssert.Contains(names, "profile")
+		tAssert.Contains(names, "input")
+		tAssert.Contains(names, "runtime")
+	})
+
+	It("returns hover details for parsed variables", func() {
+		workspace, err := os.MkdirTemp("", "mace-analysis-parse-hover-*")
+		tAssert.NoError(err)
+
+		documentPath := filepath.Join(workspace, "consumer.mace")
+		text := `|===|
+	schema Runtime: {
+	  env: string;
+	  profile: { name: string; };
+	};
+	|===|
+	[output = data, parse = Runtime]
+	{
+	  result: profile.name;
+	}`
+		snapshot := analyzeDocumentAt(text, documentPath)
+		hover := Hover(text, snapshot, protocol.Position{Line: 8, Character: 11})
+		tAssert.NotNil(hover)
+		if hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if !ok {
+			return
+		}
+
+		tAssert.Contains(content.Value, "parse profile: { name: string }")
+	})
+
 	It("surfaces only LSP-visible declarations from imports, script, and output", func() {
 		workspace, err := os.MkdirTemp("", "mace-analysis-visible-*")
 		tAssert.NoError(err)
