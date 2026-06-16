@@ -70,6 +70,7 @@ const (
 	diagnosticDirectiveUnknownSchemaName            diagnosticCode = "mace.directive.unknown-schema-name"
 	diagnosticDirectiveSchemaFileInvalid            diagnosticCode = "mace.directive.schema-file-invalid"
 	diagnosticDirectiveSchemaFileUnusable           diagnosticCode = "mace.directive.schema-file-unusable"
+	diagnosticDirectiveParseValuesUnknown           diagnosticCode = "mace.directive.parse-values-unknown"
 )
 
 func diagnosticCodeValue(code diagnosticCode) *protocol.IntegerOrString {

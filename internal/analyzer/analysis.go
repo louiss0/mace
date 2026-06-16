@@ -377,12 +377,16 @@ func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir str
 
 	fileDiagnostics, fileActions := analyzeFileStructure(text, file, tokens, documentPath)
 	snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, fileActions...)
+	parseDirectiveWarning, hasParseDirectiveWarning := parseDirectiveWarningDiagnostic(text, file)
 
 	processorInstance := processor.New()
 	result, processErr := processorInstance.ProcessInScope(text, importBaseDir, importRootDir)
 	if processErr != nil {
 		snapshot.diagnostics = append(snapshot.diagnostics, fileDiagnostics...)
 		if shouldIgnoreParseValidationError(file, processErr) {
+			if hasParseDirectiveWarning {
+				snapshot.diagnostics = append(snapshot.diagnostics, parseDirectiveWarning)
+			}
 			unusedDiagnostics, unusedActions := unusedDeclarationAnalysis(text, file, tokens, documentPath)
 			snapshot.diagnostics = append(snapshot.diagnostics, unusedDiagnostics...)
 			snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, unusedActions...)
@@ -394,6 +398,9 @@ func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir str
 		} else if len(snapshot.diagnostics) == 0 {
 			snapshot.diagnostics = append(snapshot.diagnostics, diagnosticFromError(processErr))
 		}
+		if hasParseDirectiveWarning {
+			snapshot.diagnostics = append(snapshot.diagnostics, parseDirectiveWarning)
+		}
 		return snapshot
 	}
 
@@ -402,6 +409,9 @@ func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir str
 	snapshot.symbolIndex = indexSymbols(snapshot.symbols)
 	snapshot.declarations = declarationsFromSymbols(snapshot.symbols)
 	snapshot.diagnostics = append(snapshot.diagnostics, fileDiagnostics...)
+	if hasParseDirectiveWarning {
+		snapshot.diagnostics = append(snapshot.diagnostics, parseDirectiveWarning)
+	}
 
 	unusedDiagnostics, unusedActions := unusedDeclarationAnalysis(text, file, tokens, documentPath)
 	snapshot.diagnostics = append(snapshot.diagnostics, unusedDiagnostics...)
@@ -2807,6 +2817,24 @@ func hasParseValidationDirective(directives []ast.OutputDirective) bool {
 	return false
 }
 
+func parseDirectiveWarningDiagnostic(text string, file ast.File) (protocol.Diagnostic, bool) {
+	if !hasParseValidationDirective(file.Output.Directives) {
+		return protocol.Diagnostic{}, false
+	}
+
+	rangeValue, ok := outputDirectiveListRange(text)
+	if !ok {
+		rangeValue = protocol.Range{}
+	}
+
+	return diagnosticWithCode(
+		rangeValue,
+		protocol.DiagnosticSeverityWarning,
+		diagnosticDirectiveParseValuesUnknown,
+		"You used a parse directive. The analyzer cannot know which runtime values will be injected. Make sure this file is parsed with input that satisfies the selected schema.",
+	), true
+}
+
 func semanticDiagnosticFromError(file ast.File, tokens []lexer.Token, err error) (protocol.Diagnostic, bool) {
 	message := err.Error()
 	var diagnosticError processor.DiagnosticError
@@ -3789,13 +3817,27 @@ func pathURI(path string) protocol.DocumentUri {
 	return protocol.DocumentUri(fileURI(path))
 }
 
-func schemaFileDirectiveRanges(text string) (protocol.Range, protocol.Range, bool) {
+func outputDirectiveListRange(text string) (protocol.Range, bool) {
 	openIndex := strings.Index(text, "[")
 	closeIndex := strings.Index(text, "]")
 	if openIndex < 0 || closeIndex <= openIndex {
+		return protocol.Range{}, false
+	}
+
+	return protocol.Range{
+		Start: positionFromIndex(text, openIndex),
+		End:   positionFromIndex(text, closeIndex+1),
+	}, true
+}
+
+func schemaFileDirectiveRanges(text string) (protocol.Range, protocol.Range, bool) {
+	directiveRange, ok := outputDirectiveListRange(text)
+	if !ok {
 		return protocol.Range{}, protocol.Range{}, false
 	}
 
+	openIndex := strings.Index(text, "[")
+	closeIndex := strings.Index(text, "]")
 	directiveText := text[openIndex : closeIndex+1]
 	schemaFileIndex := strings.Index(directiveText, "schema_file")
 	if schemaFileIndex < 0 {
@@ -3816,11 +3858,6 @@ func schemaFileDirectiveRanges(text string) (protocol.Range, protocol.Range, boo
 	schemaFileEditRange := protocol.Range{
 		Start: positionFromIndex(text, start),
 		End:   positionFromIndex(text, end),
-	}
-
-	directiveRange := protocol.Range{
-		Start: positionFromIndex(text, openIndex),
-		End:   positionFromIndex(text, closeIndex+1),
 	}
 
 	return directiveRange, schemaFileEditRange, true

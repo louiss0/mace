@@ -623,7 +623,7 @@ array<string> names = ['Kyle', 'Tyrone', 'Luke'];
 		}
 	})
 
-	It("ignores parse validation diagnostics", func() {
+	It("warns when parse directives inject unknown runtime values", func() {
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `|===|
@@ -636,11 +636,15 @@ schema Package: { name: string; project: string; };
 
 		if tAssert.Len(notifications, 1) {
 			params := requireDiagnostics(notifications[0])
-			tAssert.Empty(params.Diagnostics)
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "The analyzer cannot know which runtime values will be injected")
+				tAssert.Equal(protocol.DiagnosticSeverityWarning, *params.Diagnostics[0].Severity)
+				tAssert.NotNil(params.Diagnostics[0].Code)
+			}
 		}
 	})
 
-	It("ignores parse_file validation diagnostics", func() {
+	It("warns when parse_file directives inject unknown runtime values", func() {
 		notifications := []capturedNotification{}
 		workspace, err := os.MkdirTemp("", "mace-lsp-parse-ignore-*")
 		tAssert.NoError(err)
@@ -659,7 +663,11 @@ schema Package: { name: string; project: string; };
 
 		if tAssert.Len(notifications, 1) {
 			params := requireDiagnostics(notifications[0])
-			tAssert.Empty(params.Diagnostics)
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "The analyzer cannot know which runtime values will be injected")
+				tAssert.Equal(protocol.DiagnosticSeverityWarning, *params.Diagnostics[0].Severity)
+				tAssert.NotNil(params.Diagnostics[0].Code)
+			}
 		}
 	})
 

@@ -311,7 +311,7 @@ nullable string env = null;
 		tAssert.Empty(snapshot.diagnostics)
 	})
 
-	It("ignores parse validation errors in diagnostics", func() {
+	It("warns when parse directives inject unknown runtime values", func() {
 		snapshot := analyzeDocument(`|===|
 schema Package: { name: string; project: string; };
 |===|
@@ -320,10 +320,15 @@ schema Package: { name: string; project: string; };
   result: "ok";
 }`)
 
-		tAssert.Empty(snapshot.diagnostics)
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			diagnostic := snapshot.diagnostics[0]
+			tAssert.Contains(diagnostic.Message, "The analyzer cannot know which runtime values will be injected")
+			tAssert.Equal(protocol.DiagnosticSeverityWarning, *diagnostic.Severity)
+			tAssert.Equal(string(diagnosticDirectiveParseValuesUnknown), requireDiagnosticCode(diagnostic))
+		}
 	})
 
-	It("ignores parse_file validation errors in diagnostics", func() {
+	It("warns when parse_file directives inject unknown runtime values", func() {
 		workspace, err := os.MkdirTemp("", "mace-analysis-parse-file-*")
 		tAssert.NoError(err)
 		defer os.RemoveAll(workspace)
@@ -338,7 +343,12 @@ schema Package: { name: string; project: string; };
   result: "ok";
 }`, documentPath)
 
-		tAssert.Empty(snapshot.diagnostics)
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			diagnostic := snapshot.diagnostics[0]
+			tAssert.Contains(diagnostic.Message, "The analyzer cannot know which runtime values will be injected")
+			tAssert.Equal(protocol.DiagnosticSeverityWarning, *diagnostic.Severity)
+			tAssert.Equal(string(diagnosticDirectiveParseValuesUnknown), requireDiagnosticCode(diagnostic))
+		}
 	})
 
 	It("reports direct null output fields", func() {

@@ -1124,7 +1124,9 @@ Runtime input is introduced through `parse = <Schema>` or `parse_file = "<path>"
 `parse = <Schema>` selects an already-available schema from the current file, imports, or declarations loaded by other directives. It does not load files on its own.
 `parse_file = "<path>"` loads schema declarations from another Mace file. When `parse_file` is used without `parse` or `schema`, the referenced file MUST expose exactly one schema in its output block, and that schema becomes the active parse schema.
 The host-provided record is validated against the selected schema before its
-fields are injected into output evaluation as global variables.
+fields are injected into output evaluation as global variables. Tooling MUST
+warn that these injected values are not knowable statically and depend on the
+host-provided runtime input.
 
 ### Documentation Evaluation
 
