@@ -35,8 +35,8 @@ var directiveKeywordDocs = map[string]string{
 	"output":      "Selects the output mode with `output = data` or `output = schema`.",
 	"schema":      "Validates `output = data` against a named local or imported schema. It does not switch output mode.",
 	"schema_file": "Loads declarations from another Mace file for output validation. It does not switch output mode.",
-	"parse":       "Validates the runtime `input` record against a schema already available in the current context and exposes matching fields as output variables.",
-	"parse_file":  "Loads schema declarations from another Mace file for parse-driven validation. When used alone, the referenced file must expose exactly one schema. It still parses the runtime `input` record, not external JSON, YAML, or TOML data.",
+	"parse":       "Validates the runtime `input` record against a schema already available in the current context and injects matching fields into the output block as global variables.",
+	"parse_file":  "Loads schema declarations from another Mace file for parse-driven validation. When used alone, the referenced file must expose exactly one schema. Matching runtime input fields are injected into the output block as global variables, just like `parse = <Schema>`. It still parses the runtime `input` record, not external JSON, YAML, or TOML data.",
 }
 
 var declarationKeywordDocs = map[string]string{
