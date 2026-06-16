@@ -209,7 +209,11 @@ func outputInitializerCompletionItems(document document, uri protocol.DocumentUr
 			if guarded {
 				return []protocol.CompletionItem{}, true
 			}
-			items := completionItemsForValueMembers(syntheticCompletionValue(expectedType, model, 8))
+			items := completionItemsForMemberTarget(expectedType, model)
+			return sortCompletionItems(items), true
+		}
+		if expectedType, importedModel, ok := importedMemberCompletionRootType(*file, memberPath, importBaseDir, importRootDir, cache); ok {
+			items := completionItemsForMemberTarget(expectedType, importedModel)
 			return sortCompletionItems(items), true
 		}
 	}
@@ -537,11 +541,18 @@ func parsedVariableMemberCompletionItems(document document, uri protocol.Documen
 	if guarded {
 		return []protocol.CompletionItem{}, true
 	}
+	memberModel := model
 	if !ok {
-		return nil, false
+		rootType, importedModel, importedOk := importedMemberCompletionRootType(file, chain, importBaseDir, importRootDir, cache)
+		if !importedOk {
+			return nil, false
+		}
+		memberModel = importedModel
+		items := completionItemsForMemberTarget(rootType, memberModel)
+		return sortCompletionItems(items), true
 	}
 
-	items := completionItemsForValueMembers(syntheticCompletionValue(rootType, model, 8))
+	items := completionItemsForMemberTarget(rootType, memberModel)
 	return sortCompletionItems(items), true
 }
 
@@ -1364,30 +1375,32 @@ func completionRoot(snapshot analysisSnapshot, uri protocol.DocumentUri) string 
 }
 
 func availableSchemaNames(document document, uri protocol.DocumentUri, linePrefix string) []string {
-	localSchemas := []string{}
 	file := completionFile(document, linePrefix)
-	if file != nil && file.Script != nil {
-		localSchemas = lo.FilterMap(file.Script.Items, func(item ast.Declaration, _ int) (string, bool) {
-			declaration, ok := item.(ast.SchemaDeclaration)
-			if !ok {
-				return "", false
-			}
-
-			return declaration.Name, true
-		})
-	}
-
-	importedSchemas := lo.FlatMap(currentImports(document, linePrefix), func(importDecl ast.ImportDeclaration, _ int) []string {
-		exportedSchemas, ok := importableSchemaIdentifiers(document, uri, importDecl)
-		if !ok {
+	if file == nil {
+		openIndex := strings.LastIndex(document.text, "[")
+		if openIndex < 0 {
 			return nil
 		}
 
-		return exportedSchemas
-	})
+		outputMode := "data"
+		if strings.Contains(linePrefix, "output = schema") {
+			outputMode = "schema"
+		}
 
-	names := append(localSchemas, importedSchemas...)
-	return lo.Uniq(sortStrings(names))
+		parsedFile, err := parseFile(document.text[:openIndex] + "[output = " + outputMode + "] {}")
+		if err != nil {
+			return nil
+		}
+		file = &parsedFile
+	}
+
+	importBaseDir := filepath.Dir(documentPath(uri))
+	if importBaseDir == "" {
+		importBaseDir = "."
+	}
+
+	model := buildCompletionModel(*file, importBaseDir, completionRoot(document.analysis, uri), map[string]completionModel{})
+	return sortStrings(lo.Keys(model.schemas))
 }
 
 func importableSchemaIdentifiers(document document, uri protocol.DocumentUri, importDecl ast.ImportDeclaration) ([]string, bool) {
@@ -1413,6 +1426,13 @@ func importableSchemaIdentifiers(document document, uri protocol.DocumentUri, im
 	file, err := parseFile(string(contents))
 	if err != nil {
 		return nil, false
+	}
+
+	if importDecl.ImportAs != nil {
+		if file.Output.Mode == ast.OutputModeSchema && len(file.Output.SchemaFields) > 0 {
+			return []string{importDecl.ImportAs.LocalName()}, true
+		}
+		return nil, true
 	}
 
 	exportedSchemaNames := lo.Map(file.Output.SchemaFields, func(field ast.OutputSchemaField, _ int) string {
@@ -2174,8 +2194,9 @@ func outputSchemaDirective(file ast.File) (string, bool) {
 
 func buildCompletionModel(file ast.File, importBaseDir string, importRootDir string, cache map[string]completionModel) completionModel {
 	model := completionModel{
-		aliases: map[string]ast.TypeReference{},
-		schemas: map[string]ast.RecordType{},
+		aliases:   map[string]ast.TypeReference{},
+		schemas:   map[string]ast.RecordType{},
+		variables: map[string]ast.TypeReference{},
 	}
 
 	for _, item := range fileScriptItems(file) {
@@ -2199,6 +2220,18 @@ func buildCompletionModel(file ast.File, importBaseDir string, importRootDir str
 		}
 		importedModel, importedFile, ok := importedCompletionModel(resolvedPath, importRootDir, cache)
 		if !ok {
+			continue
+		}
+
+		if importDecl.ImportAs != nil {
+			localName := importDecl.ImportAs.LocalName()
+			if importedFile.Output.Mode == ast.OutputModeSchema {
+				if record, ok := importAsSchemaRecord(importedFile, importedModel); ok {
+					model.schemas[localName] = record
+				}
+			} else if record, ok := importAsDataRecord(importedFile, importedModel); ok {
+				model.variables[localName] = record
+			}
 			continue
 		}
 
@@ -2459,6 +2492,137 @@ func parseFileOutputExportedRecord(directives []ast.OutputDirective, importBaseD
 	return ast.RecordType{}, false
 }
 
+func importedMemberCompletionRootType(file ast.File, path []string, importBaseDir string, importRootDir string, cache map[string]completionModel) (ast.TypeReference, completionModel, bool) {
+	if len(path) == 0 {
+		return nil, completionModel{}, false
+	}
+
+	for _, importDecl := range file.Imports {
+		if importDecl.ImportAs == nil || importDecl.ImportAs.LocalName() != path[0] {
+			continue
+		}
+
+		importPath, ok := stringLiteralValue(importDecl.Path)
+		if !ok {
+			return nil, completionModel{}, false
+		}
+
+		resolvedPath, err := resolveBoundedPathInRoot(importBaseDir, importRootDir, importPath)
+		if err != nil {
+			return nil, completionModel{}, false
+		}
+
+		importedModel, importedFile, ok := importedCompletionModel(resolvedPath, importRootDir, cache)
+		if !ok || importedFile.Output.Mode != ast.OutputModeData {
+			return nil, completionModel{}, false
+		}
+
+		record, ok := importAsDataRecord(importedFile, importedModel)
+		if !ok {
+			return nil, completionModel{}, false
+		}
+		if len(path) == 1 {
+			return record, importedModel, true
+		}
+
+		resolvedType, ok := completionTypeAtPath(record, path[1:], importedModel)
+		if !ok {
+			return nil, completionModel{}, false
+		}
+		return resolvedType, importedModel, true
+	}
+
+	return nil, completionModel{}, false
+}
+
+func importAsSchemaRecord(file ast.File, model completionModel) (ast.RecordType, bool) {
+	fields := lo.Map(file.Output.SchemaFields, func(field ast.OutputSchemaField, _ int) ast.SchemaField {
+		fieldType := field.Type
+		if resolved := resolveCompletionType(field.Type, model, map[string]struct{}{}); resolved.kind == completionTypeSchema {
+			fieldType = resolved.record
+		}
+		return ast.SchemaField{
+			Name:        field.Name,
+			Optional:    field.Optional,
+			Type:        fieldType,
+			Description: field.Description,
+		}
+	})
+	if len(fields) == 0 {
+		return ast.RecordType{}, false
+	}
+
+	return ast.RecordType{Fields: fields}, true
+}
+
+func importAsDataRecord(file ast.File, model completionModel) (ast.RecordType, bool) {
+	if schemaName, ok := outputSchemaDirective(file); ok {
+		record, ok := model.schemas[schemaName]
+		if ok {
+			return record, true
+		}
+	}
+
+	fields := lo.Map(file.Output.DataFields, func(field ast.OutputField, _ int) ast.SchemaField {
+		fieldType, _ := completionOutputFieldType(field.Value, model)
+		return ast.SchemaField{
+			Name:        field.Name,
+			Optional:    field.Optional,
+			Type:        fieldType,
+			Description: field.Description,
+		}
+	})
+	if len(fields) == 0 {
+		return ast.RecordType{}, false
+	}
+
+	return ast.RecordType{Fields: fields}, true
+}
+
+func completionOutputFieldType(expression ast.Expression, model completionModel) (ast.TypeReference, bool) {
+	switch typed := expression.(type) {
+	case ast.StringLiteral:
+		return ast.PrimitiveType{Name: "string"}, true
+	case ast.IntLiteral:
+		return ast.PrimitiveType{Name: "int"}, true
+	case ast.FloatLiteral:
+		return ast.PrimitiveType{Name: "float"}, true
+	case ast.HexIntLiteral:
+		return ast.PrimitiveType{Name: "hex_int"}, true
+	case ast.HexFloatLiteral:
+		return ast.PrimitiveType{Name: "hex_float"}, true
+	case ast.BooleanLiteral:
+		return ast.PrimitiveType{Name: "boolean"}, true
+	case ast.ArrayLiteral:
+		if len(typed.Elements) == 0 {
+			return nil, false
+		}
+		elementType, ok := completionOutputFieldType(typed.Elements[0], model)
+		if !ok {
+			return nil, false
+		}
+		return ast.ArrayType{Element: elementType}, true
+	case ast.RecordLiteral:
+		fields := lo.Map(typed.Fields, func(field ast.RecordField, _ int) ast.SchemaField {
+			fieldType, _ := completionOutputFieldType(field.Value, model)
+			return ast.SchemaField{Name: field.Name, Optional: field.Optional, Type: fieldType}
+		})
+		return ast.RecordType{Fields: fields}, true
+	case ast.Identifier:
+		if record, ok := model.schemas[typed.Name]; ok {
+			return record, true
+		}
+		if reference, ok := model.aliases[typed.Name]; ok {
+			return reference, true
+		}
+		if reference, ok := model.variables[typed.Name]; ok {
+			return reference, true
+		}
+	}
+
+	return nil, false
+}
+
 func outputDirectiveValue(directives []ast.OutputDirective, kind ast.OutputDirectiveKind) (string, bool) {
 	for _, directive := range directives {
 		if directive.Kind == kind {
@@ -2512,8 +2676,9 @@ func importedCompletionModel(path string, importRootDir string, cache map[string
 	}
 
 	cache[path] = completionModel{
-		aliases: map[string]ast.TypeReference{},
-		schemas: map[string]ast.RecordType{},
+		aliases:   map[string]ast.TypeReference{},
+		schemas:   map[string]ast.RecordType{},
+		variables: map[string]ast.TypeReference{},
 	}
 	model := buildCompletionModel(file, filepath.Dir(path), importRootDir, cache)
 	cache[path] = model
@@ -2876,8 +3041,9 @@ type directiveState struct {
 }
 
 type completionModel struct {
-	aliases map[string]ast.TypeReference
-	schemas map[string]ast.RecordType
+	aliases   map[string]ast.TypeReference
+	schemas   map[string]ast.RecordType
+	variables map[string]ast.TypeReference
 }
 
 type completionChoice struct {

@@ -3385,6 +3385,13 @@ func importedSemanticSymbols(file ast.File, documentPath string) []semanticSymbo
 			return nil
 		}
 
+		if importDecl.ImportAs != nil {
+			if symbol, ok := importedImportAsSemanticSymbol(importedFile, importedPath, importDecl.ImportAs.LocalName()); ok {
+				return []semanticSymbol{symbol}
+			}
+			return nil
+		}
+
 		return lo.FilterMap(importDecl.Identifiers, func(identifier ast.ImportedIdentifier, _ int) (semanticSymbol, bool) {
 			symbol, ok := importedSemanticSymbol(importedFile, importedPath, identifier.Name)
 			if !ok {
@@ -3396,6 +3403,39 @@ func importedSemanticSymbols(file ast.File, documentPath string) []semanticSymbo
 			return symbol, true
 		})
 	})
+}
+
+func importedImportAsSemanticSymbol(file ast.File, path string, name string) (semanticSymbol, bool) {
+	model := buildCompletionModel(file, filepath.Dir(path), filepath.Dir(path), map[string]completionModel{})
+	if file.Output.Mode == ast.OutputModeSchema {
+		record, ok := importAsSchemaRecord(file, model)
+		if !ok {
+			return semanticSymbol{}, false
+		}
+		return semanticSymbol{
+			Name:   name,
+			Kind:   protocol.CompletionItemKindStruct,
+			Detail: fmt.Sprintf("schema %s: %s", name, recordTypeDetail(record)),
+			Origin: symbolOriginImport,
+			Definition: protocol.Location{
+				URI: pathURI(path),
+			},
+		}, true
+	}
+
+	if _, ok := importAsDataRecord(file, model); !ok {
+		return semanticSymbol{}, false
+	}
+
+	return semanticSymbol{
+		Name:   name,
+		Kind:   protocol.CompletionItemKindVariable,
+		Detail: fmt.Sprintf("import %s", name),
+		Origin: symbolOriginImport,
+		Definition: protocol.Location{
+			URI: pathURI(path),
+		},
+	}, true
 }
 
 func importedSemanticSymbol(file ast.File, path string, name string) (semanticSymbol, bool) {

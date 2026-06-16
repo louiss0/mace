@@ -1,4 +1,8 @@
-[parse_file='nx_inputs.mace']
+|===========================================|
+from "./nx_inputs.mace" import-as NxInputs;
+|===========================================|
+
+[output = data, parse = NxInputs]
 {
   name: project.name,
   root: project.root,

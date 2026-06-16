@@ -2082,6 +2082,204 @@ array<array<int>> result = [[1], ["two"]];
 		assertExpectedValue(result.Output["type"], expectedValue{kind: ValueString, string: "commonjs"})
 	})
 
+	It("imports a data output as a named record with import-as", func() {
+		workspace, err := os.MkdirTemp("", "mace-processor-import-as-data-*")
+		tAssert.NoError(err)
+		defer os.RemoveAll(workspace)
+
+		sharedPath := filepath.Join(workspace, "shared.mace")
+		tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = data]
+{
+  project: {
+    name: "pi-prompt-form";
+    root: "libs/pi-prompt-form";
+  };
+  workspace: {
+    root: ".";
+  };
+}`), 0o644))
+
+		documentPath := filepath.Join(workspace, "document.mace")
+		tAssert.NoError(os.WriteFile(documentPath, []byte(`|===|
+from "./shared.mace" import-as Shared;
+|===|
+[output = data]
+{
+  name: Shared.project.name;
+  root: Shared.project.root;
+  cwd: Shared.workspace.root;
+}`), 0o644))
+
+		result, err := New().ProcessFile(documentPath)
+		tAssert.NoError(err)
+		assertExpectedValue(result.Output["name"], expectedValue{kind: ValueString, string: "pi-prompt-form"})
+		assertExpectedValue(result.Output["root"], expectedValue{kind: ValueString, string: "libs/pi-prompt-form"})
+		assertExpectedValue(result.Output["cwd"], expectedValue{kind: ValueString, string: "."})
+	})
+
+	DescribeTable("imports data outputs with import-as across nested levels",
+		func(accessor string, expected expectedValue) {
+			workspace, err := os.MkdirTemp("", "mace-processor-import-as-data-depth-*")
+			tAssert.NoError(err)
+			defer os.RemoveAll(workspace)
+
+			sharedPath := filepath.Join(workspace, "shared.mace")
+			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = data]
+{
+  level1: {
+    value: "one";
+    level2: {
+      value: "two";
+      level3: {
+        value: "three";
+        level4: {
+          value: "four";
+          level5: {
+            value: "five";
+          };
+        };
+      };
+    };
+  };
+}`), 0o644))
+
+			documentPath := filepath.Join(workspace, "document.mace")
+			tAssert.NoError(os.WriteFile(documentPath, []byte(fmt.Sprintf(`|===|
+from "./shared.mace" import-as Shared;
+|===|
+[output = data]
+{
+  result: %s;
+}`, accessor)), 0o644))
+
+			result, err := New().ProcessFile(documentPath)
+			tAssert.NoError(err)
+			assertExpectedValue(result.Output["result"], expected)
+		},
+		Entry("level 1", "Shared.level1.value", expectedValue{kind: ValueString, string: "one"}),
+		Entry("level 2", "Shared.level1.level2.value", expectedValue{kind: ValueString, string: "two"}),
+		Entry("level 3", "Shared.level1.level2.level3.value", expectedValue{kind: ValueString, string: "three"}),
+		Entry("level 4", "Shared.level1.level2.level3.level4.value", expectedValue{kind: ValueString, string: "four"}),
+		Entry("level 5", "Shared.level1.level2.level3.level4.level5.value", expectedValue{kind: ValueString, string: "five"}),
+	)
+
+	DescribeTable("imports schema outputs with import-as across nested levels",
+		func(accessor string, input Value, expected expectedValue) {
+			workspace, err := os.MkdirTemp("", "mace-processor-import-as-schema-depth-*")
+			tAssert.NoError(err)
+			defer os.RemoveAll(workspace)
+
+			sharedPath := filepath.Join(workspace, "shared.mace")
+			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = schema]
+{
+  level1: {
+    value: string;
+    level2: {
+      value: string;
+      level3: {
+        value: string;
+        level4: {
+          value: string;
+          level5: {
+            value: string;
+          };
+        };
+      };
+    };
+  };
+}`), 0o644))
+
+			documentPath := filepath.Join(workspace, "document.mace")
+			tAssert.NoError(os.WriteFile(documentPath, []byte(fmt.Sprintf(`|===|
+from "./shared.mace" import-as Shared;
+|===|
+[output = data, parse = Shared]
+{
+  result: %s;
+}`, accessor)), 0o644))
+
+			processor := NewWithInput(map[string]Value{"level1": input})
+			result, err := processor.ProcessFile(documentPath)
+			tAssert.NoError(err)
+			assertExpectedValue(result.Output["result"], expected)
+		},
+		Entry("level 1", "level1.value", Value{Kind: ValueRecord, Record: map[string]Value{
+			"value": {Kind: ValueString, String: "one"},
+			"level2": {Kind: ValueRecord, Record: map[string]Value{
+				"value": {Kind: ValueString, String: "two"},
+				"level3": {Kind: ValueRecord, Record: map[string]Value{
+					"value": {Kind: ValueString, String: "three"},
+					"level4": {Kind: ValueRecord, Record: map[string]Value{
+						"value": {Kind: ValueString, String: "four"},
+						"level5": {Kind: ValueRecord, Record: map[string]Value{
+							"value": {Kind: ValueString, String: "five"},
+						}},
+					}},
+				}},
+			}},
+		}}, expectedValue{kind: ValueString, string: "one"}),
+		Entry("level 2", "level1.level2.value", Value{Kind: ValueRecord, Record: map[string]Value{
+			"value": {Kind: ValueString, String: "one"},
+			"level2": {Kind: ValueRecord, Record: map[string]Value{
+				"value": {Kind: ValueString, String: "two"},
+				"level3": {Kind: ValueRecord, Record: map[string]Value{
+					"value": {Kind: ValueString, String: "three"},
+					"level4": {Kind: ValueRecord, Record: map[string]Value{
+						"value": {Kind: ValueString, String: "four"},
+						"level5": {Kind: ValueRecord, Record: map[string]Value{
+							"value": {Kind: ValueString, String: "five"},
+						}},
+					}},
+				}},
+			}},
+		}}, expectedValue{kind: ValueString, string: "two"}),
+		Entry("level 3", "level1.level2.level3.value", Value{Kind: ValueRecord, Record: map[string]Value{
+			"value": {Kind: ValueString, String: "one"},
+			"level2": {Kind: ValueRecord, Record: map[string]Value{
+				"value": {Kind: ValueString, String: "two"},
+				"level3": {Kind: ValueRecord, Record: map[string]Value{
+					"value": {Kind: ValueString, String: "three"},
+					"level4": {Kind: ValueRecord, Record: map[string]Value{
+						"value": {Kind: ValueString, String: "four"},
+						"level5": {Kind: ValueRecord, Record: map[string]Value{
+							"value": {Kind: ValueString, String: "five"},
+						}},
+					}},
+				}},
+			}},
+		}}, expectedValue{kind: ValueString, string: "three"}),
+		Entry("level 4", "level1.level2.level3.level4.value", Value{Kind: ValueRecord, Record: map[string]Value{
+			"value": {Kind: ValueString, String: "one"},
+			"level2": {Kind: ValueRecord, Record: map[string]Value{
+				"value": {Kind: ValueString, String: "two"},
+				"level3": {Kind: ValueRecord, Record: map[string]Value{
+					"value": {Kind: ValueString, String: "three"},
+					"level4": {Kind: ValueRecord, Record: map[string]Value{
+						"value": {Kind: ValueString, String: "four"},
+						"level5": {Kind: ValueRecord, Record: map[string]Value{
+							"value": {Kind: ValueString, String: "five"},
+						}},
+					}},
+				}},
+			}},
+		}}, expectedValue{kind: ValueString, string: "four"}),
+		Entry("level 5", "level1.level2.level3.level4.level5.value", Value{Kind: ValueRecord, Record: map[string]Value{
+			"value": {Kind: ValueString, String: "one"},
+			"level2": {Kind: ValueRecord, Record: map[string]Value{
+				"value": {Kind: ValueString, String: "two"},
+				"level3": {Kind: ValueRecord, Record: map[string]Value{
+					"value": {Kind: ValueString, String: "three"},
+					"level4": {Kind: ValueRecord, Record: map[string]Value{
+						"value": {Kind: ValueString, String: "four"},
+						"level5": {Kind: ValueRecord, Record: map[string]Value{
+							"value": {Kind: ValueString, String: "five"},
+						}},
+					}},
+				}},
+			}},
+		}}, expectedValue{kind: ValueString, string: "five"}),
+	)
+
 	It("surfaces only top-level parsed schema fields as variables", func() {
 		processor := NewWithInput(map[string]Value{
 			"project": {Kind: ValueRecord, Record: map[string]Value{
