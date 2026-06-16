@@ -1,11 +1,16 @@
+|===================|
+schema Project: {
+  name: string;
+  root: string;
+};
+schema Workspace: {
+  name: string;
+  root: string;
+};
+|===================|
+
 [output=schema]
 {
-  project: {
-    name: string,
-    root: string,
-  },
-  workspace: {
-    name: string,
-    root: string,
-  },
+  project: Project,
+  workspace: Workspace,
 }
