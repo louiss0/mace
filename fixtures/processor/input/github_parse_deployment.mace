@@ -24,7 +24,7 @@ EscalationPath escalation_path = {
   backup: "sre-manager",
 };
 |====================================|
-[output = data, parse_file = "https://raw.githubusercontent.com/louiss0/mace/main/internal/processor/testdata/input/fixtures/runtime_deployment.mace"]
+[output = data, parse_file = "https://raw.githubusercontent.com/louiss0/mace/main/fixtures/processor/input/runtime_deployment.mace"]
 {
   service: service,
   environment: env,

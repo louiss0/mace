@@ -24,7 +24,7 @@ SupportContact support_contact = {
   handle: "platform@example.com",
 };
 |===|
-[output = data, parse_file = "https://raw.githubusercontent.com/louiss0/mace/main/internal/processor/testdata/input/fixtures/runtime_identity.mace"]
+[output = data, parse_file = "https://raw.githubusercontent.com/louiss0/mace/main/fixtures/processor/input/runtime_identity.mace"]
 {
   environment: env,
   region: region,
