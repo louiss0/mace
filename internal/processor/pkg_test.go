@@ -1127,7 +1127,22 @@ from "testdata/imports/metrics.mace" import Hidden;
 
 	It("processes nested variable array access fixtures", func() {
 		processor := New()
-		result, err := processor.ProcessFile("testdata/array_access/nested_variable_access.mace")
+		result, err := processor.Process(`|============================================================|
+array<int> level1 = [1];
+array<array<int>> level2 = [[2]];
+array<array<array<int>>> level3 = [[[3]]];
+array<array<array<array<int>>>> level4 = [[[[4]]]];
+array<array<array<array<array<int>>>>> level5 = [[[[[5]]]]];
+|============================================================|
+[output = data]
+{
+  level1: level1[0],
+  level2: level2[0][0],
+  level3: level3[0][0][0],
+  level4: level4[0][0][0][0],
+  level5: level5[0][0][0][0][0],
+}
+`)
 		tAssert.NoError(err)
 		assertExpectedOutput(result, map[string]expectedValue{
 			"level1": {kind: ValueInt, int64: 1},

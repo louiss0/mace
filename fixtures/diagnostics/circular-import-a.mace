@@ -1,0 +1,5 @@
+|===|
+from "./circular-import-b.mace" import Name;
+type Name: string;
+|===|
+[output = data] {}

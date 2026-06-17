@@ -2114,8 +2114,37 @@ Reusable schema.
 	})
 
 	It("loads hover documentation from the docs fixture", func() {
-		fixture := readFixtureFile(filepath.Join("..", "internal", "analyzer", "testdata", "docs", "hover.mace"))
-		didOpen(server, uri, fixture, nil)
+		didOpen(server, uri, `|===|
+schema User: {
+  name: string;
+};
+
+string greeting = "Hello";
+
+gen_doc greeting {
+  summary: "Rendered greeting";
+};
+
+schema_doc User {
+  summary: "Represents a user";
+  description: """
+# User
+
+Hover should surface this documentation.
+""";
+  props: {
+    name: "The user's display name";
+  };
+};
+|===|
+[output = schema]
+"""
+# User Output
+"""
+{
+  user: User /# Public user schema;
+}
+`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{

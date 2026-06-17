@@ -1,0 +1,9 @@
+|===|
+schema User: { name: string; };
+
+schema_doc User {
+  summary: "One";
+  summary: "Two";
+};
+|===|
+[output = data] {}

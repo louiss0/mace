@@ -1,0 +1,69 @@
+schema Profile: {
+  name: string,
+  email: string,
+};
+
+schema Activity: {
+  created_at: string,
+  updated_at: string,
+};
+
+type ProfileOrActivity: union[Profile, Activity];
+
+type OptionOne: union[UserChoice, TeamChoice];
+type OptionTwo: union[BillingChoice, ShippingChoice];
+
+schema UserChoice: {
+  id: string,
+  handle?: string,
+};
+
+schema TeamChoice: {
+  id: string,
+  members?: array<string>,
+};
+
+schema BillingChoice: {
+  invoice_id: string,
+  amount?: int,
+};
+
+schema ShippingChoice: {
+  shipment_id: string,
+  tracking?: string,
+};
+
+type NestedUnion1: union[Outer1, Outer2];
+type NestedUnion2: union[Outer3, Outer4];
+type NestedUnion3: union[Outer5, Outer6];
+type NestedUnion4: union[Outer7, Outer8];
+type NestedUnion5: union[Outer9, Outer10];
+
+schema Outer1: { one: Inner1, };
+schema Outer2: { two: Inner2, };
+schema Inner1: { depth1: string, };
+schema Inner2: { depth1: string, extra?: string, };
+
+schema Outer3: { one: Inner3, };
+schema Outer4: { two: Inner4, };
+schema Inner3: { depth2: InnerLeaf1, };
+schema Inner4: { depth2: InnerLeaf2, };
+schema InnerLeaf1: { depth3: string, };
+schema InnerLeaf2: { depth3: string, note?: string, };
+
+schema Outer5: { one: Inner5, };
+schema Outer6: { two: Inner6, };
+schema Inner5: { depth4: InnerLeaf3, };
+schema Inner6: { depth4: InnerLeaf4, };
+schema InnerLeaf3: { depth5: string, };
+schema InnerLeaf4: { depth5: string, extra?: string, };
+
+schema Outer7: { one: Inner7, };
+schema Outer8: { two: Inner8, };
+schema Inner7: { level: string, };
+schema Inner8: { level: string, optional?: string, };
+
+schema Outer9: { one: Inner9, };
+schema Outer10: { two: Inner10, };
+schema Inner9: { final: string, };
+schema Inner10: { final: string, note?: string, };

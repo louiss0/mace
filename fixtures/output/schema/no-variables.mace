@@ -1,0 +1,5 @@
+[output = schema]
+{
+  id: string,
+  active: boolean,
+}

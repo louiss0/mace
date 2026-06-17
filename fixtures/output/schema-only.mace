@@ -1,0 +1,4 @@
+[output = schema]
+{
+  User: User,
+}

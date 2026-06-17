@@ -1,0 +1,12 @@
+|===|
+string workflow_name = "build";
+string runner = "ubuntu-latest";
+boolean matrix = true;
+|===|
+[output = schema]
+{
+  workflow_name: string,
+  runner: string,
+  matrix: boolean,
+  jobs: record<string>,
+}
