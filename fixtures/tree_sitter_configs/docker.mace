@@ -1,0 +1,36 @@
+ /= Docker service configuration represented in Mace
+|===|
+schema PortMapping: {
+  host: int,
+  container: int,
+};
+
+schema Service: {
+  name: string,
+  image: string,
+  ports: array<PortMapping>,
+  environment: array<string>,
+};
+
+schema DockerConfig: {
+  version: string,
+  services: array<Service>,
+};
+
+Service app = {
+  name: "app",
+  image: "ghcr.io/louiss0/mace:latest",
+  ports: [
+    {
+      host: 3000,
+      container: 3000,
+    }
+  ],
+  environment: ["NODE_ENV=production", "PORT=3000"],
+};
+|===|
+[schema=DockerConfig]
+{
+  version: "3.9",
+  services: [app],
+}

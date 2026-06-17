@@ -1,0 +1,38 @@
+/= VS Code settings represented in Mace using snake_case field names
+|===|
+schema Font: {
+  family: string,
+  size: int,
+};
+
+schema Search: {
+  exclude: array<string>,
+  follow_symlinks: boolean,
+};
+
+schema VscodeConfig: {
+  theme: string,
+  format_on_save: boolean,
+  font: Font,
+  search: Search,
+  language_servers: array<string>,
+};
+
+Font editor_font = {
+  family: "Fira Code",
+  size: 14,
+};
+
+Search search = {
+  exclude: ["node_modules", "dist", ".turbo"],
+  follow_symlinks: false,
+};
+|===|
+[output = data, schema = VscodeConfig]
+{
+  theme: "Default Dark Modern",
+  format_on_save: true,
+  font: editor_font,
+  search: search,
+  language_servers: ["typescript-language-server", "gopls"],
+}

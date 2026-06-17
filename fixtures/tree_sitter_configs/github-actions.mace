@@ -1,0 +1,52 @@
+/= GitHub Actions style workflow configuration represented in Mace
+|===|
+schema Step: {
+  name: string,
+  run: string,
+};
+
+schema Job: {
+  name: string,
+  runs_on: string,
+  steps: array<Step>,
+};
+
+schema Workflow: {
+  name: string,
+  on: array<string>,
+  jobs: array<Job>,
+};
+
+string node_version = "22";
+
+array<Step> setup_steps = [
+  {
+    name: "Checkout",
+    run: "actions/checkout@v4",
+  },
+  {
+    name: "Install",
+    run: "pnpm install --frozen-lockfile",
+  },
+  {
+    name: "Test",
+    run: "pnpm test",
+  },
+  {
+    name: "Build",
+    run: "pnpm build",
+  }
+];
+
+Job ci_job = {
+  name: "CI",
+  runs_on: "ubuntu-latest",
+  steps: setup_steps,
+};
+|===|
+[output = data, schema = Workflow]
+{
+  name: "ci",
+  on: ["push", "pull_request"],
+  jobs: [ci_job],
+}
