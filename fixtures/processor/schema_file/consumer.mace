@@ -1,4 +1,4 @@
 [output = data, schema_file = "./shared.mace"]
 {
- f5: "nice",
+  result: { name: "Ada", },
 }

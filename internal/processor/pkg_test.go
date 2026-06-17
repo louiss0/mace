@@ -503,6 +503,26 @@ Value second = "fallback";
 		tAssert.NoError(err)
 	})
 
+	It("accepts array variant alternatives", func() {
+		processor := New()
+		_, err := processor.Process(wrapScriptWithOutput(`|===|
+type Value: variant[array<string>, array<int>];
+Value names = ["Ada", "Lin"];
+Value counts = [1, 2];
+|===|`))
+		tAssert.NoError(err)
+	})
+
+	It("accepts nested array variant alternatives", func() {
+		processor := New()
+		_, err := processor.Process(wrapScriptWithOutput(`|===|
+type Value: variant[array<array<string>>, array<array<array<int>>>];
+Value tags = [["api"]];
+Value matrix = [[[1]]];
+|===|`))
+		tAssert.NoError(err)
+	})
+
 	It("accepts nested variant aliases", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|

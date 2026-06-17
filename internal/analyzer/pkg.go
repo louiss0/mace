@@ -28,7 +28,7 @@ var keywordDocs = map[string]string{
 	"nullable": "Marks a variable as able to evaluate to `null`.",
 	"type":     "Declares a reusable type alias.",
 	"union":    "Declares schema composition like `union[Profile, Audit]`.",
-	"variant":  "Declares a closed variant type like `variant[string, int]`.",
+	"variant":  "Declares a closed variant type like `variant[string, int]` or `variant[array<string>, array<int>]`.",
 }
 
 var directiveKeywordDocs = map[string]string{

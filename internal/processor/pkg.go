@@ -782,7 +782,16 @@ func resolveBoundedPath(importBaseDir string, importRootDir string, importPath s
 		return "", validationErrorf("import path %q escapes root: root=%q, base=%q, resolved=%q", importPath, formatImportRoot(importRootDir), importBaseDir, resolvedPath)
 	}
 
-	relativePath, err := filepath.Rel(importRootDir, resolvedPath)
+	absoluteRoot, err := filepath.Abs(importRootDir)
+	if err != nil {
+		return "", validationErrorf("unable to resolve path %q", importPath)
+	}
+	absolutePath, err := filepath.Abs(resolvedPath)
+	if err != nil {
+		return "", validationErrorf("unable to resolve path %q", importPath)
+	}
+
+	relativePath, err := filepath.Rel(absoluteRoot, absolutePath)
 	if err != nil {
 		return "", validationErrorf("unable to resolve path %q", importPath)
 	}
@@ -790,7 +799,7 @@ func resolveBoundedPath(importBaseDir string, importRootDir string, importPath s
 		return "", validationErrorf("import path %q escapes root: root=%q, base=%q, resolved=%q", importPath, formatImportRoot(importRootDir), importBaseDir, resolvedPath)
 	}
 
-	return resolvedPath, nil
+	return absolutePath, nil
 }
 
 func resolveBoundedRemotePath(importBaseDir string, importRootDir string, importPath string, resolvedPath string) (string, error) {
@@ -3685,15 +3694,13 @@ func validateVariantValueTypes(members []valueType) error {
 	members = flattenVariantValueTypes(members)
 
 	for _, member := range members {
-		if member.kind == ValueArray {
-			return validationErrorf("variant members must be primitives or schemas")
-		}
 		switch {
 		case len(member.choiceValues) > 0:
+		case member.kind == ValueArray:
 		case member.kind == ValueRecord:
 		case member.kind == ValueString || member.kind == ValueInt || member.kind == ValueFloat || member.kind == ValueHexInt || member.kind == ValueHexFloat || member.kind == ValueBoolean:
 		default:
-			return validationErrorf("variant members must be primitives or schemas")
+			return validationErrorf("variant members must be primitives, arrays, or schemas")
 		}
 	}
 

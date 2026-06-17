@@ -108,13 +108,16 @@ combine fields from different variant branches.
 ```mace
 |===|
 type Identity: variant[string, int];
+type Values: variant[array<string>, array<int>];
 Identity primary = "Ada";
 Identity fallback = 42;
+Values tags = ["api", "web"];
 |===|
 [output = data]
 {
   primary: primary,
-  fallback: fallback
+  fallback: fallback,
+  tags: tags
 }
 ```
 

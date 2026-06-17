@@ -793,6 +793,31 @@ type Value: variant[string, int];
 			}
 		})
 
+		It("parses array members in variant type references", func() {
+			input := `|===|
+type Value: variant[array<string>, array<int>];
+|===|
+[output = data] {}`
+
+			file, err := parseFileInput(input)
+			tAssert.NoError(err)
+
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 1) {
+				typeDecl, ok := file.Script.Items[0].(ast.TypeDeclaration)
+				tAssert.True(ok)
+				if ok {
+					variantType, ok := typeDecl.Type.(ast.VariantType)
+					tAssert.True(ok)
+					if ok && tAssert.Len(variantType.Members, 2) {
+						_, firstIsArray := variantType.Members[0].(ast.ArrayType)
+						_, secondIsArray := variantType.Members[1].(ast.ArrayType)
+						tAssert.True(firstIsArray)
+						tAssert.True(secondIsArray)
+					}
+				}
+			}
+		})
+
 		It("parses union type references", func() {
 			input := `|===|
 type Value: union[Profile, Audit];
