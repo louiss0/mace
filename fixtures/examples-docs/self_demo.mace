@@ -1,6 +1,5 @@
-|=============================================|
 
-/=
+/*
 
 [output = data]
 { product: "Mechanical Keyboard";
@@ -11,17 +10,16 @@
  tax_amount: $self.subtotal * $self.tax_rate;
  total: $self.subtotal + $self.tax_amount;
 }
-=/
+*/
 
-|=============================================|
 
 
 {
-product: "Mechanical Keyboard";
-unit_price: 129.99;
-quantity: 3;
-subtotal: $self.unit_price * $self.quantity;
-tax_rate: 0.8875;
-tax_amount: $self.subtotal * $self.tax_rate;
-total: $self.subtotal * $self.tax_amount;
+product: "Mechanical Keyboard",
+unit_price: 129.99,
+quantity: 3,
+subtotal: $self.unit_price * $self.quantity,
+tax_rate: 0.8875,
+tax_amount: $self.subtotal * $self.tax_rate,
+total: $self.subtotal * $self.tax_amount,
 }

@@ -1,5 +1,5 @@
-/= GitHub Actions style workflow configuration represented in Mace
-|===|
+// GitHub Actions style workflow configuration represented in Mace
+|==========================================|
 schema Step: {
   name: string,
   run: string,
@@ -43,7 +43,7 @@ Job ci_job = {
   runs_on: "ubuntu-latest",
   steps: setup_steps,
 };
-|===|
+|==========================================|
 [output = data, schema = Workflow]
 {
   name: "ci",

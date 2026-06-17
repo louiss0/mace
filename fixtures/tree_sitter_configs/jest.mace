@@ -1,5 +1,5 @@
-/= Jest style test runner configuration represented in Mace
-|===|
+// Jest style test runner configuration represented in Mace
+|==============================|
 schema Coverage: {
   provider: string,
   enabled: boolean,
@@ -19,7 +19,7 @@ Coverage coverage = {
   enabled: true,
   reporters: ["text", "lcov"],
 };
-|===|
+|==============================|
 [output = data, schema = JestConfig]
 {
   test_environment: "node",

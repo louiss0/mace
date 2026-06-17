@@ -1,3 +1,4 @@
+|===========================================================================|
 type RestartPolicy: choice["no", "always", "unless-stopped", "on-failure"];
 type ComposeVersion: choice["3.9", "3.8"];
 
@@ -49,7 +50,7 @@ schema DockerCompose: {
   configs?: record<DockerConfig>,
   secrets?: record<DockerSecret>,
 };
-
+|===========================================================================|
 [output = schema]
 {
   DockerService: DockerService,

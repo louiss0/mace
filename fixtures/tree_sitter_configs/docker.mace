@@ -1,5 +1,5 @@
- /= Docker service configuration represented in Mace
-|===|
+ // Docker service configuration represented in Mace
+|====================================================|
 schema PortMapping: {
   host: int,
   container: int,
@@ -28,7 +28,7 @@ Service app = {
   ],
   environment: ["NODE_ENV=production", "PORT=3000"],
 };
-|===|
+|====================================================|
 [schema=DockerConfig]
 {
   version: "3.9",

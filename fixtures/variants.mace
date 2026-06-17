@@ -1,3 +1,4 @@
+|============================================================================================================|
 type StringValue: variant[string, choice["alpha", "beta"]];
 type IntValue: variant[int, choice[1, 2]];
 type FloatValue: variant[float, choice[1.5, 2.5]];
@@ -43,10 +44,8 @@ schema SecondaryUser: {
   email?: string,
 };
 
-enum Status: string {
-  Active,
-  Disabled,
-};
+type Status: choice["Active", "Disabled"];
+|============================================================================================================|
 
 [output = schema]
 {

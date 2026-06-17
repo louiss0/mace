@@ -1,4 +1,4 @@
-/= Anonymous schema output for workflow-shaped data
+// Anonymous schema output for workflow-shaped data
 [output = schema]
 {
   name: string,

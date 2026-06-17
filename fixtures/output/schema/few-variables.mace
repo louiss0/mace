@@ -1,7 +1,4 @@
-|===|
-string name = "mace";
-int version = 1;
-|===|
+
 [output = schema]
 {
   name: string,

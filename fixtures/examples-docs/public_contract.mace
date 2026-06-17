@@ -23,10 +23,7 @@ A reusable schema exposed as part of the public contract.
 
 type UserID: string /# A stable user identifier;
 
-enum Status: string {
-  Active,
-  Disabled,
-};
+type Status: choice["Active", "Disabled"];
 
 
 |=========================================================|

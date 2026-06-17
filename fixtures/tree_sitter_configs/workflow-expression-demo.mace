@@ -1,5 +1,5 @@
-/= Expression-heavy example to exercise arithmetic, logical, ternary, and $self
-|===|
+// Expression-heavy example to exercise arithmetic, logical, ternary, and $self
+|===========================|
 schema BuildPlan: {
   base_jobs: int,
   retries: int,
@@ -16,7 +16,7 @@ int base_jobs = 2;
 int retries = 3;
 string branch = "main";
 boolean release_tag = true;
-|===|
+|===========================|
 [output = data, schema = BuildPlan]
 {
   base_jobs: base_jobs,
