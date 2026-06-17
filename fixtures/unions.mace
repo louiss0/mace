@@ -1,3 +1,4 @@
+|=======================================================|
 schema Profile: {
   name: string,
   email: string,
@@ -67,3 +68,7 @@ schema Outer9: { one: Inner9, };
 schema Outer10: { two: Inner10, };
 schema Inner9: { final: string, };
 schema Inner10: { final: string, note?: string, };
+|=======================================================|
+{
+
+}
