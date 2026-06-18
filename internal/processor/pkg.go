@@ -359,7 +359,11 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 		return Result{}, err
 	}
 
-	if schemaName, ok := outputSchemaName(outputBlock.Directives); ok {
+	schemaName, hasSchema, err := activeOutputSchemaName(outputBlock.Directives, outputContext)
+	if err != nil {
+		return Result{}, err
+	}
+	if hasSchema {
 		if err := validateOutputSchema(schemaName, outputBlock.DataFields, outputContext.variables, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
 			return Result{}, err
 		}
@@ -370,7 +374,7 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 		return Result{}, err
 	}
 
-	if schemaName, ok := outputSchemaName(outputBlock.Directives); ok {
+	if hasSchema {
 		if err := validateEvaluatedOutputSchema(schemaName, output, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
 			return Result{}, err
 		}
@@ -1141,7 +1145,11 @@ func collectImportExports(output ast.OutputBlock, context processContext) (map[s
 		return exports, nil
 	}
 
-	if schemaName, ok := outputSchemaName(output.Directives); ok {
+	schemaName, hasSchema, err := activeOutputSchemaName(output.Directives, outputContext)
+	if err != nil {
+		return nil, err
+	}
+	if hasSchema {
 		if err := validateOutputSchema(schemaName, output.DataFields, outputContext.variables, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
 			return nil, err
 		}
@@ -1221,7 +1229,11 @@ func schemaFieldImportDeclaration(field ast.OutputSchemaField, context processCo
 }
 
 func exportedOutputFieldType(field ast.OutputField, output ast.OutputBlock, context processContext) (valueType, error) {
-	if schemaName, ok := outputSchemaName(output.Directives); ok {
+	schemaName, ok, err := activeOutputSchemaName(output.Directives, context)
+	if err != nil {
+		return valueType{}, err
+	}
+	if ok {
 		schema, exists := context.schemas.Get(schemaName)
 		if !exists {
 			return valueType{}, validationErrorf("unknown schema %q", schemaName)
@@ -1708,13 +1720,13 @@ func validateOutputDirectiveStructure(output ast.OutputBlock) error {
 		return validationErrorf("parse and parse_file directives cannot be used together")
 	}
 	if !hasParse && !hasParseFile {
-		hasSchemaDirective := false
+		hasDataValidationDirective := false
 		for _, directive := range output.Directives {
-			if directive.Kind == ast.OutputDirectiveSchema {
-				hasSchemaDirective = true
+			if directive.Kind == ast.OutputDirectiveSchema || directive.Kind == ast.OutputDirectiveSchemaFile {
+				hasDataValidationDirective = true
 			}
 		}
-		if !hasOutput && !hasSchemaDirective {
+		if !hasOutput && !hasDataValidationDirective {
 			return validationErrorf("missing output directive")
 		}
 	}
@@ -1785,6 +1797,28 @@ func outputSchemaName(directives []ast.OutputDirective) (string, bool) {
 	return "", false
 }
 
+func activeOutputSchemaName(directives []ast.OutputDirective, context processContext) (string, bool, error) {
+	if schemaName, ok := outputSchemaName(directives); ok {
+		return schemaName, true, nil
+	}
+	if !hasSchemaFile(directives) {
+		return "", false, nil
+	}
+
+	schemaNames, err := resolveSchemaFileOutputSchemaNames(directives, context.importBaseDir, context.importRootDir)
+	if err != nil {
+		return "", false, err
+	}
+	if len(schemaNames) == 1 {
+		return schemaNames[0], true, nil
+	}
+	if len(schemaNames) == 0 {
+		return "", false, validationErrorf("schema_file directive requires a schema directive or a schema output file")
+	}
+
+	return "", false, validationErrorf("schema_file directive is ambiguous without a schema directive")
+}
+
 func outputParseSchemeName(directives []ast.OutputDirective) (string, bool) {
 	for _, directive := range directives {
 		if directive.Kind == ast.OutputDirectiveParse {
@@ -1819,10 +1853,18 @@ func outputParseSchemaName(directives []ast.OutputDirective, context processCont
 	return "", false, validationErrorf("parse_file directive is ambiguous without a schema directive")
 }
 
+func resolveSchemaFileOutputSchemaNames(directives []ast.OutputDirective, importBaseDir string, importRootDir string) ([]string, error) {
+	return resolveOutputSchemaNames(directives, ast.OutputDirectiveSchemaFile, importBaseDir, importRootDir)
+}
+
 func resolveParseFileExportedSchemaNames(directives []ast.OutputDirective, importBaseDir string, importRootDir string) ([]string, error) {
+	return resolveOutputSchemaNames(directives, ast.OutputDirectiveParseFile, importBaseDir, importRootDir)
+}
+
+func resolveOutputSchemaNames(directives []ast.OutputDirective, kind ast.OutputDirectiveKind, importBaseDir string, importRootDir string) ([]string, error) {
 	var path string
 	for _, directive := range directives {
-		if directive.Kind != ast.OutputDirectiveParseFile {
+		if directive.Kind != kind {
 			continue
 		}
 
@@ -1859,15 +1901,20 @@ func resolveParseFileExportedSchemaNames(directives []ast.OutputDirective, impor
 		return nil, validationErrorf("unable to parse import file %q: %s", resolvedPath, err)
 	}
 	if file.Output.Mode != ast.OutputModeSchema {
-		return nil, validationErrorf("parse_file target %q must output a schema", resolvedPath)
+		return nil, validationErrorf("%s target %q must output a schema", directiveKindName(kind), resolvedPath)
 	}
 
 	schemaNames := make([]string, 0, len(file.Output.SchemaFields))
 	for _, field := range file.Output.SchemaFields {
 		named, ok := field.Type.(ast.NamedType)
-		if ok && field.Name == named.Name {
-			schemaNames = append(schemaNames, field.Name)
+		if !ok {
+			continue
 		}
+		if kind == ast.OutputDirectiveParseFile && field.Name != named.Name {
+			continue
+		}
+
+		schemaNames = append(schemaNames, named.Name)
 	}
 
 	slices.Sort(schemaNames)
@@ -1877,6 +1924,15 @@ func resolveParseFileExportedSchemaNames(directives []ast.OutputDirective, impor
 func hasParseFile(directives []ast.OutputDirective) bool {
 	for _, directive := range directives {
 		if directive.Kind == ast.OutputDirectiveParseFile {
+			return true
+		}
+	}
+	return false
+}
+
+func hasSchemaFile(directives []ast.OutputDirective) bool {
+	for _, directive := range directives {
+		if directive.Kind == ast.OutputDirectiveSchemaFile {
 			return true
 		}
 	}

@@ -1260,6 +1260,56 @@ from "../shared.mace" import value;
 		})
 	})
 
+	DescribeTable("validates local schema_file outputs without schema directive",
+		func(directive string) {
+			workspace, err := os.MkdirTemp("", "mace-schema-file-validation-*")
+			tAssert.NoError(err)
+			defer func() { _ = os.RemoveAll(workspace) }()
+
+			writeFixtureFile(workspace, "schema.mace", `|===|
+schema User: { name: string; };
+|===|
+[output = schema]
+{
+  User: User;
+}`)
+
+			input := fmt.Sprintf(`%s
+{
+  name: "Ada";
+}`, directive)
+
+			processor := New()
+			result, err := processor.ProcessInDir(input, workspace)
+			tAssert.NoError(err)
+			assertExpectedValue(requireOutputValue(result, "name"), expectedValue{kind: ValueString, string: "Ada"})
+		},
+		Entry("implicit data output", `[schema_file = "./schema.mace"]`),
+		Entry("explicit data output", `[output = data, schema_file = "./schema.mace"]`),
+	)
+
+	It("rejects local implicit schema_file outputs that do not match the inferred schema", func() {
+		workspace, err := os.MkdirTemp("", "mace-schema-file-invalid-*")
+		tAssert.NoError(err)
+		defer func() { _ = os.RemoveAll(workspace) }()
+
+		writeFixtureFile(workspace, "schema.mace", `|===|
+schema User: { name: string; };
+|===|
+[output = schema]
+{
+  User: User;
+}`)
+
+		processor := New()
+		_, err = processor.ProcessInDir(`[schema_file = "./schema.mace"]
+{
+  age: 27;
+}`, workspace)
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, `missing required field "name" for schema "User"`)
+	})
+
 	It("rejects schema_file paths that escape the activation directory", func() {
 		workspace, err := os.MkdirTemp("", "mace-schema-file-root-boundary-*")
 		tAssert.NoError(err)
@@ -1337,33 +1387,50 @@ from %q import value;
 		assertExpectedValue(requireOutputValue(result, "result"), expectedValue{kind: ValueString, string: "Ada"})
 	})
 
-	It("loads remote schema_file declarations over http", func() {
-		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-			switch request.URL.Path {
-			case "/schema.mace":
-				_, _ = writer.Write([]byte(`|===|
+	DescribeTable("validates remote schema_file outputs over http",
+		func(formatInput func(string) string) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				switch request.URL.Path {
+				case "/schema.mace":
+					_, _ = writer.Write([]byte(`|===|
 schema User: { name: string; };
 |===|
 [output = schema]
 {
   User: User;
 }`))
-			default:
-				http.NotFound(writer, request)
-			}
-		}))
-		defer server.Close()
+				default:
+					http.NotFound(writer, request)
+				}
+			}))
+			defer server.Close()
 
-		input := fmt.Sprintf(`[output = data, schema = User, schema_file = %q]
+			input := formatInput(server.URL + "/schema.mace")
+
+			processor := New()
+			result, err := processor.ProcessInDir(input, "../..")
+			tAssert.NoError(err)
+			assertExpectedValue(requireOutputValue(result, "name"), expectedValue{kind: ValueString, string: "Ada"})
+		},
+		Entry("implicit data output", func(schemaURL string) string {
+			return fmt.Sprintf(`[schema_file = %q]
 {
   name: "Ada";
-}`, server.URL+"/schema.mace")
-
-		processor := New()
-		result, err := processor.ProcessInDir(input, "../..")
-		tAssert.NoError(err)
-		assertExpectedValue(requireOutputValue(result, "name"), expectedValue{kind: ValueString, string: "Ada"})
-	})
+}`, schemaURL)
+		}),
+		Entry("explicit data output", func(schemaURL string) string {
+			return fmt.Sprintf(`[output = data, schema_file = %q]
+{
+  name: "Ada";
+}`, schemaURL)
+		}),
+		Entry("explicit schema directive", func(schemaURL string) string {
+			return fmt.Sprintf(`[output = data, schema = User, schema_file = %q]
+{
+  name: "Ada";
+}`, schemaURL)
+		}),
+	)
 
 	It("loads remote parse_file output schema records over http", func() {
 		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

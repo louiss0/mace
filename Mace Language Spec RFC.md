@@ -1191,9 +1191,11 @@ Schema directives prepare data output validation. If `schema_file = "path"` is
 present, the schema context is loaded from the referenced file before output
 validation. If `schema = Name` is present, the output fields are checked
 against the named schema before evaluation where possible, the fields are
-evaluated, and the final record is validated against the schema. Data mode may
-combine `schema_file` with `schema` so the named schema can come from the
-loaded schema file.
+evaluated, and the final record is validated against the schema. When
+`schema_file` is used without `schema`, the referenced file MUST expose exactly
+one named schema output, and that schema becomes the active output schema.
+Data mode may be implicit or explicit and may combine `schema_file` with
+`schema` so the named schema can come from the loaded schema file.
 
 Parse directives prepare runtime input validation. `parse = Name` selects a
 schema that is already available in the current evaluation context. If
@@ -1500,10 +1502,14 @@ be valid and must evaluate to a runtime value.
 When `output = data` includes `schema = <Name>`, the output record must conform
 to the named schema.
 
-When `output = data` includes `schema_file = "<path>"`, the processor loads the
+When data output includes `schema_file = "<path>"`, the processor loads the
 referenced Mace file and uses its schema declarations for output validation.
+When `schema_file` is used without `schema`, the referenced file MUST expose
+exactly one named schema output, and that schema becomes the active output
+schema.
 
-The `schema` and `schema_file` directives are mutually exclusive.
+The `schema` and `schema_file` directives MAY be combined so the named schema
+can come from the referenced schema file.
 
 When `output = schema`, output fields contain type references rather than
 runtime expressions. `output = schema` must be used alone and **MAY** not be
@@ -1803,9 +1809,9 @@ If no schema directive is present, the evaluated record is emitted without schem
 
 If `schema = Name` is present, the output record MUST validate against the named schema.
 
-If `schema_file = "path"` is present, the processor loads declarations from the referenced Mace file and validates the output record against the available schema declarations from that file.
+If `schema_file = "path"` is present, the processor loads declarations from the referenced Mace file and validates the output record against a schema from that file. When no `schema` directive is present, the referenced file MUST expose exactly one named schema output, and that schema becomes the active output schema.
 
-A data output directive MUST NOT specify both `schema` and `schema_file`.
+A data output directive MAY specify both `schema` and `schema_file` so the named schema can be loaded from the referenced file.
 
 For `output = schema`, the output block itself MUST be a valid schema shape.
 
