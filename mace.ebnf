@@ -50,7 +50,7 @@ mace_file = ws0 , [ script_block , ws0 ] , output_block , ws0 ;
 (* 3. IMPORTS                                            *)
 (* ===================================================== *)
 
-import_declaration = "from" , ws1 , string_literal , ws1 , "import" , ws1 , import_list , ws0 , ";" ;
+import_declaration = "from" , ws1 , string_literal , ws1 , ( "import" , ws1 , import_list | "import-as" , ws1 , identifier ) , ws0 , [ ";" ] ;
 import_list = imported_identifier , { ws0 , "," , ws0 , imported_identifier } ;
 imported_identifier = identifier , [ ws0 , ":" , ws0 , identifier ] ;
 
@@ -116,9 +116,10 @@ pair_separator = "," | ";" ;
 (* 9. TYPE REFERENCES                                    *)
 (* ===================================================== *)
 
-type_reference = primitive_type | array_type | union_type | variant_type | choice_type | identifier ;
+type_reference = primitive_type | array_type | record_map_type | union_type | variant_type | choice_type | identifier ;
 primitive_type = "string" | "int" | "float" | "hex_int" | "hex_float" | "boolean" ;
 array_type = "array" , ws0 , "<" , ws0 , type_reference , ws0 , ">" ;
+record_map_type = "record" , ws0 , "<" , ws0 , type_reference , ws0 , ">" ;
 union_type = "union" , ws0 , "[" , ws0 , type_reference , { ws0 , "," , ws0 , type_reference } , ws0 , "]" ;
 variant_type = "variant" , ws0 , "[" , ws0 , type_reference , { ws0 , "," , ws0 , type_reference } , ws0 , "]" ;
 choice_type = "choice" , ws0 , "[" , ws0 , choice_member , { ws0 , "," , ws0 , choice_member } , ws0 , "]" ;

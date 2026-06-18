@@ -1,0 +1,26 @@
+|===================================|
+string plain = "Ada";
+string single = 'Ada';
+string block = """Hello
+World""";
+nullable string maybe_name = null;
+string greeting = "Hello $(plain)";
+int whole = 42;
+float ratio = 3.14;
+hex_int color = 0xFF;
+hex_float fraction = 0x2.8;
+boolean enabled = true;
+|===================================|
+[output = data]
+{
+  plain: plain,
+  single: single,
+  block: block,
+  maybe_name: maybe_name,
+  greeting: greeting,
+  whole: whole,
+  ratio: ratio,
+  color: color,
+  fraction: fraction,
+  enabled: enabled,
+}

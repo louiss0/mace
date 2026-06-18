@@ -1,0 +1,35 @@
+|====================================|
+type ReportName: string;
+type ContactHandle: string;
+
+schema DeliveryAudit: {
+  report: ReportName,
+  owner: ContactHandle,
+  window: string,
+};
+
+DeliveryAudit delivery_audit = {
+  report: "remote-deployment-parse",
+  owner: "release-bot",
+  window: "weekday-business-hours",
+};
+
+schema EscalationPath: {
+  primary: string,
+  backup: string,
+};
+
+EscalationPath escalation_path = {
+  primary: "platform-oncall",
+  backup: "sre-manager",
+};
+|====================================|
+[output = data, parse_file = "https://raw.githubusercontent.com/louiss0/mace/main/fixtures/processor/input/runtime_deployment.mace"]
+{
+  service: service,
+  environment: env,
+  region: region,
+  replicas: replicas,
+  owner: owner,
+  canary: flags.canary,
+}

@@ -1,0 +1,10 @@
+|==========================================|
+from "package_json.mace" import-as Package
+|==========================================|
+
+[output = data, parse = Package]
+{
+  package_name: name,
+  package_version: version,
+  package_type: type,
+}

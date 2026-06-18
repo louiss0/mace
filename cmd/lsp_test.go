@@ -165,12 +165,6 @@ func writeWorkspaceFile(root string, relativePath string, contents string) strin
 	return testFileURI(path)
 }
 
-func readFixtureFile(path string) string {
-	contents, err := os.ReadFile(filepath.Clean(path))
-	tAssert.NoError(err)
-	return string(contents)
-}
-
 func testFileURI(path string) string {
 	return fileURI(path)
 }
@@ -623,6 +617,54 @@ array<string> names = ['Kyle', 'Tyrone', 'Luke'];
 		}
 	})
 
+	It("warns when parse directives inject unknown runtime values", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+schema Package: { name: string; project: string; };
+|===|
+[output = data, parse = Package]
+{
+  result: "ok";
+}`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "The analyzer cannot know which runtime values will be injected")
+				tAssert.Equal(protocol.DiagnosticSeverityWarning, *params.Diagnostics[0].Severity)
+				tAssert.NotNil(params.Diagnostics[0].Code)
+			}
+		}
+	})
+
+	It("warns when parse_file directives inject unknown runtime values", func() {
+		notifications := []capturedNotification{}
+		workspace, err := os.MkdirTemp("", "mace-lsp-parse-ignore-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "runtime.mace", `[output = schema]
+{
+  Package: { project: string; };
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data, parse_file = "./runtime.mace"]
+{
+  result: "ok";
+}`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "The analyzer cannot know which runtime values will be injected")
+				tAssert.Equal(protocol.DiagnosticSeverityWarning, *params.Diagnostics[0].Severity)
+				tAssert.NotNil(params.Diagnostics[0].Code)
+			}
+		}
+	})
+
 	It("publishes processor diagnostics for invalid output data structures", func() {
 		notifications := []capturedNotification{}
 
@@ -886,6 +928,16 @@ Us
 		tAssert.Equal([]string{"output"}, labels)
 	})
 
+	It("assumes output data when suggesting additional directives", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output, p`, nil)
+
+		labels := completeLabels(server, uri, 0, uint32(len(`[output, p`)))
+		tAssert.Contains(labels, "parse")
+		tAssert.Contains(labels, "parse_file")
+		tAssert.NotContains(labels, "output")
+	})
+
 	It("does not suggest script keywords in the output block", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = data]
@@ -1124,9 +1176,84 @@ schema Runtime: { env: string; region: string; };
 }`, nil)
 
 		labels := completeLabels(server, uri, 2, uint32(len(`  result: `)))
+		tAssert.NotContains(labels, "env")
+		tAssert.NotContains(labels, "region")
+		tAssert.Contains(labels, "Runtime")
+	})
+
+	It("only suggests top-level parse schema fields as output variables", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+schema Runtime: {
+  env: string;
+  profile: { name: string; email: string; };
+};
+|===|
+[output = data, parse = Runtime]
+{
+  result:
+}`, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentCompletion, protocol.CompletionParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position: protocol.Position{
+					Line:      8,
+					Character: uint32(len(`  result: `)),
+				},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		items, ok := resultValue.([]protocol.CompletionItem)
+		tAssert.True(ok)
+		if !ok {
+			return
+		}
+
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string { return item.Label })
+		details := map[string]string{}
+		for _, item := range items {
+			if item.Detail != nil {
+				details[item.Label] = *item.Detail
+			}
+		}
+
 		tAssert.Contains(labels, "env")
-		tAssert.Contains(labels, "region")
-		tAssert.NotContains(labels, "Runtime")
+		tAssert.Contains(labels, "profile")
+		tAssert.NotContains(labels, "name")
+		tAssert.NotContains(labels, "email")
+		tAssert.Equal("string", details["env"])
+		tAssert.Equal("{ name: string, email: string }", details["profile"])
+	})
+
+	It("only suggests top-level parse_file schema fields as output variables", func() {
+		workspace, err := os.MkdirTemp("", "mace-lsp-parse-file-top-level-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "runtime.mace", `[output = schema]
+{
+  Runtime: {
+    env: string;
+    profile: { name: string; email: string; };
+  };
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data, parse_file = "./runtime.mace"]
+{
+  result:
+}`, nil)
+
+		labels := completeLabels(server, uri, 2, uint32(len(`  result: `)))
+		tAssert.NotContains(labels, "env")
+		tAssert.NotContains(labels, "profile")
+		tAssert.NotContains(labels, "name")
+		tAssert.NotContains(labels, "email")
+		tAssert.Contains(labels, "Runtime")
 	})
 
 	It("suggests parse_file output schema field members as output variables", func() {
@@ -1148,6 +1275,178 @@ schema Runtime: { env: string; region: string; };
 		labels := completeLabels(server, uri, 2, uint32(len(`  result: user.`)))
 		tAssert.Contains(labels, "name")
 		tAssert.Contains(labels, "home")
+	})
+
+	It("completes recursive nested parse values through member access", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+schema Contact: {
+  email: string;
+  phone: string;
+};
+schema Profile: {
+  title: string;
+  contact: Contact;
+};
+schema User: {
+  name: string;
+  manager: User;
+  profile: Profile;
+};
+|===|
+[output = data, parse = User]
+{
+  result: manager.manager.profile.contact.
+}`, nil)
+
+		labels := completeLabels(server, uri, 17, uint32(len(`  result: manager.manager.profile.contact.`)))
+		tAssert.Contains(labels, "email")
+		tAssert.Contains(labels, "phone")
+	})
+
+	It("only suggests exported parse_file props as output variables", func() {
+		workspace, err := os.MkdirTemp("", "mace-lsp-parse-file-exports-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "nx_inputs.mace", `|===|
+schema Project: {
+  name: string;
+  root: string;
+};
+schema Workspace: {
+  name: string;
+  root: string;
+};
+|===|
+[output = schema]
+{
+  project: Project;
+  workspace: Workspace;
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data, parse_file = "./nx_inputs.mace"]
+{
+  
+}`, nil)
+
+		labels := completeLabels(server, uri, 2, 2)
+		tAssert.Contains(labels, "project")
+		tAssert.Contains(labels, "workspace")
+		tAssert.NotContains(labels, "name")
+		tAssert.NotContains(labels, "root")
+		tAssert.NotContains(labels, "cwd")
+	})
+
+	It("completes members for exported parse_file props", func() {
+		workspace, err := os.MkdirTemp("", "mace-lsp-parse-file-export-members-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "nx_inputs.mace", `|===|
+schema Project: {
+  name: string;
+  root: string;
+};
+schema Workspace: {
+  name: string;
+  root: string;
+};
+|===|
+[output = schema]
+{
+  project: Project;
+  workspace: Workspace;
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data, parse_file = "./nx_inputs.mace"]
+{
+  result: project.
+}`, nil)
+
+		labels := completeLabels(server, uri, 2, uint32(len(`  result: project.`)))
+		tAssert.Contains(labels, "name")
+		tAssert.Contains(labels, "root")
+		tAssert.NotContains(labels, "project")
+		tAssert.NotContains(labels, "workspace")
+	})
+
+	It("does not suggest schema names as output expressions", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+schema Runtime: { env: string; };
+|===|
+[output = data]
+{
+  result:
+}`, nil)
+
+		labels := completeLabels(server, uri, 5, uint32(len(`  result: `)))
+		tAssert.NotContains(labels, "Runtime")
+	})
+
+	It("does not suggest imported schema names as output expressions", func() {
+		workspace, err := os.MkdirTemp("", "mace-lsp-output-schema-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
+{
+  Runtime: { env: string; };
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+from "./shared.mace" import Runtime;
+|===|
+[output = data]
+{
+  result:
+}`, nil)
+
+		labels := completeLabels(server, uri, 5, uint32(len(`  result: `)))
+		tAssert.NotContains(labels, "Runtime")
+	})
+
+	It("suggests parse variables when previous output fields use commas", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `|===|
+schema Runtime: { env: string; region: string; };
+|===|
+[output = data, parse = Runtime]
+{
+  name: "mace",
+  result:
+}`, nil)
+
+		labels := completeLabels(server, uri, 6, uint32(len(`  result: `)))
+		tAssert.Contains(labels, "env")
+		tAssert.Contains(labels, "region")
+	})
+
+	It("suggests parse_file variables when previous output fields use commas", func() {
+		workspace, err := os.MkdirTemp("", "mace-lsp-parse-commas-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "runtime.mace", `[output = schema]
+{
+  Runtime: { env: string; region: string; };
+}`)
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
+
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data, parse_file = "./runtime.mace"]
+{
+  name: "mace",
+  result:
+}`, nil)
+
+		labels := completeLabels(server, uri, 3, uint32(len(`  result: `)))
+		tAssert.NotContains(labels, "env")
+		tAssert.NotContains(labels, "region")
+		tAssert.Contains(labels, "Runtime")
 	})
 
 	It("suggests choice values for output schema fields", func() {
@@ -1175,7 +1474,7 @@ schema Runtime: { env: string; region: string; };
 |===|
 [output = data, schema = Basket]
 {
-  favorite_fruit: true ? $self.previous : 
+  favorite_fruit: true ? $self.previous :
 }`, nil)
 
 		labels := completeLabels(server, uri, 6, uint32(len(`  favorite_fruit: true ? $self.previous : `)))
@@ -1309,6 +1608,21 @@ from "./shared.mace" import ImportedUser;
 }`, nil)
 
 		labels := completeLabels(server, uri, 3, uint32(len(`  result: `)))
+		tAssert.Contains(labels, "$self")
+	})
+
+	It("does not suggest previous output fields without self access", func() {
+		openEmptyDocument(server, uri, nil)
+		didChange(server, uri, 2, `[output = data]
+{
+  base: 1;
+  profile: { name: "Ada"; };
+  result:
+}`, nil)
+
+		labels := completeLabels(server, uri, 3, uint32(len(`  result: `)))
+		tAssert.NotContains(labels, "base")
+		tAssert.NotContains(labels, "profile")
 		tAssert.Contains(labels, "$self")
 	})
 
@@ -1794,8 +2108,37 @@ Reusable schema.
 	})
 
 	It("loads hover documentation from the docs fixture", func() {
-		fixture := readFixtureFile(filepath.Join("..", "internal", "analyzer", "testdata", "docs", "hover.mace"))
-		didOpen(server, uri, fixture, nil)
+		didOpen(server, uri, `|===|
+schema User: {
+  name: string;
+};
+
+string greeting = "Hello";
+
+gen_doc greeting {
+  summary: "Rendered greeting";
+};
+
+schema_doc User {
+  summary: "Represents a user";
+  description: """
+# User
+
+Hover should surface this documentation.
+""";
+  props: {
+    name: "The user's display name";
+  };
+};
+|===|
+[output = schema]
+"""
+# User Output
+"""
+{
+  user: User /# Public user schema;
+}
+`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{

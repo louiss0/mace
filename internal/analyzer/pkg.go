@@ -28,15 +28,15 @@ var keywordDocs = map[string]string{
 	"nullable": "Marks a variable as able to evaluate to `null`.",
 	"type":     "Declares a reusable type alias.",
 	"union":    "Declares schema composition like `union[Profile, Audit]`.",
-	"variant":  "Declares a closed variant type like `variant[string, int]`.",
+	"variant":  "Declares a closed variant type like `variant[string, int]` or `variant[array<string>, array<int>]`.",
 }
 
 var directiveKeywordDocs = map[string]string{
 	"output":      "Selects the output mode with `output = data` or `output = schema`.",
 	"schema":      "Validates `output = data` against a named local or imported schema. It does not switch output mode.",
 	"schema_file": "Loads declarations from another Mace file for output validation. It does not switch output mode.",
-	"parse":       "Validates the runtime `input` record against a schema already available in the current context and exposes matching fields as output variables.",
-	"parse_file":  "Loads schema declarations from another Mace file for parse-driven validation. When used alone, the referenced file must expose exactly one schema. It still parses the runtime `input` record, not external JSON, YAML, or TOML data.",
+	"parse":       "Only valid for data output; validates the runtime `input` record against a schema already available in the current context and injects matching fields into the output block as global variables.",
+	"parse_file":  "Only valid for data output; loads schema declarations from another Mace file for parse-driven validation. When used without `schema`, the referenced file must expose exactly one schema. Matching runtime input fields are injected into the output block as global variables, just like `parse = <Schema>`. It still parses the runtime `input` record, not external JSON, YAML, or TOML data.",
 }
 
 var declarationKeywordDocs = map[string]string{
@@ -194,7 +194,8 @@ func CodeActions(snapshot Snapshot, uri protocol.DocumentUri, targetRange protoc
 }
 
 func PrepareRename(snapshot Snapshot, position protocol.Position) (protocol.Range, bool) {
-	if _, ok := snapshot.symbolAt(position); !ok {
+	symbol, ok := snapshot.symbolAt(position)
+	if !ok || symbol.Origin == symbolOriginParsed {
 		return protocol.Range{}, false
 	}
 
@@ -203,7 +204,7 @@ func PrepareRename(snapshot Snapshot, position protocol.Position) (protocol.Rang
 
 func Rename(text string, snapshot Snapshot, uri protocol.DocumentUri, position protocol.Position, newName string) (*protocol.WorkspaceEdit, bool) {
 	symbol, ok := snapshot.symbolAt(position)
-	if !ok || newName == "" {
+	if !ok || newName == "" || symbol.Origin == symbolOriginParsed {
 		return nil, false
 	}
 

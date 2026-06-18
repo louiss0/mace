@@ -1,0 +1,10 @@
+|===========================================|
+from "./nx_inputs.mace" import-as NxInputs;
+|===========================================|
+
+[output = data, parse = NxInputs]
+{
+  project_name: project.name,
+  project_root: project.root,
+  workspace_root: workspace.root,
+}

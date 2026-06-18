@@ -1,0 +1,105 @@
+|============================================================================================================|
+record<string> settings = {
+    theme: "dark";
+    locale: "en";
+};
+record<boolean> flags = {
+    enabled: true;
+    archived: false;
+};
+record<int> counts = {
+    total: 1;
+    open: 2;
+};
+record<float> ratios = {
+    daily: 1.5;
+    weekly: 2.5;
+};
+record<hex_int> identifiers = {
+    primary: 0xAB;
+    secondary: 0xCD;
+};
+record<choice["red", "blue"]> palette = {
+    primary: "red";
+    accent: "blue";
+};
+record<variant[string, int, float, hex_int, hex_float, boolean]> primitive_envelope = {
+    text: "text";
+    whole: 1;
+    ratio: 1.5;
+    color: 0x10;
+    fraction: 0x2.4;
+    enabled: true;
+};
+record<variant[choice["left", "right"], choice[1, 2], choice[true, false], string, int]> choice_envelope = {
+    a: "left";
+    b: 2;
+    c: true;
+    d: "value";
+    e: 3;
+};
+record<variant[int, float, choice[1, 2, 3], choice["one", "two"]]> number_or_choice_envelope = {
+    a: 1;
+    b: 1.5;
+    c: 2;
+    d: "one";
+};
+record<record<string>> level1 = {
+    value: {
+        name: "one";
+    };
+};
+record<record<record<string>>> level2 = {
+    value: {
+        value: {
+            name: "two";
+        };
+    };
+};
+record<record<record<record<string>>>> level3 = {
+    value: {
+        value: {
+            value: {
+                name: "three";
+            };
+        };
+    };
+};
+record<record<record<record<record<string>>>>> level4 = {
+    value: {
+        value: {
+            value: {
+                value: {
+                    name: "four";
+                };
+            };
+        };
+    };
+};
+record<record<record<record<record<record<string>>>>>> level5 = {
+    value: {
+        value: {
+            value: {
+                value: {
+                    value: {
+                        name: "five";
+                    };
+                };
+            };
+        };
+    };
+};
+record<record<string>> user = {
+    profile: {
+        name: "Ada";
+        email: "ada@example.com";
+    };
+};
+record<record<string>> team = {
+    team: {
+        name: "Core";
+        lead: "Ada";
+    };
+};
+|============================================================================================================|
+{}

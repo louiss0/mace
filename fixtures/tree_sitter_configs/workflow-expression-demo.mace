@@ -1,0 +1,31 @@
+// Expression-heavy example to exercise arithmetic, logical, ternary, and $self
+|===========================|
+schema BuildPlan: {
+  base_jobs: int,
+  retries: int,
+  branch: string,
+  is_release: boolean,
+  timeout: int,
+  parallelism: int,
+  cache_key: string,
+  can_deploy: boolean,
+  score: int,
+};
+
+int base_jobs = 2;
+int retries = 3;
+string branch = "main";
+boolean release_tag = true;
+|===========================|
+[output = data, schema = BuildPlan]
+{
+  base_jobs: base_jobs,
+  retries: retries,
+  branch: branch,
+  is_release: branch == "main" && release_tag,
+  timeout: 10 + 5 * 2,
+  parallelism: ($self.base_jobs << 1) + 1,
+  cache_key: $self.is_release ? "release-main" : "preview",
+  can_deploy: !$self.branch != false ? $self.is_release : false,
+  score: (($self.parallelism ** 2) / 3) + (retries % 2),
+}

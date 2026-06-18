@@ -1120,11 +1120,13 @@ Variables evaluate by type, then value. The declared type is resolved first,
 the initializer expression is evaluated, and then the value is validated
 against the declared type before being added to the value environment.
 
-Runtime input is introduced through `parse = <Schema>` or `parse_file = "<path>"`.
+Runtime input is introduced through `parse = <Schema>` or `parse_file = "<path>"` in data output directive lists.
 `parse = <Schema>` selects an already-available schema from the current file, imports, or declarations loaded by other directives. It does not load files on its own.
 `parse_file = "<path>"` loads schema declarations from another Mace file. When `parse_file` is used without `parse` or `schema`, the referenced file MUST expose exactly one schema in its output block, and that schema becomes the active parse schema.
 The host-provided record is validated against the selected schema before its
-fields are introduced into output evaluation.
+fields are injected into output evaluation as global variables. Tooling MUST
+warn that these injected values are not knowable statically and depend on the
+host-provided runtime input.
 
 ### Documentation Evaluation
 
@@ -1773,7 +1775,7 @@ Script declarations are evaluated after static checks and type checks succeed.
 
 Variables are immutable. Once evaluated, their values do not change.
 
-Runtime input is supplied only through `parse = <Schema>` or `parse_file = "<path>"` and must satisfy the selected schema before output evaluation continues.
+Runtime input is supplied only through `parse = <Schema>` or `parse_file = "<path>"` on data output blocks and must satisfy the selected schema before output evaluation continues.
 
 Documentation declarations are metadata only and do not affect evaluation.
 

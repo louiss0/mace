@@ -133,7 +133,7 @@ func assertExpectedSchema(result Result, expected map[expectedSchemaField]Schema
 
 func assertProcessedResult(input string, expected expectedValue) {
 	processor := New()
-	result, err := processor.Process(input)
+	result, err := processor.ProcessInDir(input, "../..")
 	tAssert.NoError(err)
 
 	actual := requireOutputValue(result, "result")
@@ -220,7 +220,7 @@ var _ = Describe("Script block", func() {
 				tAssert.NoError(err)
 				return
 			}
-			_, err := processor.Process(input)
+			_, err := processor.ProcessInDir(input, "../..")
 			tAssert.NoError(err)
 		},
 		Entry("type and schema declarations", wrapScriptWithOutput(`|===|
@@ -251,7 +251,7 @@ World""";
 nullable string env = null;
 |===|`)),
 		Entry("imports and script block", `|===|
-from "testdata/imports/base.mace" import Name;
+from "fixtures/processor/imports/base.mace" import Name;
 Name user = "Ada";
 |===|
 [output = data]
@@ -297,7 +297,7 @@ gen_doc greeting {
 };
 |===|`)),
 		Entry("line and block comments are ignored", `|===|
-from "testdata/imports/base.mace" import Name; // trailing import comment
+from "fixtures/processor/imports/base.mace" import Name; // trailing import comment
 // line comment before declaration
 schema Profile: {
   // line comment before field
@@ -336,13 +336,13 @@ User user = {
   name: string /# Name before separator,
   age?: int, /# Age after separator
 }`),
-		Entry("doc fixtures", "testdata/docs/public_contract.mace"),
+		Entry("doc fixtures", "../../fixtures/processor/doc_fixtures/public_contract.mace"),
 	)
 
 	DescribeTable("rejects invalid script blocks",
 		func(input, message string) {
 			processor := New()
-			_, err := processor.Process(input)
+			_, err := processor.ProcessInDir(input, "../..")
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, message)
 		},
@@ -357,7 +357,7 @@ type User: string;
 schema User: { name: string; };
 |===|`), "duplicate declaration"),
 		Entry("duplicate imports", `|===|
-from "testdata/imports/base.mace" import User, User;
+from "fixtures/processor/imports/base.mace" import User, User;
 |===|
 [output = data] {}`, "duplicate import"),
 		Entry("interpolation rejects type references", wrapScriptWithOutput(`|===|
@@ -503,6 +503,26 @@ Value second = "fallback";
 		tAssert.NoError(err)
 	})
 
+	It("accepts array variant alternatives", func() {
+		processor := New()
+		_, err := processor.Process(wrapScriptWithOutput(`|===|
+type Value: variant[array<string>, array<int>];
+Value names = ["Ada", "Lin"];
+Value counts = [1, 2];
+|===|`))
+		tAssert.NoError(err)
+	})
+
+	It("accepts nested array variant alternatives", func() {
+		processor := New()
+		_, err := processor.Process(wrapScriptWithOutput(`|===|
+type Value: variant[array<array<string>>, array<array<array<int>>>];
+Value tags = [["api"]];
+Value matrix = [[[1]]];
+|===|`))
+		tAssert.NoError(err)
+	})
+
 	It("accepts nested variant aliases", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
@@ -614,7 +634,7 @@ Identity value = { id: "u1"; };
 	DescribeTable("accepts schema record literals",
 		func(input string) {
 			processor := New()
-			_, err := processor.Process(input)
+			_, err := processor.ProcessInDir(input, "../..")
 			tAssert.NoError(err)
 		},
 		Entry("optional fields omitted", wrapScriptWithOutput(`|===|
@@ -636,7 +656,7 @@ nullable string env = "dev";
 	DescribeTable("rejects schema record literal mismatches",
 		func(input, message string) {
 			processor := New()
-			_, err := processor.Process(input)
+			_, err := processor.ProcessInDir(input, "../..")
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, message)
 		},
@@ -805,6 +825,14 @@ Runtime config = { env: false ? null : "prod"; };
 		tAssert.ErrorContains(err, "unknown schema")
 	})
 
+	It("rejects parse_file with a missing schema file", func() {
+		processor := New()
+
+		_, err := processor.ProcessInDir(`[output = data, parse_file = "./missing.mace"] {}`, ".")
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, "unable to read import file")
+	})
+
 	It("uses parse_file without a schema directive when one schema is available", func() {
 		workspace, err := os.MkdirTemp("", "mace-parse-file-fixture-*")
 		tAssert.NoError(err)
@@ -862,7 +890,7 @@ schema Backup: { env: string; };
 	DescribeTable("processes valid choice declarations",
 		func(input string, expected expectedValue) {
 			processor := New()
-			result, err := processor.Process(input)
+			result, err := processor.ProcessInDir(input, "../..")
 			tAssert.NoError(err)
 
 			actual := requireOutputValue(result, "result")
@@ -903,7 +931,7 @@ schema Backup: { env: string; };
 	DescribeTable("rejects invalid choice declarations and assignments",
 		func(input string, message string) {
 			processor := New()
-			_, err := processor.Process(input)
+			_, err := processor.ProcessInDir(input, "../..")
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, message)
 		},
@@ -939,14 +967,14 @@ var _ = Describe("Imports", func() {
 	DescribeTable("merges imported declarations",
 		func(file string, expected expectedValue) {
 			processor := New()
-			result, err := processor.Process(file)
+			result, err := processor.ProcessInDir(file, "../..")
 			tAssert.NoError(err)
 
 			actual := requireOutputValue(result, "result")
 			assertExpectedValue(actual, expected)
 		},
 		Entry("imports types and schemas", `|===|
-from "testdata/imports/base.mace" import Name, User;
+from "fixtures/processor/imports/base.mace" import Name, User;
 Name name = "Ada";
 User result = { name: name; age: 30; };
 |===|
@@ -956,12 +984,12 @@ User result = { name: name; age: 30; };
 			"age":  {kind: ValueInt, int64: 30},
 		}}),
 		Entry("imports values surfaced through output", `|===|
-from "testdata/imports/values.mace" import count;
+from "fixtures/processor/imports/values.mace" import count;
 |===|
 [output = data]
 { result: count + 2; }`, expectedValue{kind: ValueInt, int64: 5}),
 		Entry("imports schemas and aliases from a public contract fixture", `|===|
-from "testdata/imports/contracts.mace" import ID, Team;
+from "fixtures/processor/imports/contracts.mace" import ID, Team;
 ID team_name = "core";
 Team result = { name: team_name; members: [{ id: "u1"; role: "owner"; }]; };
 |===|
@@ -1039,24 +1067,24 @@ from "./producer.mace" import User;
 	DescribeTable("keeps hidden declarations internal",
 		func(file string, message string) {
 			processor := New()
-			_, err := processor.Process(file)
+			_, err := processor.ProcessInDir(file, "../..")
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, message)
 		},
 		Entry("hidden type is not importable", `|===|
-from "testdata/imports/base.mace" import Internal;
+from "fixtures/processor/imports/base.mace" import Internal;
 |===|
 [output = data] {}`, "imported identifier"),
 		Entry("hidden schema is not importable", `|===|
-from "testdata/imports/base.mace" import Secret;
+from "fixtures/processor/imports/base.mace" import Secret;
 |===|
 [output = data] {}`, "imported identifier"),
 		Entry("hidden value is not importable", `|===|
-from "testdata/imports/values.mace" import hidden;
+from "fixtures/processor/imports/values.mace" import hidden;
 |===|
 [output = data] {}`, "imported identifier"),
 		Entry("hidden schema in a data fixture is not importable", `|===|
-from "testdata/imports/metrics.mace" import Hidden;
+from "fixtures/processor/imports/metrics.mace" import Hidden;
 |===|
 [output = data] {}`, "imported identifier"),
 	)
@@ -1064,17 +1092,17 @@ from "testdata/imports/metrics.mace" import Hidden;
 	DescribeTable("processes imported files",
 		func(path string, expected expectedValue) {
 			processor := New()
-			result, err := processor.ProcessFile(path)
+			result, err := processor.ProcessFileInDir(path, "../..")
 			tAssert.NoError(err)
 
 			actual := requireOutputValue(result, "result")
 			assertExpectedValue(actual, expected)
 		},
-		Entry("resolves imports relative to file", "testdata/imports/consumer.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+		Entry("resolves imports relative to file", "../../fixtures/processor/imports/consumer.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
 			"name": {kind: ValueString, string: "Ada"},
 			"age":  {kind: ValueInt, int64: 27},
 		}}),
-		Entry("resolves schema_file relative to file", "testdata/schema_file/consumer.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+		Entry("resolves schema_file relative to file", "../../fixtures/processor/schema_file/consumer.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
 			"name": {kind: ValueString, string: "Ada"},
 		}}),
 	)
@@ -1082,35 +1110,35 @@ from "testdata/imports/metrics.mace" import Hidden;
 	DescribeTable("processes practical choice fixtures",
 		func(path string, expected expectedValue) {
 			processor := New()
-			result, err := processor.ProcessFile(path)
+			result, err := processor.ProcessFileInDir(path, "../..")
 			tAssert.NoError(err)
 
 			actual := requireOutputValue(result, "result")
 			assertExpectedValue(actual, expected)
 		},
-		Entry("deployment environment choices", "testdata/choices/deployment.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+		Entry("deployment environment choices", "../../fixtures/processor/choices/deployment.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
 			"app":         {kind: ValueString, string: "billing-api"},
 			"environment": {kind: ValueString, string: "prod"},
 			"region":      {kind: ValueString, string: "us-east-1"},
 			"replicas":    {kind: ValueInt, int64: 4},
 		}}),
-		Entry("nested permission choices", "testdata/choices/permissions.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+		Entry("nested permission choices", "../../fixtures/processor/choices/permissions.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
 			"role":       {kind: ValueString, string: "admin"},
 			"permission": {kind: ValueString, string: "approve"},
 			"resource":   {kind: ValueString, string: "invoice"},
 		}}),
-		Entry("mixed scalar shipping choices", "testdata/choices/shipping.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+		Entry("mixed scalar shipping choices", "../../fixtures/processor/choices/shipping.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
 			"order_id":           {kind: ValueString, string: "ORD-1001"},
 			"method":             {kind: ValueString, string: "express"},
 			"package_tier":       {kind: ValueInt, int64: 2},
 			"signature_required": {kind: ValueBoolean, bool: true},
 		}}),
-		Entry("composed contact channel choices", "testdata/choices/mixed_choices.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+		Entry("composed contact channel choices", "../../fixtures/processor/choices/mixed_choices.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
 			"customer_id": {kind: ValueString, string: "CUST-42"},
 			"preferred":   {kind: ValueString, string: "email"},
 			"fallback":    {kind: ValueString, string: "chat"},
 		}}),
-		Entry("choice nested inside variant", "testdata/choices/choice_variant.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+		Entry("choice nested inside variant", "../../fixtures/processor/choices/choice_variant.mace", expectedValue{kind: ValueRecord, record: map[string]expectedValue{
 			"reviewer": {kind: ValueString, string: "ada"},
 			"outcome":  {kind: ValueString, string: "approved"},
 			"note":     {kind: ValueString, string: "ready to ship"},
@@ -1119,7 +1147,22 @@ from "testdata/imports/metrics.mace" import Hidden;
 
 	It("processes nested variable array access fixtures", func() {
 		processor := New()
-		result, err := processor.ProcessFile("testdata/array_access/nested_variable_access.mace")
+		result, err := processor.Process(`|============================================================|
+array<int> level1 = [1];
+array<array<int>> level2 = [[2]];
+array<array<array<int>>> level3 = [[[3]]];
+array<array<array<array<int>>>> level4 = [[[[4]]]];
+array<array<array<array<array<int>>>>> level5 = [[[[[5]]]]];
+|============================================================|
+[output = data]
+{
+  level1: level1[0],
+  level2: level2[0][0],
+  level3: level3[0][0][0],
+  level4: level4[0][0][0][0],
+  level5: level5[0][0][0][0][0],
+}
+`)
 		tAssert.NoError(err)
 		assertExpectedOutput(result, map[string]expectedValue{
 			"level1": {kind: ValueInt, int64: 1},
@@ -1133,35 +1176,35 @@ from "testdata/imports/metrics.mace" import Hidden;
 	DescribeTable("rejects circular imports",
 		func(path string) {
 			processor := New()
-			_, err := processor.ProcessFile(path)
+			_, err := processor.ProcessFileInDir(path, "../..")
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, "circular import")
 		},
-		Entry("cycle detected", "testdata/imports/cycle_a.mace"),
+		Entry("cycle detected", "../../fixtures/processor/imports/cycle_a.mace"),
 	)
 
 	DescribeTable("rejects invalid imports",
 		func(file string, message string) {
 			processor := New()
-			_, err := processor.Process(file)
+			_, err := processor.ProcessInDir(file, "../..")
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, message)
 		},
 		Entry("unknown imported identifier", `|===|
-from "testdata/imports/base.mace" import Missing;
+from "fixtures/processor/imports/base.mace" import Missing;
 |===|
 [output = data] {}`, "imported identifier"),
 		Entry("duplicate import across declarations", `|===|
-from "testdata/imports/base.mace" import Name;
-from "testdata/imports/other.mace" import Name;
+from "fixtures/processor/imports/base.mace" import Name;
+from "fixtures/processor/imports/other.mace" import Name;
 |===|
 [output = data] {}`, "duplicate import"),
 		Entry("import file missing", `|===|
-from "testdata/imports/missing.mace" import Name;
+from "fixtures/processor/imports/missing.mace" import Name;
 |===|
 [output = data] {}`, "unable to read import file"),
 		Entry("import collides with local declaration", `|===|
-from "testdata/imports/base.mace" import Name;
+from "fixtures/processor/imports/base.mace" import Name;
 type Name: string;
 |===|
 [output = data] {}`, "duplicate declaration"),
@@ -1289,7 +1332,7 @@ from %q import value;
 }`, server.URL+"/shared.mace")
 
 		processor := New()
-		result, err := processor.Process(input)
+		result, err := processor.ProcessInDir(input, "../..")
 		tAssert.NoError(err)
 		assertExpectedValue(requireOutputValue(result, "result"), expectedValue{kind: ValueString, string: "Ada"})
 	})
@@ -1317,9 +1360,44 @@ schema User: { name: string; };
 }`, server.URL+"/schema.mace")
 
 		processor := New()
-		result, err := processor.Process(input)
+		result, err := processor.ProcessInDir(input, "../..")
 		tAssert.NoError(err)
 		assertExpectedValue(requireOutputValue(result, "name"), expectedValue{kind: ValueString, string: "Ada"})
+	})
+
+	It("loads remote parse_file output schema records over http", func() {
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			switch request.URL.Path {
+			case "/shared.mace":
+				_, _ = writer.Write([]byte(`[output = schema]
+{
+  User: { name: string; };
+}`))
+			case "/schema.mace":
+				_, _ = writer.Write([]byte(`|===|
+from "./shared.mace" import User;
+|===|
+[output = schema]
+{
+  user: User;
+}`))
+			default:
+				http.NotFound(writer, request)
+			}
+		}))
+		defer server.Close()
+
+		processor := NewWithInput(map[string]Value{
+			"user": {Kind: ValueRecord, Record: map[string]Value{
+				"name": {Kind: ValueString, String: "Ada"},
+			}},
+		})
+		result, err := processor.ProcessInDir(fmt.Sprintf(`[output = data, parse_file = %q]
+{
+  result: user.name;
+}`, server.URL+"/schema.mace"), server.URL)
+		tAssert.NoError(err)
+		assertExpectedValue(requireOutputValue(result, "result"), expectedValue{kind: ValueString, string: "Ada"})
 	})
 
 	It("resolves relative imports inside remote mace files", func() {
@@ -1353,7 +1431,7 @@ from %q import result;
 }`, server.URL+"/entry.mace")
 
 		processor := New()
-		result, err := processor.Process(input)
+		result, err := processor.ProcessInDir(input, "../..")
 		tAssert.NoError(err)
 		assertExpectedValue(requireOutputValue(result, "result"), expectedValue{kind: ValueString, string: "Ada"})
 	})
@@ -1380,24 +1458,22 @@ var _ = Describe("Output block", func() {
 	DescribeTable("rejects invalid directives",
 		func(input, message string) {
 			processor := New()
-			_, err := processor.Process(input)
+			_, err := processor.ProcessInDir(input, "../..")
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, message)
 		},
-		Entry("missing output directive", `|===|
-schema User: { name: string; };
-|===|
-[schema = User] {}`, "missing output directive"),
 		Entry("duplicate output directive", "[output = data, output = schema] {}", "duplicate output directive"),
 		Entry("unknown schema in directive", "[output = data, schema = Missing] {}", "unknown schema"),
 		Entry("schema directive is invalid in schema mode", "[output = schema, schema = User] {}", "schema directive"),
 		Entry("schema_file directive is invalid in schema mode", `[output = schema, schema_file = "./user.mace"] {}`, "schema_file"),
+		Entry("parse directive is invalid in schema mode", `[output = schema, parse = User] {}`, "parse directive is invalid when output mode is schema"),
+		Entry("parse_file directive is invalid in schema mode", `[output = schema, parse_file = "./user.mace"] {}`, "parse_file directive is invalid when output mode is schema"),
 	)
 
 	DescribeTable("returns schema output fields",
 		func(input string, expected map[expectedSchemaField]SchemaType) {
 			processor := New()
-			result, err := processor.Process(input)
+			result, err := processor.ProcessInDir(input, "../..")
 			tAssert.NoError(err)
 
 			assertExpectedSchema(result, expected)
@@ -1453,7 +1529,7 @@ schema User: { name: string; };
 	DescribeTable("accepts output that matches schema",
 		func(input string) {
 			processor := New()
-			_, err := processor.Process(input)
+			_, err := processor.ProcessInDir(input, "../..")
 			tAssert.NoError(err)
 		},
 		Entry("optional field omitted", `|===|
@@ -1479,7 +1555,7 @@ schema Team: { values: array<variant[string, int]>; };
 	DescribeTable("rejects output that violates schema",
 		func(input, message string) {
 			processor := New()
-			_, err := processor.Process(input)
+			_, err := processor.ProcessInDir(input, "../..")
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, message)
 		},
@@ -1521,7 +1597,7 @@ schema Plot: { points: array<Point>; };
 	DescribeTable("rejects output surface mismatches",
 		func(input, message string) {
 			processor := New()
-			_, err := processor.Process(input)
+			_, err := processor.ProcessInDir(input, "../..")
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, message)
 		},
@@ -1630,7 +1706,7 @@ array<Scalar> right = ["x"];
 	DescribeTable("rejects invalid hexadecimal expressions",
 		func(input string, expected string) {
 			processor := New()
-			_, err := processor.Process(input)
+			_, err := processor.ProcessInDir(input, "../..")
 			tAssert.Error(err)
 			tAssert.Contains(err.Error(), expected)
 		},
@@ -1651,7 +1727,7 @@ hex_float c = a % b;
 	DescribeTable("rejects invalid merge expressions",
 		func(input string, expected string) {
 			processor := New()
-			_, err := processor.Process(input)
+			_, err := processor.ProcessInDir(input, "../..")
 			tAssert.Error(err)
 			tAssert.Contains(err.Error(), expected)
 		},
@@ -1667,7 +1743,7 @@ array<string> right = ["two"];
 	DescribeTable("returns math results",
 		func(file string, expected expectedValue) {
 			processor := New()
-			result, err := processor.Process(file)
+			result, err := processor.ProcessInDir(file, "../..")
 			tAssert.NoError(err)
 
 			actual := requireOutputValue(result, "result")
@@ -1711,7 +1787,7 @@ float result = 5 % 2.5;
 	DescribeTable("returns operator precedence results",
 		func(file string, expected expectedValue) {
 			processor := New()
-			result, err := processor.Process(file)
+			result, err := processor.ProcessInDir(file, "../..")
 			tAssert.NoError(err)
 
 			actual := requireOutputValue(result, "result")
@@ -1749,7 +1825,7 @@ int result = false || true ? 5 : 2;
 	DescribeTable("accepts non-math operators in script variables",
 		func(file string, expected map[string]expectedValue) {
 			processor := New()
-			result, err := processor.Process(file)
+			result, err := processor.ProcessInDir(file, "../..")
 			tAssert.NoError(err)
 
 			assertExpectedOutput(result, expected)
@@ -1805,7 +1881,7 @@ int value = true ? 1 : 2;
 	DescribeTable("rejects invalid operator usage",
 		func(file string) {
 			processor := New()
-			_, err := processor.Process(file)
+			_, err := processor.ProcessInDir(file, "../..")
 			tAssert.Error(err)
 		},
 		Entry("boolean with bitwise", wrapScriptWithOutputFields(`|===|
@@ -1828,7 +1904,7 @@ int value = true ? 1 : 2.0;
 	DescribeTable("returns array and record results",
 		func(file string, expected expectedValue) {
 			processor := New()
-			result, err := processor.Process(file)
+			result, err := processor.ProcessInDir(file, "../..")
 			tAssert.NoError(err)
 
 			actual := requireOutputValue(result, "result")
@@ -1930,7 +2006,7 @@ int base = 3 * 4;
 	DescribeTable("returns inline output expressions",
 		func(file string, expected expectedValue) {
 			processor := New()
-			result, err := processor.Process(file)
+			result, err := processor.ProcessInDir(file, "../..")
 			tAssert.NoError(err)
 
 			actual := requireOutputValue(result, "result")
@@ -1971,7 +2047,7 @@ int base = 3 * 4;
 	DescribeTable("returns inline output blocks with multiple fields",
 		func(file string, expected map[string]expectedValue) {
 			processor := New()
-			result, err := processor.Process(file)
+			result, err := processor.ProcessInDir(file, "../..")
 			tAssert.NoError(err)
 
 			assertExpectedOutput(result, expected)
@@ -2025,7 +2101,7 @@ int base = 3 * 4;
 	DescribeTable("rejects invalid self references",
 		func(input, message string) {
 			processor := New()
-			_, err := processor.Process(input)
+			_, err := processor.ProcessInDir(input, "../..")
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, message)
 		},
@@ -2036,7 +2112,7 @@ int base = 3 * 4;
 	DescribeTable("rejects invalid array access",
 		func(input, message string) {
 			processor := New()
-			_, err := processor.Process(input)
+			_, err := processor.ProcessInDir(input, "../..")
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, message)
 		},
@@ -2048,7 +2124,7 @@ int base = 3 * 4;
 	DescribeTable("rejects arrays that do not match declared element types",
 		func(file string) {
 			processor := New()
-			_, err := processor.Process(file)
+			_, err := processor.ProcessInDir(file, "../..")
 			tAssert.Error(err)
 		},
 		Entry("primitive type mismatch", `|===|
@@ -2064,4 +2140,436 @@ array<array<int>> result = [[1], ["two"]];
 |===|
 [output = data] { result: result; }`),
 	)
+
+	It("imports a schema output as a named schema with import-as", func() {
+		processor := NewWithInput(map[string]Value{
+			"name":    {Kind: ValueString, String: "@code-fixer-23/cn-efs"},
+			"version": {Kind: ValueString, String: "1.0.0"},
+			"type":    {Kind: ValueString, String: "commonjs"},
+		})
+		result, err := processor.ProcessFile("../../fixtures/processor/import_as/consumer.mace")
+		tAssert.NoError(err)
+		assertExpectedValue(result.Output["name"], expectedValue{kind: ValueString, string: "@code-fixer-23/cn-efs"})
+		assertExpectedValue(result.Output["version"], expectedValue{kind: ValueString, string: "1.0.0"})
+		assertExpectedValue(result.Output["type"], expectedValue{kind: ValueString, string: "commonjs"})
+	})
+
+	It("imports a data output as a named record with import-as", func() {
+		workspace, err := os.MkdirTemp("", "mace-processor-import-as-data-*")
+		tAssert.NoError(err)
+		defer func() { _ = os.RemoveAll(workspace) }()
+
+		sharedPath := filepath.Join(workspace, "shared.mace")
+		tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = data]
+{
+  project: {
+    name: "pi-prompt-form";
+    root: "libs/pi-prompt-form";
+  };
+  workspace: {
+    root: ".";
+  };
+}`), 0o644))
+
+		documentPath := filepath.Join(workspace, "document.mace")
+		tAssert.NoError(os.WriteFile(documentPath, []byte(`|===|
+from "./shared.mace" import-as Shared;
+|===|
+[output = data]
+{
+  name: Shared.project.name;
+  root: Shared.project.root;
+  cwd: Shared.workspace.root;
+}`), 0o644))
+
+		result, err := New().ProcessFile(documentPath)
+		tAssert.NoError(err)
+		assertExpectedValue(result.Output["name"], expectedValue{kind: ValueString, string: "pi-prompt-form"})
+		assertExpectedValue(result.Output["root"], expectedValue{kind: ValueString, string: "libs/pi-prompt-form"})
+		assertExpectedValue(result.Output["cwd"], expectedValue{kind: ValueString, string: "."})
+	})
+
+	DescribeTable("imports data outputs with import-as across nested levels",
+		func(accessor string, expected expectedValue) {
+			workspace, err := os.MkdirTemp("", "mace-processor-import-as-data-depth-*")
+			tAssert.NoError(err)
+			defer func() { _ = os.RemoveAll(workspace) }()
+
+			sharedPath := filepath.Join(workspace, "shared.mace")
+			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = data]
+{
+  level1: {
+    value: "one";
+    level2: {
+      value: "two";
+      level3: {
+        value: "three";
+        level4: {
+          value: "four";
+          level5: {
+            value: "five";
+          };
+        };
+      };
+    };
+  };
+}`), 0o644))
+
+			documentPath := filepath.Join(workspace, "document.mace")
+			tAssert.NoError(os.WriteFile(documentPath, []byte(fmt.Sprintf(`|===|
+from "./shared.mace" import-as Shared;
+|===|
+[output = data]
+{
+  result: %s;
+}`, accessor)), 0o644))
+
+			result, err := New().ProcessFile(documentPath)
+			tAssert.NoError(err)
+			assertExpectedValue(result.Output["result"], expected)
+		},
+		Entry("level 1", "Shared.level1.value", expectedValue{kind: ValueString, string: "one"}),
+		Entry("level 2", "Shared.level1.level2.value", expectedValue{kind: ValueString, string: "two"}),
+		Entry("level 3", "Shared.level1.level2.level3.value", expectedValue{kind: ValueString, string: "three"}),
+		Entry("level 4", "Shared.level1.level2.level3.level4.value", expectedValue{kind: ValueString, string: "four"}),
+		Entry("level 5", "Shared.level1.level2.level3.level4.level5.value", expectedValue{kind: ValueString, string: "five"}),
+	)
+
+	DescribeTable("imports schema outputs with import-as across nested levels",
+		func(accessor string, input Value, expected expectedValue) {
+			workspace, err := os.MkdirTemp("", "mace-processor-import-as-schema-depth-*")
+			tAssert.NoError(err)
+			defer func() { _ = os.RemoveAll(workspace) }()
+
+			sharedPath := filepath.Join(workspace, "shared.mace")
+			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = schema]
+{
+  level1: {
+    value: string;
+    level2: {
+      value: string;
+      level3: {
+        value: string;
+        level4: {
+          value: string;
+          level5: {
+            value: string;
+          };
+        };
+      };
+    };
+  };
+}`), 0o644))
+
+			documentPath := filepath.Join(workspace, "document.mace")
+			tAssert.NoError(os.WriteFile(documentPath, []byte(fmt.Sprintf(`|===|
+from "./shared.mace" import-as Shared;
+|===|
+[output = data, parse = Shared]
+{
+  result: %s;
+}`, accessor)), 0o644))
+
+			processor := NewWithInput(map[string]Value{"level1": input})
+			result, err := processor.ProcessFile(documentPath)
+			tAssert.NoError(err)
+			assertExpectedValue(result.Output["result"], expected)
+		},
+		Entry("level 1", "level1.value", Value{Kind: ValueRecord, Record: map[string]Value{
+			"value": {Kind: ValueString, String: "one"},
+			"level2": {Kind: ValueRecord, Record: map[string]Value{
+				"value": {Kind: ValueString, String: "two"},
+				"level3": {Kind: ValueRecord, Record: map[string]Value{
+					"value": {Kind: ValueString, String: "three"},
+					"level4": {Kind: ValueRecord, Record: map[string]Value{
+						"value": {Kind: ValueString, String: "four"},
+						"level5": {Kind: ValueRecord, Record: map[string]Value{
+							"value": {Kind: ValueString, String: "five"},
+						}},
+					}},
+				}},
+			}},
+		}}, expectedValue{kind: ValueString, string: "one"}),
+		Entry("level 2", "level1.level2.value", Value{Kind: ValueRecord, Record: map[string]Value{
+			"value": {Kind: ValueString, String: "one"},
+			"level2": {Kind: ValueRecord, Record: map[string]Value{
+				"value": {Kind: ValueString, String: "two"},
+				"level3": {Kind: ValueRecord, Record: map[string]Value{
+					"value": {Kind: ValueString, String: "three"},
+					"level4": {Kind: ValueRecord, Record: map[string]Value{
+						"value": {Kind: ValueString, String: "four"},
+						"level5": {Kind: ValueRecord, Record: map[string]Value{
+							"value": {Kind: ValueString, String: "five"},
+						}},
+					}},
+				}},
+			}},
+		}}, expectedValue{kind: ValueString, string: "two"}),
+		Entry("level 3", "level1.level2.level3.value", Value{Kind: ValueRecord, Record: map[string]Value{
+			"value": {Kind: ValueString, String: "one"},
+			"level2": {Kind: ValueRecord, Record: map[string]Value{
+				"value": {Kind: ValueString, String: "two"},
+				"level3": {Kind: ValueRecord, Record: map[string]Value{
+					"value": {Kind: ValueString, String: "three"},
+					"level4": {Kind: ValueRecord, Record: map[string]Value{
+						"value": {Kind: ValueString, String: "four"},
+						"level5": {Kind: ValueRecord, Record: map[string]Value{
+							"value": {Kind: ValueString, String: "five"},
+						}},
+					}},
+				}},
+			}},
+		}}, expectedValue{kind: ValueString, string: "three"}),
+		Entry("level 4", "level1.level2.level3.level4.value", Value{Kind: ValueRecord, Record: map[string]Value{
+			"value": {Kind: ValueString, String: "one"},
+			"level2": {Kind: ValueRecord, Record: map[string]Value{
+				"value": {Kind: ValueString, String: "two"},
+				"level3": {Kind: ValueRecord, Record: map[string]Value{
+					"value": {Kind: ValueString, String: "three"},
+					"level4": {Kind: ValueRecord, Record: map[string]Value{
+						"value": {Kind: ValueString, String: "four"},
+						"level5": {Kind: ValueRecord, Record: map[string]Value{
+							"value": {Kind: ValueString, String: "five"},
+						}},
+					}},
+				}},
+			}},
+		}}, expectedValue{kind: ValueString, string: "four"}),
+		Entry("level 5", "level1.level2.level3.level4.level5.value", Value{Kind: ValueRecord, Record: map[string]Value{
+			"value": {Kind: ValueString, String: "one"},
+			"level2": {Kind: ValueRecord, Record: map[string]Value{
+				"value": {Kind: ValueString, String: "two"},
+				"level3": {Kind: ValueRecord, Record: map[string]Value{
+					"value": {Kind: ValueString, String: "three"},
+					"level4": {Kind: ValueRecord, Record: map[string]Value{
+						"value": {Kind: ValueString, String: "four"},
+						"level5": {Kind: ValueRecord, Record: map[string]Value{
+							"value": {Kind: ValueString, String: "five"},
+						}},
+					}},
+				}},
+			}},
+		}}, expectedValue{kind: ValueString, string: "five"}),
+	)
+
+	It("surfaces only top-level parsed schema fields as variables", func() {
+		processor := NewWithInput(map[string]Value{
+			"project": {Kind: ValueRecord, Record: map[string]Value{
+				"name": {Kind: ValueString, String: "pi-prompt-form"},
+				"root": {Kind: ValueString, String: "libs/pi-prompt-form"},
+			}},
+			"workspace": {Kind: ValueRecord, Record: map[string]Value{
+				"name": {Kind: ValueString, String: "workspace"},
+				"root": {Kind: ValueString, String: "."},
+			}},
+		})
+		result, err := processor.ProcessFile("../../fixtures/processor/import_as/nx_consumer.mace")
+		tAssert.NoError(err)
+		assertExpectedValue(result.Output["name"], expectedValue{kind: ValueString, string: "pi-prompt-form"})
+		assertExpectedValue(result.Output["root"], expectedValue{kind: ValueString, string: "libs/pi-prompt-form"})
+		assertExpectedValue(result.Output["cwd"], expectedValue{kind: ValueString, string: "."})
+	})
+
+	It("validates arbitrary record keys against a record value type", func() {
+		input := `|===|
+type Dependencies: record<string>;
+schema PackageJSON: {
+  name: string,
+  dependencies: Dependencies,
+}
+|===|
+[schema=PackageJSON]
+{
+  name: "pkg",
+  dependencies: {
+    pi_prompt_guard: "^1.0.0",
+    pi_prompt_form: "^1.0.0",
+  },
+}`
+		result, err := New().Process(input)
+		tAssert.NoError(err)
+		assertExpectedValue(result.Output["dependencies"], expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+			"pi_prompt_guard": {kind: ValueString, string: "^1.0.0"},
+			"pi_prompt_form":  {kind: ValueString, string: "^1.0.0"},
+		}})
+	})
+
+	It("allows record keyword schema fields to be referenced as values", func() {
+		processor := NewWithInput(map[string]Value{
+			"record": {Kind: ValueString, String: "value"},
+		})
+		result, err := processor.Process(`|===|
+schema Input: { record: string; };
+|===|
+[output = data, parse = Input]
+{
+  record: record;
+}`)
+		tAssert.NoError(err)
+		assertExpectedValue(result.Output["record"], expectedValue{kind: ValueString, string: "value"})
+	})
+
+	It("infers member access types for record map values", func() {
+		input := `|===|
+record<string> deps = { foo: "bar"; };
+string foo = deps.foo;
+|===|
+[output = data]
+{
+  foo: foo;
+}`
+		result, err := New().Process(input)
+		tAssert.NoError(err)
+		assertExpectedValue(result.Output["foo"], expectedValue{kind: ValueString, string: "bar"})
+	})
+
+	It("resolves imported types in parse_file output schemas", func() {
+		dir, err := os.MkdirTemp("", "mace-parse-file-*")
+		tAssert.NoError(err)
+		defer func() { _ = os.RemoveAll(dir) }()
+		tAssert.NoError(os.WriteFile(filepath.Join(dir, "shared.mace"), []byte(`[output = schema]
+{
+  User: { name: string; };
+}`), 0o644))
+		tAssert.NoError(os.WriteFile(filepath.Join(dir, "schema.mace"), []byte(`|===|
+from "./shared.mace" import User;
+|===|
+[output = schema]
+{
+  user: User;
+}`), 0o644))
+
+		processor := NewWithInput(map[string]Value{
+			"user": {Kind: ValueRecord, Record: map[string]Value{
+				"name": {Kind: ValueString, String: "Ada"},
+			}},
+		})
+		result, err := processor.ProcessInDir(`[output = data, parse_file = "./schema.mace"]
+{
+  name: user.name;
+}`, dir)
+		tAssert.NoError(err)
+		assertExpectedValue(result.Output["name"], expectedValue{kind: ValueString, string: "Ada"})
+	})
+
+	Describe("optional field presence guards", func() {
+		const guardSchema = `|===|
+schema User: {
+  name: string;
+  manager?: User;
+};
+|===|
+`
+
+		It("evaluates 'in' expression to true when optional field exists in input", func() {
+			processor := NewWithInput(map[string]Value{
+				"name":    {Kind: ValueString, String: "Ada"},
+				"manager": {Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Bob"}}},
+			})
+			result, err := processor.Process(guardSchema + `[output = data, parse = User]
+{
+  has_manager: "manager" in input,
+}`)
+			tAssert.NoError(err)
+			assertExpectedValue(result.Output["has_manager"], expectedValue{kind: ValueBoolean, bool: true})
+		})
+
+		It("evaluates 'in' expression to false when optional field is absent from input", func() {
+			processor := NewWithInput(map[string]Value{
+				"name": {Kind: ValueString, String: "Ada"},
+			})
+			result, err := processor.Process(guardSchema + `[output = data, parse = User]
+{
+  has_manager: "manager" in input,
+}`)
+			tAssert.NoError(err)
+			assertExpectedValue(result.Output["has_manager"], expectedValue{kind: ValueBoolean, bool: false})
+		})
+
+		It("rejects unguarded member access on optional parse variable", func() {
+			processor := NewWithInput(map[string]Value{
+				"name":    {Kind: ValueString, String: "Ada"},
+				"manager": {Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Bob"}}},
+			})
+			_, err := processor.Process(guardSchema + `[output = data, parse = User]
+{
+  result: manager.name,
+}`)
+			tAssert.Error(err)
+			tAssert.ErrorContains(err, "optional field")
+			tAssert.ErrorContains(err, "manager")
+		})
+
+		It("allows member access on optional parse variable inside 'in' guard", func() {
+			processor := NewWithInput(map[string]Value{
+				"name":    {Kind: ValueString, String: "Ada"},
+				"manager": {Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Bob"}}},
+			})
+			result, err := processor.Process(guardSchema + `[output = data, parse = User]
+{
+  result: "manager" in input ? manager.name : "none",
+}`)
+			tAssert.NoError(err)
+			assertExpectedValue(result.Output["result"], expectedValue{kind: ValueString, string: "Bob"})
+		})
+
+		It("uses the else branch when the guarded optional field is absent", func() {
+			processor := NewWithInput(map[string]Value{
+				"name": {Kind: ValueString, String: "Ada"},
+			})
+			result, err := processor.Process(guardSchema + `[output = data, parse = User]
+{
+  result: "manager" in input ? manager.name : "none",
+}`)
+			tAssert.NoError(err)
+			assertExpectedValue(result.Output["result"], expectedValue{kind: ValueString, string: "none"})
+		})
+
+		It("supports 'in' guards with the lowercase schema-name variable", func() {
+			processor := NewWithInput(map[string]Value{
+				"name":    {Kind: ValueString, String: "Ada"},
+				"manager": {Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Bob"}}},
+			})
+			result, err := processor.Process(guardSchema + `[output = data, parse = User]
+{
+  result: "manager" in user ? manager.name : "none",
+}`)
+			tAssert.NoError(err)
+			assertExpectedValue(result.Output["result"], expectedValue{kind: ValueString, string: "Bob"})
+		})
+
+		It("validates nested optional access with nested 'in' guards via &&", func() {
+			processor := NewWithInput(map[string]Value{
+				"name": {Kind: ValueString, String: "Ada"},
+				"manager": {Kind: ValueRecord, Record: map[string]Value{
+					"name":    {Kind: ValueString, String: "Bob"},
+					"manager": {Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Carol"}}},
+				}},
+			})
+			result, err := processor.Process(guardSchema + `[output = data, parse = User]
+{
+  result: "manager" in input && "manager" in manager ? manager.manager.name : "none",
+}`)
+			tAssert.NoError(err)
+			assertExpectedValue(result.Output["result"], expectedValue{kind: ValueString, string: "Carol"})
+		})
+	})
+
+	It("rejects record values that do not match the record value type", func() {
+		input := `|===|
+type Dependencies: record<string>;
+schema PackageJSON: {
+  dependencies: Dependencies,
+}
+|===|
+[schema=PackageJSON]
+{
+  dependencies: {
+    pi_prompt_guard: 1,
+  },
+}`
+		_, err := New().Process(input)
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, "type mismatch")
+	})
 })

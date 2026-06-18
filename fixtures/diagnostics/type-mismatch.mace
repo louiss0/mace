@@ -1,0 +1,4 @@
+|===|
+int total = 1.5;
+|===|
+[output = data] {}

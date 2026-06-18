@@ -1,0 +1,62 @@
+|===========================================================================|
+type RestartPolicy: choice["no", "always", "unless-stopped", "on-failure"];
+type ComposeVersion: choice["3.9", "3.8"];
+
+schema DockerService: {
+  image?: string,
+  build?: string,
+  command?: string,
+  ports?: array<string>,
+  environment?: record<string>,
+  volumes?: array<string>,
+  configs?: array<string>,
+  secrets?: array<string>,
+  depends_on?: array<string>,
+  networks?: array<string>,
+  restart?: RestartPolicy,
+  labels?: record<string>,
+  working_dir?: string,
+};
+
+schema DockerNetwork: {
+  driver?: string,
+  internal?: boolean,
+  attachable?: boolean,
+  labels?: record<string>,
+};
+
+schema DockerVolume: {
+  driver?: string,
+  labels?: record<string>,
+  external?: boolean,
+};
+
+schema DockerConfig: {
+  file?: string,
+  external?: boolean,
+};
+
+schema DockerSecret: {
+  file?: string,
+  external?: boolean,
+};
+
+schema DockerCompose: {
+  version: ComposeVersion,
+  name: string,
+  services: record<DockerService>,
+  networks?: record<DockerNetwork>,
+  volumes?: record<DockerVolume>,
+  configs?: record<DockerConfig>,
+  secrets?: record<DockerSecret>,
+};
+|===========================================================================|
+[output = schema]
+{
+  DockerService: DockerService,
+  DockerNetwork: DockerNetwork,
+  DockerVolume: DockerVolume,
+  DockerConfig: DockerConfig,
+  DockerSecret: DockerSecret,
+  DockerCompose: DockerCompose,
+}

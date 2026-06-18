@@ -1,0 +1,4 @@
+[output = data, parse_file = "./schema-file/working-schema.mace"]
+{
+  result: user.name,
+}

@@ -17,6 +17,7 @@ const (
 	TokenUnion
 	TokenVariant
 	TokenChoice
+	TokenRecord
 	TokenStringType
 	TokenIntType
 	TokenFloatType

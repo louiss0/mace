@@ -1,0 +1,8 @@
+[output = schema]
+{
+  name: string,
+  version: string,
+  private: boolean,
+  scripts: record<string>,
+  dependencies: record<string>,
+}

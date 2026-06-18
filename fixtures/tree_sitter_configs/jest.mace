@@ -1,0 +1,30 @@
+// Jest style test runner configuration represented in Mace
+|==============================|
+schema Coverage: {
+  provider: string,
+  enabled: boolean,
+  reporters: array<string>,
+};
+
+schema JestConfig: {
+  test_environment: string,
+  roots: array<string>,
+  extensions: array<string>,
+  collect_coverage: boolean,
+  coverage: Coverage,
+};
+
+Coverage coverage = {
+  provider: "v8",
+  enabled: true,
+  reporters: ["text", "lcov"],
+};
+|==============================|
+[output = data, schema = JestConfig]
+{
+  test_environment: "node",
+  roots: ["src", "test"],
+  extensions: ["js", "mjs", "cjs"],
+  collect_coverage: true,
+  coverage: coverage,
+}

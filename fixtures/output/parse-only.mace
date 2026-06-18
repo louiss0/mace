@@ -1,0 +1,4 @@
+[output = data, parse = User]
+{
+  result: name,
+}

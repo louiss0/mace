@@ -1,0 +1,38 @@
+|=========================================================|
+
+schema User: {
+  id: UserID;
+  name: string;
+  age?: int;
+  status: Status;
+};
+
+schema_doc User {
+  summary: "Represents a user";
+  description: """
+# User
+
+A reusable schema exposed as part of the public contract.
+""";
+  props: {
+    id: "Stable user identifier";
+    name: "The user's display name";
+    age: "Optional age in years";
+  };
+};
+
+type UserID: string /# A stable user identifier;
+
+type Status: choice["Active", "Disabled"];
+
+
+|=========================================================|
+[output = schema]
+"""
+# Public User Contract
+
+The user schema returned by Mace tools.
+"""
+{
+  user: User /# Public user schema;
+}

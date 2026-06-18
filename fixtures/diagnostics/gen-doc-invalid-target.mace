@@ -1,0 +1,8 @@
+|===|
+type Status: string;
+
+gen_doc Status {
+  summary: "Invalid target.";
+};
+|===|
+[output = data] {}

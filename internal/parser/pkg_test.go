@@ -2,8 +2,6 @@ package parser
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -53,15 +51,6 @@ func parseFileInput(input string) (ast.File, error) {
 	}
 
 	return New(tokens).ParseFile()
-}
-
-func parseFixtureFile(path string) (ast.File, error) {
-	contents, err := os.ReadFile(filepath.Clean(path))
-	if err != nil {
-		return ast.File{}, err
-	}
-
-	return parseFileInput(string(contents))
 }
 
 func requireIdentifier(expression ast.Expression, name string) ast.Identifier {
@@ -793,6 +782,31 @@ type Value: variant[string, int];
 			}
 		})
 
+		It("parses array members in variant type references", func() {
+			input := `|===|
+type Value: variant[array<string>, array<int>];
+|===|
+[output = data] {}`
+
+			file, err := parseFileInput(input)
+			tAssert.NoError(err)
+
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 1) {
+				typeDecl, ok := file.Script.Items[0].(ast.TypeDeclaration)
+				tAssert.True(ok)
+				if ok {
+					variantType, ok := typeDecl.Type.(ast.VariantType)
+					tAssert.True(ok)
+					if ok && tAssert.Len(variantType.Members, 2) {
+						_, firstIsArray := variantType.Members[0].(ast.ArrayType)
+						_, secondIsArray := variantType.Members[1].(ast.ArrayType)
+						tAssert.True(firstIsArray)
+						tAssert.True(secondIsArray)
+					}
+				}
+			}
+		})
+
 		It("parses union type references", func() {
 			input := `|===|
 type Value: union[Profile, Audit];
@@ -1090,7 +1104,37 @@ gen_doc Name {
 		})
 
 		It("parses documentation fixtures with props and inline descriptions", func() {
-			file, err := parseFixtureFile(filepath.Join("..", "analyzer", "testdata", "docs", "hover.mace"))
+			file, err := parseFileInput(`|===|
+schema User: {
+  name: string;
+};
+
+string greeting = "Hello";
+
+gen_doc greeting {
+  summary: "Rendered greeting";
+};
+
+schema_doc User {
+  summary: "Represents a user";
+  description: """
+# User
+
+Hover should surface this documentation.
+""";
+  props: {
+    name: "The user's display name";
+  };
+};
+|===|
+[output = schema]
+"""
+# User Output
+"""
+{
+  user: User /# Public user schema;
+}
+`)
 			tAssert.NoError(err)
 			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 4) {
 				docDecl, ok := file.Script.Items[3].(ast.DocDeclaration)
@@ -1124,7 +1168,22 @@ gen_doc Name {
 		})
 
 		It("parses nested variable array access fixtures", func() {
-			file, err := parseFixtureFile(filepath.Join("testdata", "array_access", "nested_variable_access.mace"))
+			file, err := parseFileInput(`|============================================================|
+array<int> level1 = [1];
+array<array<int>> level2 = [[2]];
+array<array<array<int>>> level3 = [[[3]]];
+array<array<array<array<int>>>> level4 = [[[[4]]]];
+array<array<array<array<array<int>>>>> level5 = [[[[[5]]]]];
+|============================================================|
+[output = data]
+{
+  level1: level1[0],
+  level2: level2[0][0],
+  level3: level3[0][0][0],
+  level4: level4[0][0][0][0],
+  level5: level5[0][0][0][0][0],
+}
+`)
 			tAssert.NoError(err)
 			if !tAssert.NotNil(file.Script) {
 				return

@@ -1,0 +1,5 @@
+|===|
+type User: string;
+schema User: { name: string; };
+|===|
+[output = data] {}

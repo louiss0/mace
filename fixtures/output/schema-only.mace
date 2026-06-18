@@ -1,0 +1,12 @@
+schema User: {
+  id: string,
+  name: string,
+  email: string,
+  role: string,
+  active: boolean,
+};
+
+[output = schema]
+{
+  User: User,
+}

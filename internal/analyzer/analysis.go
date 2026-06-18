@@ -25,6 +25,7 @@ const (
 	symbolOriginLocal  symbolOrigin = "local"
 	symbolOriginImport symbolOrigin = "import"
 	symbolOriginOutput symbolOrigin = "output"
+	symbolOriginParsed symbolOrigin = "parsed"
 )
 
 type semanticSymbol struct {
@@ -65,6 +66,9 @@ func (snapshot analysisSnapshot) symbol(name string) (semanticSymbol, bool) {
 func (snapshot analysisSnapshot) symbolAt(position protocol.Position) (semanticSymbol, bool) {
 	for index := len(snapshot.symbols) - 1; index >= 0; index-- {
 		symbol := snapshot.symbols[index]
+		if !symbolHasRange(symbol) {
+			continue
+		}
 		if comparePositions(symbol.Range.Start, position) <= 0 && comparePositions(position, symbol.Range.End) <= 0 {
 			return symbol, true
 		}
@@ -114,6 +118,7 @@ func (snapshot analysisSnapshot) definitionAt(position protocol.Position) (proto
 func (snapshot analysisSnapshot) documentSymbolAt(position protocol.Position) (semanticSymbol, bool) {
 	return findLastSymbol(snapshot.symbols, func(symbol semanticSymbol) bool {
 		return symbol.Definition.URI == snapshot.documentURI &&
+			symbolHasRange(symbol) &&
 			comparePositions(symbol.Range.Start, position) <= 0 &&
 			comparePositions(position, symbol.Range.End) <= 0
 	})
@@ -372,16 +377,29 @@ func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir str
 
 	fileDiagnostics, fileActions := analyzeFileStructure(text, file, tokens, documentPath)
 	snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, fileActions...)
+	parseDirectiveWarning, hasParseDirectiveWarning := parseDirectiveWarningDiagnostic(text, file)
 
 	processorInstance := processor.New()
 	result, processErr := processorInstance.ProcessInScope(text, importBaseDir, importRootDir)
 	if processErr != nil {
 		snapshot.diagnostics = append(snapshot.diagnostics, fileDiagnostics...)
+		if shouldIgnoreParseValidationError(file, processErr) {
+			if hasParseDirectiveWarning {
+				snapshot.diagnostics = append(snapshot.diagnostics, parseDirectiveWarning)
+			}
+			unusedDiagnostics, unusedActions := unusedDeclarationAnalysis(text, file, tokens, documentPath)
+			snapshot.diagnostics = append(snapshot.diagnostics, unusedDiagnostics...)
+			snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, unusedActions...)
+			return snapshot
+		}
 		if semanticDiagnostic, ok := semanticDiagnosticFromError(file, tokens, processErr); ok {
 			snapshot.diagnostics = append(snapshot.diagnostics, semanticDiagnostic)
 			snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, semanticCodeActions(text, file, tokens, documentPath, semanticDiagnostic, processErr.Error())...)
 		} else if len(snapshot.diagnostics) == 0 {
 			snapshot.diagnostics = append(snapshot.diagnostics, diagnosticFromError(processErr))
+		}
+		if hasParseDirectiveWarning {
+			snapshot.diagnostics = append(snapshot.diagnostics, parseDirectiveWarning)
 		}
 		return snapshot
 	}
@@ -391,6 +409,9 @@ func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir str
 	snapshot.symbolIndex = indexSymbols(snapshot.symbols)
 	snapshot.declarations = declarationsFromSymbols(snapshot.symbols)
 	snapshot.diagnostics = append(snapshot.diagnostics, fileDiagnostics...)
+	if hasParseDirectiveWarning {
+		snapshot.diagnostics = append(snapshot.diagnostics, parseDirectiveWarning)
+	}
 
 	unusedDiagnostics, unusedActions := unusedDeclarationAnalysis(text, file, tokens, documentPath)
 	snapshot.diagnostics = append(snapshot.diagnostics, unusedDiagnostics...)
@@ -2765,6 +2786,55 @@ func schemaFileConflictAnalysis(text string, file ast.File, documentPath string)
 	return diagnostic, actions, true
 }
 
+func shouldIgnoreParseValidationError(file ast.File, err error) bool {
+	var diagnosticError processor.DiagnosticError
+	if !errors.As(err, &diagnosticError) {
+		return false
+	}
+	if !hasParseValidationDirective(file.Output.Directives) {
+		return false
+	}
+
+	if diagnosticError.Code == processor.CodeMissingRequiredField {
+		return true
+	}
+
+	message := diagnosticError.Message
+	if strings.Contains(message, "unknown field") || strings.Contains(message, "is not optional in schema") {
+		return true
+	}
+
+	return false
+}
+
+func hasParseValidationDirective(directives []ast.OutputDirective) bool {
+	for _, directive := range directives {
+		if directive.Kind == ast.OutputDirectiveParse || directive.Kind == ast.OutputDirectiveParseFile {
+			return true
+		}
+	}
+
+	return false
+}
+
+func parseDirectiveWarningDiagnostic(text string, file ast.File) (protocol.Diagnostic, bool) {
+	if !hasParseValidationDirective(file.Output.Directives) {
+		return protocol.Diagnostic{}, false
+	}
+
+	rangeValue, ok := outputDirectiveListRange(text)
+	if !ok {
+		rangeValue = protocol.Range{}
+	}
+
+	return diagnosticWithCode(
+		rangeValue,
+		protocol.DiagnosticSeverityWarning,
+		diagnosticDirectiveParseValuesUnknown,
+		"You used a parse directive. The analyzer cannot know which runtime values will be injected. Make sure this file is parsed with input that satisfies the selected schema.",
+	), true
+}
+
 func semanticDiagnosticFromError(file ast.File, tokens []lexer.Token, err error) (protocol.Diagnostic, bool) {
 	message := err.Error()
 	var diagnosticError processor.DiagnosticError
@@ -3172,8 +3242,12 @@ func tokenProtocolRange(token lexer.Token) protocol.Range {
 	return protocol.Range{Start: start, End: end}
 }
 
-func collectDeclarations(file ast.File, result *processor.Result, importBaseDir string) []declarationDefinition {
-	return declarationsFromSymbols(collectSemanticSymbols(file, nil, result, filepath.Join(importBaseDir, "document.mace")))
+func collectDeclarationsExcludingParsed(file ast.File, result *processor.Result, importBaseDir string) []declarationDefinition {
+	symbols := collectSemanticSymbols(file, nil, result, filepath.Join(importBaseDir, "document.mace"))
+	symbols = lo.Filter(symbols, func(symbol semanticSymbol, _ int) bool {
+		return symbol.Origin != symbolOriginParsed
+	})
+	return declarationsFromSymbols(symbols)
 }
 
 func declarationsFromSymbols(symbols []semanticSymbol) []declarationDefinition {
@@ -3206,6 +3280,8 @@ func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *process
 			}
 		})...)
 	}
+
+	symbols = append(symbols, parsedSemanticSymbols(file, documentPath)...)
 
 	symbols = append(symbols, lo.Map(file.Output.SchemaFields, func(field ast.OutputSchemaField, _ int) semanticSymbol {
 		return newOutputSymbol(field.NameToken, documentURI, field.Name, fmt.Sprintf("output %s: %s", field.Name, fieldTypeDetail(field.Type)), inlineDescriptionDocumentation(field.Description))
@@ -3327,6 +3403,89 @@ func stringLiteralMarkdown(literal ast.StringLiteral) string {
 	}
 }
 
+func parsedSemanticSymbols(file ast.File, documentPath string) []semanticSymbol {
+	if documentPath == "" {
+		return nil
+	}
+
+	importBaseDir := filepath.Dir(documentPath)
+	model := buildCompletionModel(file, importBaseDir, importBaseDir, map[string]completionModel{})
+	record, ok := parseInputCompletionRecord(file, model, importBaseDir, importBaseDir, map[string]completionModel{})
+	if !ok {
+		return nil
+	}
+
+	symbols := lo.Map(record.Fields, func(field ast.SchemaField, _ int) semanticSymbol {
+		return semanticSymbol{
+			Name:   field.Name,
+			Kind:   protocol.CompletionItemKindVariable,
+			Detail: fmt.Sprintf("parse %s: %s", field.Name, fieldTypeDetail(field.Type)),
+			Origin: symbolOriginParsed,
+		}
+	})
+
+	rootDetail := fmt.Sprintf("parse input: %s", recordTypeDetail(record))
+	symbols = append(symbols, semanticSymbol{
+		Name:   "input",
+		Kind:   protocol.CompletionItemKindVariable,
+		Detail: rootDetail,
+		Origin: symbolOriginParsed,
+	})
+
+	if schemaName, ok := parseInputSemanticSchemaName(file, importBaseDir); ok {
+		aliasName := strings.ToLower(schemaName)
+		if aliasName != "input" {
+			symbols = append(symbols, semanticSymbol{
+				Name:   aliasName,
+				Kind:   protocol.CompletionItemKindVariable,
+				Detail: fmt.Sprintf("parse %s: %s", aliasName, recordTypeDetail(record)),
+				Origin: symbolOriginParsed,
+			})
+		}
+	}
+
+	return dedupeSymbols(symbols)
+}
+
+func parseInputSemanticSchemaName(file ast.File, importBaseDir string) (string, bool) {
+	if name, ok := outputDirectiveValue(file.Output.Directives, ast.OutputDirectiveParse); ok {
+		return name, true
+	}
+	if !hasOutputDirective(file.Output.Directives, ast.OutputDirectiveParseFile) {
+		return "", false
+	}
+	if name, ok := outputDirectiveValue(file.Output.Directives, ast.OutputDirectiveSchema); ok {
+		return name, true
+	}
+
+	for _, directive := range file.Output.Directives {
+		if directive.Kind != ast.OutputDirectiveParseFile {
+			continue
+		}
+
+		pathValue, ok := stringLiteralValue(ast.StringLiteral{Lexeme: directive.Value})
+		if !ok {
+			return "", false
+		}
+
+		resolvedPath, err := resolveBoundedPathInRoot(importBaseDir, importBaseDir, pathValue)
+		if err != nil {
+			return "", false
+		}
+
+		_, importedFile, _, ok := parsedFile(resolvedPath)
+		if !ok {
+			return "", false
+		}
+
+		if len(importedFile.Output.SchemaFields) == 1 {
+			return importedFile.Output.SchemaFields[0].Name, true
+		}
+	}
+
+	return "", false
+}
+
 func importedSemanticSymbols(file ast.File, documentPath string) []semanticSymbol {
 	importBaseDir := filepath.Dir(documentPath)
 	if documentPath == "" {
@@ -3348,6 +3507,13 @@ func importedSemanticSymbols(file ast.File, documentPath string) []semanticSymbo
 			return nil
 		}
 
+		if importDecl.ImportAs != nil {
+			if symbol, ok := importedImportAsSemanticSymbol(importedFile, importedPath, importDecl.ImportAs.LocalName()); ok {
+				return []semanticSymbol{symbol}
+			}
+			return nil
+		}
+
 		return lo.FilterMap(importDecl.Identifiers, func(identifier ast.ImportedIdentifier, _ int) (semanticSymbol, bool) {
 			symbol, ok := importedSemanticSymbol(importedFile, importedPath, identifier.Name)
 			if !ok {
@@ -3359,6 +3525,39 @@ func importedSemanticSymbols(file ast.File, documentPath string) []semanticSymbo
 			return symbol, true
 		})
 	})
+}
+
+func importedImportAsSemanticSymbol(file ast.File, path string, name string) (semanticSymbol, bool) {
+	model := buildCompletionModel(file, filepath.Dir(path), filepath.Dir(path), map[string]completionModel{})
+	if file.Output.Mode == ast.OutputModeSchema {
+		record, ok := importAsSchemaRecord(file, model)
+		if !ok {
+			return semanticSymbol{}, false
+		}
+		return semanticSymbol{
+			Name:   name,
+			Kind:   protocol.CompletionItemKindStruct,
+			Detail: fmt.Sprintf("schema %s: %s", name, recordTypeDetail(record)),
+			Origin: symbolOriginImport,
+			Definition: protocol.Location{
+				URI: pathURI(path),
+			},
+		}, true
+	}
+
+	if _, ok := importAsDataRecord(file, model); !ok {
+		return semanticSymbol{}, false
+	}
+
+	return semanticSymbol{
+		Name:   name,
+		Kind:   protocol.CompletionItemKindVariable,
+		Detail: fmt.Sprintf("import %s", name),
+		Origin: symbolOriginImport,
+		Definition: protocol.Location{
+			URI: pathURI(path),
+		},
+	}, true
 }
 
 func importedSemanticSymbol(file ast.File, path string, name string) (semanticSymbol, bool) {
@@ -3583,6 +3782,10 @@ func variableDeclarationDetail(declaration ast.VariableDeclaration) string {
 	return detail + " = " + expressionSummary(declaration.Value)
 }
 
+func symbolHasRange(symbol semanticSymbol) bool {
+	return comparePositions(symbol.Range.Start, symbol.Range.End) < 0
+}
+
 func indexSymbols(symbols []semanticSymbol) map[string]semanticSymbol {
 	return lo.Reduce(symbols, func(index map[string]semanticSymbol, symbol semanticSymbol, _ int) map[string]semanticSymbol {
 		if symbol.Name == "" {
@@ -3610,13 +3813,27 @@ func pathURI(path string) protocol.DocumentUri {
 	return protocol.DocumentUri(fileURI(path))
 }
 
-func schemaFileDirectiveRanges(text string) (protocol.Range, protocol.Range, bool) {
+func outputDirectiveListRange(text string) (protocol.Range, bool) {
 	openIndex := strings.Index(text, "[")
 	closeIndex := strings.Index(text, "]")
 	if openIndex < 0 || closeIndex <= openIndex {
+		return protocol.Range{}, false
+	}
+
+	return protocol.Range{
+		Start: positionFromIndex(text, openIndex),
+		End:   positionFromIndex(text, closeIndex+1),
+	}, true
+}
+
+func schemaFileDirectiveRanges(text string) (protocol.Range, protocol.Range, bool) {
+	directiveRange, ok := outputDirectiveListRange(text)
+	if !ok {
 		return protocol.Range{}, protocol.Range{}, false
 	}
 
+	openIndex := strings.Index(text, "[")
+	closeIndex := strings.Index(text, "]")
 	directiveText := text[openIndex : closeIndex+1]
 	schemaFileIndex := strings.Index(directiveText, "schema_file")
 	if schemaFileIndex < 0 {
@@ -3637,11 +3854,6 @@ func schemaFileDirectiveRanges(text string) (protocol.Range, protocol.Range, boo
 	schemaFileEditRange := protocol.Range{
 		Start: positionFromIndex(text, start),
 		End:   positionFromIndex(text, end),
-	}
-
-	directiveRange := protocol.Range{
-		Start: positionFromIndex(text, openIndex),
-		End:   positionFromIndex(text, closeIndex+1),
 	}
 
 	return directiveRange, schemaFileEditRange, true

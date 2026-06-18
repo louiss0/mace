@@ -1,0 +1,9 @@
+|===|
+schema User: {
+  name: string,
+};
+|===|
+[output = schema]
+{
+  User: User,
+}

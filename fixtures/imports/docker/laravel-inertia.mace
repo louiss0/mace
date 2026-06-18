@@ -1,0 +1,156 @@
+|===|
+from "./docker-schema.mace" import DockerCompose, DockerService, DockerNetwork, DockerVolume, DockerConfig, DockerSecret;
+
+DockerService app = {
+  build: "./docker/app",
+  command: "php artisan serve --host=0.0.0.0 --port=80",
+  ports: ["8000:80"],
+  environment: {
+    APP_NAME: "Laravel Inertia",
+    APP_ENV: "local",
+    APP_DEBUG: "true",
+    APP_URL: "http://localhost:8000",
+    DB_CONNECTION: "mysql",
+    DB_HOST: "mysql",
+    DB_PORT: "3306",
+    REDIS_HOST: "redis",
+  },
+  volumes: [".:/var/www/html"],
+  depends_on: ["mysql", "redis"],
+  networks: ["app"],
+  restart: "unless-stopped",
+};
+
+DockerService queue = {
+  build: "./docker/app",
+  command: "php artisan queue:work --verbose --tries=3 --timeout=90",
+  environment: {
+    APP_ENV: "local",
+    QUEUE_CONNECTION: "redis",
+    REDIS_HOST: "redis",
+  },
+  volumes: [".:/var/www/html"],
+  depends_on: ["mysql", "redis"],
+  networks: ["app"],
+  restart: "unless-stopped",
+};
+
+DockerService scheduler = {
+  build: "./docker/app",
+  command: "sh -lc 'while true; do php artisan schedule:run --verbose --no-interaction; sleep 60; done'",
+  environment: {
+    APP_ENV: "local",
+    QUEUE_CONNECTION: "redis",
+  },
+  volumes: [".:/var/www/html"],
+  depends_on: ["mysql", "redis"],
+  networks: ["app"],
+  restart: "unless-stopped",
+};
+
+DockerService vite = {
+  build: "./docker/node",
+  command: "npm run dev -- --host 0.0.0.0",
+  ports: ["5173:5173"],
+  volumes: [".:/var/www/html"],
+  depends_on: ["app"],
+  networks: ["app"],
+  restart: "unless-stopped",
+};
+
+DockerService mysql = {
+  image: "mysql:8.4",
+  ports: ["3306:3306"],
+  environment: {
+    MYSQL_DATABASE: "app",
+    MYSQL_USER: "app",
+    MYSQL_PASSWORD: "secret",
+    MYSQL_ROOT_PASSWORD: "root-secret",
+  },
+  volumes: ["mysql_data:/var/lib/mysql"],
+  networks: ["app"],
+  restart: "unless-stopped",
+};
+
+DockerService redis = {
+  image: "redis:7-alpine",
+  ports: ["6379:6379"],
+  volumes: ["redis_data:/data"],
+  networks: ["app"],
+  restart: "unless-stopped",
+};
+
+DockerService mailpit = {
+  image: "axllent/mailpit:latest",
+  ports: ["8025:8025", "1025:1025"],
+  networks: ["app"],
+  restart: "unless-stopped",
+};
+
+DockerNetwork app_network = {
+  driver: "bridge",
+  attachable: true,
+  labels: {
+    project: "laravel-inertia",
+  },
+};
+
+DockerVolume mysql_data = {
+  driver: "local",
+  labels: {
+    project: "laravel-inertia",
+  },
+};
+
+DockerVolume redis_data = {
+  driver: "local",
+  labels: {
+    project: "laravel-inertia",
+  },
+};
+
+DockerConfig nginx_config = {
+  file: "./docker/nginx/default.conf",
+};
+
+DockerConfig php_ini = {
+  file: "./docker/php/php.ini",
+};
+
+DockerSecret app_key = {
+  file: "./docker/secrets/app_key",
+};
+
+DockerSecret db_password = {
+  file: "./docker/secrets/db_password",
+};
+|===|
+[output = data, schema = DockerCompose]
+{
+  version: "3.9",
+  name: "laravel-inertia",
+  services: {
+    app: app,
+    queue: queue,
+    scheduler: scheduler,
+    vite: vite,
+    mysql: mysql,
+    redis: redis,
+    mailpit: mailpit,
+  },
+  networks: {
+    app: app_network,
+  },
+  volumes: {
+    mysql_data: mysql_data,
+    redis_data: redis_data,
+  },
+  configs: {
+    nginx: nginx_config,
+    php_ini: php_ini,
+  },
+  secrets: {
+    app_key: app_key,
+    db_password: db_password,
+  },
+}

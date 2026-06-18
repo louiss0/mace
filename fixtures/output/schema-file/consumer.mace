@@ -1,0 +1,4 @@
+[output = data, schema_file = "./working-schema.mace"]
+{
+  result: { name: "Ada"; },
+}

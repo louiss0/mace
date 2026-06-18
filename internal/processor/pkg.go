@@ -52,6 +52,7 @@ const (
 	SchemaTypeRecord
 	SchemaTypeUnion
 	SchemaTypeVariant
+	SchemaTypeRecordMap
 )
 
 type SchemaType struct {
@@ -63,24 +64,26 @@ type SchemaType struct {
 }
 
 type processContext struct {
-	importBaseDir string
-	importRootDir string
-	symbols       *symbolTable
-	types         *typeRegistry
-	schemas       *schemaRegistry
-	variables     *variableRegistry
-	environment   *valueEnvironment
+	importBaseDir     string
+	importRootDir     string
+	symbols           *symbolTable
+	types             *typeRegistry
+	schemas           *schemaRegistry
+	variables         *variableRegistry
+	environment       *valueEnvironment
+	optionalParseVars map[string]struct{} // field names from optional parse schema fields
 }
 
 func newProcessContext(importBaseDir string, importRootDir string) processContext {
 	return processContext{
-		importBaseDir: importBaseDir,
-		importRootDir: importRootDir,
-		symbols:       newSymbolTable(),
-		types:         newTypeRegistry(),
-		schemas:       newSchemaRegistry(),
-		variables:     newVariableRegistry(),
-		environment:   newValueEnvironment(),
+		importBaseDir:     importBaseDir,
+		importRootDir:     importRootDir,
+		symbols:           newSymbolTable(),
+		types:             newTypeRegistry(),
+		schemas:           newSchemaRegistry(),
+		variables:         newVariableRegistry(),
+		environment:       newValueEnvironment(),
+		optionalParseVars: map[string]struct{}{},
 	}
 }
 
@@ -89,14 +92,20 @@ func (context processContext) clone() processContext {
 		return processContext{}
 	}
 
+	clonedOptional := make(map[string]struct{}, len(context.optionalParseVars))
+	for k := range context.optionalParseVars {
+		clonedOptional[k] = struct{}{}
+	}
+
 	return processContext{
-		importBaseDir: context.importBaseDir,
-		importRootDir: context.importRootDir,
-		symbols:       context.symbols.Clone(),
-		types:         context.types.Clone(),
-		schemas:       context.schemas.Clone(),
-		variables:     context.variables.Clone(),
-		environment:   context.environment.Clone(),
+		importBaseDir:     context.importBaseDir,
+		importRootDir:     context.importRootDir,
+		symbols:           context.symbols.Clone(),
+		types:             context.types.Clone(),
+		schemas:           context.schemas.Clone(),
+		variables:         context.variables.Clone(),
+		environment:       context.environment.Clone(),
+		optionalParseVars: clonedOptional,
 	}
 }
 
@@ -346,7 +355,7 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 		return Result{}, err
 	}
 
-	if err := validateDataOutputFields(outputBlock.DataFields, outputContext.symbols); err != nil {
+	if err := validateDataOutputFields(outputBlock.DataFields, outputContext.symbols, outputContext.optionalParseVars); err != nil {
 		return Result{}, err
 	}
 
@@ -530,6 +539,14 @@ func (p *Processor) applyParsedOutputInput(output ast.OutputBlock, context *proc
 	context.variables.Add("input", expectedType)
 	context.environment.Add("input", inputValue)
 
+	// Also expose the schema-named variable (lowercase) for guards like "field" in user.
+	schemaVarName := strings.ToLower(schemaName)
+	if schemaVarName != "input" && !context.symbols.Has(schemaVarName) {
+		context.symbols.Add(schemaVarName, symbolKindVariable)
+		context.variables.Add(schemaVarName, expectedType)
+		context.environment.Add(schemaVarName, inputValue)
+	}
+
 	for _, field := range schema.Fields {
 		fieldValue, exists := inputValue.Record[field.Name]
 		if !exists {
@@ -541,6 +558,9 @@ func (p *Processor) applyParsedOutputInput(output ast.OutputBlock, context *proc
 		fieldType, err := resolveValueType(field.Type, context.symbols, context.types, context.schemas, nil)
 		if err != nil {
 			return err
+		}
+		if field.Optional {
+			context.optionalParseVars[field.Name] = struct{}{}
 		}
 		context.symbols.Add(field.Name, symbolKindVariable)
 		context.variables.Add(field.Name, fieldType)
@@ -583,6 +603,18 @@ func resolveImportsWithState(file ast.File, importBaseDir string, importRootDir 
 		if err != nil {
 			return nil, err
 		}
+		if importDecl.ImportAs != nil {
+			localName := importDecl.ImportAs.LocalName()
+			if _, exists := imports[localName]; exists {
+				return nil, validationErrorf("duplicate import %q", localName)
+			}
+			decl, err := importFileAsDeclaration(localName, declarations)
+			if err != nil {
+				return nil, err
+			}
+			imports[localName] = decl
+			continue
+		}
 
 		for _, imported := range importDecl.Identifiers {
 			localName := imported.LocalName()
@@ -606,6 +638,99 @@ func resolveImportsWithState(file ast.File, importBaseDir string, importRootDir 
 		imported = append(imported, item)
 	}
 	return imported, nil
+}
+
+func importFileAsDeclaration(name string, declarations map[string]importedDeclaration) (importedDeclaration, error) {
+	fields := make([]ast.SchemaField, 0, len(declarations))
+	recordValues := map[string]Value{}
+	allVariables := true
+	for exportedName, declaration := range declarations {
+		switch declaration.kind {
+		case symbolKindSchema:
+			fields = append(fields, ast.SchemaField{Name: exportedName, Type: declaration.record})
+			allVariables = false
+		case symbolKindType:
+			fields = append(fields, ast.SchemaField{Name: exportedName, Type: declaration.typeRef})
+			allVariables = false
+		case symbolKindVariable:
+			recordValues[exportedName] = declaration.value
+			fields = append(fields, ast.SchemaField{Name: exportedName, Type: typeReferenceFromValueType(declaration.vtype)})
+		default:
+			return importedDeclaration{}, validationErrorf("unknown import %q", exportedName)
+		}
+	}
+	if allVariables {
+		return importedDeclaration{name: name, kind: symbolKindVariable, value: Value{Kind: ValueRecord, Record: recordValues}, vtype: valueType{kind: ValueRecord, record: &ast.RecordType{Fields: fields}}}, nil
+	}
+	return importedDeclaration{name: name, kind: symbolKindSchema, record: ast.RecordType{Fields: fields}}, nil
+}
+
+func typeReferenceFromValueType(input valueType) ast.TypeReference {
+	if len(input.choiceValues) > 0 {
+		members := make([]ast.Expression, 0, len(input.choiceValues))
+		for _, value := range input.choiceValues {
+			members = append(members, expressionFromValue(value))
+		}
+		return ast.ChoiceType{Members: members}
+	}
+	if len(input.members) > 0 {
+		members := make([]ast.TypeReference, 0, len(input.members))
+		for _, member := range input.members {
+			members = append(members, typeReferenceFromValueType(member))
+		}
+		return ast.VariantType{Members: members}
+	}
+	switch input.kind {
+	case ValueString:
+		return ast.PrimitiveType{Name: "string"}
+	case ValueInt:
+		return ast.PrimitiveType{Name: "int"}
+	case ValueFloat:
+		return ast.PrimitiveType{Name: "float"}
+	case ValueHexInt:
+		return ast.PrimitiveType{Name: "hex_int"}
+	case ValueHexFloat:
+		return ast.PrimitiveType{Name: "hex_float"}
+	case ValueBoolean:
+		return ast.PrimitiveType{Name: "boolean"}
+	case ValueArray:
+		if input.element != nil {
+			return ast.ArrayType{Element: typeReferenceFromValueType(*input.element)}
+		}
+		return ast.ArrayType{Element: ast.PrimitiveType{Name: "string"}}
+	case ValueRecord:
+		if input.schemaName != "" {
+			return ast.NamedType{Name: input.schemaName}
+		}
+		if input.element != nil {
+			return ast.RecordMapType{Value: typeReferenceFromValueType(*input.element)}
+		}
+		if input.record != nil {
+			return *input.record
+		}
+		return ast.RecordType{}
+	default:
+		return ast.PrimitiveType{Name: "string"}
+	}
+}
+
+func expressionFromValue(value Value) ast.Expression {
+	switch value.Kind {
+	case ValueString:
+		return ast.StringLiteral{Lexeme: strconv.Quote(value.String)}
+	case ValueInt:
+		return ast.IntLiteral{Lexeme: strconv.FormatInt(value.Int, 10)}
+	case ValueFloat:
+		return ast.FloatLiteral{Lexeme: strconv.FormatFloat(value.Float, 'f', -1, 64)}
+	case ValueHexInt:
+		return ast.HexIntLiteral{Lexeme: value.String}
+	case ValueHexFloat:
+		return ast.HexFloatLiteral{Lexeme: value.String}
+	case ValueBoolean:
+		return ast.BooleanLiteral{Value: value.Boolean}
+	default:
+		return ast.StringLiteral{Lexeme: strconv.Quote(scalarValueDisplay(value))}
+	}
 }
 
 func parseImportPath(literal ast.StringLiteral) (string, error) {
@@ -657,7 +782,16 @@ func resolveBoundedPath(importBaseDir string, importRootDir string, importPath s
 		return "", validationErrorf("import path %q escapes root: root=%q, base=%q, resolved=%q", importPath, formatImportRoot(importRootDir), importBaseDir, resolvedPath)
 	}
 
-	relativePath, err := filepath.Rel(importRootDir, resolvedPath)
+	absoluteRoot, err := filepath.Abs(importRootDir)
+	if err != nil {
+		return "", validationErrorf("unable to resolve path %q", importPath)
+	}
+	absolutePath, err := filepath.Abs(resolvedPath)
+	if err != nil {
+		return "", validationErrorf("unable to resolve path %q", importPath)
+	}
+
+	relativePath, err := filepath.Rel(absoluteRoot, absolutePath)
 	if err != nil {
 		return "", validationErrorf("unable to resolve path %q", importPath)
 	}
@@ -665,7 +799,7 @@ func resolveBoundedPath(importBaseDir string, importRootDir string, importPath s
 		return "", validationErrorf("import path %q escapes root: root=%q, base=%q, resolved=%q", importPath, formatImportRoot(importRootDir), importBaseDir, resolvedPath)
 	}
 
-	return resolvedPath, nil
+	return absolutePath, nil
 }
 
 func resolveBoundedRemotePath(importBaseDir string, importRootDir string, importPath string, resolvedPath string) (string, error) {
@@ -878,7 +1012,50 @@ func resolveSchemaFileDeclarations(directives []ast.OutputDirective, importBaseD
 		}
 	}
 
+	if hasParseFile(directives) {
+		record, err := loadOutputSchemaRecord(resolvedPath, importRootDir)
+		if err != nil {
+			return nil, err
+		}
+		outputDeclarations = append(outputDeclarations, importedDeclaration{
+			name:   "__parse_file",
+			kind:   symbolKindSchema,
+			record: record,
+		})
+	}
+
 	return outputDeclarations, nil
+}
+
+func loadOutputSchemaRecord(path string, importRootDir string) (ast.RecordType, error) {
+	contents, err := readMaceSource(path)
+	if err != nil {
+		return ast.RecordType{}, validationErrorf("unable to read import file %q", path)
+	}
+	tokens, err := lex(contents)
+	if err != nil {
+		return ast.RecordType{}, err
+	}
+	file, err := parser.New(tokens).ParseFile()
+	if err != nil {
+		return ast.RecordType{}, validationErrorf("unable to parse import file %q: %s", path, err)
+	}
+	if file.Output.Mode != ast.OutputModeSchema {
+		return ast.RecordType{}, validationErrorf("parse_file target %q must output a schema", path)
+	}
+	context, err := buildProcessContext(file.Imports, file.Script, basePathDir(path), importRootDir, true, nil)
+	if err != nil {
+		return ast.RecordType{}, err
+	}
+	if err := validateSchemaOutputFields(file.Output.SchemaFields, context.symbols, context.types, context.schemas, nil); err != nil {
+		return ast.RecordType{}, err
+	}
+
+	fields := make([]ast.SchemaField, 0, len(file.Output.SchemaFields))
+	for _, field := range file.Output.SchemaFields {
+		fields = append(fields, ast.SchemaField{Name: field.Name, Optional: field.Optional, Type: field.Type, Description: field.Description})
+	}
+	return resolveExportedRecordType(ast.RecordType{Fields: fields}, context.types, context.schemas, map[string]struct{}{}, map[string]struct{}{})
 }
 
 func loadSchemaFileDeclarations(path string, importRootDir string, cache map[string]map[string]ast.Declaration, stack map[string]struct{}) (map[string]ast.Declaration, error) {
@@ -1019,6 +1196,16 @@ func schemaFieldImportDeclaration(field ast.OutputSchemaField, context processCo
 			kind:   symbolKindSchema,
 			record: exportedRecord,
 		}, nil
+	case ast.RecordMapType:
+		exportedValue, err := resolveExportedTypeReference(typedRef.Value, context.types, context.schemas, map[string]struct{}{}, map[string]struct{}{})
+		if err != nil {
+			return importedDeclaration{}, err
+		}
+		return importedDeclaration{
+			name:    field.Name,
+			kind:    symbolKindType,
+			typeRef: ast.RecordMapType{Value: exportedValue},
+		}, nil
 	}
 
 	exportedType, err := resolveExportedTypeReference(field.Type, context.types, context.schemas, map[string]struct{}{}, map[string]struct{}{})
@@ -1101,6 +1288,12 @@ func resolveExportedTypeReference(typeRef ast.TypeReference, types *typeRegistry
 		}
 
 		return ast.ArrayType{Element: element}, nil
+	case ast.RecordMapType:
+		value, err := resolveExportedTypeReference(ref.Value, types, schemas, aliasStack, schemaStack)
+		if err != nil {
+			return nil, err
+		}
+		return ast.RecordMapType{Value: value}, nil
 	case ast.UnionType:
 		members := make([]ast.TypeReference, 0, len(ref.Members))
 		for _, member := range ref.Members {
@@ -1316,6 +1509,8 @@ func validateTypeReference(typeRef ast.TypeReference, symbols *symbolTable, type
 		return nil
 	case ast.ArrayType:
 		return validateTypeReference(ref.Element, symbols, types, schemas, enums)
+	case ast.RecordMapType:
+		return validateTypeReference(ref.Value, symbols, types, schemas, enums)
 	case ast.UnionType:
 		_, err := resolveUnionRecordType(ref, symbols, types, schemas)
 		if err != nil && strings.Contains(err.Error(), "union members must be schemas") {
@@ -1472,7 +1667,7 @@ func validateOutputDirectiveStructure(output ast.OutputBlock) error {
 		return nil
 	}
 
-	var outputValue string
+	hasOutput := false
 	hasParse := false
 	hasParseFile := false
 	seenKinds := map[ast.OutputDirectiveKind]struct{}{}
@@ -1485,7 +1680,7 @@ func validateOutputDirectiveStructure(output ast.OutputBlock) error {
 
 		switch directive.Kind {
 		case ast.OutputDirectiveOutput:
-			outputValue = directive.Value
+			hasOutput = true
 		case ast.OutputDirectiveSchema:
 			if output.Mode == ast.OutputModeSchema {
 				return validationErrorf("schema directive is invalid when output mode is schema")
@@ -1512,9 +1707,16 @@ func validateOutputDirectiveStructure(output ast.OutputBlock) error {
 	if hasParse && hasParseFile {
 		return validationErrorf("parse and parse_file directives cannot be used together")
 	}
-
-	if outputValue == "" {
-		return validationErrorf("missing output directive")
+	if !hasParse && !hasParseFile {
+		hasSchemaDirective := false
+		for _, directive := range output.Directives {
+			if directive.Kind == ast.OutputDirectiveSchema {
+				hasSchemaDirective = true
+			}
+		}
+		if !hasOutput && !hasSchemaDirective {
+			return validationErrorf("missing output directive")
+		}
 	}
 
 	return nil
@@ -1611,7 +1813,7 @@ func outputParseSchemaName(directives []ast.OutputDirective, context processCont
 		return schemaNames[0], true, nil
 	}
 	if len(schemaNames) == 0 {
-		return "", false, validationErrorf("parse_file directive requires exactly one exported schema")
+		return "__parse_file", true, nil
 	}
 
 	return "", false, validationErrorf("parse_file directive is ambiguous without a schema directive")
@@ -1644,15 +1846,27 @@ func resolveParseFileExportedSchemaNames(directives []ast.OutputDirective, impor
 		return nil, err
 	}
 
-	exports, err := loadImportExports(resolvedPath, importRootDir, true, map[string]map[string]importedDeclaration{}, map[string]struct{}{})
+	contents, err := readMaceSource(resolvedPath)
+	if err != nil {
+		return nil, validationErrorf("unable to read import file %q", resolvedPath)
+	}
+	tokens, err := lex(contents)
 	if err != nil {
 		return nil, err
 	}
+	file, err := parser.New(tokens).ParseFile()
+	if err != nil {
+		return nil, validationErrorf("unable to parse import file %q: %s", resolvedPath, err)
+	}
+	if file.Output.Mode != ast.OutputModeSchema {
+		return nil, validationErrorf("parse_file target %q must output a schema", resolvedPath)
+	}
 
-	schemaNames := make([]string, 0, len(exports))
-	for _, declaration := range exports {
-		if declaration.kind == symbolKindSchema {
-			schemaNames = append(schemaNames, declaration.name)
+	schemaNames := make([]string, 0, len(file.Output.SchemaFields))
+	for _, field := range file.Output.SchemaFields {
+		named, ok := field.Type.(ast.NamedType)
+		if ok && field.Name == named.Name {
+			schemaNames = append(schemaNames, field.Name)
 		}
 	}
 
@@ -1669,9 +1883,9 @@ func hasParseFile(directives []ast.OutputDirective) bool {
 	return false
 }
 
-func validateDataOutputFields(fields []ast.OutputField, symbols *symbolTable) error {
+func validateDataOutputFields(fields []ast.OutputField, symbols *symbolTable, optionalParseVars map[string]struct{}) error {
 	for _, field := range fields {
-		if err := validateDataOutputExpression(field.Value, symbols); err != nil {
+		if err := validateDataOutputExpression(field.Value, symbols, optionalParseVars, map[string]struct{}{}); err != nil {
 			return err
 		}
 	}
@@ -1679,7 +1893,7 @@ func validateDataOutputFields(fields []ast.OutputField, symbols *symbolTable) er
 	return nil
 }
 
-func validateDataOutputExpression(expression ast.Expression, symbols *symbolTable) error {
+func validateDataOutputExpression(expression ast.Expression, symbols *symbolTable, optionalParseVars map[string]struct{}, guardedNames map[string]struct{}) error {
 	switch expr := expression.(type) {
 	case ast.NullLiteral:
 		return invalidNullUsageError()
@@ -1687,36 +1901,78 @@ func validateDataOutputExpression(expression ast.Expression, symbols *symbolTabl
 		if symbols.IsType(expr.Name) || symbols.IsSchema(expr.Name) {
 			return diagnosticErrorf(ErrorValue, CodeOutputValueDeclaration, DiagnosticFields{Name: expr.Name}, "output value %q cannot reference type or schema declaration", expr.Name)
 		}
+	case ast.MemberAccess:
+		// When the immediate target is an identifier that is an optional parse variable
+		// and it has not been guarded by an 'in' check, produce an error.
+		if id, ok := expr.Target.(ast.Identifier); ok {
+			if _, isOptional := optionalParseVars[id.Name]; isOptional {
+				if _, guarded := guardedNames[id.Name]; !guarded {
+					return diagnosticErrorf(ErrorValue, CodeOptionalFieldAccess, DiagnosticFields{Name: id.Name},
+						"optional field %q requires a presence check before access (use \"field\" in record ? ... : ...)", id.Name)
+				}
+			}
+		}
+		return validateDataOutputExpression(expr.Target, symbols, optionalParseVars, guardedNames)
 	case ast.ArrayLiteral:
 		for _, element := range expr.Elements {
-			if err := validateDataOutputExpression(element, symbols); err != nil {
+			if err := validateDataOutputExpression(element, symbols, optionalParseVars, guardedNames); err != nil {
 				return err
 			}
 		}
 	case ast.RecordLiteral:
 		for _, field := range expr.Fields {
-			if err := validateDataOutputExpression(field.Value, symbols); err != nil {
+			if err := validateDataOutputExpression(field.Value, symbols, optionalParseVars, guardedNames); err != nil {
 				return err
 			}
 		}
 	case ast.PrefixExpression:
-		return validateDataOutputExpression(expr.Right, symbols)
+		return validateDataOutputExpression(expr.Right, symbols, optionalParseVars, guardedNames)
 	case ast.InfixExpression:
-		if err := validateDataOutputExpression(expr.Left, symbols); err != nil {
+		if err := validateDataOutputExpression(expr.Left, symbols, optionalParseVars, guardedNames); err != nil {
 			return err
 		}
-		return validateDataOutputExpression(expr.Right, symbols)
+		return validateDataOutputExpression(expr.Right, symbols, optionalParseVars, guardedNames)
 	case ast.ConditionalExpression:
-		if err := validateDataOutputExpression(expr.Condition, symbols); err != nil {
+		if err := validateDataOutputExpression(expr.Condition, symbols, optionalParseVars, guardedNames); err != nil {
 			return err
 		}
-		if err := validateDataOutputExpression(expr.Then, symbols); err != nil {
+		// In the then-branch, fields mentioned in 'in' guards are narrowed to non-optional.
+		thenGuarded := extractGuardedNames(expr.Condition, guardedNames)
+		if err := validateDataOutputExpression(expr.Then, symbols, optionalParseVars, thenGuarded); err != nil {
 			return err
 		}
-		return validateDataOutputExpression(expr.Else, symbols)
+		return validateDataOutputExpression(expr.Else, symbols, optionalParseVars, guardedNames)
 	}
 
 	return nil
+}
+
+// extractGuardedNames collects field names narrowed by "field" in expr guards.
+// "field" in X → adds "field" to the guarded set.
+// cond1 && cond2 → merges guards from both.
+func extractGuardedNames(condition ast.Expression, existing map[string]struct{}) map[string]struct{} {
+	switch expr := condition.(type) {
+	case ast.InfixExpression:
+		if expr.Operator == lexer.TokenIn {
+			if field, ok := expr.Left.(ast.StringLiteral); ok {
+				fieldValue, err := parseStaticString(field.Lexeme)
+				if err != nil {
+					return existing
+				}
+				extended := make(map[string]struct{}, len(existing)+1)
+				for k := range existing {
+					extended[k] = struct{}{}
+				}
+				extended[fieldValue.String] = struct{}{}
+				return extended
+			}
+		}
+		if expr.Operator == lexer.TokenAndAnd {
+			left := extractGuardedNames(expr.Left, existing)
+			return extractGuardedNames(expr.Right, left)
+		}
+	}
+	return existing
 }
 
 func validateOutputSchema(schemaName string, items []ast.OutputField, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
@@ -1820,6 +2076,24 @@ func validateExpressionAgainstType(expression ast.Expression, expectedType value
 			}
 		}
 	case ValueRecord:
+		if expectedType.element != nil {
+			switch typed := expression.(type) {
+			case ast.RecordLiteral:
+				for _, field := range typed.Fields {
+					if err := validateExpressionAgainstType(field.Value, *expectedType.element, variables, symbols, types, schemas, enums); err != nil {
+						return err
+					}
+				}
+			case ast.ConditionalExpression:
+				if err := validateExpressionAgainstType(typed.Then, expectedType, variables, symbols, types, schemas, enums); err != nil {
+					return err
+				}
+				if err := validateExpressionAgainstType(typed.Else, expectedType, variables, symbols, types, schemas, enums); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
 		if expectedType.record == nil && expectedType.schemaName == "" {
 			return nil
 		}
@@ -2029,11 +2303,19 @@ func validateEvaluatedValueAgainstType(value Value, expectedType valueType, symb
 			}
 		}
 	case ValueRecord:
-		if expectedType.record == nil && expectedType.schemaName == "" {
-			return nil
-		}
 		if value.Kind != ValueRecord {
 			return typeMismatchError(expectedType.name(), value.kindName())
+		}
+		if expectedType.element != nil {
+			for _, fieldValue := range value.Record {
+				if err := validateEvaluatedValueAgainstType(fieldValue, *expectedType.element, symbols, types, schemas, enums); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		if expectedType.record == nil && expectedType.schemaName == "" {
+			return nil
 		}
 
 		recordType := expectedType.record
@@ -3321,6 +3603,10 @@ func (t valueType) name() string {
 		}
 		name = "array"
 	case ValueRecord:
+		if t.element != nil {
+			name = fmt.Sprintf("record<%s>", t.element.name())
+			break
+		}
 		if t.schemaName != "" {
 			name = t.schemaName
 			break
@@ -3352,6 +3638,12 @@ func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *ty
 			return valueType{}, err
 		}
 		return valueType{kind: ValueArray, element: &element}, nil
+	case ast.RecordMapType:
+		value, err := resolveValueType(ref.Value, symbols, types, schemas, enums)
+		if err != nil {
+			return valueType{}, err
+		}
+		return valueType{kind: ValueRecord, element: &value}, nil
 	case ast.ChoiceType:
 		return resolveChoiceType(ref, types)
 	case ast.UnionType:
@@ -3400,15 +3692,13 @@ func validateVariantValueTypes(members []valueType) error {
 	members = flattenVariantValueTypes(members)
 
 	for _, member := range members {
-		if member.kind == ValueArray {
-			return validationErrorf("variant members must be primitives or schemas")
-		}
 		switch {
 		case len(member.choiceValues) > 0:
+		case member.kind == ValueArray:
 		case member.kind == ValueRecord:
 		case member.kind == ValueString || member.kind == ValueInt || member.kind == ValueFloat || member.kind == ValueHexInt || member.kind == ValueHexFloat || member.kind == ValueBoolean:
 		default:
-			return validationErrorf("variant members must be primitives or schemas")
+			return validationErrorf("variant members must be primitives, arrays, or schemas")
 		}
 	}
 
@@ -3529,6 +3819,12 @@ func schemaTypeFromTypeReference(typeRef ast.TypeReference, types *typeRegistry)
 		}
 
 		return SchemaType{Kind: SchemaTypeArray, Element: &element}, nil
+	case ast.RecordMapType:
+		value, err := schemaTypeFromTypeReference(ref.Value, types)
+		if err != nil {
+			return SchemaType{}, err
+		}
+		return SchemaType{Kind: SchemaTypeRecordMap, Element: &value}, nil
 	case ast.UnionType:
 		members := make([]SchemaType, 0, len(ref.Members))
 		for _, member := range ref.Members {
@@ -3590,6 +3886,9 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 		}
 		if targetType.kind != ValueRecord {
 			return valueType{}, validationErrorf("member access requires a record value")
+		}
+		if targetType.element != nil {
+			return *targetType.element, nil
 		}
 		if targetType.record == nil {
 			if targetType.schemaName == "" {

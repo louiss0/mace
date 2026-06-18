@@ -1,4 +1,0 @@
-[output = data, schema = Envelope, schema_file = "./shared.mace"]
-{
-  result: { name: "Ada", },
-}

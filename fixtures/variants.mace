@@ -1,0 +1,68 @@
+|============================================================================================================|
+type StringValue: variant[string, choice["alpha", "beta"]];
+type IntValue: variant[int, choice[1, 2]];
+type FloatValue: variant[float, choice[1.5, 2.5]];
+type BooleanValue: variant[boolean, choice[true, false]];
+type HexIntValue: variant[hex_int, choice[0x1, 0x2]];
+type HexFloatValue: variant[hex_float, choice[0x1.0, 0x2.0]];
+type ChoiceValue: choice[1, 2, 3, 4, 5, 6];
+
+type LiteralString: choice["alpha"];
+type LiteralInt: choice[1];
+type LiteralFloat: choice[1.5];
+type LiteralBoolean: choice[true];
+type LiteralHexInt: choice[0xA];
+type LiteralHexFloat: choice[0x1.8];
+
+type ArrayVariant: variant[array<string>, array<int>];
+type ArrayNest1: variant[array<string>, array<array<string>>];
+type ArrayNest2: variant[array<array<string>>, array<array<array<string>>>];
+type ArrayNest3: variant[array<array<array<string>>>, array<array<array<array<string>>>>];
+type ArrayNest4: variant[array<array<array<array<string>>>>, array<array<array<array<array<string>>>>>];
+type ArrayNest5: variant[array<array<array<array<array<string>>>>>, array<array<array<array<array<int>>>>>];
+
+type SchemaPair: variant[User, Team];
+type OptionalSchemaPair: variant[PrimaryUser, SecondaryUser];
+
+schema User: {
+  name: string,
+  status: Status,
+};
+
+schema Team: {
+  name: string,
+  size: int,
+};
+
+schema PrimaryUser: {
+  id: string,
+  nickname?: string,
+};
+
+schema SecondaryUser: {
+  id: string,
+  email?: string,
+};
+
+type Status: choice["Active", "Disabled"];
+|============================================================================================================|
+
+[output = schema]
+{
+  string_value: StringValue,
+  int_value: IntValue,
+  float_value: FloatValue,
+  boolean_value: BooleanValue,
+  hex_int_value: HexIntValue,
+  hex_float_value: HexFloatValue,
+  choice_value: ChoiceValue,
+  literal_string: LiteralString,
+  literal_int: LiteralInt,
+  literal_float: LiteralFloat,
+  literal_boolean: LiteralBoolean,
+  literal_hex_int: LiteralHexInt,
+  literal_hex_float: LiteralHexFloat,
+  array_variant: ArrayVariant,
+  schema_pair: SchemaPair,
+  optional_schema_pair: OptionalSchemaPair,
+}
