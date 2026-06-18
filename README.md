@@ -22,7 +22,7 @@ is documented in [the formal specification](./docs/src/content/docs/reference/sp
 - Literal `choice[...]` types for user-selectable value domains
 - Choice-aware editor completions for literal domains and variants
 - Deterministic expression evaluation
-- Output validation against local schemas or external schema files
+- Output validation against local schemas or external schema files in implicit or explicit data outputs
 - Relative imports between Mace files and remote imports over HTTP(S)
 - Schema-validated runtime input through `parse = <Schema>` and `parse_file = "<path>"` in data outputs, including remote schema files over HTTP(S); both inject matching input fields into the output block as global variables, `parse` selects an already-available schema, and `parse_file` loads schema declarations and can infer the schema when the referenced file exports exactly one schema
 - Canonical source formatting
