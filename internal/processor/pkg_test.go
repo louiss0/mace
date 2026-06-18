@@ -1260,55 +1260,117 @@ from "../shared.mace" import value;
 		})
 	})
 
-	DescribeTable("validates local schema_file outputs without schema directive",
-		func(directive string) {
+	DescribeTable("validates local schema_file output schema structure",
+		func(schemaFile string, validOutput string, invalidOutput string, message string) {
 			workspace, err := os.MkdirTemp("", "mace-schema-file-validation-*")
 			tAssert.NoError(err)
 			defer func() { _ = os.RemoveAll(workspace) }()
 
-			writeFixtureFile(workspace, "schema.mace", `|===|
-schema User: { name: string; };
-|===|
-[output = schema]
-{
-  User: User;
-}`)
-
-			input := fmt.Sprintf(`%s
-{
-  name: "Ada";
-}`, directive)
+			writeFixtureFile(workspace, "schema.mace", schemaFile)
 
 			processor := New()
-			result, err := processor.ProcessInDir(input, workspace)
-			tAssert.NoError(err)
-			assertExpectedValue(requireOutputValue(result, "name"), expectedValue{kind: ValueString, string: "Ada"})
+			for _, directive := range []string{`[schema_file = "./schema.mace"]`, `[output = data, schema_file = "./schema.mace"]`} {
+				_, err = processor.ProcessInDir(directive+"\n"+validOutput, workspace)
+				tAssert.NoError(err)
+			}
+
+			_, err = processor.ProcessInDir(`[schema_file = "./schema.mace"]`+"\n"+invalidOutput, workspace)
+			tAssert.Error(err)
+			tAssert.ErrorContains(err, message)
 		},
-		Entry("implicit data output", `[schema_file = "./schema.mace"]`),
-		Entry("explicit data output", `[output = data, schema_file = "./schema.mace"]`),
-	)
-
-	It("rejects local implicit schema_file outputs that do not match the inferred schema", func() {
-		workspace, err := os.MkdirTemp("", "mace-schema-file-invalid-*")
-		tAssert.NoError(err)
-		defer func() { _ = os.RemoveAll(workspace) }()
-
-		writeFixtureFile(workspace, "schema.mace", `|===|
-schema User: { name: string; };
+		Entry("top-level fields with optional fields", `[output = schema]
+{
+  name: string;
+  version: string;
+  exports?: record<string>;
+}`, `{
+  name: "mace";
+  version: "1.0.0";
+}`, `{
+  name: "mace";
+}`, `missing required field "version"`),
+		Entry("nested fields with optional fields", `[output = schema]
+{
+  user: {
+    name: string;
+    age?: int;
+    personality: choice["nice", "naive", "hateful"];
+  };
+}`, `{
+  user: {
+    name: "Ada";
+    personality: "nice";
+  };
+}`, `{
+  name: "Ada";
+  personality: "nice";
+}`, `missing required field "user"`),
+		Entry("many fields with records of known types", `|===|
+schema Service: {
+  image: string;
+  replicas?: int;
+};
 |===|
 [output = schema]
 {
-  User: User;
-}`)
-
-		processor := New()
-		_, err = processor.ProcessInDir(`[schema_file = "./schema.mace"]
+  services: record<Service>;
+  labels?: record<string>;
+  ports: record<int>;
+}`, `{
+  services: {
+    api: { image: "nginx"; replicas: 2; };
+    worker: { image: "worker"; };
+  };
+  ports: {
+    api: 8080;
+    worker: 9090;
+  };
+}`, `{
+  services: {
+    api: { image: "nginx"; replicas: "two"; };
+  };
+  ports: {
+    api: 8080;
+  };
+}`, `type mismatch`),
+		Entry("fields that have records as types", `[output = schema]
 {
-  age: 27;
-}`, workspace)
-		tAssert.Error(err)
-		tAssert.ErrorContains(err, `missing required field "name" for schema "User"`)
-	})
+  user: {
+    name: string;
+    age?: int;
+  };
+  package: {
+    name: string;
+    version: string;
+    exports: record<string>;
+  };
+  audit?: {
+    created_by: string;
+  };
+}`, `{
+  user: {
+    name: "Ada";
+  };
+  package: {
+    name: "mace";
+    version: "1.0.0";
+    exports: {
+      main: "./dist/index.js";
+    };
+  };
+}`, `{
+  user: {
+    name: "Ada";
+  };
+  package: {
+    name: "mace";
+    version: "1.0.0";
+    exports: {
+      main: 1;
+    };
+  };
+}`, `type mismatch`),
+	)
 
 	It("rejects schema_file paths that escape the activation directory", func() {
 		workspace, err := os.MkdirTemp("", "mace-schema-file-root-boundary-*")
@@ -1387,49 +1449,123 @@ from %q import value;
 		assertExpectedValue(requireOutputValue(result, "result"), expectedValue{kind: ValueString, string: "Ada"})
 	})
 
-	DescribeTable("validates remote schema_file outputs over http",
-		func(formatInput func(string) string) {
+	DescribeTable("validates remote schema_file output schema structure over http",
+		func(schemaFile string, validOutput string, invalidOutput string, message string) {
 			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 				switch request.URL.Path {
 				case "/schema.mace":
-					_, _ = writer.Write([]byte(`|===|
-schema User: { name: string; };
-|===|
-[output = schema]
-{
-  User: User;
-}`))
+					_, _ = writer.Write([]byte(schemaFile))
 				default:
 					http.NotFound(writer, request)
 				}
 			}))
 			defer server.Close()
 
-			input := formatInput(server.URL + "/schema.mace")
-
 			processor := New()
-			result, err := processor.ProcessInDir(input, "../..")
-			tAssert.NoError(err)
-			assertExpectedValue(requireOutputValue(result, "name"), expectedValue{kind: ValueString, string: "Ada"})
+			for _, directive := range []string{
+				fmt.Sprintf(`[schema_file = %q]`, server.URL+"/schema.mace"),
+				fmt.Sprintf(`[output = data, schema_file = %q]`, server.URL+"/schema.mace"),
+			} {
+				_, err := processor.ProcessInDir(directive+"\n"+validOutput, "../..")
+				tAssert.NoError(err)
+			}
+
+			_, err := processor.ProcessInDir(fmt.Sprintf(`[schema_file = %q]`, server.URL+"/schema.mace")+"\n"+invalidOutput, "../..")
+			tAssert.Error(err)
+			tAssert.ErrorContains(err, message)
 		},
-		Entry("implicit data output", func(schemaURL string) string {
-			return fmt.Sprintf(`[schema_file = %q]
+		Entry("top-level fields with optional fields", `[output = schema]
 {
-  name: "Ada";
-}`, schemaURL)
-		}),
-		Entry("explicit data output", func(schemaURL string) string {
-			return fmt.Sprintf(`[output = data, schema_file = %q]
+  name: string;
+  version: string;
+  exports?: record<string>;
+}`, `{
+  name: "mace";
+  version: "1.0.0";
+}`, `{
+  name: "mace";
+}`, `missing required field "version"`),
+		Entry("nested fields with optional fields", `[output = schema]
 {
+  user: {
+    name: string;
+    age?: int;
+    personality: choice["nice", "naive", "hateful"];
+  };
+}`, `{
+  user: {
+    name: "Ada";
+    personality: "nice";
+  };
+}`, `{
   name: "Ada";
-}`, schemaURL)
-		}),
-		Entry("explicit schema directive", func(schemaURL string) string {
-			return fmt.Sprintf(`[output = data, schema = User, schema_file = %q]
+  personality: "nice";
+}`, `missing required field "user"`),
+		Entry("many fields with records of known types", `|===|
+schema Service: {
+  image: string;
+  replicas?: int;
+};
+|===|
+[output = schema]
 {
-  name: "Ada";
-}`, schemaURL)
-		}),
+  services: record<Service>;
+  labels?: record<string>;
+  ports: record<int>;
+}`, `{
+  services: {
+    api: { image: "nginx"; replicas: 2; };
+    worker: { image: "worker"; };
+  };
+  ports: {
+    api: 8080;
+    worker: 9090;
+  };
+}`, `{
+  services: {
+    api: { image: "nginx"; replicas: "two"; };
+  };
+  ports: {
+    api: 8080;
+  };
+}`, `type mismatch`),
+		Entry("fields that have records as types", `[output = schema]
+{
+  user: {
+    name: string;
+    age?: int;
+  };
+  package: {
+    name: string;
+    version: string;
+    exports: record<string>;
+  };
+  audit?: {
+    created_by: string;
+  };
+}`, `{
+  user: {
+    name: "Ada";
+  };
+  package: {
+    name: "mace";
+    version: "1.0.0";
+    exports: {
+      main: "./dist/index.js";
+    };
+  };
+}`, `{
+  user: {
+    name: "Ada";
+  };
+  package: {
+    name: "mace";
+    version: "1.0.0";
+    exports: {
+      main: 1;
+    };
+  };
+}`, `type mismatch`),
 	)
 
 	It("loads remote parse_file output schema records over http", func() {

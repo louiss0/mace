@@ -1016,8 +1016,20 @@ func resolveSchemaFileDeclarations(directives []ast.OutputDirective, importBaseD
 		}
 	}
 
+	if hasSchemaFile(directives) {
+		record, err := loadOutputSchemaRecord(resolvedPath, importRootDir, "schema_file")
+		if err != nil {
+			return nil, err
+		}
+		outputDeclarations = append(outputDeclarations, importedDeclaration{
+			name:   "__schema_file",
+			kind:   symbolKindSchema,
+			record: record,
+		})
+	}
+
 	if hasParseFile(directives) {
-		record, err := loadOutputSchemaRecord(resolvedPath, importRootDir)
+		record, err := loadOutputSchemaRecord(resolvedPath, importRootDir, "parse_file")
 		if err != nil {
 			return nil, err
 		}
@@ -1031,7 +1043,7 @@ func resolveSchemaFileDeclarations(directives []ast.OutputDirective, importBaseD
 	return outputDeclarations, nil
 }
 
-func loadOutputSchemaRecord(path string, importRootDir string) (ast.RecordType, error) {
+func loadOutputSchemaRecord(path string, importRootDir string, directiveName string) (ast.RecordType, error) {
 	contents, err := readMaceSource(path)
 	if err != nil {
 		return ast.RecordType{}, validationErrorf("unable to read import file %q", path)
@@ -1045,7 +1057,7 @@ func loadOutputSchemaRecord(path string, importRootDir string) (ast.RecordType, 
 		return ast.RecordType{}, validationErrorf("unable to parse import file %q: %s", path, err)
 	}
 	if file.Output.Mode != ast.OutputModeSchema {
-		return ast.RecordType{}, validationErrorf("parse_file target %q must output a schema", path)
+		return ast.RecordType{}, validationErrorf("%s target %q must output a schema", directiveName, path)
 	}
 	context, err := buildProcessContext(file.Imports, file.Script, basePathDir(path), importRootDir, true, nil)
 	if err != nil {
@@ -1801,22 +1813,11 @@ func activeOutputSchemaName(directives []ast.OutputDirective, context processCon
 	if schemaName, ok := outputSchemaName(directives); ok {
 		return schemaName, true, nil
 	}
-	if !hasSchemaFile(directives) {
-		return "", false, nil
+	if hasSchemaFile(directives) {
+		return "__schema_file", true, nil
 	}
 
-	schemaNames, err := resolveSchemaFileOutputSchemaNames(directives, context.importBaseDir, context.importRootDir)
-	if err != nil {
-		return "", false, err
-	}
-	if len(schemaNames) == 1 {
-		return schemaNames[0], true, nil
-	}
-	if len(schemaNames) == 0 {
-		return "", false, validationErrorf("schema_file directive requires a schema directive or a schema output file")
-	}
-
-	return "", false, validationErrorf("schema_file directive is ambiguous without a schema directive")
+	return "", false, nil
 }
 
 func outputParseSchemeName(directives []ast.OutputDirective) (string, bool) {
@@ -1851,10 +1852,6 @@ func outputParseSchemaName(directives []ast.OutputDirective, context processCont
 	}
 
 	return "", false, validationErrorf("parse_file directive is ambiguous without a schema directive")
-}
-
-func resolveSchemaFileOutputSchemaNames(directives []ast.OutputDirective, importBaseDir string, importRootDir string) ([]string, error) {
-	return resolveOutputSchemaNames(directives, ast.OutputDirectiveSchemaFile, importBaseDir, importRootDir)
 }
 
 func resolveParseFileExportedSchemaNames(directives []ast.OutputDirective, importBaseDir string, importRootDir string) ([]string, error) {

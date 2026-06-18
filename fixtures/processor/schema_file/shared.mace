@@ -5,5 +5,5 @@ schema Envelope: { result: User, };
 |========================================|
 [output=schema]
 {
-  envelope: Envelope,
+  result: User,
 }
