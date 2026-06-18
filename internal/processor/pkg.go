@@ -1707,12 +1707,6 @@ func validateOutputDirectiveStructure(output ast.OutputBlock) error {
 	if hasParse && hasParseFile {
 		return validationErrorf("parse and parse_file directives cannot be used together")
 	}
-	if hasParse && !hasOutput {
-		return validationErrorf("parse directive requires output = data")
-	}
-	if hasParseFile && !hasOutput {
-		return validationErrorf("parse_file directive requires output = data")
-	}
 	if !hasParse && !hasParseFile {
 		hasSchemaDirective := false
 		for _, directive := range output.Directives {
