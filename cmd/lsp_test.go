@@ -165,12 +165,6 @@ func writeWorkspaceFile(root string, relativePath string, contents string) strin
 	return testFileURI(path)
 }
 
-func readFixtureFile(path string) string {
-	contents, err := os.ReadFile(filepath.Clean(path))
-	tAssert.NoError(err)
-	return string(contents)
-}
-
 func testFileURI(path string) string {
 	return fileURI(path)
 }

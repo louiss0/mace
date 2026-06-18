@@ -1,0 +1,23 @@
+|=========================================|
+
+schema User: {
+  id: string, /# The user's display name
+  name: string /# The user's display name
+};
+
+User user = {
+  id: "user_1",
+
+  name: "Ada",
+};
+
+string greeting = "Hello $(user.name)";
+|=========================================|
+[output = data, schema = User]
+"""
+# User Payload
+"""
+{
+  id: user.id /# Emitted user identifier,
+  name: user.name /# Emitted user name
+}

@@ -2,8 +2,6 @@ package parser
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -53,15 +51,6 @@ func parseFileInput(input string) (ast.File, error) {
 	}
 
 	return New(tokens).ParseFile()
-}
-
-func parseFixtureFile(path string) (ast.File, error) {
-	contents, err := os.ReadFile(filepath.Clean(path))
-	if err != nil {
-		return ast.File{}, err
-	}
-
-	return parseFileInput(string(contents))
 }
 
 func requireIdentifier(expression ast.Expression, name string) ast.Identifier {

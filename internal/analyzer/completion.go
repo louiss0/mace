@@ -1403,50 +1403,6 @@ func availableSchemaNames(document document, uri protocol.DocumentUri, linePrefi
 	return sortStrings(lo.Keys(model.schemas))
 }
 
-func importableSchemaIdentifiers(document document, uri protocol.DocumentUri, importDecl ast.ImportDeclaration) ([]string, bool) {
-	pathValue, ok := stringLiteralValue(importDecl.Path)
-	if !ok {
-		return nil, false
-	}
-
-	documentPath, ok := documentPathFromURI(uri)
-	if !ok {
-		return nil, false
-	}
-
-	resolvedPath, err := resolveBoundedPathInRoot(filepath.Dir(documentPath), completionRoot(document.analysis, uri), pathValue)
-	if err != nil {
-		return nil, false
-	}
-	contents, err := os.ReadFile(resolvedPath)
-	if err != nil {
-		return nil, false
-	}
-
-	file, err := parseFile(string(contents))
-	if err != nil {
-		return nil, false
-	}
-
-	if importDecl.ImportAs != nil {
-		if file.Output.Mode == ast.OutputModeSchema && len(file.Output.SchemaFields) > 0 {
-			return []string{importDecl.ImportAs.LocalName()}, true
-		}
-		return nil, true
-	}
-
-	exportedSchemaNames := lo.Map(file.Output.SchemaFields, func(field ast.OutputSchemaField, _ int) string {
-		return field.Name
-	})
-
-	return lo.FilterMap(importDecl.Identifiers, func(identifier ast.ImportedIdentifier, _ int) (string, bool) {
-		if lo.Contains(exportedSchemaNames, identifier.Name) {
-			return identifier.LocalName(), true
-		}
-		return "", false
-	}), true
-}
-
 func importedPaths(document document, linePrefix string) []string {
 	return lo.FilterMap(currentImports(document, linePrefix), func(importDecl ast.ImportDeclaration, _ int) (string, bool) {
 		pathValue, ok := stringLiteralValue(importDecl.Path)
@@ -2635,22 +2591,6 @@ func outputDirectiveValue(directives []ast.OutputDirective, kind ast.OutputDirec
 func hasOutputDirective(directives []ast.OutputDirective, kind ast.OutputDirectiveKind) bool {
 	_, ok := outputDirectiveValue(directives, kind)
 	return ok
-}
-
-func mergeDeclarationDefinitions(base []declarationDefinition, extras []declarationDefinition) []declarationDefinition {
-	merged := append([]declarationDefinition{}, base...)
-	seen := map[string]struct{}{}
-	for _, declaration := range merged {
-		seen[declaration.Name] = struct{}{}
-	}
-	for _, declaration := range extras {
-		if _, ok := seen[declaration.Name]; ok {
-			continue
-		}
-		seen[declaration.Name] = struct{}{}
-		merged = append(merged, declaration)
-	}
-	return merged
 }
 
 func filterOutputDeclarationDefinitions(definitions []declarationDefinition) []declarationDefinition {

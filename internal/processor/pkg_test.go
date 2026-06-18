@@ -336,7 +336,7 @@ User user = {
   name: string /# Name before separator,
   age?: int, /# Age after separator
 }`),
-		Entry("doc fixtures", "../../fixtures/processor/docs/public_contract.mace"),
+		Entry("doc fixtures", "../../fixtures/processor/doc_fixtures/public_contract.mace"),
 	)
 
 	DescribeTable("rejects invalid script blocks",
@@ -2157,7 +2157,7 @@ array<array<int>> result = [[1], ["two"]];
 	It("imports a data output as a named record with import-as", func() {
 		workspace, err := os.MkdirTemp("", "mace-processor-import-as-data-*")
 		tAssert.NoError(err)
-		defer os.RemoveAll(workspace)
+		defer func() { _ = os.RemoveAll(workspace) }()
 
 		sharedPath := filepath.Join(workspace, "shared.mace")
 		tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = data]
@@ -2193,7 +2193,7 @@ from "./shared.mace" import-as Shared;
 		func(accessor string, expected expectedValue) {
 			workspace, err := os.MkdirTemp("", "mace-processor-import-as-data-depth-*")
 			tAssert.NoError(err)
-			defer os.RemoveAll(workspace)
+			defer func() { _ = os.RemoveAll(workspace) }()
 
 			sharedPath := filepath.Join(workspace, "shared.mace")
 			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = data]
@@ -2239,7 +2239,7 @@ from "./shared.mace" import-as Shared;
 		func(accessor string, input Value, expected expectedValue) {
 			workspace, err := os.MkdirTemp("", "mace-processor-import-as-schema-depth-*")
 			tAssert.NoError(err)
-			defer os.RemoveAll(workspace)
+			defer func() { _ = os.RemoveAll(workspace) }()
 
 			sharedPath := filepath.Join(workspace, "shared.mace")
 			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = schema]

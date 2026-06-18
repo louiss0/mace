@@ -331,7 +331,7 @@ schema Package: { name: string; project: string; };
 	It("warns when parse_file directives inject unknown runtime values", func() {
 		workspace, err := os.MkdirTemp("", "mace-analysis-parse-file-*")
 		tAssert.NoError(err)
-		defer os.RemoveAll(workspace)
+		defer func() { _ = os.RemoveAll(workspace) }()
 
 		writeAnalysisFile(workspace, "runtime.mace", `[output = schema]
 {

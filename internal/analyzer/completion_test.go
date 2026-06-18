@@ -336,7 +336,7 @@ schema Runtime: { env: string; };
 		It("does not suggest imported schema names as output expressions", func() {
 			workspace, err := os.MkdirTemp("", "mace-analyzer-output-schema-*")
 			tAssert.NoError(err)
-			defer os.RemoveAll(workspace)
+			defer func() { _ = os.RemoveAll(workspace) }()
 
 			sharedPath := filepath.Join(workspace, "shared.mace")
 			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = schema]
@@ -370,7 +370,7 @@ from "./shared.mace" import Runtime;
 		It("suggests import-as data aliases as output variables", func() {
 			workspace, err := os.MkdirTemp("", "mace-analyzer-import-as-data-*")
 			tAssert.NoError(err)
-			defer os.RemoveAll(workspace)
+			defer func() { _ = os.RemoveAll(workspace) }()
 
 			sharedPath := filepath.Join(workspace, "shared.mace")
 			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = data]
@@ -408,7 +408,7 @@ from "./shared.mace" import-as Shared;
 		It("completes members for import-as data aliases", func() {
 			workspace, err := os.MkdirTemp("", "mace-analyzer-import-as-data-members-*")
 			tAssert.NoError(err)
-			defer os.RemoveAll(workspace)
+			defer func() { _ = os.RemoveAll(workspace) }()
 
 			sharedPath := filepath.Join(workspace, "shared.mace")
 			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = data]
@@ -448,7 +448,7 @@ from "./shared.mace" import-as Shared;
 			func(cursorExpr string, expectedLabels []string) {
 				workspace, err := os.MkdirTemp("", "mace-analyzer-import-as-data-depth-*")
 				tAssert.NoError(err)
-				defer os.RemoveAll(workspace)
+				defer func() { _ = os.RemoveAll(workspace) }()
 
 				sharedPath := filepath.Join(workspace, "shared.mace")
 				tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = data]
@@ -505,7 +505,7 @@ from "./shared.mace" import-as Shared;
 			func(cursorExpr string, expectedLabels []string) {
 				workspace, err := os.MkdirTemp("", "mace-analyzer-import-as-schema-depth-*")
 				tAssert.NoError(err)
-				defer os.RemoveAll(workspace)
+				defer func() { _ = os.RemoveAll(workspace) }()
 
 				sharedPath := filepath.Join(workspace, "shared.mace")
 				tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = schema]
@@ -561,7 +561,7 @@ from "./shared.mace" import-as Shared;
 		It("suggests import-as schema aliases in directive completions", func() {
 			workspace, err := os.MkdirTemp("", "mace-analyzer-import-as-schema-*")
 			tAssert.NoError(err)
-			defer os.RemoveAll(workspace)
+			defer func() { _ = os.RemoveAll(workspace) }()
 
 			sharedPath := filepath.Join(workspace, "shared.mace")
 			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = schema]
@@ -623,7 +623,7 @@ schema Runtime: { env: string; region: string; };
 		It("suggests parse_file variables when previous output fields use commas", func() {
 			workspace, err := os.MkdirTemp("", "mace-analyzer-parse-file-commas-*")
 			tAssert.NoError(err)
-			defer os.RemoveAll(workspace)
+			defer func() { _ = os.RemoveAll(workspace) }()
 
 			runtimePath := filepath.Join(workspace, "runtime.mace")
 			tAssert.NoError(os.WriteFile(runtimePath, []byte(`[output = schema]
@@ -825,7 +825,7 @@ schema User: {
 		It("completes parse_file schema fields via member access chain", func() {
 			workspace, err := os.MkdirTemp("", "mace-analyzer-parse-file-member-*")
 			tAssert.NoError(err)
-			defer os.RemoveAll(workspace)
+			defer func() { _ = os.RemoveAll(workspace) }()
 
 			tAssert.NoError(os.WriteFile(filepath.Join(workspace, "schema.mace"), []byte(`[output = schema]
 {
@@ -856,7 +856,7 @@ schema User: {
 		It("completes members for exported parse_file props", func() {
 			workspace, err := os.MkdirTemp("", "mace-analyzer-parse-file-export-members-*")
 			tAssert.NoError(err)
-			defer os.RemoveAll(workspace)
+			defer func() { _ = os.RemoveAll(workspace) }()
 
 			tAssert.NoError(os.WriteFile(filepath.Join(workspace, "schema.mace"), []byte(`|===|
 schema Project: {

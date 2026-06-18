@@ -1,0 +1,35 @@
+|=======================================|
+type UserID: string;
+
+gen_doc UserID {
+  summary: "A stable user identifier.",
+};
+
+schema User: {
+  id: UserID,
+  name: string,
+  age?: int,
+};
+
+schema_doc User {
+  summary: "Represents a user",
+  description: """
+# User
+
+A reusable schema exposed to imports.
+""",
+  props: {
+    id: "Stable user identifier",
+    name: "The user's display name",
+    age: "Optional age in years",
+  },
+};
+|=======================================|
+[output = schema]
+"""
+# Public User Contract
+"""
+{
+  user: User /# Public user schema,
+  user_id: UserID /# Public user identifier type,
+}

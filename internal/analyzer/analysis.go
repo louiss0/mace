@@ -3242,10 +3242,6 @@ func tokenProtocolRange(token lexer.Token) protocol.Range {
 	return protocol.Range{Start: start, End: end}
 }
 
-func collectDeclarations(file ast.File, result *processor.Result, importBaseDir string) []declarationDefinition {
-	return declarationsFromSymbols(collectSemanticSymbols(file, nil, result, filepath.Join(importBaseDir, "document.mace")))
-}
-
 func collectDeclarationsExcludingParsed(file ast.File, result *processor.Result, importBaseDir string) []declarationDefinition {
 	symbols := collectSemanticSymbols(file, nil, result, filepath.Join(importBaseDir, "document.mace"))
 	symbols = lo.Filter(symbols, func(symbol semanticSymbol, _ int) bool {
