@@ -1365,6 +1365,41 @@ schema User: { name: string; };
 		assertExpectedValue(requireOutputValue(result, "name"), expectedValue{kind: ValueString, string: "Ada"})
 	})
 
+	It("loads remote parse_file output schema records over http", func() {
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			switch request.URL.Path {
+			case "/shared.mace":
+				_, _ = writer.Write([]byte(`[output = schema]
+{
+  User: { name: string; };
+}`))
+			case "/schema.mace":
+				_, _ = writer.Write([]byte(`|===|
+from "./shared.mace" import User;
+|===|
+[output = schema]
+{
+  user: User;
+}`))
+			default:
+				http.NotFound(writer, request)
+			}
+		}))
+		defer server.Close()
+
+		processor := NewWithInput(map[string]Value{
+			"user": {Kind: ValueRecord, Record: map[string]Value{
+				"name": {Kind: ValueString, String: "Ada"},
+			}},
+		})
+		result, err := processor.ProcessInDir(fmt.Sprintf(`[output = data, parse_file = %q]
+{
+  result: user.name;
+}`, server.URL+"/schema.mace"), server.URL)
+		tAssert.NoError(err)
+		assertExpectedValue(requireOutputValue(result, "result"), expectedValue{kind: ValueString, string: "Ada"})
+	})
+
 	It("resolves relative imports inside remote mace files", func() {
 		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			switch request.URL.Path {

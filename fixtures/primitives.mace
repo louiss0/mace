@@ -1,4 +1,4 @@
-|===|
+|===================================|
 string plain = "Ada";
 string single = 'Ada';
 string block = """Hello
@@ -10,7 +10,7 @@ float ratio = 3.14;
 hex_int color = 0xFF;
 hex_float fraction = 0x2.8;
 boolean enabled = true;
-|===|
+|===================================|
 [output = data]
 {
   plain: plain,

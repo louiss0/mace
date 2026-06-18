@@ -1028,11 +1028,11 @@ func resolveSchemaFileDeclarations(directives []ast.OutputDirective, importBaseD
 }
 
 func loadOutputSchemaRecord(path string, importRootDir string) (ast.RecordType, error) {
-	contents, err := os.ReadFile(path)
+	contents, err := readMaceSource(path)
 	if err != nil {
 		return ast.RecordType{}, validationErrorf("unable to read import file %q", path)
 	}
-	tokens, err := lex(string(contents))
+	tokens, err := lex(contents)
 	if err != nil {
 		return ast.RecordType{}, err
 	}
@@ -1043,7 +1043,7 @@ func loadOutputSchemaRecord(path string, importRootDir string) (ast.RecordType, 
 	if file.Output.Mode != ast.OutputModeSchema {
 		return ast.RecordType{}, validationErrorf("parse_file target %q must output a schema", path)
 	}
-	context, err := buildProcessContext(file.Imports, file.Script, filepath.Dir(path), importRootDir, true, nil)
+	context, err := buildProcessContext(file.Imports, file.Script, basePathDir(path), importRootDir, true, nil)
 	if err != nil {
 		return ast.RecordType{}, err
 	}

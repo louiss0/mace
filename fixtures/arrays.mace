@@ -1,3 +1,4 @@
+|====================================================================================|
 array<string> strings = ["a", "b"];
 array<int> integers = [1, 2];
 array<float> floats = [1.5, 2.5];
@@ -18,3 +19,4 @@ array<array<string>> empty2 = [["filled"], []];
 array<array<array<string>>> empty3 = [[[["filled"]]], [[]]];
 array<array<array<array<string>>>> empty4 = [[[[["filled"]]]], [[[]]]];
 array<array<array<array<array<string>>>>> empty5 = [[[[[["filled"]]]]], [[[[[]]]]]];
+|====================================================================================|
