@@ -1466,6 +1466,8 @@ var _ = Describe("Output block", func() {
 		Entry("unknown schema in directive", "[output = data, schema = Missing] {}", "unknown schema"),
 		Entry("schema directive is invalid in schema mode", "[output = schema, schema = User] {}", "schema directive"),
 		Entry("schema_file directive is invalid in schema mode", `[output = schema, schema_file = "./user.mace"] {}`, "schema_file"),
+		Entry("parse requires explicit data output", `[parse = User] {}`, "parse directive requires output = data"),
+		Entry("parse_file requires explicit data output", `[parse_file = "./user.mace"] {}`, "parse_file directive requires output = data"),
 	)
 
 	DescribeTable("returns schema output fields",

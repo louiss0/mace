@@ -2,7 +2,7 @@
 from "package_json.mace" import-as Package
 |==========================================|
 
-[parse=Package]
+[output = data, parse = Package]
 {
   name: name,
   version: version,

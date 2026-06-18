@@ -1667,6 +1667,7 @@ func validateOutputDirectiveStructure(output ast.OutputBlock) error {
 		return nil
 	}
 
+	hasOutput := false
 	hasParse := false
 	hasParseFile := false
 	seenKinds := map[ast.OutputDirectiveKind]struct{}{}
@@ -1679,6 +1680,7 @@ func validateOutputDirectiveStructure(output ast.OutputBlock) error {
 
 		switch directive.Kind {
 		case ast.OutputDirectiveOutput:
+			hasOutput = true
 		case ast.OutputDirectiveSchema:
 			if output.Mode == ast.OutputModeSchema {
 				return validationErrorf("schema directive is invalid when output mode is schema")
@@ -1705,13 +1707,15 @@ func validateOutputDirectiveStructure(output ast.OutputBlock) error {
 	if hasParse && hasParseFile {
 		return validationErrorf("parse and parse_file directives cannot be used together")
 	}
+	if hasParse && !hasOutput {
+		return validationErrorf("parse directive requires output = data")
+	}
+	if hasParseFile && !hasOutput {
+		return validationErrorf("parse_file directive requires output = data")
+	}
 	if !hasParse && !hasParseFile {
-		hasOutput := false
 		hasSchemaDirective := false
 		for _, directive := range output.Directives {
-			if directive.Kind == ast.OutputDirectiveOutput {
-				hasOutput = true
-			}
 			if directive.Kind == ast.OutputDirectiveSchema {
 				hasSchemaDirective = true
 			}
