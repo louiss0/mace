@@ -1,6 +1,7 @@
 package codec
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/yaml.v3"
 )
 
 var tAssert *assert.Assertions
@@ -335,6 +337,41 @@ var _ = Describe("MarshalOutput", func() {
 })
 
 var _ = Describe("Check", func() {
+	It("reports whether compatibility issues are present", func() {
+		tAssert.False(newCheckReport().HasIssues())
+		tAssert.True(CheckReport{
+			Syntax: []CheckIssue{{
+				Path:   "$",
+				Reason: "invalid",
+				Format: "json",
+			}},
+		}.HasIssues())
+		tAssert.True(CheckReport{
+			KeyIncompatibility: []CheckIssue{{
+				Path:   "$[\"foo-bar\"]",
+				Reason: "key is not a valid Mace identifier",
+				Format: "json",
+				Key:    "foo-bar",
+			}},
+		}.HasIssues())
+		tAssert.True(CheckReport{
+			TypeIncompatibility: []CheckIssue{{
+				Path:   "$.name",
+				Reason: "null values are omitted during Mace conversion",
+				Format: "json",
+				Actual: "null",
+			}},
+		}.HasIssues())
+		tAssert.True(CheckReport{
+			StructureIncompatibility: []CheckIssue{{
+				Path:   "$.name",
+				Reason: "duplicate object key",
+				Format: "json",
+				Key:    "name",
+			}},
+		}.HasIssues())
+	})
+
 	It("reports JSON key incompatibilities in Mace syntax", func() {
 		report := CheckJSON(`{
   "name": "Ada",
@@ -364,6 +401,23 @@ var _ = Describe("Check", func() {
 }`, source)
 	})
 
+	It("reports JSON syntax locations and root type mismatches", func() {
+		syntaxReport := CheckJSON("{\n  \"name\": \n}")
+		tAssert.Len(syntaxReport.Syntax, 1)
+		tAssert.Equal("json", syntaxReport.Syntax[0].Format)
+		tAssert.NotZero(syntaxReport.Syntax[0].Line)
+		tAssert.NotZero(syntaxReport.Syntax[0].Column)
+
+		arrayReport := CheckJSON(`[1, 2, 3]`)
+		tAssert.Empty(arrayReport.Syntax)
+		if tAssert.Len(arrayReport.StructureIncompatibility, 1) {
+			issue := arrayReport.StructureIncompatibility[0]
+			tAssert.Equal("$", issue.Path)
+			tAssert.Equal("array", issue.Actual)
+			tAssert.Equal("record", issue.Expected)
+		}
+	})
+
 	It("detects extensionless JSON files by parsing their contents", func() {
 		root := GinkgoT().TempDir()
 		path := writeCodecTempFile(root, "config", "{\n  \"foo-bar\": true\n}\n")
@@ -373,6 +427,39 @@ var _ = Describe("Check", func() {
 		tAssert.Equal("json", report.Format)
 		tAssert.Len(report.Errors.KeyIncompatibility, 1)
 		tAssert.Equal("foo-bar", report.Errors.KeyIncompatibility[0].Key)
+	})
+
+	It("rejects unsupported check file formats", func() {
+		root := GinkgoT().TempDir()
+		path := writeCodecTempFile(root, "config.txt", "name = \"Ada\"\n")
+
+		_, err := CheckFile(path)
+
+		tAssert.ErrorContains(err, "could not detect check format")
+	})
+
+	It("formats multiple file check reports", func() {
+		source, err := FormatFileCheckReports([]FileCheckReport{
+			{
+				Path:   "config.json",
+				Format: "json",
+				Errors: newCheckReport(),
+			},
+		})
+
+		tAssert.NoError(err)
+		tAssert.Equal(`{
+  files: [{
+      path: "config.json",
+      format: "json",
+      errors: {
+        syntax: [],
+        key_incompatibility: [],
+        type_incompatibility: [],
+        structure_incompatibility: []
+      }
+    }]
+}`, source)
 	})
 
 	It("reports JSON duplicate keys and null values", func() {
@@ -487,6 +574,34 @@ var _ = Describe("Check", func() {
 }`, source)
 	})
 
+	It("reports YAML folded scalars and invalid merge sequences", func() {
+		report := CheckYAML("base: &base\n  name: Ada\nprofile:\n  <<: [*base, 1]\nnote: >\n  hello\n")
+
+		source, err := FormatCheckReport(report)
+		tAssert.NoError(err)
+		tAssert.Equal(`{
+  syntax: [],
+  key_incompatibility: [],
+  type_incompatibility: [],
+  structure_incompatibility: [{
+      path: "$.profile[\"<<\"]",
+      reason: "merge values must resolve to records or sequences of records",
+      format: "yaml",
+      line: 4,
+      column: 7,
+      actual: "sequence",
+      expected: "record or sequence of records"
+    }, {
+      path: "$.note",
+      reason: "block scalar presentation is not preserved during Mace conversion",
+      format: "yaml",
+      line: 5,
+      column: 7,
+      actual: ">"
+    }]
+}`, source)
+	})
+
 	It("reports YAML merge values that do not resolve to records", func() {
 		report := CheckYAML("base: &base 1\nprofile:\n  <<: *base\n")
 
@@ -508,6 +623,11 @@ var _ = Describe("Check", func() {
 }`, source)
 	})
 
+	It("names YAML node kinds used in merge diagnostics", func() {
+		tAssert.Equal("unknown", yamlNodeKindName(nil))
+		tAssert.Equal("unknown", yamlNodeKindName(&yaml.Node{}))
+	})
+
 	It("accepts YAML aliases and merge keys that can map to Mace merge semantics", func() {
 		report := CheckYAML("base: &base\n  name: Ada\nprofile:\n  <<: *base\n")
 
@@ -519,6 +639,39 @@ var _ = Describe("Check", func() {
   type_incompatibility: [],
   structure_incompatibility: []
 }`, source)
+	})
+
+	It("detects JSON-looking check input conservatively", func() {
+		tAssert.False(isJSONCheckInput(nil))
+		tAssert.False(isJSONCheckInput([]byte("")))
+		tAssert.False(isJSONCheckInput([]byte("name = \"Ada\"")))
+		tAssert.False(isJSONCheckInput([]byte("{")))
+		tAssert.True(isJSONCheckInput([]byte(`{"name":"Ada"}`)))
+	})
+
+	It("computes line and column positions from byte offsets", func() {
+		line, column := lineColumnAtOffset("one\ntwo\n", 6)
+		tAssert.Equal(2, line)
+		tAssert.Equal(2, column)
+
+		line, column = lineColumnAtOffset("one\n", 0)
+		tAssert.Equal(0, line)
+		tAssert.Equal(0, column)
+
+		line, column = lineColumnAtOffset("one\n", 99)
+		tAssert.Equal(2, line)
+		tAssert.Equal(1, column)
+	})
+
+	It("names imported value types for diagnostics", func() {
+		tAssert.Equal("null", importedValueTypeName(nil))
+		tAssert.Equal("record", importedValueTypeName(map[string]any{}))
+		tAssert.Equal("array", importedValueTypeName([]any{}))
+		tAssert.Equal("string", importedValueTypeName("Ada"))
+		tAssert.Equal("boolean", importedValueTypeName(true))
+		tAssert.Equal("number", importedValueTypeName(json.Number("1")))
+		tAssert.Equal("number", importedValueTypeName(uint(1)))
+		tAssert.Equal("struct", importedValueTypeName(struct{}{}))
 	})
 
 	It("reports multi-document YAML as a structural migration concern", func() {

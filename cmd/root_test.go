@@ -305,6 +305,21 @@ schema Runtime: { env: string; };
 	})
 
 	Describe("check", func() {
+		It("formats command errors with their message", func() {
+			err := &commandError{message: "check failed"}
+
+			tAssert.Equal("check failed", err.Error())
+		})
+
+		It("does not write output when no files could be checked", func() {
+			var stdout bytes.Buffer
+
+			err := writeCheckOutput(&stdout, nil)
+
+			tAssert.NoError(err)
+			tAssert.Equal("", stdout.String())
+		})
+
 		It("prints a plain Mace compatibility report for a single file", func() {
 			path := writeTempFile("config.json", `{
   "name": "Ada",
@@ -365,6 +380,34 @@ schema Runtime: { env: string; };
   structure_incompatibility: []
 }
 `, stdout.String())
+		})
+
+		It("continues checking other files when one file fails", func() {
+			validPath := writeTempFile("config.toml", "name = \"Ada\"\n")
+			missingPath := filepath.Join(filepath.Dir(validPath), "missing.json")
+
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			exitCode := run([]string{"check", missingPath, validPath}, &stdout, &stderr)
+
+			tAssert.Equal(2, exitCode)
+			tAssert.Contains(stderr.String(), missingPath)
+			tAssert.Contains(stderr.String(), "read check file")
+			tAssert.Contains(stdout.String(), `key_incompatibility: []`)
+		})
+
+		It("returns failure when every file fails before reporting", func() {
+			path := filepath.Join(GinkgoT().TempDir(), "missing.json")
+
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			exitCode := run([]string{"check", path}, &stdout, &stderr)
+
+			tAssert.Equal(2, exitCode)
+			tAssert.Equal("", stdout.String())
+			tAssert.Contains(stderr.String(), "read check file")
 		})
 	})
 

@@ -82,7 +82,7 @@ var _ = Describe("Lexer", func() {
 			tAssert.NoError(err)
 			assertTokenSequence(tokens, expected)
 		},
-		Entry("keywords and identifiers", "from import type schema gen_doc schema_doc enum array union variant choice string int float hex_int hex_float boolean output schema_file parse parse_file data nullable in null user_1", []expectedToken{
+		Entry("keywords and identifiers", "from import type schema gen_doc schema_doc enum array union variant choice record string int float hex_int hex_float boolean output schema_file parse parse_file data nullable in null user_1", []expectedToken{
 			{tokenType: TokenFrom, lexeme: "from"},
 			{tokenType: TokenImport, lexeme: "import"},
 			{tokenType: TokenTypeKeyword, lexeme: "type"},
@@ -94,6 +94,7 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenUnion, lexeme: "union"},
 			{tokenType: TokenVariant, lexeme: "variant"},
 			{tokenType: TokenChoice, lexeme: "choice"},
+			{tokenType: TokenRecord, lexeme: "record"},
 			{tokenType: TokenStringType, lexeme: "string"},
 			{tokenType: TokenIntType, lexeme: "int"},
 			{tokenType: TokenFloatType, lexeme: "float"},
@@ -218,6 +219,12 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenIdentifier, lexeme: "value"},
 			{tokenType: TokenEOF, lexeme: ""},
 		}),
+		Entry("bare slash is an operator", "name / value", []expectedToken{
+			{tokenType: TokenIdentifier, lexeme: "name"},
+			{tokenType: TokenSlash, lexeme: "/"},
+			{tokenType: TokenIdentifier, lexeme: "value"},
+			{tokenType: TokenEOF, lexeme: ""},
+		}),
 	)
 
 	DescribeTable("rejects invalid hexadecimal literals",
@@ -282,6 +289,10 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenString, lexeme: "\"\"\"hello\nworld\"\"\""},
 			{tokenType: TokenEOF, lexeme: ""},
 		}),
+		Entry("escaped quote at end of block string content", "\"\"\"hello\\\"\"\"\"", []expectedToken{
+			{tokenType: TokenString, lexeme: "\"\"\"hello\\\"\"\"\""},
+			{tokenType: TokenEOF, lexeme: ""},
+		}),
 	)
 
 	DescribeTable("rejects unterminated string literals",
@@ -292,6 +303,9 @@ var _ = Describe("Lexer", func() {
 		Entry("unterminated string", "\"unterminated"),
 		Entry("unterminated single quoted string", "'unterminated"),
 		Entry("unterminated block string", "\"\"\"unterminated"),
+		Entry("unterminated string ending with escape", "\"unterminated\\"),
+		Entry("unterminated block string ending with escape", "\"\"\"unterminated\\"),
+		Entry("newline in regular string", "\"unterminated\nnext"),
 	)
 
 	DescribeTable("lexes $self as a dedicated token",
@@ -306,6 +320,40 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenIdentifier, lexeme: "value"},
 			{tokenType: TokenEOF, lexeme: ""},
 		}),
+	)
+
+	DescribeTable("lexes inline descriptions",
+		func(input string, expected []expectedToken) {
+			tokens, err := collectTokens(input)
+			tAssert.NoError(err)
+			assertTokenSequence(tokens, expected)
+		},
+		Entry("semicolon terminated", "/# Describes a field; next", []expectedToken{
+			{tokenType: TokenInlineDescription, lexeme: "Describes a field"},
+			{tokenType: TokenSemicolon, lexeme: ";"},
+			{tokenType: TokenIdentifier, lexeme: "next"},
+			{tokenType: TokenEOF, lexeme: ""},
+		}),
+		Entry("comma terminated", "/# Describes a field, next", []expectedToken{
+			{tokenType: TokenInlineDescription, lexeme: "Describes a field"},
+			{tokenType: TokenComma, lexeme: ","},
+			{tokenType: TokenIdentifier, lexeme: "next"},
+			{tokenType: TokenEOF, lexeme: ""},
+		}),
+		Entry("newline terminated", "/# Describes a field\nnext", []expectedToken{
+			{tokenType: TokenInlineDescription, lexeme: "Describes a field"},
+			{tokenType: TokenIdentifier, lexeme: "next"},
+			{tokenType: TokenEOF, lexeme: ""},
+		}),
+	)
+
+	DescribeTable("rejects invalid self references",
+		func(input string) {
+			_, err := collectTokens(input)
+			tAssert.ErrorContains(err, "unexpected character '$'")
+		},
+		Entry("bare dollar", "$"),
+		Entry("unknown dollar identifier", "$name"),
 	)
 
 	DescribeTable("lexes schema declarations with multiple fields",
@@ -394,6 +442,48 @@ var _ = Describe("Lexer", func() {
 		Entry("invalid character", "`"),
 		Entry("emoji key", "🚀"),
 	)
+
+	It("rejects unterminated block comments", func() {
+		_, err := collectTokens("name /* missing close")
+
+		tAssert.ErrorContains(err, "unterminated block comment")
+	})
+
+	It("handles invalid UTF-8 bytes as unexpected characters", func() {
+		lexerInstance := New(string([]byte{0xff}))
+
+		_, err := lexerInstance.NextToken()
+
+		tAssert.ErrorContains(err, "unexpected character")
+	})
+
+	It("handles solitary carriage returns as newlines", func() {
+		tokens, err := collectTokens("alpha\rbeta")
+
+		tAssert.NoError(err)
+		assertTokenPositions(tokens, []expectedToken{
+			{tokenType: TokenIdentifier, lexeme: "alpha", line: 1, column: 1},
+			{tokenType: TokenIdentifier, lexeme: "beta", line: 2, column: 1},
+			{tokenType: TokenEOF, lexeme: "", line: 2, column: 5},
+		})
+	})
+
+	It("returns zero for peeks beyond the end of input", func() {
+		lexerInstance := New("a")
+		tAssert.Equal('a', lexerInstance.advance())
+
+		tAssert.Equal(rune(0), lexerInstance.peekNext())
+		nextRune, nextSize := lexerInstance.peekNextRune()
+		tAssert.Equal(rune(0), nextRune)
+		tAssert.Equal(0, nextSize)
+		tAssert.Equal(rune(0), lexerInstance.advance())
+	})
+
+	It("rejects non-pipe positions as script delimiter starts", func() {
+		lexerInstance := New("name")
+
+		tAssert.False(lexerInstance.isScriptDelimiterStart(0))
+	})
 
 	DescribeTable("lexes mixed shift operators by length",
 		func(input string, expected []expectedToken) {

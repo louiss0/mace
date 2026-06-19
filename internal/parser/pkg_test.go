@@ -209,6 +209,27 @@ var _ = Describe("Parser", func() {
 		Entry("hex float literal", "0x2.8", func(expression ast.Expression) {
 			requireHexFloatLiteral(expression, "0x2.8")
 		}),
+		Entry("float literal", "3.14", func(expression ast.Expression) {
+			literal, ok := expression.(ast.FloatLiteral)
+			tAssert.True(ok)
+			if ok {
+				tAssert.Equal("3.14", literal.Lexeme)
+			}
+		}),
+		Entry("boolean literal", "true", func(expression ast.Expression) {
+			literal, ok := expression.(ast.BooleanLiteral)
+			tAssert.True(ok)
+			if ok {
+				tAssert.True(literal.Value)
+			}
+		}),
+		Entry("null literal", "null", func(expression ast.Expression) {
+			_, ok := expression.(ast.NullLiteral)
+			tAssert.True(ok)
+		}),
+		Entry("record keyword identifier", "record", func(expression ast.Expression) {
+			requireIdentifier(expression, "record")
+		}),
 	)
 
 	It("rejects trailing tokens after an expression", func() {
@@ -313,6 +334,9 @@ var _ = Describe("Parser", func() {
 			requireIdentifier(prefix.Right, rightName)
 		},
 		Entry("minus identifier", "-value", lexer.TokenMinus, "value"),
+		Entry("plus identifier", "+value", lexer.TokenPlus, "value"),
+		Entry("bang identifier", "!value", lexer.TokenBang, "value"),
+		Entry("tilde identifier", "~value", lexer.TokenTilde, "value"),
 	)
 
 	DescribeTable("parses infix precedence",
@@ -399,9 +423,439 @@ var _ = Describe("Parser", func() {
 		Entry("merge rejects scalar left operand", "1 <> right"),
 		Entry("merge rejects scalar right operand", "left <> 2"),
 		Entry("merge rejects member access operand", "base.value <> override"),
+		Entry("self reference requires dot", "$self"),
+		Entry("self reference requires first identifier", "$self."),
+		Entry("self reference requires later identifier", "$self.user."),
+		Entry("array literal rejects trailing comma", "[1,]"),
+		Entry("record literal requires field separator", "{ name \"Ada\" }"),
+		Entry("conditional requires colon", "ready ? yes"),
+		Entry("conditional requires then expression", "ready ? : no"),
+		Entry("conditional requires else expression", "ready ? yes :"),
+		Entry("member access requires identifier", "user."),
+		Entry("array literal requires close", "[1"),
+		Entry("record literal requires close", "{ name: \"Ada\";"),
+		Entry("prefix expression requires operand", "!"),
+		Entry("infix expression requires right operand", "1 +"),
+		Entry("grouped expression rejects missing expression", "()"),
 	)
 
+	It("parses chained merge expressions", func() {
+		expression, err := parseExpressionInput("base <> middle <> override")
+		tAssert.NoError(err)
+
+		root := requireInfix(expression, lexer.TokenMerge)
+		requireIdentifier(root.Right, "override")
+		left := requireInfix(root.Left, lexer.TokenMerge)
+		requireIdentifier(left.Left, "base")
+		requireIdentifier(left.Right, "middle")
+	})
+
+	It("covers parser helper edge branches directly", func() {
+		tAssert.True(New(nil).isAtEnd())
+		tAssert.Equal(lexer.TokenEOF, New(nil).current().Type)
+
+		tokens, err := lexInput("name")
+		tAssert.NoError(err)
+		parser := New(tokens)
+		parser.position = len(tokens)
+		tAssert.Equal(lexer.TokenEOF, parser.current().Type)
+
+		tAssert.Equal(precedenceLowest, parser.precedenceFor(lexer.TokenEOF))
+
+		_, err = New(tokens).parseConditionalExpression(ast.Identifier{Name: "ready"}, lexer.Token{Type: lexer.TokenPlus})
+		tAssert.ErrorContains(err, "expected '?'")
+
+		_, err = New(tokens).parseArrayLiteral()
+		tAssert.ErrorContains(err, "expected '['")
+
+		_, err = New(tokens).parseRecordLiteral()
+		tAssert.ErrorContains(err, "expected '{'")
+
+		_, err = New(tokens).parseSelfReference()
+		tAssert.ErrorContains(err, "expected '$self'")
+
+		_, err = New(tokens).parseChoiceType()
+		tAssert.ErrorContains(err, "expected 'choice'")
+
+		_, err = New(tokens).parseRecordType()
+		tAssert.ErrorContains(err, "expected '{'")
+
+		recordTypeTokens, err := lexInput(`{ name: string;`)
+		tAssert.NoError(err)
+		_, err = New(recordTypeTokens).parseRecordType()
+		tAssert.ErrorContains(err, "expected '}' to close record type")
+
+		_, err = New(tokens).parseOutputDirective()
+		tAssert.ErrorContains(err, "expected '['")
+
+		_, err = New(tokens).parseTypeDeclaration()
+		tAssert.ErrorContains(err, "expected 'type'")
+
+		_, err = New(tokens).parseSchemaDeclaration()
+		tAssert.ErrorContains(err, "expected 'schema'")
+
+		_, err = New(tokens).parseDocDeclaration(ast.DocumentationKindGeneral, lexer.TokenGenDoc, "gen_doc")
+		tAssert.ErrorContains(err, "expected 'gen_doc'")
+
+		_, err = New(tokens).parseDirectivePair()
+		tAssert.ErrorContains(err, "expected directive pair")
+
+		_, err = New(tokens).parseScriptBlock()
+		tAssert.ErrorContains(err, "expected script delimiter")
+	})
+
+	It("covers parser separator helpers directly", func() {
+		commaTokens, err := lexInput(",")
+		tAssert.NoError(err)
+		tAssert.NoError(New(commaTokens).consumePairSeparator("entry"))
+
+		nameTokens, err := lexInput("name")
+		tAssert.NoError(err)
+		tAssert.ErrorContains(New(nameTokens).consumePairSeparator("entry"), "expected ',' after entry")
+		tAssert.ErrorContains(New(nameTokens).consumeRecordSeparator("field"), "expected ',' after field")
+
+		descriptionTokens, err := lexInput("name")
+		tAssert.NoError(err)
+		_, _, err = New(descriptionTokens).consumeRecordSeparatorWithInlineDescription("field")
+		tAssert.ErrorContains(err, "expected ',' after field")
+
+		tAssert.False(isFieldNameToken(lexer.TokenEOF))
+	})
+
+	It("covers parser precedence branches directly", func() {
+		parser := New(nil)
+
+		cases := map[lexer.TokenType]int{
+			lexer.TokenQuestion:           precedenceTernary,
+			lexer.TokenOrOr:               precedenceOr,
+			lexer.TokenAndAnd:             precedenceAnd,
+			lexer.TokenPipe:               precedenceBitwiseOr,
+			lexer.TokenCaret:              precedenceBitwiseXor,
+			lexer.TokenAmpersand:          precedenceBitwiseAnd,
+			lexer.TokenEqualEqual:         precedenceEquality,
+			lexer.TokenNotEqual:           precedenceEquality,
+			lexer.TokenMerge:              precedenceMerge,
+			lexer.TokenLess:               precedenceRelational,
+			lexer.TokenLessEqual:          precedenceRelational,
+			lexer.TokenGreater:            precedenceRelational,
+			lexer.TokenGreaterEqual:       precedenceRelational,
+			lexer.TokenIn:                 precedenceRelational,
+			lexer.TokenShiftLeft:          precedenceShift,
+			lexer.TokenShiftRight:         precedenceShift,
+			lexer.TokenShiftRightUnsigned: precedenceShift,
+			lexer.TokenPlus:               precedenceAdditive,
+			lexer.TokenMinus:              precedenceAdditive,
+			lexer.TokenStar:               precedenceMultiplicative,
+			lexer.TokenSlash:              precedenceMultiplicative,
+			lexer.TokenPercent:            precedenceMultiplicative,
+			lexer.TokenDoubleStar:         precedenceExponent,
+			lexer.TokenDot:                precedenceMember,
+			lexer.TokenLBracket:           precedenceMember,
+			lexer.TokenEOF:                precedenceLowest,
+		}
+
+		for tokenType, precedence := range cases {
+			tAssert.Equal(precedence, parser.precedenceFor(tokenType))
+		}
+	})
+
+	It("covers parser import helper errors directly", func() {
+		cases := []struct {
+			input string
+			call  func(*Parser) error
+		}{
+			{`name`, func(p *Parser) error {
+				_, err := p.parseImportDeclaration()
+				return err
+			}},
+			{`from "./base.mace" name`, func(p *Parser) error {
+				_, err := p.parseImportDeclaration()
+				return err
+			}},
+			{`from "./base.mace" import-`, func(p *Parser) error {
+				_, err := p.parseImportDeclaration()
+				return err
+			}},
+			{`from "./base.mace" import-as Base`, func(p *Parser) error {
+				_, err := p.parseImportDeclaration()
+				return err
+			}},
+			{`from "./base.mace" import User:`, func(p *Parser) error {
+				_, err := p.parseImportDeclaration()
+				return err
+			}},
+			{`from "./base.mace" import User, Config:`, func(p *Parser) error {
+				_, err := p.parseImportDeclaration()
+				return err
+			}},
+			{`from "./base.mace" import ;`, func(p *Parser) error {
+				_, err := p.parseImportDeclaration()
+				return err
+			}},
+		}
+
+		for _, item := range cases {
+			tokens, err := lexInput(item.input)
+			tAssert.NoError(err)
+			tAssert.Error(item.call(New(tokens)))
+		}
+
+		tokens, err := lexInput(`from "./base.mace" import User |===|`)
+		tAssert.NoError(err)
+		_, err = New(tokens).parseImportDeclaration()
+		tAssert.NoError(err)
+	})
+
+	It("covers parser declaration helper errors directly", func() {
+		cases := []struct {
+			input string
+			call  func(*Parser) error
+		}{
+			{`string name =`, func(p *Parser) error {
+				_, err := p.parseVariableDeclaration()
+				return err
+			}},
+			{`string name;`, func(p *Parser) error {
+				_, err := p.parseVariableDeclaration()
+				return err
+			}},
+			{`string name = "Ada"`, func(p *Parser) error {
+				_, err := p.parseVariableDeclaration()
+				return err
+			}},
+			{`type Name: string`, func(p *Parser) error {
+				_, err := p.parseTypeDeclaration()
+				return err
+			}},
+			{`schema User: { name: string`, func(p *Parser) error {
+				_, err := p.parseSchemaDeclaration()
+				return err
+			}},
+			{`gen_doc User { summary "User"; };`, func(p *Parser) error {
+				_, err := p.parseDocDeclaration(ast.DocumentationKindGeneral, lexer.TokenGenDoc, "gen_doc")
+				return err
+			}},
+			{`gen_doc User { summary: 1; };`, func(p *Parser) error {
+				_, err := p.parseDocDeclaration(ast.DocumentationKindGeneral, lexer.TokenGenDoc, "gen_doc")
+				return err
+			}},
+			{`gen_doc User { summary: "User" };`, func(p *Parser) error {
+				_, err := p.parseDocDeclaration(ast.DocumentationKindGeneral, lexer.TokenGenDoc, "gen_doc")
+				return err
+			}},
+			{`schema_doc User { props: { name "Name"; }; };`, func(p *Parser) error {
+				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
+				return err
+			}},
+			{`schema_doc User { props: "Name"; };`, func(p *Parser) error {
+				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
+				return err
+			}},
+			{`schema_doc User { props: { name: "Name" }; };`, func(p *Parser) error {
+				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
+				return err
+			}},
+			{`schema_doc User { props: { name: "Name"; ;`, func(p *Parser) error {
+				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
+				return err
+			}},
+			{`schema_doc User { props: { name: "Name";`, func(p *Parser) error {
+				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
+				return err
+			}},
+			{`schema_doc User { props: { name: "Name"; }; }`, func(p *Parser) error {
+				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
+				return err
+			}},
+			{`gen_doc User { ; };`, func(p *Parser) error {
+				_, err := p.parseDocDeclaration(ast.DocumentationKindGeneral, lexer.TokenGenDoc, "gen_doc")
+				return err
+			}},
+			{`schema_doc User { props: { ; }; };`, func(p *Parser) error {
+				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
+				return err
+			}},
+			{`schema_doc User { props: { name: "Name"; };`, func(p *Parser) error {
+				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
+				return err
+			}},
+		}
+
+		for _, item := range cases {
+			tokens, err := lexInput(item.input)
+			tAssert.NoError(err)
+			tAssert.Error(item.call(New(tokens)))
+		}
+	})
+
+	It("covers parser type reference helper errors directly", func() {
+		cases := []string{
+			`array<`,
+			`record<`,
+			`record<string`,
+			`union[`,
+			`union[string`,
+			`variant`,
+			`variant[string`,
+			`choice[string`,
+			`choice["a"`,
+		}
+
+		for _, input := range cases {
+			tokens, err := lexInput(input)
+			tAssert.NoError(err)
+			_, err = New(tokens).parseTypeReference()
+			tAssert.Error(err)
+		}
+	})
+
+	It("covers parser directive helper errors directly", func() {
+		cases := []string{
+			`output data`,
+			`schema_file "./schema.mace"`,
+			`parse Runtime`,
+			`parse_file "./runtime.mace"`,
+			`schema User`,
+			`[output = data, ]`,
+			`[output = data`,
+		}
+
+		for _, input := range cases {
+			tokens, err := lexInput(input)
+			tAssert.NoError(err)
+			if tokens[0].Type == lexer.TokenLBracket {
+				_, err = New(tokens).parseOutputDirective()
+			} else {
+				_, err = New(tokens).parseDirectivePair()
+			}
+			tAssert.Error(err)
+		}
+	})
+
+	It("covers parser field helper errors directly", func() {
+		cases := []struct {
+			input string
+			call  func(*Parser) error
+		}{
+			{`name:`, func(p *Parser) error {
+				_, err := p.parseOutputField()
+				return err
+			}},
+			{`name: "Ada" /# first, /# second`, func(p *Parser) error {
+				_, err := p.parseOutputField()
+				return err
+			}},
+			{`name: "Ada" next`, func(p *Parser) error {
+				_, err := p.parseOutputField()
+				return err
+			}},
+			{`name:`, func(p *Parser) error {
+				_, err := p.parseSchemaField()
+				return err
+			}},
+			{`name: string /# first, /# second`, func(p *Parser) error {
+				_, err := p.parseSchemaField()
+				return err
+			}},
+			{`name: string next`, func(p *Parser) error {
+				_, err := p.parseSchemaField()
+				return err
+			}},
+			{`name: string next`, func(p *Parser) error {
+				_, err := p.parseOutputSchemaField()
+				return err
+			}},
+			{`name:`, func(p *Parser) error {
+				_, err := p.parseRecordField()
+				return err
+			}},
+			{`name: "Ada" next`, func(p *Parser) error {
+				_, err := p.parseRecordField()
+				return err
+			}},
+			{`name: "Ada" /# first, /# second`, func(p *Parser) error {
+				_, err := p.parseRecordField()
+				return err
+			}},
+			{`: "Ada"`, func(p *Parser) error {
+				_, err := p.parseOutputField()
+				return err
+			}},
+		}
+
+		for _, item := range cases {
+			tokens, err := lexInput(item.input)
+			tAssert.NoError(err)
+			tAssert.Error(item.call(New(tokens)))
+		}
+	})
+
 	Describe("parses a full file", func() {
+		It("returns errors for empty public parser entry points", func() {
+			_, err := New(nil).ParseFile()
+			tAssert.ErrorContains(err, "empty token stream")
+
+			_, err = New(nil).ParseScriptBlock()
+			tAssert.ErrorContains(err, "empty token stream")
+
+			_, err = New(nil).ParseOutputBlock()
+			tAssert.ErrorContains(err, "empty token stream")
+
+			_, err = New(nil).ParseExpression()
+			tAssert.ErrorContains(err, "empty token stream")
+		})
+
+		It("rejects trailing tokens from public script and output entry points", func() {
+			scriptTokens, err := lexInput(`|===|
+string name = "Ada";
+|===|
+extra`)
+			tAssert.NoError(err)
+
+			_, err = New(scriptTokens).ParseScriptBlock()
+			tAssert.ErrorContains(err, "unexpected token after script block")
+
+			outputTokens, err := lexInput(`[output = data] {} extra`)
+			tAssert.NoError(err)
+
+			_, err = New(outputTokens).ParseOutputBlock()
+			tAssert.ErrorContains(err, "unexpected token after output block")
+
+			_, err = parseFileInput(`[output = data] {} extra`)
+			tAssert.ErrorContains(err, "unexpected token after output block")
+		})
+
+		It("returns public entry parse errors from malformed blocks", func() {
+			scriptTokens, err := lexInput(`name`)
+			tAssert.NoError(err)
+			_, err = New(scriptTokens).ParseScriptBlock()
+			tAssert.ErrorContains(err, "expected script delimiter")
+
+			scriptTokens, err = lexInput(`|===|
+string name = "Ada";`)
+			tAssert.NoError(err)
+			_, err = New(scriptTokens).ParseScriptBlock()
+			tAssert.ErrorContains(err, "expected closing script delimiter")
+
+			outputTokens, err := lexInput(`[output = data]`)
+			tAssert.NoError(err)
+			_, err = New(outputTokens).ParseOutputBlock()
+			tAssert.ErrorContains(err, "expected '{' to start output block")
+
+			outputTokens, err = lexInput(`{ name: "Ada";`)
+			tAssert.NoError(err)
+			_, err = New(outputTokens).ParseOutputBlock()
+			tAssert.ErrorContains(err, "expected '}' to close output block")
+		})
+
+		It("rejects public output parsing when the next token is not an output block", func() {
+			tokens, err := lexInput(`name`)
+			tAssert.NoError(err)
+
+			_, err = New(tokens).ParseOutputBlock()
+			tAssert.ErrorContains(err, "expected output block")
+		})
+
 		It("parses public script and output block entry points", func() {
 			scriptTokens, err := lexInput(`|===|
 string name = "Ada";
@@ -418,6 +872,95 @@ string name = "Ada";
 			tAssert.NoError(err)
 			tAssert.Len(output.DataFields, 1)
 		})
+
+		It("parses import-as declarations and import aliases", func() {
+			input := `|===|
+from "./base.mace" import-as Base;
+from "./shared.mace" import User:Person, Config:Settings;
+|===|
+[output = data] {}`
+
+			file, err := parseFileInput(input)
+			tAssert.NoError(err)
+
+			if tAssert.Len(file.Imports, 2) {
+				tAssert.NotNil(file.Imports[0].ImportAs)
+				if file.Imports[0].ImportAs != nil {
+					tAssert.Equal("Base", file.Imports[0].ImportAs.Name)
+				}
+				tAssert.Equal([]ast.ImportedIdentifier{
+					{Name: "User", Alias: "Person"},
+					{Name: "Config", Alias: "Settings"},
+				}, file.Imports[1].Identifiers)
+			}
+		})
+
+		It("parses all output directive kinds", func() {
+			file, err := parseFileInput(`[output = data, schema = User, schema_file = "./schema.mace", parse = Runtime, parse_file = "./runtime.mace"] {}`)
+			tAssert.NoError(err)
+
+			if tAssert.Len(file.Output.Directives, 5) {
+				tAssert.Equal(ast.OutputDirectiveOutput, file.Output.Directives[0].Kind)
+				tAssert.Equal(ast.OutputDirectiveSchema, file.Output.Directives[1].Kind)
+				tAssert.Equal(ast.OutputDirectiveSchemaFile, file.Output.Directives[2].Kind)
+				tAssert.Equal(ast.OutputDirectiveParse, file.Output.Directives[3].Kind)
+				tAssert.Equal(ast.OutputDirectiveParseFile, file.Output.Directives[4].Kind)
+			}
+		})
+
+		It("rejects malformed import declarations", func() {
+			cases := []string{
+				`|===|
+import "./base.mace" User;
+|===|
+[output = data] {}`,
+				`|===|
+from import User;
+|===|
+[output = data] {}`,
+				`|===|
+from "./base.mace" import- nope Base;
+|===|
+[output = data] {}`,
+				`|===|
+from "./base.mace" import-as;
+|===|
+[output = data] {}`,
+				`|===|
+from "./base.mace" import User:
+|===|
+[output = data] {}`,
+				`|===|
+from "./base.mace" import User,;
+|===|
+[output = data] {}`,
+				`|===|
+from "./base.mace" import User
+string name = "Ada";
+|===|
+[output = data] {}`,
+			}
+
+			for _, input := range cases {
+				_, err := parseFileInput(input)
+				tAssert.Error(err)
+			}
+		})
+
+		It("rejects imports after declarations and missing script closers", func() {
+			_, err := parseFileInput(`|===|
+string name = "Ada";
+from "./base.mace" import User;
+|===|
+[output = data] {}`)
+			tAssert.ErrorContains(err, "import declarations must appear at top")
+
+			_, err = parseFileInput(`|===|
+string name = "Ada";
+[output = data] {}`)
+			tAssert.Error(err)
+		})
+
 		It("returns an error for an empty script block", func() {
 			_, err := parseFileInput(`|===|
 |===|
@@ -886,7 +1429,7 @@ type Matrix: array<array<int>>;
 		It("parses choice types with literals and choice aliases", func() {
 			input := `|===|
  type Environment: choice["dev", "prod"];
- type Mode: choice[Environment, 1, true];
+ type Mode: choice[Environment, 1, true, 1.5, 0xFF, 0x2.8, record];
 |===|
 [output = data] {}`
 
@@ -899,7 +1442,7 @@ type Matrix: array<array<int>>;
 				if ok {
 					choiceType, ok := choiceDecl.Type.(ast.ChoiceType)
 					tAssert.True(ok)
-					if ok && tAssert.Len(choiceType.Members, 3) {
+					if ok && tAssert.Len(choiceType.Members, 7) {
 						_, ok = choiceType.Members[0].(ast.Identifier)
 						tAssert.True(ok)
 						requireIntLiteral(choiceType.Members[1], "1")
@@ -908,8 +1451,198 @@ type Matrix: array<array<int>>;
 						if ok {
 							tAssert.True(booleanLiteral.Value)
 						}
+						floatLiteral, ok := choiceType.Members[3].(ast.FloatLiteral)
+						tAssert.True(ok)
+						if ok {
+							tAssert.Equal("1.5", floatLiteral.Lexeme)
+						}
+						requireHexIntLiteral(choiceType.Members[4], "0xFF")
+						requireHexFloatLiteral(choiceType.Members[5], "0x2.8")
+						requireIdentifier(choiceType.Members[6], "record")
 					}
 				}
+			}
+		})
+
+		It("parses record map and inline record type references", func() {
+			file, err := parseFileInput(`|===|
+type Lookup: record<string>;
+type Inline: { name: string; };
+|===|
+[output = schema]
+{
+  values: record<int>;
+  inline: { enabled: boolean; };
+}`)
+			tAssert.NoError(err)
+
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 2) {
+				typeDecl, ok := file.Script.Items[0].(ast.TypeDeclaration)
+				tAssert.True(ok)
+				if ok {
+					_, ok = typeDecl.Type.(ast.RecordMapType)
+					tAssert.True(ok)
+				}
+				inlineDecl, ok := file.Script.Items[1].(ast.TypeDeclaration)
+				tAssert.True(ok)
+				if ok {
+					_, ok = inlineDecl.Type.(ast.RecordType)
+					tAssert.True(ok)
+				}
+			}
+
+			if tAssert.Len(file.Output.SchemaFields, 2) {
+				_, ok := file.Output.SchemaFields[0].Type.(ast.RecordMapType)
+				tAssert.True(ok)
+				_, ok = file.Output.SchemaFields[1].Type.(ast.RecordType)
+				tAssert.True(ok)
+			}
+		})
+
+		It("rejects malformed declarations, docs, directives, and type references", func() {
+			cases := []string{
+				`|===|
+string = "Ada";
+|===|
+[output = data] {}`,
+				`|===|
+type : string;
+|===|
+[output = data] {}`,
+				`|===|
+type Name string;
+|===|
+[output = data] {}`,
+				`|===|
+type Name: ;
+|===|
+[output = data] {}`,
+				`|===|
+schema : {};
+|===|
+[output = data] {}`,
+				`|===|
+schema User {};
+|===|
+[output = data] {}`,
+				`|===|
+schema User: { name string; };
+|===|
+[output = data] {}`,
+				`|===|
+schema User: { name: string;
+|===|
+[output = data] {}`,
+				`|===|
+schema_doc {
+};
+|===|
+[output = data] {}`,
+				`|===|
+schema_doc User
+};
+|===|
+[output = data] {}`,
+				`|===|
+schema_doc User {
+  summary: "One";
+  summary: "Two";
+};
+|===|
+[output = data] {}`,
+				`|===|
+schema_doc User {
+  unknown: "Nope";
+};
+|===|
+[output = data] {}`,
+				`|===|
+schema_doc User {
+  props: {
+    name: "One";
+    name: "Two";
+  };
+};
+|===|
+[output = data] {}`,
+				`[output data] {}`,
+				`[output = nope] {}`,
+				`[schema_file = User] {}`,
+				`[parse = "Runtime"] {}`,
+				`[parse_file = Runtime] {}`,
+				`[schema = "User"] {}`,
+				`[output = data] "single line doc" {}`,
+				`[output = data] { name "Ada"; }`,
+				`[output = schema] { name string; }`,
+				`[output = schema] { name: ; }`,
+				`[output = schema] { name: string /# first, /# second }`,
+				`|===|
+type Names: array;
+|===|
+[output = data] {}`,
+				`|===|
+type Names: array<string;
+|===|
+[output = data] {}`,
+				`|===|
+type Names: record;
+|===|
+[output = data] {}`,
+				`|===|
+type Names: union;
+|===|
+[output = data] {}`,
+				`|===|
+type Names: variant[string,];
+|===|
+[output = data] {}`,
+				`|===|
+type Names: choice;
+|===|
+[output = data] {}`,
+				`|===|
+type Names: choice[null];
+|===|
+[output = data] {}`,
+				`|===|
+schema_doc User {
+  summary: 1;
+};
+|===|
+[output = data] {}`,
+				`|===|
+schema_doc User {
+  props: {
+    name: 1;
+  };
+};
+|===|
+[output = data] {}`,
+				`|===|
+schema_doc User {
+  props: {
+    name: "Name";
+  }
+};
+|===|
+[output = data] {}`,
+				`|===|
+schema_doc User {
+  summary: "User";
+}
+|===|
+[output = data] {}`,
+				`|===|
+schema_doc User {
+  summary: "User";
+};
+|===|
+[output = data]`,
+			}
+
+			for _, input := range cases {
+				_, err := parseFileInput(input)
+				tAssert.Error(err)
 			}
 		})
 
