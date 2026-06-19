@@ -1,0 +1,26 @@
+[output = data]
+{
+  nombre: "unicode_ci";
+  触发器: ["push", "pull_request"];
+  trabajos: [{
+    名前: "probar";
+    実行環境: "ubuntu_latest";
+    βήματα: [{
+      nombre: "checkout";
+      usa: "actions_checkout";
+    }, {
+      nombre: "test";
+      ejecutar: "go test ./...";
+    }];
+    artefactos: ["coverage.out"];
+  }, {
+    名前: "publicar";
+    実行環境: "ubuntu_latest";
+    necesita: ["probar"];
+    条件: "tag";
+  }];
+  περιβάλλον: {
+    GO_VERSION: "1.25.5";
+    modo: "release";
+  };
+}

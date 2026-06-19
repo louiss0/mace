@@ -1,0 +1,29 @@
+[output = data]
+{
+  despliegue: {
+    名前: "mace_api";
+    命名空间: "producción";
+    réplicas: 4;
+    etiquetas: {
+      应用: "mace";
+      βαθμίδα: "api";
+    };
+  };
+  contenedores: [{
+    名前: "api";
+    imagen: "mace/api:2.0";
+    puertos: [8080];
+    recursos: {
+      cpu: "500m";
+      memoria: "512Mi";
+    };
+  }, {
+    名前: "sidecar";
+    imagen: "mace/log_shipper:1.0";
+    puertos: [];
+  }];
+  策略: {
+    tipo: "rolling";
+    μέγιστο_no_disponible: 1;
+  };
+}

@@ -1,0 +1,26 @@
+[output = data]
+{
+  servicios: {
+    api: {
+      イメージ: "mace/api:latest";
+      ポート: [8080, 8443];
+      环境: {
+        模式: "prod";
+        βάση: "postgres";
+      };
+      volúmenes: ["./config:/config", "logs:/logs"];
+    };
+    worker: {
+      イメージ: "mace/worker:latest";
+      réplicas: 3;
+      εξαρτήσεις: ["api", "redis"];
+    };
+  };
+  redes: ["frontend", "backend"];
+  ボリューム: {
+    logs: {
+      conductor: "local";
+    };
+  };
+  再起動: "unless_stopped";
+}

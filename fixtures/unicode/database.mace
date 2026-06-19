@@ -1,0 +1,26 @@
+[output = data]
+{
+  proveedor: "postgres";
+  主机: "db.internal";
+  ポート: 5432;
+  χρήστης: "mace_app";
+  contraseña: "secret";
+  プール: {
+    最小: 4;
+    μέγιστο: 32;
+    tiempo_espera: 30;
+  };
+  replicas: [{
+    名前: "lectura_tokio";
+    主机: "db-read-1.internal";
+    βάρος: 2;
+  }, {
+    名前: "lectura_atenas";
+    主机: "db-read-2.internal";
+    βάρος: 1;
+  }];
+  ssl: {
+    ενεργό: true;
+    modo: "verify_full";
+  };
+}

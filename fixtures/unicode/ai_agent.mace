@@ -1,0 +1,29 @@
+[output = data]
+{
+  modelo: "mace_llm_70b";
+  temperatura: 0.3;
+  技能: ["lexer", "parser", "review"];
+  プロンプト: {
+    sistema: "Responde con precisión";
+    usuario: "Analiza la configuración";
+    μορφή: "markdown";
+  };
+  herramientas: [{
+    名前: "buscar";
+    ενεργό: true;
+    límite: 5;
+  }, {
+    名前: "editar";
+    ενεργό: false;
+    límite: 1;
+  }];
+  memoria: {
+    短期: true;
+    largo_plazo: false;
+    μέγεθος: 2048;
+  };
+  seguridad: {
+    confirmar: true;
+    禁止: ["rm_rf", "push_force"];
+  };
+}

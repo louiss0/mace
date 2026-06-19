@@ -1,0 +1,20 @@
+[output = data]
+{
+  主机: "0.0.0.0";
+  ポート: 8443;
+  dominio: "例.example";
+  συμπίεση: true;
+  tls: {
+    有効: true;
+    証明書: "/etc/mace/cert.pem";
+    κλειδί: "/etc/mace/key.pem";
+  };
+  cors: {
+    origenes: ["https://例.example", "https://admin.example"];
+    μέθοδοι: ["GET", "POST"];
+  };
+  ログ: {
+    nivel: "info";
+    διαδρομή: "/var/log/mace/web.log";
+  };
+}

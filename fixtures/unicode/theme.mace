@@ -1,0 +1,25 @@
+[output = data]
+{
+  tema: "aurora";
+  colores: {
+    fondo: "#0f172a";
+    texto: "#e2e8f0";
+    アクセント: "#38bdf8";
+    警告: "#f59e0b";
+  };
+  fuentes: {
+    本文: "Inter";
+    código: "JetBrains Mono";
+    μέγεθος: 14;
+  };
+  espacio: {
+    小: 4;
+    medio: 12;
+    μεγάλο: 24;
+  };
+  アイコン: {
+    estilo: "line";
+    tamaño: 20;
+  };
+  暗色: true;
+}
