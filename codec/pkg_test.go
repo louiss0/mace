@@ -99,6 +99,58 @@ int age = 27;
 })
 
 var _ = Describe("Parse", func() {
+	It("parses with injected input values through compatibility helpers", func() {
+		result, err := ParseWithInjections(`|===|
+schema Runtime: { name: string; enabled: boolean; };
+|===|
+[output = data, parse = Runtime]
+{
+  name: name;
+  enabled: enabled;
+}`, map[string]any{
+			"name":    "Ada",
+			"enabled": true,
+		})
+		tAssert.NoError(err)
+		tAssert.Equal("Ada", result.Data["name"])
+		tAssert.Equal(true, result.Data["enabled"])
+	})
+
+	It("parses files with injected input values through compatibility helpers", func() {
+		workspace, err := os.MkdirTemp("", "mace-codec-injections-*")
+		tAssert.NoError(err)
+		path := writeCodecTempFile(workspace, "input.mace", `|===|
+schema Runtime: { name: string; };
+|===|
+[output = data, parse = Runtime]
+{
+  name: name;
+}`)
+
+		result, err := ParseFileWithInjections(path, map[string]any{
+			"name": "Ada",
+		})
+		tAssert.NoError(err)
+		tAssert.Equal("Ada", result.Data["name"])
+	})
+
+	It("unmarshals with injected input values through compatibility helpers", func() {
+		target := struct {
+			Name string `json:"name"`
+		}{}
+
+		err := UnmarshalWithInjections(`|===|
+schema Runtime: { name: string; };
+|===|
+[output = data, parse = Runtime]
+{
+  name: name;
+}`, map[string]any{
+			"name": "Ada",
+		}, &target)
+		tAssert.NoError(err)
+		tAssert.Equal("Ada", target.Name)
+	})
 	It("returns schema outputs through the public binding result", func() {
 		result, err := Parse(`[output = schema]
 {

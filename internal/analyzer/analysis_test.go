@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -63,6 +64,38 @@ func requireDiagnosticCode(diagnostic protocol.Diagnostic) string {
 }
 
 var _ = Describe("LSP analysis", func() {
+	It("exercises public analysis helpers", func() {
+		workspace, err := os.MkdirTemp("", "mace-analysis-public-*")
+		tAssert.NoError(err)
+		documentPath := filepath.Join(workspace, "public.mace")
+		uri := protocol.DocumentUri("file://" + filepath.ToSlash(documentPath))
+		text := `|===|
+schema User: { name: string; };
+string greeting = "hello";
+|===|
+[output = data]
+{
+  name: greeting;
+}`
+
+		snapshot := AnalyzeDocumentAt(text, documentPath)
+		tAssert.True(HasParsedFile(snapshot))
+		tAssert.Empty(Diagnostics(snapshot))
+		tAssert.NotEmpty(DocumentSymbols(text, snapshot))
+		tAssert.NotNil(Hover(text, snapshot, protocol.Position{Line: 1, Character: 1}))
+		_, ok := Definition(snapshot, protocol.Position{Line: 6, Character: 9})
+		tAssert.True(ok)
+		_, ok = PrepareRename(snapshot, protocol.Position{Line: 2, Character: 8})
+		tAssert.True(ok)
+		edit, ok := Rename(text, snapshot, uri, protocol.Position{Line: 2, Character: 8}, "message")
+		tAssert.True(ok)
+		tAssert.NotNil(edit)
+		tAssert.NotEmpty(FormatDocumentText(text))
+		tAssert.NotEmpty(DiagnosticFromError(fmt.Errorf("parser: expected expression at 3:5")).Message)
+
+		completionSnapshot := AnalyzeCompletionContext(text, documentPath, protocol.Position{Line: 7, Character: 2})
+		_ = CompletionItems(text, completionSnapshot, uri, protocol.Position{Line: 7, Character: 2})
+	})
 	It("surfaces parsed variables as LSP-visible declarations", func() {
 		workspace, err := os.MkdirTemp("", "mace-analysis-parse-declarations-*")
 		tAssert.NoError(err)

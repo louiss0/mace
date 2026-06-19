@@ -1,3 +1,4 @@
+// Languages: Chinese, Japanese, Latin, and Greek keys are intentionally mixed in kubernetes_deployment.
 [output = data]
 {
   despliegue: {

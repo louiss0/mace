@@ -1,3 +1,4 @@
+// Languages: Chinese, Japanese, Latin, and Greek keys are intentionally mixed in ci_pipeline.
 [output = data]
 {
   nombre: "unicode_ci";

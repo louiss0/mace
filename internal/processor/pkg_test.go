@@ -285,6 +285,13 @@ Name user = "Ada";
 |===|
 [output = data]
 { user: user; }`),
+		Entry("unicode web server fixture", "../../fixtures/unicode/web_server.mace"),
+		Entry("unicode database fixture", "../../fixtures/unicode/database.mace"),
+		Entry("unicode docker services fixture", "../../fixtures/unicode/docker_services.mace"),
+		Entry("unicode ci pipeline fixture", "../../fixtures/unicode/ci_pipeline.mace"),
+		Entry("unicode theme fixture", "../../fixtures/unicode/theme.mace"),
+		Entry("unicode kubernetes deployment fixture", "../../fixtures/unicode/kubernetes_deployment.mace"),
+		Entry("unicode ai agent fixture", "../../fixtures/unicode/ai_agent.mace"),
 		Entry("variant declarations and assignments", wrapScriptWithOutput(`|===|
 type Scalar: variant[string, int];
 Scalar value = "Ada";

@@ -392,6 +392,7 @@ var _ = Describe("Lexer", func() {
 		Entry("leading underscore", "_hidden"),
 		Entry("unterminated string", "\"missing"),
 		Entry("invalid character", "`"),
+		Entry("emoji key", "🚀"),
 	)
 
 	DescribeTable("lexes mixed shift operators by length",
