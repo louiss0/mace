@@ -111,6 +111,14 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenIdentifier, lexeme: "user_1"},
 			{tokenType: TokenEOF, lexeme: ""},
 		}),
+		Entry("unicode identifiers", "café 用户 имя 名前 name_用户1", []expectedToken{
+			{tokenType: TokenIdentifier, lexeme: "café"},
+			{tokenType: TokenIdentifier, lexeme: "用户"},
+			{tokenType: TokenIdentifier, lexeme: "имя"},
+			{tokenType: TokenIdentifier, lexeme: "名前"},
+			{tokenType: TokenIdentifier, lexeme: "name_用户1"},
+			{tokenType: TokenEOF, lexeme: ""},
+		}),
 	)
 
 	DescribeTable("lexes literals",

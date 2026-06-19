@@ -591,6 +591,11 @@ level = 2
 }`, source)
 	})
 
+	It("rejects trailing JSON content", func() {
+		_, err := ImportJSON(`{"a":1} {"b":2}`)
+		tAssert.ErrorContains(err, "unexpected content after JSON document")
+	})
+
 	It("omits null fields from imported JSON data", func() {
 		source, err := ImportJSON(`{
   "name": "Ada",

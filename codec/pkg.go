@@ -189,6 +189,14 @@ func parseImportedJSON(input string) (any, error) {
 		return nil, fmt.Errorf("import json: %w", err)
 	}
 
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err != nil {
+			return nil, fmt.Errorf("import json: %w", err)
+		}
+		return nil, fmt.Errorf("import json: unexpected content after JSON document")
+	}
+
 	return value, nil
 }
 

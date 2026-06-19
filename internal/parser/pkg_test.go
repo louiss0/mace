@@ -211,6 +211,11 @@ var _ = Describe("Parser", func() {
 		}),
 	)
 
+	It("rejects trailing tokens after an expression", func() {
+		_, err := parseExpressionInput("{ a: 1; } garbage")
+		tAssert.ErrorContains(err, "unexpected token after expression")
+	})
+
 	DescribeTable("parses collection literals",
 		func(input string, assertExpression func(ast.Expression)) {
 			expression, err := parseExpressionInput(input)

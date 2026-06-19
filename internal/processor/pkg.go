@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/samber/lo"
 
@@ -2766,15 +2767,12 @@ func decodeStringLexeme(lexeme string, allowInterpolation bool, interpolate func
 	var builder strings.Builder
 	for index := 0; index < len(content); {
 		if content[index] == '\\' {
-			if index+1 >= len(content) {
-				return "", validationErrorf("invalid string literal %q", lexeme)
-			}
-			escaped, err := unescapeByte(content[index+1])
+			escaped, width, err := unescapeSequence(content[index:])
 			if err != nil {
 				return "", err
 			}
-			builder.WriteByte(escaped)
-			index += 2
+			builder.WriteString(escaped)
+			index += width
 			continue
 		}
 		if quoteMode != stringQuoteSingle && strings.HasPrefix(content[index:], "$(") {
@@ -2821,19 +2819,69 @@ func stringContent(lexeme string) (string, stringQuoteMode, error) {
 	}
 }
 
-func unescapeByte(value byte) (byte, error) {
-	switch value {
-	case '\\', '\'', '"':
-		return value, nil
-	case 'n':
-		return '\n', nil
-	case 'r':
-		return '\r', nil
-	case 't':
-		return '\t', nil
-	default:
-		return 0, validationErrorf("invalid string escape \\%c", value)
+func unescapeSequence(sequence string) (string, int, error) {
+	if len(sequence) < 2 {
+		return "", 0, validationErrorf("invalid string escape")
 	}
+
+	switch sequence[1] {
+	case '\\', '\'', '"':
+		return string(sequence[1]), 2, nil
+	case 'n':
+		return "\n", 2, nil
+	case 'r':
+		return "\r", 2, nil
+	case 't':
+		return "\t", 2, nil
+	case 'u':
+		value, err := parseUnicodeEscape(sequence, 4)
+		if err != nil {
+			return "", 0, err
+		}
+		return string(value), 6, nil
+	case 'U':
+		value, err := parseUnicodeEscape(sequence, 8)
+		if err != nil {
+			return "", 0, err
+		}
+		return string(value), 10, nil
+	default:
+		return "", 0, validationErrorf("invalid string escape \\%c", sequence[1])
+	}
+}
+
+func parseUnicodeEscape(sequence string, digitCount int) (rune, error) {
+	width := 2 + digitCount
+	if len(sequence) < width {
+		return 0, validationErrorf("invalid unicode escape %q", sequence)
+	}
+
+	digits := sequence[2:width]
+	for _, digit := range digits {
+		if !isHexEscapeDigit(digit) {
+			return 0, validationErrorf("invalid unicode escape \\%c%s", sequence[1], digits)
+		}
+	}
+
+	codePoint, err := strconv.ParseInt(digits, 16, 32)
+	if err != nil {
+		return 0, validationErrorf("invalid unicode escape \\%c%s", sequence[1], digits)
+	}
+
+	value := rune(codePoint)
+	if !utf8.ValidRune(value) || isSurrogateCodePoint(value) {
+		return 0, validationErrorf("invalid unicode code point U+%04X", value)
+	}
+
+	return value, nil
+}
+
+func isHexEscapeDigit(value rune) bool {
+	return (value >= '0' && value <= '9') || (value >= 'a' && value <= 'f') || (value >= 'A' && value <= 'F')
+}
+
+func isSurrogateCodePoint(value rune) bool {
+	return value >= 0xD800 && value <= 0xDFFF
 }
 
 func interpolationContent(content string, start int) (int, string, error) {

@@ -157,6 +157,13 @@ func writeFixtureFile(root string, relativePath string, contents string) string 
 	return path
 }
 
+var _ = Describe("Input records", func() {
+	It("rejects trailing tokens after the record literal", func() {
+		_, err := ParseInputRecord(`{ a: 1; } garbage`)
+		tAssert.ErrorContains(err, "unexpected token after expression")
+	})
+})
+
 var _ = Describe("Block processing", func() {
 	It("processes script blocks independently", func() {
 		processor := New()
@@ -173,6 +180,28 @@ string name = "Ada";
 		name := requireScriptVariable(result, "name")
 		tAssert.Equal(ValueString, name.Kind)
 		tAssert.Equal("Ada", name.String)
+	})
+
+	It("decodes unicode string escapes", func() {
+		processor := New()
+		result, err := processor.ProcessOutputBlock(`[output = data]
+{
+  accent: "\u00E9";
+  rocket: "\U0001F680";
+}`, ScriptResult{})
+		tAssert.NoError(err)
+
+		assertExpectedValue(requireOutputValue(result, "accent"), expectedValue{kind: ValueString, string: "é"})
+		assertExpectedValue(requireOutputValue(result, "rocket"), expectedValue{kind: ValueString, string: "🚀"})
+	})
+
+	It("rejects invalid unicode string escapes", func() {
+		processor := New()
+		_, err := processor.ProcessOutputBlock(`[output = data]
+{
+  invalid: "\U00110000";
+}`, ScriptResult{})
+		tAssert.ErrorContains(err, "invalid unicode")
 	})
 
 	It("processes output blocks independently", func() {

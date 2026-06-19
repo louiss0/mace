@@ -117,7 +117,15 @@ func (p *Parser) ParseExpression() (ast.Expression, error) {
 		return nil, fmt.Errorf("parser: empty token stream")
 	}
 
-	return p.parseExpression(precedenceLowest)
+	expression, err := p.parseExpression(precedenceLowest)
+	if err != nil {
+		return nil, err
+	}
+	if !p.isAtEnd() {
+		return nil, p.unexpectedTokenError("parser: unexpected token after expression")
+	}
+
+	return expression, nil
 }
 
 func (p *Parser) parseImportDeclaration() (ast.ImportDeclaration, error) {
