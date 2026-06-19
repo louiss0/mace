@@ -402,6 +402,22 @@ var _ = Describe("Parser", func() {
 	)
 
 	Describe("parses a full file", func() {
+		It("parses public script and output block entry points", func() {
+			scriptTokens, err := lexInput(`|===|
+string name = "Ada";
+|===|`)
+			tAssert.NoError(err)
+			script, err := New(scriptTokens).ParseScriptBlock()
+			tAssert.NoError(err)
+			tAssert.Len(script.Items, 1)
+
+			outputTokens, err := lexInput(`[output = data]
+{ name: "Ada"; }`)
+			tAssert.NoError(err)
+			output, err := New(outputTokens).ParseOutputBlock()
+			tAssert.NoError(err)
+			tAssert.Len(output.DataFields, 1)
+		})
 		It("returns an error for an empty script block", func() {
 			_, err := parseFileInput(`|===|
 |===|

@@ -158,6 +158,12 @@ func writeFixtureFile(root string, relativePath string, contents string) string 
 }
 
 var _ = Describe("Input records", func() {
+	It("parses injection records through the compatibility helper", func() {
+		record, err := ParseInjectionRecord(`{ name: "Ada"; enabled: true; }`)
+		tAssert.NoError(err)
+		assertExpectedValue(record["name"], expectedValue{kind: ValueString, string: "Ada"})
+		assertExpectedValue(record["enabled"], expectedValue{kind: ValueBoolean, bool: true})
+	})
 	It("rejects trailing tokens after the record literal", func() {
 		_, err := ParseInputRecord(`{ a: 1; } garbage`)
 		tAssert.ErrorContains(err, "unexpected token after expression")
@@ -165,6 +171,29 @@ var _ = Describe("Input records", func() {
 })
 
 var _ = Describe("Block processing", func() {
+	It("processes variables in explicit directories", func() {
+		processor := NewWithInjections(map[string]Value{
+			"unused": {Kind: ValueInt, Int: 4},
+		})
+		variables, err := processor.ProcessVariablesInDir(`|===|
+int base = 4;
+int doubled = base * 2;
+|===|
+[output = data]
+{ result: doubled; }`, "../..")
+		tAssert.NoError(err)
+		assertExpectedValue(variables["doubled"], expectedValue{kind: ValueInt, int64: 8})
+
+		variables, err = processor.ProcessVariablesInScope(`|===|
+int base = 4;
+int tripled = base * 3;
+|===|
+[output = data]
+{ result: tripled; }`, "../..", "../..")
+		tAssert.NoError(err)
+		assertExpectedValue(variables["tripled"], expectedValue{kind: ValueInt, int64: 12})
+	})
+
 	It("processes script blocks independently", func() {
 		processor := New()
 		result, err := processor.ProcessScriptBlock(`|===|
