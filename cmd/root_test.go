@@ -32,6 +32,25 @@ func writeMaceFile(contents string) string {
 }
 
 var _ = Describe("CLI", func() {
+	It("exits with the command result from the process entrypoint", func() {
+		previousArgs := os.Args
+		previousExit := exit
+		defer func() {
+			os.Args = previousArgs
+			exit = previousExit
+		}()
+
+		var code int
+		os.Args = []string{"mace", "--help"}
+		exit = func(value int) {
+			code = value
+		}
+
+		main()
+
+		tAssert.Equal(0, code)
+	})
+
 	Describe("json", func() {
 		It("prints evaluated output as JSON", func() {
 			path := writeMaceFile(`|===|

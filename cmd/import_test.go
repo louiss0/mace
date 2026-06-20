@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 
 	burnttoml "github.com/BurntSushi/toml"
 	goccyyaml "github.com/goccy/go-yaml"
+	yamlast "github.com/goccy/go-yaml/ast"
 	"github.com/louiss0/mace/internal/processor"
 	. "github.com/onsi/ginkgo/v2"
 )
@@ -233,6 +235,100 @@ func dataFixtures() []importFixture {
 }
 
 var _ = Describe("import conversion", func() {
+	It("handles YAML scalar names and reports unsupported YAML name nodes", func() {
+		fieldName := yamlFieldName
+		fieldNameFromNode := yamlFieldNameFromNode
+		anchorName := yamlAnchorName
+		aliasName := yamlAliasName
+
+		name, err := fieldName(&yamlast.StringNode{Value: "service"})
+		tAssert.NoError(err)
+		tAssert.Equal("service", name)
+
+		name, err = fieldName(&yamlast.MappingKeyNode{Value: &yamlast.StringNode{Value: "mapped"}})
+		tAssert.NoError(err)
+		tAssert.Equal("mapped", name)
+
+		_, err = fieldNameFromNode(&yamlast.IntegerNode{Value: int64(1)})
+		tAssert.ErrorContains(err, "unsupported map key")
+
+		name, err = anchorName(&yamlast.StringNode{Value: "defaults"})
+		tAssert.NoError(err)
+		tAssert.Equal("defaults", name)
+
+		_, err = anchorName(&yamlast.IntegerNode{Value: int64(1)})
+		tAssert.ErrorContains(err, "unsupported anchor name")
+
+		name, err = aliasName(&yamlast.StringNode{Value: "defaults"})
+		tAssert.NoError(err)
+		tAssert.Equal("defaults", name)
+
+		_, err = aliasName(&yamlast.IntegerNode{Value: int64(1)})
+		tAssert.ErrorContains(err, "unsupported alias")
+	})
+
+	It("converts schema references to Mace paths", func() {
+		referenceToMace := schemaReferenceToMace
+		pathToMace := schemaPathToMace
+		referenceParts := schemaReferenceParts
+		relativePath := explicitRelativeSchemaPath
+
+		tAssert.Equal("", referenceToMace(""))
+		tAssert.Equal("schemas/config.mace", referenceToMace("schemas/config.json"))
+		tAssert.Equal("https://example.test/schemas/config.mace?draft=1", referenceToMace("https://example.test/schemas/config.json?draft=1"))
+		tAssert.Equal("schema.mace?version=1#/$defs/User", pathToMace("schema.json?version=1#/$defs/User", "/"))
+
+		base, suffix := referenceParts("schema.json#/$defs/User")
+		tAssert.Equal("schema.json", base)
+		tAssert.Equal("#/$defs/User", suffix)
+
+		base, suffix = referenceParts("schema.json?version=1")
+		tAssert.Equal("schema.json", base)
+		tAssert.Equal("?version=1", suffix)
+
+		tAssert.Equal("", relativePath(""))
+		tAssert.Equal("./schema.mace", relativePath("schema.mace"))
+		tAssert.Equal("../schema.mace", relativePath("../schema.mace"))
+	})
+
+	It("handles reflected TOML fallback values", func() {
+		reflectExpression := reflectTOMLExpression
+
+		expression, err := reflectExpression(reflect.ValueOf(map[string]any{
+			"name": "Ada",
+			"tags": []any{"config", "tool"},
+		}), nil, tomlImportConfig{})
+		tAssert.NoError(err)
+		tAssert.Equal(`{
+  name: "Ada",
+  tags: [
+    "config",
+    "tool"
+  ]
+}`, expression.render(0))
+
+		expression, err = reflectExpression(reflect.ValueOf((*map[string]any)(nil)), nil, tomlImportConfig{})
+		tAssert.NoError(err)
+		tAssert.Equal(`""`, expression.render(0))
+
+		expression, err = reflectExpression(reflect.ValueOf([]map[string]any{{"name": "Ada"}}), nil, tomlImportConfig{})
+		tAssert.NoError(err)
+		tAssert.Equal(`[
+  {
+    name: "Ada"
+  }
+]`, expression.render(0))
+
+		_, err = reflectExpression(reflect.ValueOf(1), nil, tomlImportConfig{})
+		tAssert.ErrorContains(err, "unsupported value")
+	})
+
+	It("renders omitted import expressions as empty text", func() {
+		render := omittedExpression{}.render
+
+		tAssert.Equal("", render(0))
+	})
+
 	It("imports YAML data fixtures into equivalent Mace output", func() {
 		for _, fixture := range dataFixtures() {
 			expected := expectedOutput(fixture.mace)

@@ -27,7 +27,8 @@ func TestExpressionNodes(t *testing.T) {
 	}
 
 	for _, expression := range expressions {
-		expression.expressionNode()
+		fn := expression.expressionNode
+		fn()
 	}
 }
 
@@ -40,7 +41,8 @@ func TestDeclarationNodes(t *testing.T) {
 	}
 
 	for _, declaration := range declarations {
-		declaration.declarationNode()
+		fn := declaration.declarationNode
+		fn()
 	}
 }
 
@@ -57,7 +59,8 @@ func TestTypeReferenceNodes(t *testing.T) {
 	}
 
 	for _, typeReference := range typeReferences {
-		typeReference.typeReferenceNode()
+		fn := typeReference.typeReferenceNode
+		fn()
 	}
 }
 

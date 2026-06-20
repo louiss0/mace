@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/louiss0/mace/internal/lexer"
+	"github.com/louiss0/mace/internal/parser/ast"
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/stretchr/testify/assert"
 )
@@ -2839,5 +2842,387 @@ schema PackageJSON: {
 		_, err := New().Process(input)
 		tAssert.Error(err)
 		tAssert.ErrorContains(err, "type mismatch")
+	})
+})
+
+var _ = Describe("Processor helpers", func() {
+	It("compares and displays choice values by scalar keys", func() {
+		valuesEqual := choiceValuesEqual
+		valueKeys := choiceValueKeys
+		typeName := choiceTypeName
+		left := []Value{
+			{Kind: ValueString, String: "Ada"},
+			{Kind: ValueInt, Int: 7},
+			{Kind: ValueBoolean, Boolean: true},
+		}
+		right := []Value{
+			{Kind: ValueBoolean, Boolean: true},
+			{Kind: ValueString, String: "Ada"},
+			{Kind: ValueInt, Int: 7},
+		}
+
+		tAssert.True(valuesEqual(left, right))
+		tAssert.False(valuesEqual(left, right[:2]))
+		tAssert.Equal([]string{"boolean:true", "int:7", "string:Ada"}, valueKeys(left))
+		tAssert.Empty(valueKeys([]Value{{Kind: ValueRecord}}))
+		tAssert.Equal(`choice["Ada", 7, true]`, typeName(left))
+	})
+
+	It("falls back to source labels for unresolved choice schema members", func() {
+		typeNameForSchema := choiceTypeNameForSchema
+		reference := ast.ChoiceType{Members: []ast.Expression{
+			ast.Identifier{Name: "Shared"},
+			ast.StringLiteral{Lexeme: `"Ada"`},
+			ast.IntLiteral{Lexeme: "7"},
+			ast.FloatLiteral{Lexeme: "1.5"},
+			ast.HexIntLiteral{Lexeme: "0xFF"},
+			ast.HexFloatLiteral{Lexeme: "0x2.8"},
+			ast.BooleanLiteral{Value: false},
+			ast.RecordLiteral{},
+		}}
+
+		name := typeNameForSchema(reference, newTypeRegistry())
+
+		tAssert.Contains(name, "Shared")
+		tAssert.Contains(name, `"Ada"`)
+		tAssert.Contains(name, "7")
+		tAssert.Contains(name, "1.5")
+		tAssert.Contains(name, "0xFF")
+		tAssert.Contains(name, "0x2.8")
+		tAssert.Contains(name, "false")
+		tAssert.Contains(name, "ast.RecordLiteral")
+	})
+
+	It("converts runtime value types back to AST type references", func() {
+		typeReference := typeReferenceFromValueType
+		recordType := ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}
+
+		tAssert.Equal(ast.ChoiceType{Members: []ast.Expression{
+			ast.StringLiteral{Lexeme: `"Ada"`},
+			ast.IntLiteral{Lexeme: "7"},
+		}}, typeReference(valueType{choiceValues: []Value{
+			{Kind: ValueString, String: "Ada"},
+			{Kind: ValueInt, Int: 7},
+		}}))
+		tAssert.Equal(ast.VariantType{Members: []ast.TypeReference{
+			ast.PrimitiveType{Name: "string"},
+			ast.PrimitiveType{Name: "int"},
+		}}, typeReference(valueType{members: []valueType{{kind: ValueString}, {kind: ValueInt}}}))
+		tAssert.Equal(ast.ArrayType{Element: ast.PrimitiveType{Name: "boolean"}}, typeReference(valueType{kind: ValueArray, element: &valueType{kind: ValueBoolean}}))
+		tAssert.Equal(ast.ArrayType{Element: ast.PrimitiveType{Name: "string"}}, typeReference(valueType{kind: ValueArray}))
+		tAssert.Equal(ast.NamedType{Name: "User"}, typeReference(valueType{kind: ValueRecord, schemaName: "User"}))
+		tAssert.Equal(ast.RecordMapType{Value: ast.PrimitiveType{Name: "float"}}, typeReference(valueType{kind: ValueRecord, element: &valueType{kind: ValueFloat}}))
+		tAssert.Equal(recordType, typeReference(valueType{kind: ValueRecord, record: &recordType}))
+		tAssert.Equal(ast.PrimitiveType{Name: "string"}, typeReference(valueType{kind: ValueUnknown}))
+	})
+
+	It("converts runtime scalar values back to AST expressions", func() {
+		expression := expressionFromValue
+
+		tAssert.Equal(ast.StringLiteral{Lexeme: `"Ada"`}, expression(Value{Kind: ValueString, String: "Ada"}))
+		tAssert.Equal(ast.IntLiteral{Lexeme: "7"}, expression(Value{Kind: ValueInt, Int: 7}))
+		tAssert.Equal(ast.FloatLiteral{Lexeme: "1.5"}, expression(Value{Kind: ValueFloat, Float: 1.5}))
+		tAssert.Equal(ast.HexIntLiteral{Lexeme: "0xFF"}, expression(Value{Kind: ValueHexInt, String: "0xFF"}))
+		tAssert.Equal(ast.HexFloatLiteral{Lexeme: "0x2.8"}, expression(Value{Kind: ValueHexFloat, String: "0x2.8"}))
+		tAssert.Equal(ast.BooleanLiteral{Value: true}, expression(Value{Kind: ValueBoolean, Boolean: true}))
+		tAssert.Equal(ast.StringLiteral{Lexeme: `"null"`}, expression(Value{Kind: ValueNull}))
+	})
+
+	It("reports diagnostic helper details", func() {
+		kindName := directiveKindName
+		cause := errors.New("root cause")
+		err := DiagnosticError{Message: "wrapped", Cause: cause}
+
+		tAssert.Equal(cause, errors.Unwrap(err))
+		tAssert.Equal("missing required field \"name\"", strings.TrimPrefix(missingRequiredFieldError("name", "").Error(), "processor: "))
+		tAssert.Equal("output", kindName(ast.OutputDirectiveOutput))
+		tAssert.Equal("schema_file", kindName(ast.OutputDirectiveSchemaFile))
+		tAssert.Equal("schema", kindName(ast.OutputDirectiveSchema))
+		tAssert.Equal("parse", kindName(ast.OutputDirectiveParse))
+		tAssert.Equal("parse_file", kindName(ast.OutputDirectiveParseFile))
+		tAssert.Equal("unknown", kindName(ast.OutputDirectiveKind(99)))
+	})
+
+	It("formats scalar helper values", func() {
+		valueKey := scalarValueKey
+		valueDisplay := scalarValueDisplay
+		floatLiteral := decimalFloatLiteral
+
+		key, ok := valueKey(Value{Kind: ValueFloat, Float: 1.5})
+		tAssert.True(ok)
+		tAssert.Contains(key, "float:")
+		_, ok = valueKey(Value{Kind: ValueRecord})
+		tAssert.False(ok)
+		tAssert.Equal("null", valueDisplay(Value{Kind: ValueNull}))
+		tAssert.Equal("unknown", valueDisplay(Value{Kind: ValueRecord}))
+		tAssert.Equal("2.0", floatLiteral(2))
+		tAssert.Equal("1.5", floatLiteral(1.5))
+	})
+
+	It("derives value types and kind names from evaluated values", func() {
+		valueTypeFor := valueTypeFromValue
+		kindNameFor := Value.kindName
+
+		arrayType := valueTypeFor(Value{Kind: ValueArray})
+		tAssert.Equal(ValueArray, arrayType.kind)
+		if tAssert.NotNil(arrayType.element) {
+			tAssert.Equal(ValueUnknown, arrayType.element.kind)
+		}
+
+		arrayType = valueTypeFor(Value{Kind: ValueArray, Array: []Value{{Kind: ValueString, String: "Ada"}}})
+		tAssert.Equal(ValueArray, arrayType.kind)
+		if tAssert.NotNil(arrayType.element) {
+			tAssert.Equal(ValueString, arrayType.element.kind)
+		}
+
+		tAssert.Equal(ValueRecord, valueTypeFor(Value{Kind: ValueRecord}).kind)
+		tAssert.Equal(ValueBoolean, valueTypeFor(Value{Kind: ValueBoolean}).kind)
+
+		tAssert.Equal("array", kindNameFor(Value{Kind: ValueArray}))
+		tAssert.Equal("int", kindNameFor(Value{Kind: ValueInt}))
+		tAssert.Equal("float", kindNameFor(Value{Kind: ValueFloat}))
+		tAssert.Equal("hex_int", kindNameFor(Value{Kind: ValueHexInt}))
+		tAssert.Equal("hex_float", kindNameFor(Value{Kind: ValueHexFloat}))
+		tAssert.Equal("boolean", kindNameFor(Value{Kind: ValueBoolean}))
+		tAssert.Equal("record", kindNameFor(Value{Kind: ValueRecord}))
+		tAssert.Equal("null", kindNameFor(Value{Kind: ValueNull}))
+		tAssert.Equal("string", kindNameFor(Value{Kind: ValueString}))
+		tAssert.Equal("unknown", kindNameFor(Value{Kind: ValueUnknown}))
+	})
+
+	It("converts AST type references to public schema types", func() {
+		schemaType := schemaTypeFromTypeReference
+		types := newTypeRegistry()
+		types.AddAlias("ChoiceAlias", ast.ChoiceType{Members: []ast.Expression{
+			ast.StringLiteral{Lexeme: `"Ada"`},
+			ast.StringLiteral{Lexeme: `"Bob"`},
+		}})
+
+		result, err := schemaType(ast.PrimitiveType{Name: "string"}, types)
+		tAssert.NoError(err)
+		tAssert.Equal(schemaPrimitive("string"), result)
+
+		result, err = schemaType(ast.NamedType{Name: "User"}, types)
+		tAssert.NoError(err)
+		tAssert.Equal(schemaNamed("User"), result)
+
+		result, err = schemaType(ast.ArrayType{Element: ast.PrimitiveType{Name: "int"}}, types)
+		tAssert.NoError(err)
+		tAssert.Equal(schemaArray(schemaPrimitive("int")), result)
+
+		result, err = schemaType(ast.RecordMapType{Value: ast.PrimitiveType{Name: "boolean"}}, types)
+		tAssert.NoError(err)
+		tAssert.Equal(SchemaType{Kind: SchemaTypeRecordMap, Element: &SchemaType{Kind: SchemaTypePrimitive, Name: "boolean"}}, result)
+
+		result, err = schemaType(ast.UnionType{Members: []ast.TypeReference{
+			ast.NamedType{Name: "User"},
+			ast.NamedType{Name: "Audit"},
+		}}, types)
+		tAssert.NoError(err)
+		tAssert.Equal(SchemaType{Kind: SchemaTypeUnion, Members: []SchemaType{schemaNamed("User"), schemaNamed("Audit")}}, result)
+
+		result, err = schemaType(ast.VariantType{Members: []ast.TypeReference{
+			ast.PrimitiveType{Name: "string"},
+			ast.PrimitiveType{Name: "int"},
+		}}, types)
+		tAssert.NoError(err)
+		tAssert.Equal(SchemaType{Kind: SchemaTypeVariant, Members: []SchemaType{schemaPrimitive("string"), schemaPrimitive("int")}}, result)
+
+		result, err = schemaType(ast.ChoiceType{Members: []ast.Expression{
+			ast.Identifier{Name: "ChoiceAlias"},
+			ast.StringLiteral{Lexeme: `"Carol"`},
+		}}, types)
+		tAssert.NoError(err)
+		tAssert.Equal(SchemaType{Kind: SchemaTypeNamed, Name: `choice["Ada", "Bob", "Carol"]`}, result)
+
+		result, err = schemaType(ast.RecordType{Fields: []ast.SchemaField{
+			{Name: "name", Type: ast.PrimitiveType{Name: "string"}},
+			{Name: "age", Optional: true, Type: ast.PrimitiveType{Name: "int"}},
+		}}, types)
+		tAssert.NoError(err)
+		tAssert.Equal(schemaRecord(map[expectedSchemaField]SchemaType{
+			{name: "name"}:                schemaPrimitive("string"),
+			{name: "age", optional: true}: schemaPrimitive("int"),
+		}), result)
+
+		_, err = schemaType(ast.ArrayType{Element: nil}, types)
+		tAssert.ErrorContains(err, "unknown type reference")
+	})
+
+	It("infers merge and numeric binary result types", func() {
+		mergeType := inferMergeType
+		numericType := inferNumericBinary
+
+		recordType := valueType{kind: ValueRecord, schemaName: "User"}
+		result, err := mergeType(recordType, recordType)
+		tAssert.NoError(err)
+		tAssert.Equal(recordType, result)
+
+		arrayElement := valueType{kind: ValueString}
+		arrayType := valueType{kind: ValueArray, element: &arrayElement}
+		result, err = mergeType(arrayType, arrayType)
+		tAssert.NoError(err)
+		tAssert.Equal(arrayType, result)
+
+		_, err = mergeType(valueType{kind: ValueString}, recordType)
+		tAssert.ErrorContains(err, "records or arrays")
+
+		_, err = mergeType(valueType{kind: ValueRecord, schemaName: "User"}, valueType{kind: ValueRecord, schemaName: "Audit"})
+		tAssert.ErrorContains(err, "same type")
+
+		result, err = numericType(lexer.TokenPlus, valueType{kind: ValueInt}, valueType{kind: ValueInt})
+		tAssert.NoError(err)
+		tAssert.Equal(ValueInt, result.kind)
+
+		result, err = numericType(lexer.TokenPlus, valueType{kind: ValueInt}, valueType{kind: ValueFloat})
+		tAssert.NoError(err)
+		tAssert.Equal(ValueFloat, result.kind)
+
+		result, err = numericType(lexer.TokenSlash, valueType{kind: ValueHexInt}, valueType{kind: ValueHexInt})
+		tAssert.NoError(err)
+		tAssert.Equal(ValueHexFloat, result.kind)
+
+		result, err = numericType(lexer.TokenPlus, valueType{kind: ValueHexInt}, valueType{kind: ValueHexFloat})
+		tAssert.NoError(err)
+		tAssert.Equal(ValueHexFloat, result.kind)
+
+		_, err = numericType(lexer.TokenPlus, valueType{kind: ValueString}, valueType{kind: ValueInt})
+		tAssert.ErrorContains(err, "numeric operands")
+
+		_, err = numericType(lexer.TokenPlus, valueType{kind: ValueHexInt}, valueType{kind: ValueInt})
+		tAssert.ErrorContains(err, "hexadecimal operands")
+	})
+
+	It("compares scalar values for equality", func() {
+		equalValues := valuesEqual
+
+		equal, err := equalValues(Value{Kind: ValueInt, Int: 1}, Value{Kind: ValueInt, Int: 1})
+		tAssert.NoError(err)
+		tAssert.True(equal)
+
+		equal, err = equalValues(Value{Kind: ValueFloat, Float: 1.5}, Value{Kind: ValueFloat, Float: 2.5})
+		tAssert.NoError(err)
+		tAssert.False(equal)
+
+		equal, err = equalValues(Value{Kind: ValueHexInt, Int: 2}, Value{Kind: ValueHexFloat, Float: 2})
+		tAssert.NoError(err)
+		tAssert.True(equal)
+
+		equal, err = equalValues(Value{Kind: ValueHexFloat, Float: 3}, Value{Kind: ValueHexInt, Int: 2})
+		tAssert.NoError(err)
+		tAssert.False(equal)
+
+		equal, err = equalValues(Value{Kind: ValueBoolean, Boolean: true}, Value{Kind: ValueBoolean, Boolean: true})
+		tAssert.NoError(err)
+		tAssert.True(equal)
+
+		equal, err = equalValues(Value{Kind: ValueString, String: "Ada"}, Value{Kind: ValueString, String: "Bob"})
+		tAssert.NoError(err)
+		tAssert.False(equal)
+
+		_, err = equalValues(Value{Kind: ValueRecord}, Value{Kind: ValueRecord})
+		tAssert.ErrorContains(err, "unsupported equality")
+	})
+
+	It("resolves chained and cyclic type aliases", func() {
+		resolveReference := (*typeRegistry).resolveTypeReference
+		registry := newTypeRegistry()
+		registry.AddAlias("Name", ast.PrimitiveType{Name: "string"})
+		registry.AddAlias("DisplayName", ast.NamedType{Name: "Name"})
+		registry.AddAlias("External", ast.NamedType{Name: "Missing"})
+		registry.AddAlias("Loop", ast.NamedType{Name: "Loop"})
+
+		resolved, err := resolveReference(registry, ast.NamedType{Name: "DisplayName"}, map[string]struct{}{})
+		tAssert.NoError(err)
+		tAssert.Equal(ast.PrimitiveType{Name: "string"}, resolved)
+
+		resolved, err = resolveReference(registry, ast.NamedType{Name: "External"}, map[string]struct{}{})
+		tAssert.NoError(err)
+		tAssert.Equal(ast.NamedType{Name: "Missing"}, resolved)
+
+		resolved, err = resolveReference(registry, ast.PrimitiveType{Name: "int"}, map[string]struct{}{})
+		tAssert.NoError(err)
+		tAssert.Equal(ast.PrimitiveType{Name: "int"}, resolved)
+
+		_, err = resolveReference(registry, ast.NamedType{Name: "Loop"}, map[string]struct{}{})
+		tAssert.ErrorContains(err, "cyclic type alias")
+	})
+
+	It("evaluates numeric helper operations", func() {
+		hexNumeric := evaluateHexNumeric
+		floatNumeric := evaluateFloatNumeric
+		shiftValue := evaluateShift
+		bitwiseValue := evaluateBitwise
+
+		result, err := hexNumeric(lexer.TokenPlus, Value{Kind: ValueHexInt, Int: 2}, Value{Kind: ValueHexInt, Int: 3})
+		tAssert.NoError(err)
+		assertExpectedValue(result, expectedValue{kind: ValueHexInt, string: "0x5"})
+
+		result, err = hexNumeric(lexer.TokenMinus, Value{Kind: ValueHexFloat, Float: 3.5}, Value{Kind: ValueHexInt, Int: 1})
+		tAssert.NoError(err)
+		assertExpectedValue(result, expectedValue{kind: ValueHexFloat, string: "0x2.8"})
+
+		result, err = hexNumeric(lexer.TokenStar, Value{Kind: ValueHexInt, Int: 2}, Value{Kind: ValueHexFloat, Float: 2.5})
+		tAssert.NoError(err)
+		assertExpectedValue(result, expectedValue{kind: ValueHexFloat, string: "0x5.0"})
+
+		result, err = hexNumeric(lexer.TokenDoubleStar, Value{Kind: ValueHexInt, Int: 2}, Value{Kind: ValueHexInt, Int: 3})
+		tAssert.NoError(err)
+		assertExpectedValue(result, expectedValue{kind: ValueHexInt, string: "0x8"})
+
+		result, err = hexNumeric(lexer.TokenDoubleStar, Value{Kind: ValueHexFloat, Float: 2}, Value{Kind: ValueHexFloat, Float: 3})
+		tAssert.NoError(err)
+		assertExpectedValue(result, expectedValue{kind: ValueHexFloat, string: "0x8.0"})
+
+		_, err = hexNumeric(lexer.TokenSlash, Value{Kind: ValueHexInt, Int: 2}, Value{Kind: ValueHexInt, Int: 0})
+		tAssert.ErrorContains(err, "division by zero")
+
+		_, err = hexNumeric(lexer.TokenPercent, Value{Kind: ValueHexInt, Int: 2}, Value{Kind: ValueHexInt, Int: 1})
+		tAssert.ErrorContains(err, "unknown numeric operator")
+
+		result, err = floatNumeric(lexer.TokenSlash, 7.5, 2.5)
+		tAssert.NoError(err)
+		assertExpectedValue(result, expectedValue{kind: ValueFloat, float: 3})
+
+		result, err = floatNumeric(lexer.TokenDoubleStar, 2, 3)
+		tAssert.NoError(err)
+		assertExpectedValue(result, expectedValue{kind: ValueFloat, float: 8})
+
+		_, err = floatNumeric(lexer.TokenSlash, 1, 0)
+		tAssert.ErrorContains(err, "division by zero")
+
+		_, err = floatNumeric(lexer.TokenPercent, 1, 1)
+		tAssert.ErrorContains(err, "unknown numeric operator")
+
+		result, err = shiftValue(lexer.TokenShiftLeft, Value{Kind: ValueInt, Int: 1}, Value{Kind: ValueInt, Int: 3})
+		tAssert.NoError(err)
+		assertExpectedValue(result, expectedValue{kind: ValueInt, int64: 8})
+
+		result, err = shiftValue(lexer.TokenShiftRightUnsigned, Value{Kind: ValueHexInt, Int: -8}, Value{Kind: ValueHexInt, Int: 1})
+		tAssert.NoError(err)
+		tAssert.Equal(ValueHexInt, result.Kind)
+
+		_, err = shiftValue(lexer.TokenShiftLeft, Value{Kind: ValueHexFloat, Float: 1}, Value{Kind: ValueHexInt, Int: 1})
+		tAssert.ErrorContains(err, "hex_int operands")
+
+		_, err = shiftValue(lexer.TokenShiftLeft, Value{Kind: ValueInt, Int: 1}, Value{Kind: ValueInt, Int: -1})
+		tAssert.ErrorContains(err, "negative shift")
+
+		_, err = shiftValue(lexer.TokenPlus, Value{Kind: ValueInt, Int: 1}, Value{Kind: ValueInt, Int: 1})
+		tAssert.ErrorContains(err, "unknown shift")
+
+		result, err = bitwiseValue(lexer.TokenPipe, Value{Kind: ValueInt, Int: 1}, Value{Kind: ValueInt, Int: 2})
+		tAssert.NoError(err)
+		assertExpectedValue(result, expectedValue{kind: ValueInt, int64: 3})
+
+		result, err = bitwiseValue(lexer.TokenCaret, Value{Kind: ValueHexInt, Int: 3}, Value{Kind: ValueHexInt, Int: 1})
+		tAssert.NoError(err)
+		assertExpectedValue(result, expectedValue{kind: ValueHexInt, string: "0x2"})
+
+		_, err = bitwiseValue(lexer.TokenPipe, Value{Kind: ValueHexFloat, Float: 1}, Value{Kind: ValueHexInt, Int: 1})
+		tAssert.ErrorContains(err, "hex_int operands")
+
+		_, err = bitwiseValue(lexer.TokenPlus, Value{Kind: ValueInt, Int: 1}, Value{Kind: ValueInt, Int: 1})
+		tAssert.ErrorContains(err, "unknown bitwise")
 	})
 })

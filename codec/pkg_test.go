@@ -8,11 +8,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/louiss0/mace/internal/processor"
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/yaml.v3"
@@ -314,6 +316,39 @@ var _ = Describe("Marshal", func() {
 	It("rejects nil values", func() {
 		_, err := Marshal(map[string]any{"value": nil})
 		tAssert.Error(err)
+	})
+
+	It("marshals pointers, arrays, empty records, and default field names", func() {
+		type defaultFieldConfig struct {
+			DisplayName string
+			hidden      string
+		}
+
+		name := "Ada"
+		source, err := Marshal(map[string]any{
+			"name":    &name,
+			"pair":    [2]int{1, 2},
+			"empty":   map[string]any{},
+			"profile": defaultFieldConfig{DisplayName: "Ada", hidden: "ignored"},
+		})
+
+		tAssert.NoError(err)
+		tAssert.Equal(`{
+  empty: {},
+  name: "Ada",
+  pair: [1, 2],
+  profile: {
+    displayName: "Ada"
+  }
+}`, source)
+	})
+
+	It("rejects unsupported marshal values", func() {
+		_, err := Marshal(map[int]string{1: "one"})
+		tAssert.ErrorContains(err, "maps must use string keys")
+
+		_, err = Marshal(func() {})
+		tAssert.ErrorContains(err, "unsupported kind")
 	})
 })
 
@@ -737,6 +772,105 @@ var _ = Describe("Check", func() {
 	})
 })
 
+var _ = Describe("Codec helpers", func() {
+	It("converts reflected Go values into processor values", func() {
+		convert := processorValueFromReflect
+		name := "Ada"
+
+		tAssert.Equal(processor.Value{Kind: processor.ValueUnknown}, convert(reflect.Value{}))
+		tAssert.Equal(processor.Value{Kind: processor.ValueString, String: "Ada"}, convert(reflect.ValueOf(&name)))
+		tAssert.Equal(processor.Value{Kind: processor.ValueUnknown}, convert(reflect.ValueOf((*string)(nil))))
+		tAssert.Equal(processor.Value{Kind: processor.ValueBoolean, Boolean: true}, convert(reflect.ValueOf(true)))
+		tAssert.Equal(processor.Value{Kind: processor.ValueInt, Int: 7}, convert(reflect.ValueOf(uint(7))))
+		tAssert.Equal(processor.Value{Kind: processor.ValueFloat, Float: 1.5}, convert(reflect.ValueOf(float32(1.5))))
+		tAssert.Equal(processor.Value{Kind: processor.ValueArray, Array: []processor.Value{
+			{Kind: processor.ValueInt, Int: 1},
+			{Kind: processor.ValueInt, Int: 2},
+		}}, convert(reflect.ValueOf([2]int{1, 2})))
+		tAssert.Equal(processor.Value{Kind: processor.ValueRecord, Record: map[string]processor.Value{
+			"name": {Kind: processor.ValueString, String: "Ada"},
+		}}, convert(reflect.ValueOf(map[string]string{"name": "Ada"})))
+		tAssert.Equal(processor.Value{Kind: processor.ValueUnknown}, convert(reflect.ValueOf(struct{}{})))
+	})
+
+	It("handles imported map keys and JSON number edge cases", func() {
+		mapKey := importedMapKey
+		jsonNumber := importedJSONNumber
+
+		name, err := mapKey(reflect.ValueOf("name"))
+		tAssert.NoError(err)
+		tAssert.Equal("name", name)
+
+		_, err = mapKey(reflect.Value{})
+		tAssert.ErrorContains(err, "invalid map key")
+
+		var value any = (*string)(nil)
+		_, err = mapKey(reflect.ValueOf(&value))
+		tAssert.ErrorContains(err, "invalid map key")
+
+		_, err = mapKey(reflect.ValueOf(1))
+		tAssert.ErrorContains(err, "string keys")
+
+		integer, err := jsonNumber(json.Number("7"))
+		tAssert.NoError(err)
+		tAssert.Equal(int64(7), integer)
+
+		floatValue, err := jsonNumber(json.Number("1.5"))
+		tAssert.NoError(err)
+		tAssert.Equal(1.5, floatValue)
+
+		_, err = jsonNumber(json.Number("nope"))
+		tAssert.ErrorContains(err, "invalid json number")
+	})
+
+	It("decodes helper values into requested Go types", func() {
+		floatDecode := decodeFloat
+		boolDecode := decodeBool
+		recordDecode := decodeRecordValue
+		valueDecode := decodeValue
+		interfaceType := reflect.TypeOf((*any)(nil)).Elem()
+
+		value, err := floatDecode(1.5, interfaceType)
+		tAssert.NoError(err)
+		tAssert.Equal(1.5, value.Interface())
+
+		_, err = floatDecode(1.5, reflect.TypeOf(""))
+		tAssert.ErrorContains(err, "cannot assign float")
+
+		value, err = boolDecode(true, interfaceType)
+		tAssert.NoError(err)
+		tAssert.Equal(true, value.Interface())
+
+		_, err = boolDecode(true, reflect.TypeOf(""))
+		tAssert.ErrorContains(err, "cannot assign boolean")
+
+		value, err = recordDecode(map[string]processor.Value{
+			"name": {Kind: processor.ValueString, String: "Ada"},
+		}, interfaceType)
+		tAssert.NoError(err)
+		tAssert.Equal(map[string]any{"name": "Ada"}, value.Interface())
+
+		_, err = recordDecode(map[string]processor.Value{}, reflect.TypeOf(""))
+		tAssert.ErrorContains(err, "cannot assign record")
+
+		_, err = valueDecode(processor.Value{Kind: processor.ValueUnknown}, reflect.TypeOf(""))
+		tAssert.ErrorContains(err, "unsupported value kind")
+	})
+
+	It("reports empty values used by struct omitempty handling", func() {
+		empty := isEmptyValue
+
+		tAssert.True(empty(reflect.ValueOf("")))
+		tAssert.True(empty(reflect.ValueOf(false)))
+		tAssert.True(empty(reflect.ValueOf(0)))
+		tAssert.True(empty(reflect.ValueOf(uint(0))))
+		tAssert.True(empty(reflect.ValueOf(0.0)))
+		tAssert.True(empty(reflect.ValueOf((*string)(nil))))
+		tAssert.False(empty(reflect.ValueOf(struct{}{})))
+		tAssert.False(empty(reflect.ValueOf(1)))
+	})
+})
+
 var _ = Describe("Import", func() {
 	It("imports JSON objects into a Mace output block", func() {
 		source, err := ImportJSON(`{
@@ -757,6 +891,28 @@ var _ = Describe("Import", func() {
   },
   scores: [1, 2, 3]
 }`, source)
+	})
+
+	It("rejects malformed imported document formats", func() {
+		_, err := ImportJSON(`{"name": "Ada"} true`)
+		tAssert.ErrorContains(err, "unexpected content")
+
+		_, err = ImportYAML("name: [")
+		tAssert.ErrorContains(err, "import yaml")
+
+		_, err = ImportTOML("name = ")
+		tAssert.ErrorContains(err, "import toml")
+
+		_, err = ImportJSONSchema(`[]`)
+		tAssert.ErrorContains(err, "expected record root")
+	})
+
+	It("rejects imported roots that cannot become output records", func() {
+		_, err := ImportJSON(`null`)
+		tAssert.ErrorContains(err, "expected record root")
+
+		_, err = ImportJSON(`{"nickname": null}`)
+		tAssert.ErrorContains(err, "output block is empty")
 	})
 
 	It("imports YAML mappings into a Mace output block", func() {
@@ -1690,6 +1846,42 @@ enum Status: int {
 })
 
 var _ = Describe("Unmarshal", func() {
+	It("unmarshals scalar, pointer, array, and interface targets", func() {
+		var target struct {
+			Name    *string        `json:"name"`
+			Count   uint           `json:"count"`
+			Ratio   float64        `json:"ratio"`
+			Flags   [2]bool        `json:"flags"`
+			Items   []int          `json:"items"`
+			Profile map[string]any `json:"profile"`
+			Any     any            `json:"any"`
+		}
+
+		err := Unmarshal(`[output = data]
+{
+  name: "Ada";
+  count: 3;
+  ratio: 1.5;
+  flags: [true, false];
+  items: [1, 2];
+  profile: {
+    level: 7;
+  };
+  any: [1, "two"];
+}`, &target)
+
+		tAssert.NoError(err)
+		if tAssert.NotNil(target.Name) {
+			tAssert.Equal("Ada", *target.Name)
+		}
+		tAssert.Equal(uint(3), target.Count)
+		tAssert.Equal(1.5, target.Ratio)
+		tAssert.Equal([2]bool{true, false}, target.Flags)
+		tAssert.Equal([]int{1, 2}, target.Items)
+		tAssert.Equal(map[string]any{"level": int64(7)}, target.Profile)
+		tAssert.Equal([]any{int64(1), "two"}, target.Any)
+	})
+
 	It("unmarshals output records into structs", func() {
 		input := `[output = data]
 {
@@ -1734,6 +1926,44 @@ var _ = Describe("Unmarshal", func() {
 	It("rejects non-pointer targets", func() {
 		err := Unmarshal(`[output = data] { value: 1; }`, map[string]any{})
 		tAssert.Error(err)
+	})
+
+	It("rejects incompatible unmarshal targets", func() {
+		var nilMap *map[string]any
+		err := Unmarshal(`[output = data] { value: 1; }`, nilMap)
+		tAssert.ErrorContains(err, "non-nil pointer")
+
+		var scalar string
+		err = Unmarshal(`[output = data] { value: 1; }`, &scalar)
+		tAssert.ErrorContains(err, "target must point")
+
+		var unsigned struct {
+			Value uint `json:"value"`
+		}
+		err = Unmarshal(`[output = data] { value: -1; }`, &unsigned)
+		tAssert.ErrorContains(err, "negative int")
+
+		var fixed struct {
+			Values [1]int `json:"values"`
+		}
+		err = Unmarshal(`[output = data] { values: [1, 2]; }`, &fixed)
+		tAssert.ErrorContains(err, "array length mismatch")
+
+		var typed struct {
+			Value int `json:"value"`
+		}
+		err = Unmarshal(`[output = data] { value: "Ada"; }`, &typed)
+		tAssert.ErrorContains(err, "cannot assign string")
+	})
+
+	It("unmarshals into nil nested pointers", func() {
+		var target **map[string]int
+
+		err := Unmarshal(`[output = data] { value: 1; }`, &target)
+
+		tAssert.NoError(err)
+		tAssert.NotNil(target)
+		tAssert.Equal(map[string]int{"value": 1}, **target)
 	})
 
 	It("uses parse input values during unmarshal", func() {

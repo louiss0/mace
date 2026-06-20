@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/louiss0/mace/internal/lexer"
+	"github.com/louiss0/mace/internal/parser/ast"
+	"github.com/louiss0/mace/internal/processor"
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/samber/lo"
 	protocol "github.com/tliron/glsp/protocol_3_16"
@@ -64,6 +67,330 @@ func requireDiagnosticCode(diagnostic protocol.Diagnostic) string {
 }
 
 var _ = Describe("LSP analysis", func() {
+	It("computes output and field edit ranges", func() {
+		insertRange := outputInsertRange
+		bodyRange := outputBodyRange
+		namedRange := namedFieldEditRange
+		namedRangeFromEnd := namedFieldEditRangeFromEnd
+		fieldRangeAt := fieldEditRangeAt
+
+		text := "[output = data]\n{\n  name: \"Ada\";\n  age: 27;\n  name: \"Bob\";\n}"
+		tokens := lexAnalysisTokens(text)
+
+		rangeValue, ok := insertRange(text)
+		tAssert.True(ok)
+		tAssert.Equal(protocol.Position{Line: 5, Character: 0}, rangeValue.Start)
+		tAssert.Equal(rangeValue.Start, rangeValue.End)
+
+		rangeValue, ok = bodyRange(text, tokens)
+		tAssert.True(ok)
+		tAssert.Equal(protocol.Position{Line: 1, Character: 0}, rangeValue.Start)
+		tAssert.Equal(protocol.Position{Line: 5, Character: 1}, rangeValue.End)
+
+		rangeValue, ok = namedRange(text, tokens, "name")
+		tAssert.True(ok)
+		tAssert.Equal(protocol.Position{Line: 2, Character: 0}, rangeValue.Start)
+		tAssert.Equal(protocol.Position{Line: 3, Character: 0}, rangeValue.End)
+
+		rangeValue, ok = namedRangeFromEnd(text, tokens, "name")
+		tAssert.True(ok)
+		tAssert.Equal(protocol.Position{Line: 4, Character: 0}, rangeValue.Start)
+		tAssert.Equal(protocol.Position{Line: 5, Character: 0}, rangeValue.End)
+
+		_, ok = namedRange(text, tokens, "missing")
+		tAssert.False(ok)
+
+		_, ok = fieldRangeAt(text, tokens, len(tokens)+1)
+		tAssert.False(ok)
+
+		_, ok = insertRange("[output = data]\n")
+		tAssert.False(ok)
+	})
+
+	It("classifies parser and processor diagnostics", func() {
+		parseCases := map[string]diagnosticCode{
+			"parser: empty script block":                     diagnosticSyntaxEmptyScriptBlock,
+			"parser: expected closing script delimiter EOF":  diagnosticSyntaxUnterminatedScriptBlock,
+			"parser: script delimiter mismatch":              diagnosticSyntaxInconsistentScriptDelimiters,
+			"parser: malformed import":                       diagnosticSyntaxMalformedImport,
+			"parser: malformed directive":                    diagnosticSyntaxMalformedDirectiveList,
+			"parser: malformed schema declaration":           diagnosticSyntaxMalformedSchema,
+			"parser: expected integer index in array access": diagnosticSyntaxInvalidArrayAccessIndex,
+			"parser: not allowed when output = schema":       diagnosticDirectiveSchemaOutputVariableIgnored,
+			"parser: malformed variable declaration":         diagnosticSyntaxMalformedVariableDeclaration,
+			"parser: malformed output field":                 diagnosticSyntaxMalformedOutputField,
+			"parser: unexpected token":                       diagnosticSyntaxUnexpectedToken,
+		}
+		for message, code := range parseCases {
+			tAssert.Equal(code, classifyDiagnosticCode(message))
+		}
+
+		processorCases := map[string]diagnosticCode{
+			"processor: duplicate output directive":                                                 diagnosticDirectiveDuplicateKey,
+			"processor: duplicate documentation declaration":                                        diagnosticSyntaxUnexpectedToken,
+			"processor: unknown output directive":                                                   diagnosticDirectiveUnknownKey,
+			"processor: schema directive is invalid when output mode is schema":                     diagnosticDirectiveOutputSchemaCombined,
+			"processor: unknown schema User":                                                        diagnosticDirectiveUnknownSchemaName,
+			"processor: unable to read import file":                                                 diagnosticImportFileNotFound,
+			"processor: unable to parse import file":                                                diagnosticImportFileFailedParse,
+			"processor: circular import":                                                            diagnosticImportCircular,
+			"processor: duplicate import":                                                           diagnosticImportDuplicateName,
+			"processor: imported identifier missing":                                                diagnosticImportNameNotExposed,
+			"processor: schema_doc target missing":                                                  diagnosticSyntaxUnexpectedToken,
+			"processor: unknown type Profile":                                                       diagnosticDeclarationUnknownTypeReference,
+			"processor: variable requires an initializer":                                           diagnosticDeclarationVariableMissingInitializer,
+			"processor: duplicate declaration":                                                      diagnosticDeclarationDuplicateVariable,
+			"processor: already documented by a documentation declaration":                          diagnosticSyntaxUnexpectedToken,
+			"processor: duplicate field":                                                            diagnosticDeclarationDuplicateSchemaField,
+			"processor: duplicate output field":                                                     diagnosticDeclarationDuplicateOutputField,
+			"processor: array literal has mixed element types":                                      diagnosticTypeMixedArrayLiteral,
+			"processor: array index 3 out of range":                                                 diagnosticTypeInvalidArrayAccess,
+			"processor: unknown identifier":                                                         diagnosticTypeUnknownIdentifier,
+			"processor: unknown self reference":                                                     diagnosticTypeUnknownSelfField,
+			"processor: invalid field type when output = schema":                                    diagnosticTypeInvalidOutputSchemaField,
+			"processor: cannot reference type or schema declaration":                                diagnosticTypeUnknownIdentifier,
+			"processor: expected boolean after '!'":                                                 diagnosticTypeInvalidUnaryOperator,
+			"processor: expected numeric operands":                                                  diagnosticTypeInvalidBinaryOperator,
+			"processor: null can only be assigned to nullable variables and optional schema fields": diagnosticTypeInvalidNullUsage,
+			"processor: type mismatch":                                                              diagnosticTypeInitializerMismatch,
+			"processor: missing required field":                                                     diagnosticTypeRecordDoesNotMatchSchema,
+			"processor: something else":                                                             diagnosticSyntaxUnexpectedToken,
+		}
+		for message, code := range processorCases {
+			tAssert.Equal(code, classifyDiagnosticCode(message))
+		}
+
+		tAssert.Equal(diagnosticSyntaxUnexpectedToken, classifyDiagnosticCode("plain error"))
+	})
+
+	It("covers diagnostic error code and token helpers", func() {
+		errorCases := []struct {
+			err  processor.DiagnosticError
+			code diagnosticCode
+		}{
+			{processor.DiagnosticError{Code: processor.CodeArrayIndexOutOfRange}, diagnosticTypeInvalidArrayAccess},
+			{processor.DiagnosticError{Code: processor.CodeArrayValueRequired}, diagnosticTypeInvalidArrayAccess},
+			{processor.DiagnosticError{Code: processor.CodeInvalidNullUsage}, diagnosticTypeInvalidNullUsage},
+			{processor.DiagnosticError{Code: processor.CodeInvalidOutputSchemaField}, diagnosticTypeInvalidOutputSchemaField},
+			{processor.DiagnosticError{Code: processor.CodeMissingRequiredField}, diagnosticTypeRecordDoesNotMatchSchema},
+			{processor.DiagnosticError{Code: processor.CodeOutputValueDeclaration}, diagnosticTypeUnknownIdentifier},
+			{processor.DiagnosticError{Code: processor.CodeSelfReferenceUnknown}, diagnosticTypeUnknownSelfField},
+			{processor.DiagnosticError{Code: processor.CodeTypeMismatch}, diagnosticTypeInitializerMismatch},
+			{processor.DiagnosticError{Kind: processor.ErrorImport}, diagnosticImportFileFailedParse},
+			{processor.DiagnosticError{Kind: processor.ErrorDirective}, diagnosticDirectiveUnknownKey},
+			{processor.DiagnosticError{Kind: processor.ErrorDeclaration}, diagnosticDeclarationDuplicateVariable},
+			{processor.DiagnosticError{Kind: processor.ErrorType}, diagnosticTypeInitializerMismatch},
+			{processor.DiagnosticError{Kind: processor.ErrorValue}, diagnosticTypeUnknownIdentifier},
+			{processor.DiagnosticError{Kind: processor.ErrorOperator}, diagnosticTypeInvalidBinaryOperator},
+			{processor.DiagnosticError{Kind: processor.ErrorSchema}, diagnosticTypeRecordDoesNotMatchSchema},
+			{processor.DiagnosticError{Message: "duplicate output directive"}, diagnosticDirectiveDuplicateKey},
+		}
+		for _, test := range errorCases {
+			tAssert.Equal(test.code, diagnosticCodeFromProcessorError(test.err))
+		}
+
+		bracket := lexer.Token{Type: lexer.TokenLBracket, Lexeme: "[", Line: 1, Column: 4}
+		index := lexer.Token{Type: lexer.TokenInt, Lexeme: "3", Line: 1, Column: 5}
+		candidates := []arrayAccessCandidate{{Level: 2, Bracket: bracket, Index: &index}}
+		token, ok := invalidArrayAccessToken(candidates, processor.DiagnosticError{
+			Fields: processor.DiagnosticFields{Level: 2},
+		})
+		tAssert.True(ok)
+		tAssert.Equal(bracket, token)
+
+		token, ok = outOfRangeArrayAccessToken(candidates, processor.DiagnosticError{
+			Fields: processor.DiagnosticFields{Level: 2, Index: "3"},
+		})
+		tAssert.True(ok)
+		tAssert.Equal(index, token)
+
+		_, ok = invalidArrayAccessToken(candidates, processor.DiagnosticError{
+			Fields: processor.DiagnosticFields{Level: 1},
+		})
+		tAssert.False(ok)
+	})
+
+	It("covers public root wrappers and range helpers", func() {
+		workspace, err := os.MkdirTemp("", "mace-analyzer-root-wrappers-*")
+		tAssert.NoError(err)
+		documentPath := filepath.Join(workspace, "document.mace")
+		text := `[output = data]
+{
+  name: "Ada";
+}`
+		snapshot := AnalyzeDocumentAtInRoot(text, documentPath, workspace)
+		tAssert.True(HasParsedFile(snapshot))
+		tAssert.Empty(Diagnostics(snapshot))
+
+		completion := AnalyzeCompletionContextInRoot(text, documentPath, workspace, protocol.Position{
+			Line:      2,
+			Character: protocol.UInteger(len(`  name`)),
+		})
+		tAssert.True(HasParsedFile(completion))
+
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		rangeValue := protocol.Range{
+			Start: protocol.Position{Line: 2, Character: 2},
+			End:   protocol.Position{Line: 2, Character: 6},
+		}
+		tAssert.Empty(CodeActions(snapshot, uri, rangeValue))
+		tAssert.True(hasTextEditAtRange([]protocol.TextEdit{{Range: rangeValue, NewText: "title"}}, rangeValue))
+		tAssert.False(hasTextEditAtRange(nil, rangeValue))
+	})
+
+	It("finds import alias tokens", func() {
+		text := `from "./shared.mace" import Remote: Local;`
+		tokens := lexAnalysisTokens(text)
+		importDecl := ast.ImportDeclaration{
+			Path: ast.StringLiteral{Lexeme: `"./shared.mace"`},
+		}
+		identifier := ast.ImportedIdentifier{Name: "Remote", Alias: "Local"}
+
+		token, ok := importAliasToken(tokens, importDecl, identifier)
+		tAssert.True(ok)
+		tAssert.Equal("Local", token.Lexeme)
+
+		_, ok = importAliasToken(tokens, importDecl, ast.ImportedIdentifier{Name: "Remote"})
+		tAssert.False(ok)
+	})
+
+	It("quick-formats parseable documents", func() {
+		quickFormat := formatTextQuick
+
+		formatted, ok := quickFormat(`[output = data]{result:1+2;}`)
+		tAssert.True(ok)
+		tAssert.Equal(`[output = data]
+{
+  result: 1 + 2
+}`, formatted)
+
+		_, ok = quickFormat(`[output = data] { result: ; }`)
+		tAssert.False(ok)
+	})
+
+	It("resolves output value symbols from self references and nested fields", func() {
+		selfPathAt := selfReferencePathAt
+		nestedPathAt := nestedOutputFieldPathAt
+		valueAtPath := outputValueAtPath
+		valueSymbol := outputValueSymbol
+
+		text := `[output = data]
+{
+  profile: {
+    name: "Ada";
+  };
+  result: $self.profile.name;
+}`
+		tokens := lexAnalysisTokens(text)
+
+		path, rangeValue, ok := selfPathAt(tokens, positionFromIndex(text, strings.Index(text, "$self.profile.name")+len("$self.profile.")))
+		tAssert.True(ok)
+		tAssert.Equal([]string{"profile", "name"}, path)
+		tAssert.Equal(protocol.Position{Line: 5, Character: 24}, rangeValue.Start)
+
+		path, rangeValue, ok = nestedPathAt(text, tokens, positionFromIndex(text, strings.Index(text, "name:")))
+		tAssert.True(ok)
+		tAssert.Equal([]string{"profile", "name"}, path)
+		tAssert.Equal(protocol.Position{Line: 3, Character: 4}, rangeValue.Start)
+
+		output := map[string]processor.Value{
+			"profile": {Kind: processor.ValueRecord, Record: map[string]processor.Value{
+				"name": {Kind: processor.ValueString, String: "Ada"},
+			}},
+		}
+
+		value, ok := valueAtPath(output, []string{"profile", "name"})
+		tAssert.True(ok)
+		tAssert.Equal(processor.ValueString, value.Kind)
+		tAssert.Equal("Ada", value.String)
+
+		_, ok = valueAtPath(output, nil)
+		tAssert.False(ok)
+		_, ok = valueAtPath(output, []string{"profile", "missing"})
+		tAssert.False(ok)
+		_, ok = valueAtPath(output, []string{"profile", "name", "first"})
+		tAssert.False(ok)
+
+		symbol := valueSymbol("$self.profile.name", []string{"profile", "name"}, rangeValue, value)
+		tAssert.Equal("$self.profile.name", symbol.Name)
+		tAssert.Contains(symbol.Detail, `output profile.name: string = "Ada"`)
+		tAssert.Equal(symbolOriginOutput, symbol.Origin)
+	})
+
+	It("finds output symbols through analysis snapshots", func() {
+		text := `[output = data]
+{
+  profile: {
+    name: "Ada";
+  };
+  result: $self.profile.name;
+}`
+		snapshot := analyzeDocument(text)
+
+		symbol, ok := snapshot.symbolAt(positionFromIndex(text, strings.Index(text, "$self.profile.name")+len("$self.profile.")))
+		tAssert.True(ok)
+		tAssert.Equal("$self.profile.name", symbol.Name)
+
+		symbol, ok = snapshot.symbolAt(positionFromIndex(text, strings.Index(text, "name:")))
+		tAssert.True(ok)
+		tAssert.Equal("profile.name", symbol.Name)
+	})
+
+	It("builds quick-fix edits for schema and directive diagnostics", func() {
+		missingField := missingSchemaFieldEdit
+		missingImport := missingImportEdit
+		invalidDirectiveRange := invalidDirectiveComboEditRange
+		generateFromSchema := generateOutputFromSchemaEdit
+
+		text := `|===|
+schema User: {
+  name: string;
+  age: int;
+};
+|===|
+[output = data, schema = User]
+{
+  name: "Ada";
+}`
+		file, err := parseFile(text)
+		tAssert.NoError(err)
+		tokens := lexAnalysisTokens(text)
+
+		rangeValue, newText, ok := missingField(text, file, `processor: missing required field "age" for schema "User"`)
+		tAssert.True(ok)
+		tAssert.Equal(protocol.Position{Line: 9, Character: 0}, rangeValue.Start)
+		tAssert.Equal("  age: TODO;\n", newText)
+
+		rangeValue, newText, ok = generateFromSchema(text, file, tokens, `processor: missing required field "age" for schema "User"`)
+		tAssert.True(ok)
+		tAssert.Equal(protocol.Position{Line: 1, Character: 13}, rangeValue.Start)
+		tAssert.Contains(newText, `name: ""`)
+		tAssert.Contains(newText, `age: 0`)
+
+		schemaText := `[output = schema, schema = User]
+{
+  name: string;
+}`
+		schemaFile, err := parseFile(schemaText)
+		tAssert.NoError(err)
+		schemaTokens := lexAnalysisTokens(schemaText)
+
+		rangeValue, ok = invalidDirectiveRange(schemaText, schemaFile, schemaTokens, "schema directive is invalid when output mode is schema")
+		tAssert.True(ok)
+		tAssert.Equal(protocol.Position{Line: 0, Character: 10}, rangeValue.Start)
+
+		importText := `[output = data] { result: value; }`
+		importFile, err := parseFile(importText)
+		tAssert.NoError(err)
+		rangeValue, newText, ok = missingImport(importText, importFile, lexAnalysisTokens(importText), `processor: unknown identifier "SharedValue"`)
+		tAssert.True(ok)
+		tAssert.Equal(protocol.Position{}, rangeValue.Start)
+		tAssert.Contains(newText, `from "./shared.mace" import SharedValue;`)
+
+		_, _, ok = missingImport(text, file, tokens, `processor: unknown identifier "SharedValue"`)
+		tAssert.False(ok)
+	})
+
 	It("exercises public analysis helpers", func() {
 		workspace, err := os.MkdirTemp("", "mace-analysis-public-*")
 		tAssert.NoError(err)
@@ -1469,3 +1796,16 @@ Us`, "", protocol.Position{Line: 2, Character: 2})
 		tAssert.Contains(declarationNames(snapshot), "User")
 	})
 })
+
+func lexAnalysisTokens(text string) []lexer.Token {
+	instance := lexer.New(text)
+	tokens := []lexer.Token{}
+	for {
+		token, err := instance.NextToken()
+		tAssert.NoError(err)
+		tokens = append(tokens, token)
+		if token.Type == lexer.TokenEOF {
+			return tokens
+		}
+	}
+}
