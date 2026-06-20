@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/samber/lo"
+	"github.com/sourcegraph/jsonrpc2"
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
@@ -2997,5 +2999,90 @@ string display_name = "Ada";
   result: [{ profile: { name: "Ada"; }; }, { profile: { name: "Bob"; }; }];
 }`, edits[0].NewText)
 		}
+	})
+
+	It("builds the lsp command metadata", func() {
+		command := newLSPCommand()
+
+		tAssert.Equal("lsp", command.Use)
+		tAssert.Contains(command.Short, "language server")
+		tAssert.NoError(command.Args(command, nil))
+		tAssert.Error(command.Args(command, []string{"extra"}))
+	})
+
+	It("resolves workspace and import roots", func() {
+		root, err := os.MkdirTemp("", "mace-lsp-roots-*")
+		tAssert.NoError(err)
+		workspace := filepath.Join(root, "project")
+		nestedDocument := filepath.Join(workspace, "src", "main.mace")
+		workspaceURI := protocol.DocumentUri(fileURI(workspace))
+		rootURIPath := filepath.Join(root, "root")
+		rootURI := protocol.DocumentUri(fileURI(rootURIPath))
+		rootPath := filepath.Join(root, "root-path")
+
+		tAssert.Equal(workspace, workspaceRootDir(&protocol.InitializeParams{
+			WorkspaceFolders: []protocol.WorkspaceFolder{{URI: workspaceURI}},
+			RootURI:          &rootURI,
+			RootPath:         &rootPath,
+		}))
+		tAssert.Equal(rootURIPath, workspaceRootDir(&protocol.InitializeParams{
+			RootURI:  &rootURI,
+			RootPath: &rootPath,
+		}))
+		tAssert.Equal(rootPath, workspaceRootDir(&protocol.InitializeParams{
+			RootPath: &rootPath,
+		}))
+
+		server.workspaceRootDir = workspace
+		tAssert.Equal(workspace, server.importRootDir(nestedDocument))
+		tAssert.Equal(filepath.Dir(filepath.Join("elsewhere", "main.mace")), server.importRootDir(filepath.Join("elsewhere", "main.mace")))
+		tAssert.Equal(workspace, server.importRootDir(""))
+
+		server.workspaceRootDir = ""
+		tAssert.Equal(filepath.Dir(nestedDocument), server.importRootDir(nestedDocument))
+		tAssert.Equal(".", server.importRootDir(""))
+	})
+
+	It("rejects unsupported document change payloads", func() {
+		server.documents[protocol.DocumentUri(uri)] = document{text: `[output = data] {}`}
+
+		err := server.didChange(nil, &protocol.DidChangeTextDocumentParams{
+			TextDocument: protocol.VersionedTextDocumentIdentifier{
+				Version: 2,
+				TextDocumentIdentifier: protocol.TextDocumentIdentifier{
+					URI: protocol.DocumentUri(uri),
+				},
+			},
+			ContentChanges: []any{"unsupported"},
+		})
+
+		tAssert.ErrorContains(err, "unsupported text change payload")
+	})
+
+	It("handles unsupported json-rpc methods", func() {
+		_, err := server.handle(context.Background(), nil, &jsonrpc2.Request{
+			Method: "mace/unknown",
+		})
+
+		tAssert.Error(err)
+		var rpcError *jsonrpc2.Error
+		tAssert.ErrorAs(err, &rpcError)
+		if rpcError != nil {
+			tAssert.Equal(int64(jsonrpc2.CodeMethodNotFound), rpcError.Code)
+		}
+	})
+
+	It("loads saved document text fallbacks and file errors", func() {
+		saved := `[output = data] {}`
+		text, err := savedDocumentText(&saved, protocol.DocumentUri(uri), "fallback")
+		tAssert.NoError(err)
+		tAssert.Equal(saved, text)
+
+		text, err = savedDocumentText(nil, protocol.DocumentUri("not a uri"), "fallback")
+		tAssert.NoError(err)
+		tAssert.Equal("fallback", text)
+
+		_, err = savedDocumentText(nil, protocol.DocumentUri(fileURI(filepath.Join("missing", "document.mace"))), "fallback")
+		tAssert.Error(err)
 	})
 })

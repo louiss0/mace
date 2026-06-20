@@ -3148,6 +3148,164 @@ var _ = Describe("Processor helpers", func() {
 		tAssert.ErrorContains(err, "cyclic type alias")
 	})
 
+	It("sanitizes imported value types and resolves exported references", func() {
+		schemas := newSchemaRegistry()
+		schemas.Add("Local", ast.RecordType{})
+
+		recordType := valueType{kind: ValueRecord, schemaName: "Local"}
+		arrayType := valueType{kind: ValueArray, element: &recordType}
+		variantType := valueType{kind: ValueUnknown, members: []valueType{
+			{kind: ValueRecord, schemaName: "External"},
+			arrayType,
+		}}
+
+		sanitized := sanitizeImportedValueType(variantType, schemas)
+		tAssert.Equal("External", sanitized.members[0].schemaName)
+		if tAssert.NotNil(sanitized.members[1].element) {
+			tAssert.Empty(sanitized.members[1].element.schemaName)
+		}
+
+		types := newTypeRegistry()
+		types.AddAlias("Name", ast.PrimitiveType{Name: "string"})
+		types.AddAlias("Names", ast.ArrayType{Element: ast.NamedType{Name: "Name"}})
+		types.AddAlias("Loop", ast.NamedType{Name: "Loop"})
+		schemas.Add("User", ast.RecordType{Fields: []ast.SchemaField{{
+			Name: "name",
+			Type: ast.NamedType{Name: "Name"},
+		}}})
+
+		resolveExport := resolveExportedTypeReference
+		resolved, err := resolveExport(ast.NamedType{Name: "Names"}, types, schemas, map[string]struct{}{}, map[string]struct{}{})
+		tAssert.NoError(err)
+		tAssert.Equal(ast.ArrayType{Element: ast.PrimitiveType{Name: "string"}}, resolved)
+
+		resolved, err = resolveExport(ast.RecordMapType{Value: ast.NamedType{Name: "Name"}}, types, schemas, map[string]struct{}{}, map[string]struct{}{})
+		tAssert.NoError(err)
+		tAssert.Equal(ast.RecordMapType{Value: ast.PrimitiveType{Name: "string"}}, resolved)
+
+		resolved, err = resolveExport(ast.UnionType{Members: []ast.TypeReference{
+			ast.NamedType{Name: "Name"},
+			ast.NamedType{Name: "Missing"},
+		}}, types, schemas, map[string]struct{}{}, map[string]struct{}{})
+		tAssert.NoError(err)
+		tAssert.Equal(ast.UnionType{Members: []ast.TypeReference{
+			ast.PrimitiveType{Name: "string"},
+			ast.NamedType{Name: "Missing"},
+		}}, resolved)
+
+		resolved, err = resolveExport(ast.VariantType{Members: []ast.TypeReference{
+			ast.NamedType{Name: "Name"},
+			ast.PrimitiveType{Name: "int"},
+		}}, types, schemas, map[string]struct{}{}, map[string]struct{}{})
+		tAssert.NoError(err)
+		tAssert.Equal(ast.VariantType{Members: []ast.TypeReference{
+			ast.PrimitiveType{Name: "string"},
+			ast.PrimitiveType{Name: "int"},
+		}}, resolved)
+
+		resolved, err = resolveExport(ast.NamedType{Name: "User"}, types, schemas, map[string]struct{}{}, map[string]struct{}{})
+		tAssert.NoError(err)
+		tAssert.Equal(ast.RecordType{Fields: []ast.SchemaField{{
+			Name: "name",
+			Type: ast.PrimitiveType{Name: "string"},
+		}}}, resolved)
+
+		_, err = resolveExport(ast.NamedType{Name: "Loop"}, types, schemas, map[string]struct{}{}, map[string]struct{}{})
+		tAssert.ErrorContains(err, "cyclic type alias")
+		_, err = resolveExport(nil, types, schemas, map[string]struct{}{}, map[string]struct{}{})
+		tAssert.ErrorContains(err, "unknown type reference")
+	})
+
+	It("exports output field types from schema and inferred values", func() {
+		context := newProcessContext(".", ".")
+		context.schemas.Add("User", ast.RecordType{Fields: []ast.SchemaField{{
+			Name: "name",
+			Type: ast.PrimitiveType{Name: "string"},
+		}}})
+		output := ast.OutputBlock{Directives: []ast.OutputDirective{{
+			Kind:  ast.OutputDirectiveSchema,
+			Value: "User",
+		}}}
+		fieldType := exportedOutputFieldType
+
+		result, err := fieldType(ast.OutputField{Name: "name", Value: ast.IntLiteral{Lexeme: "1"}}, output, context)
+		tAssert.NoError(err)
+		tAssert.Equal(ValueString, result.kind)
+
+		result, err = fieldType(ast.OutputField{
+			Name:  "age",
+			Value: ast.IntLiteral{Lexeme: "42"},
+		}, ast.OutputBlock{}, context)
+		tAssert.NoError(err)
+		tAssert.Equal(ValueInt, result.kind)
+
+		_, err = fieldType(ast.OutputField{Name: "name"}, ast.OutputBlock{Directives: []ast.OutputDirective{{
+			Kind:  ast.OutputDirectiveSchema,
+			Value: "Missing",
+		}}}, context)
+		tAssert.ErrorContains(err, "unknown schema")
+	})
+
+	It("formats scalar values and evaluates member/prefix/merge helpers", func() {
+		formatValue := stringifyValue
+		formatted, err := formatValue(Value{Kind: ValueString, String: "Ada"})
+		tAssert.NoError(err)
+		tAssert.Equal("Ada", formatted)
+		formatted, err = formatValue(Value{Kind: ValueHexFloat, Float: -31.5})
+		tAssert.NoError(err)
+		tAssert.Equal("-0x1F.8", formatted)
+		_, err = formatValue(Value{Kind: ValueArray})
+		tAssert.ErrorContains(err, "scalar value")
+
+		environment := newValueEnvironment()
+		environment.Add("user", Value{Kind: ValueRecord, Record: map[string]Value{
+			"name": {Kind: ValueString, String: "Ada"},
+		}})
+		member, err := evaluateMemberAccess(ast.MemberAccess{
+			Target: ast.Identifier{Name: "user"},
+			Name:   "name",
+		}, environment, Value{}, newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
+		tAssert.NoError(err)
+		tAssert.Equal("Ada", member.String)
+
+		_, err = evaluateMemberAccess(ast.MemberAccess{
+			Target: ast.Identifier{Name: "user"},
+			Name:   "missing",
+		}, environment, Value{}, newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
+		tAssert.ErrorContains(err, "unknown member")
+
+		prefix, err := evaluatePrefix(ast.PrefixExpression{
+			Operator: lexer.TokenBang,
+			Right:    ast.BooleanLiteral{Value: false},
+		}, newValueEnvironment(), Value{}, newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
+		tAssert.NoError(err)
+		tAssert.True(prefix.Boolean)
+
+		prefix, err = evaluatePrefix(ast.PrefixExpression{
+			Operator: lexer.TokenMinus,
+			Right:    ast.HexFloatLiteral{Lexeme: "0x1.8"},
+		}, newValueEnvironment(), Value{}, newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
+		tAssert.NoError(err)
+		tAssert.Equal(ValueHexFloat, prefix.Kind)
+		tAssert.Equal(-1.5, prefix.Float)
+
+		contains, err := evaluateContains(Value{Kind: ValueString, String: "name"}, Value{Kind: ValueRecord, Record: map[string]Value{
+			"name": {Kind: ValueString, String: "Ada"},
+		}})
+		tAssert.NoError(err)
+		tAssert.True(contains.Boolean)
+
+		merged, err := evaluateMerge(
+			Value{Kind: ValueArray, Array: []Value{{Kind: ValueString, String: "Ada"}}},
+			Value{Kind: ValueArray, Array: []Value{{Kind: ValueString, String: "Bob"}}},
+		)
+		tAssert.NoError(err)
+		tAssert.Len(merged.Array, 2)
+
+		_, err = evaluateMerge(Value{Kind: ValueString}, Value{Kind: ValueString})
+		tAssert.ErrorContains(err, "records or arrays")
+	})
+
 	It("evaluates numeric helper operations", func() {
 		hexNumeric := evaluateHexNumeric
 		floatNumeric := evaluateFloatNumeric
