@@ -173,6 +173,73 @@ var _ = Describe("Input records", func() {
 	})
 })
 
+var _ = Describe("Path helpers", func() {
+	It("formats local and remote import roots", func() {
+		tAssert.Equal("./", formatImportRoot(""))
+		tAssert.Equal("./", formatImportRoot("."))
+		tAssert.Equal("workspace/", formatImportRoot(filepath.Join("/tmp", "workspace")))
+		tAssert.Equal("https://example.com/root/", formatImportRoot("https://example.com/root/"))
+	})
+
+	It("parses remote URLs and derives base directories", func() {
+		remote, ok := parseRemoteURL("https://example.com/root/file.mace")
+		tAssert.True(ok)
+		tAssert.Equal("https", remote.Scheme)
+		tAssert.Equal("example.com", remote.Host)
+
+		_, ok = parseRemoteURL("file:///tmp/file.mace")
+		tAssert.False(ok)
+		tAssert.Equal("https://example.com/root/", basePathDir("https://example.com/root/file.mace"))
+		tAssert.Equal(filepath.Dir("/tmp/file.mace"), basePathDir("/tmp/file.mace"))
+	})
+
+	It("resolves import paths within and outside bounded scopes", func() {
+		resolved, err := resolveImportPath("/workspace", "nested/file.mace")
+		tAssert.NoError(err)
+		tAssert.Contains(resolved, "nested")
+
+		resolved, err = resolveImportPath("https://example.com/root/", "child/file.mace")
+		tAssert.NoError(err)
+		tAssert.Equal("https://example.com/root/child/file.mace", resolved)
+
+		resolved, err = resolveImportPath("/workspace", "/absolute/file.mace")
+		tAssert.NoError(err)
+		tAssert.Contains(resolved, "absolute")
+
+		bounded, err := resolveImportPathInScope("/workspace", "/workspace", "nested/file.mace", true)
+		tAssert.NoError(err)
+		tAssert.Contains(bounded, "nested")
+
+		_, err = resolveBoundedPath("/workspace", "/workspace", "../escape.mace")
+		tAssert.ErrorContains(err, "escapes root")
+	})
+
+	It("validates mace source paths", func() {
+		tAssert.NoError(validateMaceSourcePath("config.mace"))
+		tAssert.ErrorContains(validateMaceSourcePath("config.txt"), "must end in .mace")
+	})
+
+	It("reads local and remote mace sources", func() {
+		localDir, err := os.MkdirTemp("", "mace-local-*")
+		tAssert.NoError(err)
+		localPath := filepath.Join(localDir, "config.mace")
+		tAssert.NoError(os.WriteFile(localPath, []byte("local"), 0o600))
+
+		contents, err := readMaceSource(localPath)
+		tAssert.NoError(err)
+		tAssert.Equal("local", contents)
+
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			_, _ = writer.Write([]byte("remote"))
+		}))
+		defer server.Close()
+
+		contents, err = readMaceSource(server.URL + "/config.mace")
+		tAssert.NoError(err)
+		tAssert.Equal("remote", contents)
+	})
+})
+
 var _ = Describe("Block processing", func() {
 	It("processes variables in explicit directories", func() {
 		processor := NewWithInjections(map[string]Value{
