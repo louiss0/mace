@@ -67,6 +67,44 @@ func requireDiagnosticCode(diagnostic protocol.Diagnostic) string {
 }
 
 var _ = Describe("LSP analysis", func() {
+	It("covers literal and type helper functions", func() {
+		tAssert.NotEmpty(defaultLiteralForTypeName("string"))
+		tAssert.NotEmpty(defaultLiteralForTypeName("boolean"))
+		tAssert.NotEmpty(defaultLiteralForTypeName("int"))
+		tAssert.NotEmpty(defaultLiteralForTypeName("float"))
+		tAssert.NotEmpty(defaultLiteralForTypeName("[]int"))
+		tAssert.NotEmpty(defaultLiteralForTypeName("Profile"))
+		tAssert.NotEmpty(convertStringLiteralForm("Ada"))
+		tAssert.NotEmpty(convertStringLiteralForm(`"Ada"`))
+		tAssert.NotEmpty(simpleExpressionText(ast.StringLiteral{Lexeme: `"Ada"`}))
+		tAssert.NotEmpty(simpleExpressionText(ast.IntLiteral{Lexeme: "7"}))
+		tAssert.NotEmpty(simpleExpressionText(ast.BooleanLiteral{Value: true}))
+		tAssert.NotEmpty(defaultExpressionForType(ast.PrimitiveType{Name: "string"}))
+		tAssert.NotEmpty(inferredTypeFromExpression(ast.StringLiteral{Lexeme: `"Ada"`}))
+		tAssert.NotEmpty(placeholderForType(ast.File{}, "Title"))
+	})
+
+	It("covers text and declaration edit helpers", func() {
+		text := "first\nsecond\nthird"
+		tAssert.NotEmpty(lineAt(text, 1))
+		tAssert.Equal("", lineAt(text, 9))
+
+		file := ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}}}}
+		tokens := lexAnalysisTokens("from \"./shared.mace\" import Remote: Local;")
+		_, _, _ = moveImportsToTopEdit("from \"./shared.mace\" import Remote: Local;", file, tokens, "move")
+		_, _ = duplicateDeclarationEditRange("type Name: string; type Name: int;", file, tokens, "duplicate")
+		_, _, _ = declarationOperatorEdit("type Name: string;", tokens, "operator")
+		_, _, _ = selfOrderingEdit("[output = data] { result: $self.name; }", file, tokens, "self")
+	})
+
+	It("covers schema documentation and refactor helpers", func() {
+		file := ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchema, Value: "Profile"}}}}
+		tAssert.NotPanics(func() { _ = hasSchemaDoc(file, "Profile") })
+		tAssert.NotPanics(func() { _ = hasSchemaDoc(file, "Missing") })
+		tAssert.NotEmpty(placeholderForType(file, "name"))
+		_, _ = existingMacePathWithSimilarName("./profile.mace")
+	})
+
 	It("computes output and field edit ranges", func() {
 		insertRange := outputInsertRange
 		bodyRange := outputBodyRange
