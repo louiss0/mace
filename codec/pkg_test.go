@@ -793,6 +793,31 @@ var _ = Describe("Codec helpers", func() {
 		tAssert.Equal(processor.Value{Kind: processor.ValueUnknown}, convert(reflect.ValueOf(struct{}{})))
 	})
 
+	It("covers scalar display helpers and field metadata", func() {
+		tAssert.Equal("", lowerLeading(""))
+		tAssert.Equal("hello", lowerLeading("Hello"))
+
+		field, _ := reflect.TypeOf(struct {
+			Name string `json:"name,omitempty"`
+			Skip string `json:"-"`
+		}{}).FieldByName("Name")
+		name, omit := fieldName(field)
+		tAssert.Equal("name", name)
+		tAssert.True(omit)
+
+		skipField, _ := reflect.TypeOf(struct {
+			Skip string `json:"-"`
+		}{}).FieldByName("Skip")
+		skipName, skipOmit := fieldName(skipField)
+		tAssert.Equal("-", skipName)
+		tAssert.False(skipOmit)
+
+		tAssert.False(isEmptyValue(reflect.ValueOf(struct{}{})))
+		tAssert.True(isEmptyValue(reflect.ValueOf("")))
+		tAssert.True(isEmptyValue(reflect.ValueOf([]string{})))
+		tAssert.True(isEmptyValue(reflect.ValueOf(map[string]string{})))
+	})
+
 	It("handles imported map keys and JSON number edge cases", func() {
 		mapKey := importedMapKey
 		jsonNumber := importedJSONNumber
@@ -855,6 +880,41 @@ var _ = Describe("Codec helpers", func() {
 
 		_, err = valueDecode(processor.Value{Kind: processor.ValueUnknown}, reflect.TypeOf(""))
 		tAssert.ErrorContains(err, "unsupported value kind")
+	})
+
+	It("decodes arrays, integers, and record targets", func() {
+		intDecode := decodeInt
+		arrayDecode := decodeArray
+		ensure := ensureTargetValue
+
+		value, err := intDecode(7, reflect.TypeOf(int8(0)))
+		tAssert.NoError(err)
+		tAssert.Equal(int8(7), value.Interface())
+
+		_, err = intDecode(-1, reflect.TypeOf(uint(0)))
+		tAssert.ErrorContains(err, "negative int")
+
+		value, err = arrayDecode([]processor.Value{{Kind: processor.ValueInt, Int: 1}}, reflect.TypeOf([]int{}))
+		tAssert.NoError(err)
+		tAssert.Equal([]int{1}, value.Interface())
+
+		_, err = arrayDecode([]processor.Value{{Kind: processor.ValueInt, Int: 1}}, reflect.TypeOf([2]int{}))
+		tAssert.ErrorContains(err, "array length mismatch")
+
+		ptr := new(struct{ Name string `json:"name"` })
+		ensured := ensure(reflect.ValueOf(ptr))
+		tAssert.Equal("", ensured.Field(0).String())
+	})
+
+	It("covers schema import helpers and marshaling", func() {
+		tAssert.NotEmpty(schemaTypeFromProcessor(processor.SchemaType{Kind: processor.SchemaTypePrimitive, Name: "string"}))
+		tAssert.NotEmpty(valueToAny(processor.Value{Kind: processor.ValueString, String: "Ada"}))
+		tAssert.NotEmpty(normalizeImportedValue(reflect.ValueOf("Ada")))
+		tAssert.NotEmpty(normalizeImportedValue(reflect.ValueOf(time.Now())))
+		tAssert.NotEmpty(fieldName(reflect.StructField{Name: "Name"}))
+		tAssert.NotEmpty(isEmptyValue(reflect.ValueOf("")))
+		_, _ = importedMapKey(reflect.ValueOf("name"))
+		_, _ = importedJSONNumber(json.Number("7"))
 	})
 
 	It("reports empty values used by struct omitempty handling", func() {

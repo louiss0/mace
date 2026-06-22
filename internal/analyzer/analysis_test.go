@@ -97,6 +97,16 @@ var _ = Describe("LSP analysis", func() {
 		_, _, _ = selfOrderingEdit("[output = data] { result: $self.name; }", file, tokens, "self")
 	})
 
+	It("covers analysis helpers for diagnostics and symbols", func() {
+		tAssert.NotEmpty(diagnosticCodeFromProcessorError(processor.DiagnosticError{Kind: processor.ErrorImport}))
+		tAssert.NotEmpty(diagnosticCodeFromProcessorError(processor.DiagnosticError{Code: processor.CodeTypeMismatch}))
+		tAssert.NotEmpty(expressionSummary(ast.StringLiteral{Lexeme: `"Ada"`}))
+		tAssert.NotEmpty(expressionSummary(ast.Identifier{Name: "name"}))
+		tAssert.NotEmpty(summarizeValue(processor.Value{Kind: processor.ValueString, String: "Ada"}))
+		tAssert.NotEmpty(summarizeValue(processor.Value{Kind: processor.ValueArray, Array: []processor.Value{{Kind: processor.ValueInt, Int: 1}}}))
+		tAssert.NotEmpty(fileScriptDeclarations(ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.VariableDeclaration{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}}))
+	})
+
 	It("covers schema documentation and refactor helpers", func() {
 		file := ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchema, Value: "Profile"}}}}
 		tAssert.NotPanics(func() { _ = hasSchemaDoc(file, "Profile") })

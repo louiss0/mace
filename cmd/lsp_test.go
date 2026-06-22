@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -202,6 +203,33 @@ func nestedSelfDocument(depth int) string {
 }
 
 var _ = Describe("LSP server", func() {
+	It("covers stdrwc file methods", func() {
+		stdinFile, err := os.CreateTemp("", "mace-stdin-*")
+		tAssert.NoError(err)
+		_, err = stdinFile.WriteString("x")
+		tAssert.NoError(err)
+		_, err = stdinFile.Seek(0, 0)
+		tAssert.NoError(err)
+
+		stdoutFile, err := os.CreateTemp("", "mace-stdout-*")
+		tAssert.NoError(err)
+
+		previousStdin := os.Stdin
+		previousStdout := os.Stdout
+		defer func() {
+			os.Stdin = previousStdin
+			os.Stdout = previousStdout
+		}()
+
+		os.Stdin = stdinFile
+		os.Stdout = stdoutFile
+
+		buffer := make([]byte, 1)
+		_, _ = stdrwc{}.Read(buffer)
+		_, _ = stdrwc{}.Write([]byte("x"))
+		tAssert.NoError(stdrwc{}.Close())
+	})
+
 	const uri = "file:///workspace/test.mace"
 
 	var server *Server
@@ -3059,6 +3087,28 @@ string display_name = "Ada";
 		tAssert.ErrorContains(err, "unsupported text change payload")
 	})
 
+	It("accepts save notifications with and without explicit text", func() {
+		root, err := os.MkdirTemp("", "mace-lsp-save-*")
+		tAssert.NoError(err)
+		path := filepath.Join(root, "document.mace")
+		err = os.WriteFile(path, []byte(`[output = data] {}`), 0o600)
+		tAssert.NoError(err)
+		uriValue := protocol.DocumentUri(fileURI(path))
+		didOpen(server, uriValue, `[output = data] {}`, nil)
+		didSave(server, uriValue, nil, nil)
+		saved := `|===|
+int value = 1;
+|===|
+[output = data]
+{ value: value; }`
+		didSave(server, uriValue, &saved, nil)
+	})
+
+	It("returns empty completion results for unopened documents", func() {
+		labels := completeLabels(server, protocol.DocumentUri(uri), 1, 1)
+		tAssert.Empty(labels)
+	})
+
 	It("handles unsupported json-rpc methods", func() {
 		_, err := server.handle(context.Background(), nil, &jsonrpc2.Request{
 			Method: "mace/unknown",
@@ -3069,6 +3119,31 @@ string display_name = "Ada";
 		tAssert.ErrorAs(err, &rpcError)
 		if rpcError != nil {
 			tAssert.Equal(int64(jsonrpc2.CodeMethodNotFound), rpcError.Code)
+		}
+	})
+
+	It("returns method not found for unknown requests", func() {
+		_, err := uninitializedServer.handle(context.Background(), nil, &jsonrpc2.Request{Method: "mace/unknown"})
+		tAssert.Error(err)
+	})
+
+	It("returns invalid params errors for malformed requests", func() {
+		params := json.RawMessage(`{"textDocument":{}}`)
+		left, right := net.Pipe()
+		defer left.Close()
+		defer right.Close()
+		connection := jsonrpc2.NewConn(context.Background(), jsonrpc2.NewBufferedStream(left, jsonrpc2.VSCodeObjectCodec{}), nil)
+		defer connection.Close()
+
+		_, err := server.handle(context.Background(), connection, &jsonrpc2.Request{
+			Method: protocol.MethodTextDocumentDidOpen,
+			Params: &params,
+		})
+		tAssert.Error(err)
+		var rpcError *jsonrpc2.Error
+		tAssert.ErrorAs(err, &rpcError)
+		if rpcError != nil {
+			tAssert.Equal(int64(jsonrpc2.CodeInvalidParams), rpcError.Code)
 		}
 	})
 

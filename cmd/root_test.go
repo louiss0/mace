@@ -9,6 +9,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/louiss0/mace/internal/processor"
 )
 
 var tAssert *assert.Assertions
@@ -49,6 +51,75 @@ var _ = Describe("CLI", func() {
 		main()
 
 		tAssert.Equal(0, code)
+	})
+
+	Describe("helpers", func() {
+		It("returns the current working directory as the activation dir", func() {
+			dir, err := os.Getwd()
+			tAssert.NoError(err)
+			tAssert.Equal(dir, activationDir())
+		})
+
+		It("parses mace files and reports read errors", func() {
+			path := writeMaceFile(`|===|
+int value = 1;
+|===|
+[output = data]
+{ value: value; }`)
+
+			file, err := parseFile(path)
+			tAssert.NoError(err)
+			tAssert.NotEmpty(file.Output.Directives)
+
+			_, err = parseFile(filepath.Join("missing", "config.mace"))
+			tAssert.Error(err)
+		})
+
+		It("creates JSON and import commands", func() {
+			jsonCommand := newJSONCommand()
+			tAssert.Equal("json <path>", jsonCommand.Use)
+			tAssert.Contains(jsonCommand.Short, "JSON")
+			importCommand := newImportCommand()
+			tAssert.Equal("import <path> [path...]", importCommand.Use)
+			tAssert.Contains(importCommand.Short, "Mace files")
+		})
+
+		It("classifies import formats and paths", func() {
+			jsonPath := writeTempFile("config.json", `{}`)
+			yamlPath := writeTempFile("config.yaml", `name: Ada`)
+			tomlPath := writeTempFile("config.toml", `name = "Ada"`)
+			missingPath := writeTempFile("config", `name: Ada`)
+			outputDir, err := os.MkdirTemp("", "mace-output-*")
+			tAssert.NoError(err)
+
+			format, err := importFormat(jsonPath)
+			tAssert.NoError(err)
+			tAssert.Equal("json", format)
+			format, err = importFormat(yamlPath)
+			tAssert.NoError(err)
+			tAssert.Equal("yaml", format)
+			format, err = importFormat(tomlPath)
+			tAssert.NoError(err)
+			tAssert.Equal("toml", format)
+			_, err = importFormat(missingPath)
+			tAssert.Error(err)
+
+			path, err := importOutputPath(jsonPath, "")
+			tAssert.NoError(err)
+			tAssert.Equal(strings.TrimSuffix(jsonPath, ".json")+".mace", path)
+			path, err = importOutputPath(jsonPath, outputDir)
+			tAssert.NoError(err)
+			tAssert.Equal(filepath.Join(outputDir, "config.mace"), path)
+		})
+
+		It("converts processor values into any values", func() {
+			tAssert.Equal("text", valueToAny(processor.Value{Kind: processor.ValueString, String: "text"}))
+			tAssert.Equal(int64(4), valueToAny(processor.Value{Kind: processor.ValueInt, Int: 4}))
+			tAssert.Equal(1.5, valueToAny(processor.Value{Kind: processor.ValueFloat, Float: 1.5}))
+			tAssert.Equal("0xFF", valueToAny(processor.Value{Kind: processor.ValueHexInt, Int: 255}))
+			tAssert.Equal(true, valueToAny(processor.Value{Kind: processor.ValueBoolean, Boolean: true}))
+			tAssert.Nil(valueToAny(processor.Value{Kind: processor.ValueUnknown}))
+		})
 	})
 
 	Describe("json", func() {
@@ -506,6 +577,17 @@ schema User: {
 		})
 	})
 
+	Describe("check", func() {
+		It("builds the check command and error type", func() {
+			command := newCheckCommand()
+			tAssert.Equal("check <path> [path...]", command.Use)
+			tAssert.Contains(command.Short, "compatibility issues")
+			tAssert.Equal("message", (&commandError{message: "message"}).Error())
+			commandError := &commandError{code: 2}
+			tAssert.Equal(2, commandError.code)
+		})
+	})
+
 	Describe("lsp", func() {
 		It("registers the language server command", func() {
 			command := newRootCommand(&bytes.Buffer{}, &bytes.Buffer{})
@@ -518,6 +600,12 @@ schema User: {
 			}
 
 			tAssert.True(found)
+		})
+
+		It("builds a language server with default settings", func() {
+			command := newLSPCommand()
+			tAssert.Equal("lsp", command.Use)
+			tAssert.Contains(command.Short, "language server")
 		})
 	})
 })
