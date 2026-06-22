@@ -3450,4 +3450,87 @@ var _ = Describe("Processor helpers", func() {
 		_, err = bitwiseValue(lexer.TokenPlus, Value{Kind: ValueInt, Int: 1}, Value{Kind: ValueInt, Int: 1})
 		tAssert.ErrorContains(err, "unknown bitwise")
 	})
+
+	It("covers string escaping and conditional inference helpers", func() {
+		unescaped, length, err := unescapeSequence(`\u0041`)
+		tAssert.NoError(err)
+		tAssert.Equal("A", unescaped)
+		tAssert.Equal(6, length)
+
+		_, _, err = unescapeSequence(`\u00ZZ`)
+		tAssert.Error(err)
+
+		runeValue, err := parseUnicodeEscape(`\u0041`, 4)
+		tAssert.NoError(err)
+		tAssert.Equal('A', runeValue)
+
+		tAssert.Equal("0x1.8", formatHexFloat(1.5))
+		tAssert.Equal("0x2.0", formatHexFloat(2))
+
+		result, err := inferConditionalType(ast.ConditionalExpression{
+			Condition: ast.BooleanLiteral{Value: true},
+			Then:      ast.IntLiteral{Lexeme: "1"},
+			Else:      ast.IntLiteral{Lexeme: "2"},
+		}, &variableRegistry{}, newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
+		tAssert.NoError(err)
+		tAssert.Equal(ValueInt, result.kind)
+	})
+
+	It("covers arithmetic, parsing, and type resolution helpers", func() {
+		intValue, err := parseInt("42")
+		tAssert.NoError(err)
+		tAssert.Equal(int64(42), intValue.Int)
+
+		floatValue, err := parseFloat("1.5")
+		tAssert.NoError(err)
+		tAssert.Equal(1.5, floatValue.Float)
+
+		hexInt, err := parseHexInt("0x10")
+		tAssert.NoError(err)
+		tAssert.Equal(int64(16), hexInt.Int)
+
+		hexFloat, err := parseHexFloat("0x1.8")
+		tAssert.NoError(err)
+		tAssert.Equal(1.5, hexFloat.Float)
+
+		_, err = parseInt("bad")
+		tAssert.Error(err)
+		_, err = parseFloat("bad")
+		tAssert.Error(err)
+		hexIntBad, err := parseHexInt("bad")
+		tAssert.NoError(err)
+		tAssert.Equal(int64(2989), hexIntBad.Int)
+		_, err = parseHexFloat("bad")
+		tAssert.Error(err)
+
+		tAssert.True(arrayMergeTypesMatch(Value{Kind: ValueArray, Array: []Value{{Kind: ValueInt, Int: 1}}}, Value{Kind: ValueArray, Array: []Value{{Kind: ValueInt, Int: 2}}}))
+		tAssert.False(arrayMergeTypesMatch(Value{Kind: ValueArray, Array: []Value{{Kind: ValueInt, Int: 1}}}, Value{Kind: ValueArray, Array: []Value{{Kind: ValueString, String: "a"}}}))
+
+		_, err = resolveUnionRecordType(ast.UnionType{Members: []ast.TypeReference{ast.PrimitiveType{Name: "string"}}}, newSymbolTable(), newTypeRegistry(), newSchemaRegistry())
+		tAssert.ErrorContains(err, "union members must be schemas")
+	})
+
+	It("covers numeric and boolean evaluation helpers", func() {
+		result, err := evaluateModulo(Value{Kind: ValueInt, Int: 7}, Value{Kind: ValueInt, Int: 3})
+		tAssert.NoError(err)
+		tAssert.Equal(ValueInt, result.Kind)
+
+		_, err = evaluateModulo(Value{Kind: ValueInt, Int: 7}, Value{Kind: ValueInt, Int: 0})
+		tAssert.Error(err)
+
+		result, err = evaluateEquality(lexer.TokenEqualEqual, Value{Kind: ValueInt, Int: 7}, Value{Kind: ValueInt, Int: 7})
+		tAssert.NoError(err)
+		tAssert.True(result.Boolean)
+
+		result, err = evaluateComparison(lexer.TokenLess, Value{Kind: ValueInt, Int: 7}, Value{Kind: ValueInt, Int: 8})
+		tAssert.NoError(err)
+		tAssert.True(result.Boolean)
+
+		result, err = evaluateLogicalAnd(ast.InfixExpression{Left: ast.BooleanLiteral{Value: true}, Right: ast.BooleanLiteral{Value: false}}, newValueEnvironment(), Value{}, newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
+		tAssert.NoError(err)
+		tAssert.False(result.Boolean)
+
+		_, err = evaluateLogicalOr(ast.InfixExpression{Left: ast.BooleanLiteral{Value: false}, Right: ast.BooleanLiteral{Value: true}}, newValueEnvironment(), Value{}, newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
+		tAssert.NoError(err)
+	})
 })

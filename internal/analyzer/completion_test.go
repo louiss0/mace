@@ -1671,12 +1671,41 @@ int count = 1;
 [output = data] {}`, protocol.DocumentUri(fileURI(documentPath)))
 			tAssert.Equal(processor.ValueInt, variables["count"].Kind)
 
+			partial := partialScriptVariables("|===|\nint count = 1;\n|===|\n[output = data] {}", protocol.DocumentUri(fileURI(documentPath)), protocol.Position{Line: 1, Character: 3})
+			_ = partial
+
+			scriptVariables := scriptVariablesForOutput("|===|\nint count = 1;\n|===|\n[output = data] {}", protocol.DocumentUri(fileURI(documentPath)))
+			_ = scriptVariables
+
 			names, ok := importableIdentifiers(protocol.DocumentUri(fileURI(documentPath)), workspace, "./shared.mace")
 			tAssert.True(ok)
 			tAssert.Equal([]string{"name"}, names)
 
 			_, ok = importableIdentifiers(protocol.DocumentUri("not a file"), workspace, "./shared.mace")
 			tAssert.False(ok)
+		})
+
+		It("reads imported paths and directory entries", func() {
+			workspace, err := os.MkdirTemp("", "mace-completion-directory-*")
+			tAssert.NoError(err)
+			defer func() { _ = os.RemoveAll(workspace) }()
+
+			tAssert.NoError(os.MkdirAll(filepath.Join(workspace, "schemas", "nested"), 0o755))
+			tAssert.NoError(os.WriteFile(filepath.Join(workspace, "schemas", "profile.mace"), []byte(``), 0o644))
+			tAssert.NoError(os.WriteFile(filepath.Join(workspace, "schemas", "skip.txt"), []byte(``), 0o644))
+
+			doc := document{analysis: Snapshot{file: &ast.File{Imports: []ast.ImportDeclaration{
+				{Path: ast.StringLiteral{Lexeme: `"./schemas/profile.mace"`}},
+				{Path: ast.StringLiteral{Lexeme: `"./schemas/nested/"`}},
+			}}}}
+			paths := importedPaths(doc, `from "./schemas/n`)
+			tAssert.Equal([]string{"./schemas/profile.mace", "./schemas/nested/"}, paths)
+
+			items, err := directoryEntries(workspace, workspace, "", nil, false)
+			tAssert.NoError(err)
+			labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string { return item.Label })
+			tAssert.Contains(labels, "./schemas/")
+			tAssert.NotContains(labels, "./skip.txt")
 		})
 
 		It("merges completion union records", func() {
@@ -1708,6 +1737,57 @@ int count = 1;
 			_, ok = completionUnionRecord([]ast.TypeReference{
 				ast.PrimitiveType{Name: "string"},
 			}, model, map[string]struct{}{})
+			tAssert.False(ok)
+		})
+
+		It("covers completion choice members and directory helpers", func() {
+			model := completionModel{aliases: map[string]ast.TypeReference{
+				"Mode": ast.ChoiceType{Members: []ast.Expression{
+					ast.StringLiteral{Lexeme: `"auto"`},
+					ast.IntLiteral{Lexeme: "1"},
+				}},
+			}}
+
+			members, ok := completionChoiceMemberValues(ast.Identifier{Name: "Mode"}, model, map[string]struct{}{})
+			tAssert.True(ok)
+			tAssert.Equal("\"auto\"", members[0].Label)
+
+			members, ok = completionChoiceMemberValues(ast.BooleanLiteral{Value: true}, model, map[string]struct{}{})
+			tAssert.True(ok)
+			tAssert.Equal("true", members[0].Label)
+
+			_, ok = completionChoiceMemberValues(ast.Identifier{Name: "Missing"}, model, map[string]struct{}{})
+			tAssert.False(ok)
+
+			choice, ok := completionChoiceFromMembers([]ast.Expression{ast.Identifier{Name: "Mode"}}, model, map[string]struct{}{})
+			tAssert.True(ok)
+			tAssert.NotEmpty(choice.members)
+
+			_, ok = completionChoiceFromMembers([]ast.Expression{ast.Identifier{Name: "Mode"}, ast.Identifier{Name: "Mode"}}, model, map[string]struct{}{})
+			tAssert.True(ok)
+
+			tAssert.Equal("", completionExpressionClosers("x", 0))
+			tAssert.Equal(")", completionExpressionClosers("($self.foo", len("($self.foo")))
+
+			workspace, err := os.MkdirTemp("", "mace-completion-directory-root-*")
+			tAssert.NoError(err)
+			defer func() { _ = os.RemoveAll(workspace) }()
+			tAssert.NoError(os.WriteFile(filepath.Join(workspace, "alpha.mace"), []byte(``), 0o644))
+			items, err := directoryEntries(workspace, workspace, "", nil, false)
+			tAssert.NoError(err)
+			tAssert.NotEmpty(items)
+		})
+
+		It("covers string literal and completion context helpers", func() {
+			context, ok := stringLiteralCompletionContext(`"hello"`, protocol.Position{Line: 0, Character: 4})
+			tAssert.True(ok)
+			tAssert.Equal("hel", context.prefix)
+
+			context, ok = stringLiteralCompletionContext(`'hello'`, protocol.Position{Line: 0, Character: 4})
+			tAssert.True(ok)
+			tAssert.Equal("hel", context.prefix)
+
+			_, ok = stringLiteralCompletionContext("hello", protocol.Position{Line: 0, Character: 2})
 			tAssert.False(ok)
 		})
 

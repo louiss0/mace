@@ -3,6 +3,7 @@ package codec
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -473,6 +474,26 @@ var _ = Describe("Check", func() {
 		tAssert.ErrorContains(err, "could not detect check format")
 	})
 
+	It("covers low-level check helpers", func() {
+		report := newCheckReport()
+		checkValue(nil, "yaml", "$", &report)
+		tAssert.Len(report.TypeIncompatibility, 1)
+		tAssert.Equal("$", report.TypeIncompatibility[0].Path)
+
+		report = newCheckReport()
+		checkValue(map[any]any{"bad-key": nil}, "json", "$", &report)
+		tAssert.Len(report.KeyIncompatibility, 1)
+		tAssert.Equal("bad-key", report.KeyIncompatibility[0].Key)
+
+		syntax := jsonSyntaxIssue("{}", io.EOF)
+		tAssert.Equal("json", syntax.Format)
+		tAssert.Equal("EOF", syntax.Reason)
+
+		yamlIssue := yamlSyntaxIssue(io.EOF)
+		tAssert.Equal("yaml", yamlIssue.Format)
+		tAssert.Equal("EOF", yamlIssue.Reason)
+	})
+
 	It("formats multiple file check reports", func() {
 		source, err := FormatFileCheckReports([]FileCheckReport{
 			{
@@ -915,6 +936,76 @@ var _ = Describe("Codec helpers", func() {
 		tAssert.NotEmpty(isEmptyValue(reflect.ValueOf("")))
 		_, _ = importedMapKey(reflect.ValueOf("name"))
 		_, _ = importedJSONNumber(json.Number("7"))
+	})
+
+	It("covers JSON schema document loading helpers", func() {
+		record := map[string]any{"$schema": "file:///workspace/schema.json", "type": "object"}
+		value, ok, err := resolveJSONSchemaDocument(record, "workspace/schema.json")
+		tAssert.True(ok)
+		tAssert.NoError(err)
+		tAssert.Equal(record, value)
+
+		parsed, err := url.Parse("file:///workspace/schema.json")
+		tAssert.NoError(err)
+		_, err = loadJSONSchemaDocument(parsed, "file:///workspace/schema.json", "workspace/input.mace")
+		tAssert.Error(err)
+	})
+
+	It("covers JSON schema naming and lookup helpers", func() {
+		tAssert.True(looksLikeJSONSchemaDocument(map[string]any{"properties": map[string]any{}}))
+		tAssert.True(looksLikeJSONSchemaDocument(map[string]any{"type": "string"}))
+		tAssert.False(looksLikeJSONSchemaDocument(map[string]any{"type": 1}))
+		tAssert.Equal("Profile", jsonSchemaDefinitionName("#/$defs/Profile"))
+		tAssert.Equal("Value123Name", jsonSchemaIdentifier("123 name"))
+		tAssert.Equal("Generated", jsonSchemaIdentifier("---"))
+		tAssert.Equal(filepath.Join("workspace", "schema.json"), resolveJSONSchemaPath("schema.json", filepath.Join("workspace", "file.mace")))
+		tAssert.Equal("schema.json", resolveJSONSchemaPath("schema.json", ""))
+
+		root := map[string]any{"$defs": map[string]any{"Profile": map[string]any{"type": "object"}}}
+		ref, err := jsonSchemaReference("#/$defs/Profile", root)
+		tAssert.NoError(err)
+		tAssert.Contains(ref, "type")
+		_, err = jsonSchemaReference("schema.json", root)
+		tAssert.ErrorContains(err, "unsupported $ref")
+	})
+
+	It("covers JSON schema enum helpers", func() {
+		name, inferred, err := jsonSchemaEnumDeclaration("Mode", []any{"auto", "manual"})
+		tAssert.NoError(err)
+		tAssert.Contains(name, "enum Mode")
+		tAssert.Equal("Mode", inferred.name)
+
+		backingType, members, err := jsonSchemaEnumMembers([]any{"alpha", "beta", "gamma"})
+		tAssert.NoError(err)
+		tAssert.Equal("string", backingType)
+		tAssert.Len(members, 3)
+		tAssert.Equal("Alpha", members[0].name)
+
+		_, _, err = jsonSchemaEnumMembers([]any{"alpha", 1})
+		tAssert.ErrorContains(err, "mixed enum value types")
+
+		_, _, err = jsonSchemaEnumMemberValue(true, 0)
+		tAssert.ErrorContains(err, "unsupported enum value")
+
+		member, memberType, err := jsonSchemaEnumMemberValue("alpha", 0)
+		tAssert.NoError(err)
+		tAssert.Equal("string", memberType)
+		tAssert.NotEmpty(member.name)
+
+		_, _, err = jsonSchemaEnumMemberValue(map[string]any{}, 0)
+		tAssert.ErrorContains(err, "unsupported enum value")
+	})
+
+	It("validates union and variant member helpers", func() {
+		_, err := validateUnionMembers([]inferredType{{kind: inferredTypePrimitive}})
+		tAssert.ErrorContains(err, "union members must be schemas")
+
+		union, err := validateUnionMembers([]inferredType{{kind: inferredTypeRecord}})
+		tAssert.NoError(err)
+		tAssert.Equal(inferredTypeUnion, union.kind)
+
+		_, err = validateVariantMembers([]inferredType{{kind: inferredTypePrimitive}, {kind: inferredTypePrimitive}})
+		tAssert.NoError(err)
 	})
 
 	It("reports empty values used by struct omitempty handling", func() {

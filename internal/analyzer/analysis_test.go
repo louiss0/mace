@@ -382,6 +382,20 @@ var _ = Describe("LSP analysis", func() {
 		symbol, ok = snapshot.symbolAt(positionFromIndex(text, strings.Index(text, "name:")))
 		tAssert.True(ok)
 		tAssert.Equal("profile.name", symbol.Name)
+
+		location, ok := snapshot.definitionAt(positionFromIndex(text, strings.Index(text, "profile:")))
+		tAssert.False(ok)
+		tAssert.Equal(protocol.Location{}, location)
+
+		definitionText := `|===|
+int count = 1;
+|===|
+[output = data]
+{ result: count; }`
+		definitionSnapshot := analyzeDocument(definitionText)
+		symbol, ok = definitionSnapshot.symbolAt(positionFromIndex(definitionText, strings.Index(definitionText, "count;")))
+		tAssert.True(ok)
+		tAssert.Equal("count", symbol.Name)
 	})
 
 	It("builds quick-fix edits for schema and directive diagnostics", func() {

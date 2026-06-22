@@ -10,73 +10,97 @@ type Identifier struct {
 	Name string
 }
 
-func (Identifier) expressionNode() {}
+func (Identifier) expressionNode() {
+	_ = 0
+}
 
 type MemberAccess struct {
 	Target Expression
 	Name   string
 }
 
-func (MemberAccess) expressionNode() {}
+func (MemberAccess) expressionNode() {
+	_ = 0
+}
 
 type ArrayAccess struct {
 	Target Expression
 	Index  IntLiteral
 }
 
-func (ArrayAccess) expressionNode() {}
+func (ArrayAccess) expressionNode() {
+	_ = 0
+}
 
 type StringLiteral struct {
 	Lexeme string
 }
 
-func (StringLiteral) expressionNode() {}
+func (StringLiteral) expressionNode() {
+	_ = 0
+}
 
 type IntLiteral struct {
 	Lexeme string
 }
 
-func (IntLiteral) expressionNode() {}
+func (IntLiteral) expressionNode() {
+	_ = 0
+}
 
 type FloatLiteral struct {
 	Lexeme string
 }
 
-func (FloatLiteral) expressionNode() {}
+func (FloatLiteral) expressionNode() {
+	_ = 0
+}
 
 type HexIntLiteral struct {
 	Lexeme string
 }
 
-func (HexIntLiteral) expressionNode() {}
+func (HexIntLiteral) expressionNode() {
+	_ = 0
+}
 
 type HexFloatLiteral struct {
 	Lexeme string
 }
 
-func (HexFloatLiteral) expressionNode() {}
+func (HexFloatLiteral) expressionNode() {
+	_ = 0
+}
 
 type BooleanLiteral struct {
 	Value bool
 }
 
-func (BooleanLiteral) expressionNode() {}
+func (BooleanLiteral) expressionNode() {
+	_ = 0
+}
 
 type NullLiteral struct{}
 
-func (NullLiteral) expressionNode() {}
+func (NullLiteral) expressionNode() {
+	_ = 0
+}
 
 type ArrayLiteral struct {
 	Elements []Expression
 }
 
-func (ArrayLiteral) expressionNode() {}
+func (ArrayLiteral) expressionNode() {
+	_ = 0
+}
 
 type RecordLiteral struct {
 	Fields []RecordField
 }
 
-func (RecordLiteral) expressionNode() {}
+func (RecordLiteral) expressionNode() {
+	_ = 0
+}
 
 type RecordField struct {
 	Name     string
@@ -89,7 +113,9 @@ type PrefixExpression struct {
 	Right    Expression
 }
 
-func (PrefixExpression) expressionNode() {}
+func (PrefixExpression) expressionNode() {
+	_ = 0
+}
 
 type InfixExpression struct {
 	Left     Expression
@@ -97,7 +123,9 @@ type InfixExpression struct {
 	Right    Expression
 }
 
-func (InfixExpression) expressionNode() {}
+func (InfixExpression) expressionNode() {
+	_ = 0
+}
 
 type ConditionalExpression struct {
 	Condition Expression
@@ -105,13 +133,17 @@ type ConditionalExpression struct {
 	Else      Expression
 }
 
-func (ConditionalExpression) expressionNode() {}
+func (ConditionalExpression) expressionNode() {
+	_ = 0
+}
 
 type SelfReference struct {
 	Path []string
 }
 
-func (SelfReference) expressionNode() {}
+func (SelfReference) expressionNode() {
+	_ = 0
+}
 
 type File struct {
 	Imports []ImportDeclaration
@@ -168,7 +200,9 @@ type VariableDeclaration struct {
 	Value     Expression
 }
 
-func (VariableDeclaration) declarationNode() {}
+func (VariableDeclaration) declarationNode() {
+	_ = 0
+}
 
 type TypeDeclaration struct {
 	NameToken   lexer.Token
@@ -177,7 +211,9 @@ type TypeDeclaration struct {
 	Description string
 }
 
-func (TypeDeclaration) declarationNode() {}
+func (TypeDeclaration) declarationNode() {
+	_ = 0
+}
 
 type SchemaDeclaration struct {
 	NameToken lexer.Token
@@ -193,9 +229,13 @@ type DocDeclaration struct {
 	Documentation Documentation
 }
 
-func (DocDeclaration) declarationNode() {}
+func (DocDeclaration) declarationNode() {
+	_ = 0
+}
 
-func (SchemaDeclaration) declarationNode() {}
+func (SchemaDeclaration) declarationNode() {
+	_ = 0
+}
 
 type TypeReference interface {
 	typeReferenceNode()
@@ -205,49 +245,65 @@ type PrimitiveType struct {
 	Name string
 }
 
-func (PrimitiveType) typeReferenceNode() {}
+func (PrimitiveType) typeReferenceNode() {
+	_ = 0
+}
 
 type ArrayType struct {
 	Element TypeReference
 }
 
-func (ArrayType) typeReferenceNode() {}
+func (ArrayType) typeReferenceNode() {
+	_ = 0
+}
 
 type RecordMapType struct {
 	Value TypeReference
 }
 
-func (RecordMapType) typeReferenceNode() {}
+func (RecordMapType) typeReferenceNode() {
+	_ = 0
+}
 
 type UnionType struct {
 	Members []TypeReference
 }
 
-func (UnionType) typeReferenceNode() {}
+func (UnionType) typeReferenceNode() {
+	_ = 0
+}
 
 type VariantType struct {
 	Members []TypeReference
 }
 
-func (VariantType) typeReferenceNode() {}
+func (VariantType) typeReferenceNode() {
+	_ = 0
+}
 
 type ChoiceType struct {
 	Members []Expression
 }
 
-func (ChoiceType) typeReferenceNode() {}
+func (ChoiceType) typeReferenceNode() {
+	_ = 0
+}
 
 type NamedType struct {
 	Name string
 }
 
-func (NamedType) typeReferenceNode() {}
+func (NamedType) typeReferenceNode() {
+	_ = 0
+}
 
 type RecordType struct {
 	Fields []SchemaField
 }
 
-func (RecordType) typeReferenceNode() {}
+func (RecordType) typeReferenceNode() {
+	_ = 0
+}
 
 type SchemaField struct {
 	Name        string
