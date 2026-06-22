@@ -1811,5 +1811,99 @@ int count = 1;
 			tAssert.Len(declarations, 4)
 			tAssert.Len(typeReferences, 8)
 		})
+
+		It("covers completion helper branches", func() {
+			model := completionModel{
+				aliases: map[string]ast.TypeReference{
+					"Alias": ast.ChoiceType{Members: []ast.Expression{ast.StringLiteral{Lexeme: `"x"`}}},
+				},
+				schemas: map[string]ast.RecordType{
+					"Node": {Fields: []ast.SchemaField{{Name: "child", Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "leaf", Type: ast.PrimitiveType{Name: "string"}}}}}}},
+				},
+			}
+			variables := map[string]processor.Value{
+				"value": {Kind: processor.ValueString, String: "hello"},
+			}
+			self := processor.Value{Kind: processor.ValueRecord, Record: map[string]processor.Value{
+				"child": {Kind: processor.ValueArray, Array: []processor.Value{{Kind: processor.ValueInt, Int: 7}}},
+			}}
+
+			value, ok := resolveCompletionValue(ast.Identifier{Name: "value"}, variables, self)
+			tAssert.True(ok)
+			tAssert.Equal("hello", value.String)
+
+			value, ok = resolveCompletionValue(ast.SelfReference{Path: []string{"child"}}, variables, self)
+			tAssert.True(ok)
+			tAssert.Equal(processor.ValueArray, value.Kind)
+
+			value, ok = resolveCompletionValue(ast.SelfReference{Path: []string{"child", "0"}}, variables, self)
+			tAssert.False(ok)
+
+			value, ok = resolveCompletionValue(ast.MemberAccess{Target: ast.Identifier{Name: "value"}, Name: "missing"}, variables, self)
+			tAssert.False(ok)
+
+			value, ok = resolveCompletionValue(ast.ArrayAccess{Target: ast.Identifier{Name: "value"}, Index: ast.IntLiteral{Lexeme: "0"}}, variables, self)
+			tAssert.False(ok)
+
+			value, ok = resolveCompletionValue(ast.ArrayLiteral{Elements: []ast.Expression{ast.StringLiteral{Lexeme: `"x"`}, ast.IntLiteral{Lexeme: "1"}}}, variables, self)
+			tAssert.True(ok)
+			tAssert.Len(value.Array, 2)
+
+			value, ok = resolveCompletionValue(ast.RecordLiteral{Fields: []ast.RecordField{{Name: "n", Value: ast.BooleanLiteral{Value: true}}}}, variables, self)
+			tAssert.True(ok)
+			tAssert.Equal(true, value.Record["n"].Boolean)
+
+			_, ok = resolveCompletionValue(ast.NullLiteral{}, variables, self)
+			tAssert.False(ok)
+
+			tAssert.True(isDigits("12345"))
+			tAssert.False(isDigits("12a"))
+
+			_, ok = outputValueAtSegments(self, []string{"child"})
+			tAssert.True(ok)
+			_, ok = outputValueAtSegments(self, []string{"missing"})
+			tAssert.False(ok)
+
+			file, ok := partialScriptFile("|===|\nint x = 1;\n|===|\n[output = data] {}", protocol.Position{Line: 1, Character: 0})
+			_ = file
+			_ = ok
+
+			_, ok = partialScriptFile("[output = data] {}", protocol.Position{Line: 0, Character: 0})
+			_ = ok
+
+			tAssert.Equal(completionScopeFile, completionScopeAt("x", protocol.Position{Line: 0, Character: 0}))
+			tAssert.Equal(completionScopeScript, completionScopeAt("|===|\nint x = 1;\n|===|", protocol.Position{Line: 1, Character: 0}))
+			_ = completionScopeAt("|===|\n|===|\n[output = data] {}", protocol.Position{Line: 2, Character: 0})
+
+			items, ok := directiveCompletionItems(document{}, protocol.DocumentUri("file:///tmp/doc.mace"), "[")
+			_ = items
+			_ = ok
+
+			pos, ok := completionPlaceholderPosition("x +", protocol.Position{Line: 0, Character: 3}, "+-*/")
+			tAssert.True(ok)
+			tAssert.Equal(protocol.Position{Line: 0, Character: 3}, pos)
+
+			_, ok = completionPlaceholderPosition("x +", protocol.Position{Line: 0, Character: 0}, "+-*/")
+			_ = ok
+
+			value = syntheticCompletionValue(ast.PrimitiveType{Name: "string"}, completionModel{}, 1)
+			tAssert.Equal(processor.ValueString, value.Kind)
+			tAssert.Equal(processor.ValueArray, syntheticCompletionValue(ast.ArrayType{Element: ast.PrimitiveType{Name: "string"}}, completionModel{}, 1).Kind)
+			tAssert.Equal(processor.ValueBoolean, syntheticCompletionValue(ast.PrimitiveType{Name: "boolean"}, completionModel{}, 1).Kind)
+			tAssert.Equal(processor.ValueRecord, syntheticCompletionValue(ast.RecordType{Fields: []ast.SchemaField{{Name: "a", Type: ast.PrimitiveType{Name: "string"}}}}, completionModel{}, 1).Kind)
+
+			tAssert.Equal(`""`, defaultLiteralForType(ast.PrimitiveType{Name: "string"}, model, map[string]struct{}{}))
+			tAssert.Equal("[]", defaultLiteralForType(ast.ArrayType{Element: ast.PrimitiveType{Name: "string"}}, model, map[string]struct{}{}))
+			tAssert.Equal(`"x"`, defaultLiteralForType(ast.NamedType{Name: "Alias"}, model, map[string]struct{}{}))
+			tAssert.Equal("{ child: { leaf: \"\" } }", defaultLiteralForType(ast.NamedType{Name: "Node"}, model, map[string]struct{}{}))
+			resolved := resolveCompletionType(ast.NamedType{Name: "Alias"}, model, map[string]struct{}{})
+			tAssert.Equal(completionTypeChoice, resolved.kind)
+			resolved = resolveCompletionType(ast.NamedType{Name: "Node"}, model, map[string]struct{}{})
+			tAssert.Equal(completionTypeSchema, resolved.kind)
+			resolved = resolveCompletionType(ast.UnionType{Members: []ast.TypeReference{ast.NamedType{Name: "Node"}}}, model, map[string]struct{}{})
+			tAssert.Equal(completionTypeSchema, resolved.kind)
+			resolved = resolveCompletionType(ast.VariantType{Members: []ast.TypeReference{ast.PrimitiveType{Name: "string"}}}, model, map[string]struct{}{})
+			tAssert.Equal(completionTypeVariant, resolved.kind)
+		})
 	})
 })

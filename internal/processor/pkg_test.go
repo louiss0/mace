@@ -174,6 +174,20 @@ var _ = Describe("Input records", func() {
 })
 
 var _ = Describe("Path helpers", func() {
+	It("clones and preserves nested contexts", func() {
+		original := newProcessContext("/base", "/root")
+		original.optionalParseVars["x"] = struct{}{}
+		cloned := original.clone()
+		tAssert.Equal(original.importBaseDir, cloned.importBaseDir)
+		tAssert.Equal(original.importRootDir, cloned.importRootDir)
+		tAssert.NotNil(cloned.symbols)
+		tAssert.NotNil(cloned.types)
+		tAssert.NotNil(cloned.schemas)
+		tAssert.NotNil(cloned.variables)
+		tAssert.NotNil(cloned.environment)
+		tAssert.Contains(cloned.optionalParseVars, "x")
+	})
+
 	It("formats local and remote import roots", func() {
 		tAssert.Equal("./", formatImportRoot(""))
 		tAssert.Equal("./", formatImportRoot("."))
@@ -237,6 +251,92 @@ var _ = Describe("Path helpers", func() {
 		contents, err = readMaceSource(server.URL + "/config.mace")
 		tAssert.NoError(err)
 		tAssert.Equal("remote", contents)
+	})
+})
+
+var _ = Describe("Processor entrypoints", func() {
+	It("covers processor entrypoint helpers", func() {
+		processor := New()
+		_, err := processor.Process(`{ result: 1; }`)
+		tAssert.NoError(err)
+		_, err = processor.ProcessInDir(`{ result: 1; }`, ".")
+		tAssert.NoError(err)
+		_, err = processor.ProcessInScope(`{ result: 1; }`, ".", ".")
+		tAssert.NoError(err)
+		_, err = processor.ProcessScriptBlock(`|===|`) 
+		tAssert.Error(err)
+		_, err = processor.ProcessVariablesInDir(`|===|`, ".")
+		tAssert.Error(err)
+		_, err = processor.ProcessVariablesInScope(`|===|`, ".", ".")
+		tAssert.Error(err)
+		_, err = processor.ProcessOutputBlock(`[output = data] { result: 1; }`, ScriptResult{})
+		tAssert.NoError(err)
+		_, err = processor.ProcessFile(filepath.Join(".", "does-not-exist.mace"))
+		tAssert.Error(err)
+		_, err = processor.ProcessFileInDir(filepath.Join(".", "does-not-exist.mace"), ".")
+		tAssert.Error(err)
+	})
+})
+
+var _ = Describe("Validation helpers", func() {
+	It("extracts guarded names and validates guarded output expressions", func() {
+		guarded := extractGuardedNames(ast.InfixExpression{
+			Left:     ast.StringLiteral{Lexeme: `"profile"`},
+			Operator: lexer.TokenIn,
+			Right:    ast.Identifier{Name: "record"},
+		}, map[string]struct{}{})
+		tAssert.Contains(guarded, "profile")
+
+		guarded = extractGuardedNames(ast.InfixExpression{
+			Left: ast.InfixExpression{
+				Left:     ast.StringLiteral{Lexeme: `"profile"`},
+				Operator: lexer.TokenIn,
+				Right:    ast.Identifier{Name: "record"},
+			},
+			Operator: lexer.TokenAndAnd,
+			Right: ast.InfixExpression{
+				Left:     ast.StringLiteral{Lexeme: `"age"`},
+				Operator: lexer.TokenIn,
+				Right:    ast.Identifier{Name: "record"},
+			},
+		}, map[string]struct{}{})
+		tAssert.Contains(guarded, "profile")
+		tAssert.Contains(guarded, "age")
+
+		symbols := newSymbolTable()
+		symbols.Add("TypeName", symbolKindType)
+		optional := map[string]struct{}{"record": {}}
+		err := validateDataOutputExpression(ast.MemberAccess{Target: ast.Identifier{Name: "record"}, Name: "value"}, symbols, optional, map[string]struct{}{})
+		tAssert.ErrorContains(err, "requires a presence check")
+
+		err = validateDataOutputExpression(ast.MemberAccess{Target: ast.Identifier{Name: "record"}, Name: "value"}, symbols, optional, map[string]struct{}{"record": {}})
+		tAssert.NoError(err)
+
+		err = validateDataOutputExpression(ast.Identifier{Name: "TypeName"}, symbols, optional, map[string]struct{}{})
+		tAssert.ErrorContains(err, "cannot reference type or schema declaration")
+	})
+
+	It("resolves parse-file schema names from imported files", func() {
+		workspace, err := os.MkdirTemp("", "mace-processor-parse-file-*")
+		tAssert.NoError(err)
+		defer func() { _ = os.RemoveAll(workspace) }()
+
+		path := writeFixtureFile(workspace, "schema.mace", `[output = schema]
+{
+  Profile: Profile;
+  Alias: Alias;
+  ignore: string;
+}`)
+		_ = path
+
+		directives := []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"./schema.mace"`}}
+		names, err := resolveParseFileExportedSchemaNames(directives, workspace, workspace)
+		tAssert.NoError(err)
+		tAssert.Equal([]string{"Alias", "Profile"}, names)
+
+		directives = []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"./missing.txt"`}}
+		_, err = resolveParseFileExportedSchemaNames(directives, workspace, workspace)
+		tAssert.Error(err)
 	})
 })
 
@@ -2912,6 +3012,35 @@ schema PackageJSON: {
 	})
 })
 
+var _ = Describe("Registry helpers", func() {
+	It("clones and queries symbol, type, schema, and variable registries", func() {
+		symbols := newSymbolTable()
+		symbols.Add("input", symbolKindImport)
+		tAssert.True(symbols.IsImport("input"))
+		tAssert.False(symbols.IsVariable("input"))
+
+		types := newTypeRegistry()
+		types.AddAlias("Alias", ast.PrimitiveType{Name: "string"})
+		typeClone := types.Clone()
+		tAssert.Equal(types.aliases["Alias"], typeClone.aliases["Alias"])
+
+		schemas := newSchemaRegistry()
+		schemas.Add("User", ast.RecordType{})
+		schemaClone := schemas.Clone()
+		tAssert.True(schemaClone != nil)
+		record, ok := schemaClone.Get("User")
+		tAssert.True(ok)
+		tAssert.Equal(ast.RecordType{}, record)
+
+		variables := newVariableRegistry()
+		variables.Add("value", valueType{kind: ValueString})
+		variableClone := variables.Clone()
+		value, ok := variableClone.Get("value")
+		tAssert.True(ok)
+		tAssert.Equal(ValueString, value.kind)
+	})
+})
+
 var _ = Describe("Processor helpers", func() {
 	It("compares and displays choice values by scalar keys", func() {
 		valuesEqual := choiceValuesEqual
@@ -3493,6 +3622,9 @@ var _ = Describe("Processor helpers", func() {
 		tAssert.NoError(err)
 		tAssert.Equal(1.5, hexFloat.Float)
 
+		_, err = parseHexFloat("0x1")
+		tAssert.Error(err)
+
 		_, err = parseInt("bad")
 		tAssert.Error(err)
 		_, err = parseFloat("bad")
@@ -3532,5 +3664,36 @@ var _ = Describe("Processor helpers", func() {
 
 		_, err = evaluateLogicalOr(ast.InfixExpression{Left: ast.BooleanLiteral{Value: false}, Right: ast.BooleanLiteral{Value: true}}, newValueEnvironment(), Value{}, newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
 		tAssert.NoError(err)
+
+		schemaResult, err := evaluateSchemaOutput(ast.OutputBlock{Mode: ast.OutputModeSchema, SchemaFields: []ast.OutputSchemaField{{Name: "profile", Type: ast.NamedType{Name: "Profile"}}}}, newTypeRegistry())
+		tAssert.NoError(err)
+		tAssert.Len(schemaResult, 1)
+
+		_, err = evaluateSchemaOutput(ast.OutputBlock{Mode: ast.OutputModeData}, newTypeRegistry())
+		tAssert.NoError(err)
+
+		fields, err := evaluateOutputFields([]ast.OutputField{{Name: "value", Value: ast.NullLiteral{}}}, newValueEnvironment(), newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
+		tAssert.NoError(err)
+		tAssert.Empty(fields)
+
+		coerced, err := coerceEvaluatedValueAgainstType(ast.ArrayLiteral{Elements: []ast.Expression{ast.IntLiteral{Lexeme: "1"}}}, Value{Kind: ValueArray, Array: []Value{{Kind: ValueInt, Int: 1}}}, valueType{kind: ValueArray, element: &valueType{kind: ValueInt}}, newValueEnvironment(), Value{}, newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
+		tAssert.NoError(err)
+		tAssert.Equal(ValueArray, coerced.Kind)
+
+		processor := New()
+		_, err = processor.processInput(`{ value: 1; }`, ".", ".", false)
+		tAssert.NoError(err)
+
+		_, err = processor.processScriptInput(`|===|
+int base = 1;
+|===|`, ".")
+		tAssert.NoError(err)
+
+		scriptResult := ScriptResult{}
+		_, err = processor.processOutputInput(`[output = data] { result: 1; }`, scriptResult, ".")
+		tAssert.NoError(err)
+
+		_, err = evaluateExpression(ast.Identifier{Name: "missing"}, newValueEnvironment(), Value{}, newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
+		tAssert.Error(err)
 	})
 })
