@@ -3046,6 +3046,7 @@ var _ = Describe("Processor helpers", func() {
 		valuesEqual := choiceValuesEqual
 		valueKeys := choiceValueKeys
 		typeName := choiceTypeName
+		containsValue := choiceContainsValue
 		left := []Value{
 			{Kind: ValueString, String: "Ada"},
 			{Kind: ValueInt, Int: 7},
@@ -3062,6 +3063,8 @@ var _ = Describe("Processor helpers", func() {
 		tAssert.Equal([]string{"boolean:true", "int:7", "string:Ada"}, valueKeys(left))
 		tAssert.Empty(valueKeys([]Value{{Kind: ValueRecord}}))
 		tAssert.Equal(`choice["Ada", 7, true]`, typeName(left))
+		tAssert.True(containsValue(left, Value{Kind: ValueString, String: "Ada"}))
+		tAssert.False(containsValue(left, Value{Kind: ValueRecord}))
 	})
 
 	It("falls back to source labels for unresolved choice schema members", func() {
@@ -3137,6 +3140,16 @@ var _ = Describe("Processor helpers", func() {
 		tAssert.Equal("parse", kindName(ast.OutputDirectiveParse))
 		tAssert.Equal("parse_file", kindName(ast.OutputDirectiveParseFile))
 		tAssert.Equal("unknown", kindName(ast.OutputDirectiveKind(99)))
+		tAssert.Equal(ErrorDoc, inferErrorKind("documentation block"))
+		tAssert.Equal(ErrorImport, inferErrorKind("import path"))
+		tAssert.Equal(ErrorDirective, inferErrorKind("directive mismatch"))
+		tAssert.Equal(ErrorDeclaration, inferErrorKind("type alias declaration"))
+		tAssert.Equal(ErrorOperator, inferErrorKind("operator operands"))
+		tAssert.Equal(ErrorType, inferErrorKind("unknown type reference"))
+		tAssert.Equal(ErrorSchema, inferErrorKind("schema field"))
+		tAssert.Equal(ErrorRuntime, inferErrorKind("runtime failure"))
+		tAssert.Equal(ErrorValue, inferErrorKind("literal value expression"))
+		tAssert.Equal(ErrorInternal, inferErrorKind("something else"))
 	})
 
 	It("formats scalar helper values", func() {
@@ -3153,6 +3166,9 @@ var _ = Describe("Processor helpers", func() {
 		tAssert.Equal("unknown", valueDisplay(Value{Kind: ValueRecord}))
 		tAssert.Equal("2.0", floatLiteral(2))
 		tAssert.Equal("1.5", floatLiteral(1.5))
+		key, ok = valueKey(Value{Kind: ValueNull})
+		tAssert.True(ok)
+		tAssert.Equal("null", key)
 	})
 
 	It("derives value types and kind names from evaluated values", func() {
