@@ -3,6 +3,7 @@ package processor
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -195,6 +196,12 @@ var _ = Describe("Path helpers", func() {
 		tAssert.Equal("https://example.com/root/", formatImportRoot("https://example.com/root/"))
 	})
 
+	It("clones empty process contexts safely", func() {
+		var empty processContext
+		cloned := empty.clone()
+		tAssert.Equal(processContext{}, cloned)
+	})
+
 	It("parses remote URLs and derives base directories", func() {
 		remote, ok := parseRemoteURL("https://example.com/root/file.mace")
 		tAssert.True(ok)
@@ -225,6 +232,12 @@ var _ = Describe("Path helpers", func() {
 		tAssert.Contains(bounded, "nested")
 
 		_, err = resolveBoundedPath("/workspace", "/workspace", "../escape.mace")
+		tAssert.ErrorContains(err, "escapes root")
+
+		boundedRemote, err := resolveBoundedRemotePath("https://example.com/root/", "https://example.com/root/", "child/file.mace", "https://example.com/root/child/file.mace")
+		tAssert.NoError(err)
+		tAssert.Equal("https://example.com/root/child/file.mace", boundedRemote)
+		_, err = resolveBoundedRemotePath("https://example.com/root/", "https://example.com/root/", "child/file.mace", "https://evil.example.com/root/child/file.mace")
 		tAssert.ErrorContains(err, "escapes root")
 	})
 
@@ -257,24 +270,94 @@ var _ = Describe("Path helpers", func() {
 var _ = Describe("Processor entrypoints", func() {
 	It("covers processor entrypoint helpers", func() {
 		processor := New()
-		_, err := processor.Process(`{ result: 1; }`)
+		workspace, err := os.MkdirTemp("", "processor-entrypoints-*")
 		tAssert.NoError(err)
-		_, err = processor.ProcessInDir(`{ result: 1; }`, ".")
+		defer func() { _ = os.RemoveAll(workspace) }()
+
+		file := writeFixtureFile(workspace, "input.mace", `|===|
+int value = 1;
+|===|
+[output = data]
+{ result: value; }`)
+
+		_, err = processor.Process(`{ result: 1; }`)
 		tAssert.NoError(err)
-		_, err = processor.ProcessInScope(`{ result: 1; }`, ".", ".")
+		_, err = processor.ProcessInDir(`{ result: 1; }`, "")
 		tAssert.NoError(err)
-		_, err = processor.ProcessScriptBlock(`|===|`) 
-		tAssert.Error(err)
-		_, err = processor.ProcessVariablesInDir(`|===|`, ".")
-		tAssert.Error(err)
-		_, err = processor.ProcessVariablesInScope(`|===|`, ".", ".")
-		tAssert.Error(err)
+		_, err = processor.ProcessInScope(`{ result: 1; }`, "", "")
+		tAssert.NoError(err)
+
+		scriptResult, err := processor.ProcessScriptBlock(`|===|
+int value = 1;
+|===|`)
+		tAssert.NoError(err)
+		_, err = processor.ProcessVariablesInDir(wrapScriptWithOutput(`|===|
+int value = 1;
+|===|`), "")
+		tAssert.NoError(err)
+		_, err = processor.ProcessVariablesInScope(wrapScriptWithOutput(`|===|
+int value = 1;
+|===|`), "", "")
+		tAssert.NoError(err)
 		_, err = processor.ProcessOutputBlock(`[output = data] { result: 1; }`, ScriptResult{})
+		tAssert.NoError(err)
+		_, err = processor.ProcessOutputBlock(`[output = data] { result: 1; }`, ScriptResult{context: newProcessContext("", "")})
 		tAssert.NoError(err)
 		_, err = processor.ProcessFile(filepath.Join(".", "does-not-exist.mace"))
 		tAssert.Error(err)
-		_, err = processor.ProcessFileInDir(filepath.Join(".", "does-not-exist.mace"), ".")
+		_, err = processor.ProcessFileInDir(filepath.Join(".", "does-not-exist.mace"), "")
 		tAssert.Error(err)
+		_, err = processor.ProcessFileInDir(file, workspace)
+		tAssert.NoError(err)
+		_, err = processor.processInput(`{ result: 1; }`, ".", ".", false)
+		tAssert.NoError(err)
+		_, err = processor.processScriptInput(`|===|
+int value = 1;
+|===|`, ".")
+		tAssert.NoError(err)
+		_, err = processor.processOutputInput(`[output = data] { result: 1; }`, scriptResult, ".")
+		tAssert.NoError(err)
+		_, err = processor.processInput(`{ result: 1; } garbage`, ".", ".", false)
+		tAssert.Error(err)
+		_, err = processor.processScriptInput(`|===|
+int value = 1;
+|===| garbage`, ".")
+		tAssert.Error(err)
+		_, err = processor.processOutputInput(`[output = data] { result: 1; } garbage`, scriptResult, ".")
+		tAssert.Error(err)
+		_, err = processor.processParsedOutput(ast.OutputBlock{}, ast.File{}, newProcessContext(".", "."))
+		tAssert.NoError(err)
+		_, err = processor.processParsedOutput(ast.OutputBlock{Mode: ast.OutputModeSchema}, ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeSchema}}, newProcessContext(".", "."))
+		tAssert.NoError(err)
+
+		_, err = processor.ProcessOutputBlock(`[parse = schema] { result: 1; }`, ScriptResult{context: newProcessContext(".", ".")})
+		tAssert.Error(err)
+		_, err = processor.ProcessOutputBlock(`[parse_file = schema.mace] { result: 1; }`, ScriptResult{context: newProcessContext(".", ".")})
+		tAssert.Error(err)
+
+		ctx := newProcessContext(".", ".")
+		cloned := ctx.clone()
+		tAssert.NotNil(cloned.symbols)
+	})
+
+	It("falls back when the current working directory cannot be read", func() {
+		workspace, err := os.MkdirTemp("", "processor-getwd-*")
+		tAssert.NoError(err)
+		cwd, err := os.Getwd()
+		tAssert.NoError(err)
+		tAssert.NoError(os.Chdir(workspace))
+		defer func() {
+			_ = os.Chdir(cwd)
+			_ = os.RemoveAll(workspace)
+		}()
+
+		processor := New()
+		_, err = processor.Process(`{ result: 1; }`)
+		tAssert.NoError(err)
+		_, err = processor.ProcessScriptBlock(`|===|
+int value = 1;
+|===|`)
+		tAssert.NoError(err)
 	})
 })
 
@@ -3042,6 +3125,187 @@ var _ = Describe("Registry helpers", func() {
 })
 
 var _ = Describe("Processor helpers", func() {
+	It("covers export resolution helpers", func() {
+		types := newTypeRegistry()
+		schemas := newSchemaRegistry()
+		types.AddAlias("Alias", ast.PrimitiveType{Name: "string"})
+		schemas.Add("User", ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}})
+
+		resolved, err := resolveExportedTypeReference(ast.NamedType{Name: "Alias"}, types, schemas, map[string]struct{}{}, map[string]struct{}{})
+		tAssert.NoError(err)
+		tAssert.Equal(ast.PrimitiveType{Name: "string"}, resolved)
+		resolved, err = resolveExportedTypeReference(ast.NamedType{Name: "User"}, types, schemas, map[string]struct{}{}, map[string]struct{}{})
+		tAssert.NoError(err)
+		tAssert.Equal(ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}, resolved)
+		_, err = resolveExportedTypeReference(ast.NamedType{Name: "Alias"}, types, schemas, map[string]struct{}{"Alias": {}}, map[string]struct{}{})
+		tAssert.Error(err)
+		_, err = resolveExportedTypeReference(ast.NamedType{Name: "User"}, types, schemas, map[string]struct{}{}, map[string]struct{}{"User": {}})
+		tAssert.Error(err)
+
+		fields := ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}
+		resolvedRecord, err := resolveExportedRecordType(fields, types, schemas, map[string]struct{}{}, map[string]struct{}{})
+		tAssert.NoError(err)
+		tAssert.Equal(fields, resolvedRecord)
+	})
+
+	It("covers import and schema export helpers", func() {
+		workspace, err := os.MkdirTemp("", "processor-imports-*")
+		tAssert.NoError(err)
+		defer func() { _ = os.RemoveAll(workspace) }()
+
+		schemaPath := writeFixtureFile(workspace, "schema.mace", `[output = schema]
+{ name: string; }`)
+		consumerPath := writeFixtureFile(workspace, "consumer.mace", `[output = data, schema_file = "schema.mace"]
+{ name: "Ada"; }`)
+		badPath := writeFixtureFile(workspace, "bad.mace", `{ name: 1; }`)
+		invalidOutputPath := writeFixtureFile(workspace, "invalid-output.mace", `[output = data]
+{ name: "Ada"; }`)
+		circularA := writeFixtureFile(workspace, "circular-a.mace", `import "circular-b.mace";`)
+		_ = writeFixtureFile(workspace, "circular-b.mace", `import "circular-a.mace";`)
+
+		context := newProcessContext(workspace, workspace)
+		declarations, err := loadSchemaFileDeclarations(schemaPath, workspace, map[string]map[string]ast.Declaration{}, map[string]struct{}{})
+		tAssert.NoError(err)
+		tAssert.NotNil(declarations)
+		_, err = loadSchemaFileDeclarations(schemaPath, workspace, map[string]map[string]ast.Declaration{schemaPath: declarations}, map[string]struct{}{})
+		tAssert.NoError(err)
+
+		outputDecls, err := resolveSchemaFileDeclarations([]ast.OutputDirective{{Kind: ast.OutputDirectiveSchemaFile, Value: `"schema.mace"`}}, workspace, workspace)
+		tAssert.NoError(err)
+		tAssert.NotNil(outputDecls)
+		_, err = resolveSchemaFileDeclarations([]ast.OutputDirective{{Kind: ast.OutputDirectiveSchemaFile, Value: `"schema.mace"`}, {Kind: ast.OutputDirectiveParseFile, Value: `"schema.mace"`}}, workspace, workspace)
+		tAssert.Error(err)
+
+		loaded, err := loadOutputSchemaRecord(schemaPath, workspace, "schema_file")
+		tAssert.NoError(err)
+		tAssert.NotEmpty(loaded.Fields)
+		_, err = loadOutputSchemaRecord(badPath, workspace, "schema_file")
+		tAssert.Error(err)
+		_, err = loadOutputSchemaRecord(invalidOutputPath, workspace, "schema_file")
+		tAssert.Error(err)
+
+		exports, err := collectImportExports(ast.OutputBlock{Mode: ast.OutputModeData, Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchemaFile, Value: `"schema.mace"`}}, DataFields: []ast.OutputField{{Name: "name", Value: ast.StringLiteral{Lexeme: `"Ada"`}}}}, context)
+		tAssert.NoError(err)
+		tAssert.NotNil(exports)
+		_, err = collectImportExports(ast.OutputBlock{Mode: ast.OutputModeSchema, SchemaFields: []ast.OutputSchemaField{{Name: "name", Type: ast.NamedType{Name: "Missing"}}}}, context)
+		tAssert.Error(err)
+
+		fieldDecl, err := schemaFieldImportDeclaration(ast.OutputSchemaField{Name: "item", Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "value", Type: ast.PrimitiveType{Name: "string"}}}}}, context)
+		tAssert.NoError(err)
+		tAssert.Equal(symbolKindSchema, fieldDecl.kind)
+		_, err = schemaFieldImportDeclaration(ast.OutputSchemaField{Name: "item", Type: ast.RecordMapType{Value: ast.PrimitiveType{Name: "string"}}}, context)
+		tAssert.NoError(err)
+		_, err = schemaFieldImportDeclaration(ast.OutputSchemaField{Name: "item", Type: ast.NamedType{Name: "Missing"}}, context)
+		tAssert.NoError(err)
+
+		_, err = exportedOutputFieldType(ast.OutputField{Name: "name", Value: ast.StringLiteral{Lexeme: `"Ada"`}}, ast.OutputBlock{Mode: ast.OutputModeData}, context)
+		tAssert.NoError(err)
+		_, err = exportedOutputFieldType(ast.OutputField{Name: "name", Value: ast.Identifier{Name: "missing"}}, ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchema, Value: "User"}}}, context)
+		tAssert.Error(err)
+
+		_, err = loadImportExports(consumerPath, workspace, true, map[string]map[string]importedDeclaration{}, map[string]struct{}{})
+		tAssert.NoError(err)
+		_, err = loadImportExports(circularA, workspace, true, map[string]map[string]importedDeclaration{}, map[string]struct{}{})
+		tAssert.Error(err)
+
+		_, err = loadSchemaFileDeclarations(writeFixtureFile(workspace, "circular-check.mace", `import "circular-check.mace";`), workspace, map[string]map[string]ast.Declaration{}, map[string]struct{}{})
+		tAssert.Error(err)
+	})
+
+	It("covers processor entrypoints and path helpers", func() {
+		workspace, err := os.MkdirTemp("", "processor-entrypoints-*")
+		tAssert.NoError(err)
+		defer func() { _ = os.RemoveAll(workspace) }()
+
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			switch request.URL.Path {
+			case "/remote.mace":
+				_, _ = io.WriteString(writer, `[output = schema]
+{ remote: string; }`)
+			case "/broken.mace":
+				writer.WriteHeader(http.StatusInternalServerError)
+			default:
+				writer.WriteHeader(http.StatusNotFound)
+			}
+		}))
+		defer server.Close()
+
+		proc := NewWithInput(map[string]Value{"seed": {Kind: ValueInt, Int: 1}})
+		inputPath := writeFixtureFile(workspace, "input.mace", `[output = data]
+{ result: seed; }`)
+		_, err = proc.Process(`{ result: 1; }`)
+		tAssert.NoError(err)
+		_, err = proc.ProcessScriptBlock(`|===|
+int value = 1;
+|===|`)
+		tAssert.NoError(err)
+		_, err = proc.ProcessVariablesInScope(wrapScriptWithOutput(`|===|
+int value = 1;
+|===|`), workspace, workspace)
+		tAssert.NoError(err)
+		_, err = proc.ProcessFileInDir(inputPath, workspace)
+		tAssert.Error(err)
+		_, err = proc.ProcessFileInDir(filepath.Join(workspace, "missing.mace"), workspace)
+		tAssert.Error(err)
+		_, err = proc.ProcessFileInDir(inputPath, "")
+		tAssert.Error(err)
+
+		scriptResult, err := proc.ProcessScriptBlock(`|===|
+int value = 1;
+|===|`)
+		tAssert.NoError(err)
+		_, err = proc.ProcessOutputBlock(`[output = data] { result: 1; }`, scriptResult)
+		tAssert.NoError(err)
+		_, err = proc.ProcessOutputBlock(`[output = data] { result: 1; }`, ScriptResult{})
+		tAssert.NoError(err)
+		_, err = proc.processOutputInput(`[output = data] { result: 1; }`, ScriptResult{}, workspace)
+		tAssert.NoError(err)
+
+		_, err = ParseInputRecord(`{ name: "Ada"; }`)
+		tAssert.NoError(err)
+		_, err = ParseInputRecord(`1`)
+		tAssert.Error(err)
+
+		_, err = parseImportPath(ast.StringLiteral{Lexeme: `"` + server.URL + `/remote.mace"`})
+		tAssert.NoError(err)
+		resolved, err := resolveImportPath(server.URL, "remote.mace")
+		tAssert.NoError(err)
+		tAssert.Equal(server.URL+"/remote.mace", resolved)
+		_, err = resolveBoundedPath(workspace, workspace, "../escape.mace")
+		tAssert.Error(err)
+		_, err = resolveBoundedRemotePath(workspace, server.URL, "remote.mace", server.URL+"/remote.mace")
+		tAssert.NoError(err)
+		tAssert.Equal("./", formatImportRoot("."))
+		tAssert.Equal(server.URL, formatImportRoot(server.URL))
+		parsed, ok := parseRemoteURL(server.URL)
+		tAssert.True(ok)
+		tAssert.NotNil(parsed)
+		_, ok = parseRemoteURL("ftp://example.com")
+		tAssert.False(ok)
+		_, err = readMaceSource(server.URL + "/remote.mace")
+		tAssert.NoError(err)
+		_, err = readMaceSource(server.URL + "/broken.mace")
+		tAssert.Error(err)
+
+		cache := map[string]map[string]importedDeclaration{}
+		stack := map[string]struct{}{}
+		_, err = loadImportExports(server.URL+"/remote.mace", server.URL, false, cache, stack)
+		tAssert.NoError(err)
+	})
+
+
+	It("validates output directive shapes and references", func() {
+		symbols := newSymbolTable()
+		symbols.Add("Schema", symbolKindSchema)
+		tAssert.NoError(validateOutputDirectiveStructure(ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveOutput, Value: "data"}}}))
+		tAssert.Error(validateOutputDirectiveStructure(ast.OutputBlock{Mode: ast.OutputModeSchema, Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchema, Value: "Schema"}, {Kind: ast.OutputDirectiveSchema, Value: "Schema"}}}))
+		tAssert.Error(validateOutputDirectiveStructure(ast.OutputBlock{Mode: ast.OutputModeSchema, Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParse, Value: "Schema"}}}))
+		tAssert.NoError(validateOutputDirectiveReferences(ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchema, Value: "Schema"}}}, symbols))
+		tAssert.Error(validateOutputDirectiveReferences(ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchema, Value: "Missing"}}}, symbols))
+		tAssert.NoError(validateSchemaOutputFields([]ast.OutputSchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}, symbols, newTypeRegistry(), newSchemaRegistry(), nil))
+		tAssert.Error(validateSchemaOutputFields([]ast.OutputSchemaField{{Name: "name", Type: ast.NamedType{Name: "Missing"}}}, symbols, newTypeRegistry(), newSchemaRegistry(), nil))
+	})
+
 	It("compares and displays choice values by scalar keys", func() {
 		valuesEqual := choiceValuesEqual
 		valueKeys := choiceValueKeys
@@ -3090,6 +3354,122 @@ var _ = Describe("Processor helpers", func() {
 		tAssert.Contains(name, "0x2.8")
 		tAssert.Contains(name, "false")
 		tAssert.Contains(name, "ast.RecordLiteral")
+	})
+
+	It("covers validation and evaluation branches", func() {
+		workspace, err := os.MkdirTemp("", "processor-validation-*")
+		tAssert.NoError(err)
+		defer func() { _ = os.RemoveAll(workspace) }()
+
+		schema := ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}, {Name: "opt", Optional: true, Type: ast.PrimitiveType{Name: "int"}}}}
+		schemas := newSchemaRegistry()
+		schemas.Add("User", schema)
+		types := newTypeRegistry()
+		vars := newVariableRegistry()
+		symbols := newSymbolTable()
+		symbols.Add("name", symbolKindVariable)
+		vars.Add("name", valueType{kind: ValueString})
+
+		tAssert.NoError(validateExpressionAgainstType(ast.StringLiteral{Lexeme: `"Ada"`}, valueType{kind: ValueString}, vars, symbols, types, schemas, nil))
+		tAssert.NoError(validateExpressionAgainstType(ast.ConditionalExpression{Then: ast.StringLiteral{Lexeme: `"Ada"`}, Else: ast.StringLiteral{Lexeme: `"Bea"`}}, valueType{choiceValues: []Value{{Kind: ValueString, String: "Ada"}, {Kind: ValueString, String: "Bea"}}}, vars, symbols, types, schemas, nil))
+		tAssert.NoError(validateExpressionAgainstType(ast.ArrayLiteral{Elements: []ast.Expression{ast.StringLiteral{Lexeme: `"Ada"`}}}, valueType{kind: ValueArray, element: &valueType{kind: ValueString}}, vars, symbols, types, schemas, nil))
+		tAssert.NoError(validateExpressionAgainstType(ast.RecordLiteral{Fields: []ast.RecordField{{Name: "name", Value: ast.StringLiteral{Lexeme: `"Ada"`}}}}, valueType{kind: ValueRecord, record: &schema}, vars, symbols, types, schemas, nil))
+		tAssert.NoError(validateExpressionAgainstType(ast.RecordLiteral{Fields: []ast.RecordField{{Name: "name", Value: ast.StringLiteral{Lexeme: `"Ada"`}}, {Name: "opt", Value: ast.IntLiteral{Lexeme: "7"}}}}, valueType{kind: ValueRecord, schemaName: "User"}, vars, symbols, types, schemas, nil))
+		tAssert.NoError(validateExpressionAgainstType(ast.ConditionalExpression{Then: ast.RecordLiteral{Fields: []ast.RecordField{{Name: "name", Value: ast.StringLiteral{Lexeme: `"Ada"`}}}}, Else: ast.RecordLiteral{Fields: []ast.RecordField{{Name: "name", Value: ast.StringLiteral{Lexeme: `"Bea"`}}}}}, valueType{kind: ValueRecord, record: &schema}, vars, symbols, types, schemas, nil))
+		tAssert.Error(validateExpressionAgainstType(ast.RecordLiteral{Fields: []ast.RecordField{{Name: "unknown", Value: ast.StringLiteral{Lexeme: `"Ada"`}}}}, valueType{kind: ValueRecord, record: &schema}, vars, symbols, types, schemas, nil))
+		tAssert.Error(validateExpressionAgainstType(ast.RecordLiteral{Fields: []ast.RecordField{{Name: "name", Value: ast.IntLiteral{Lexeme: "7"}}}}, valueType{kind: ValueRecord, record: &schema}, vars, symbols, types, schemas, nil))
+
+		tAssert.NoError(validateEvaluatedOutputSchema("User", map[string]Value{"name": {Kind: ValueString, String: "Ada"}, "opt": {Kind: ValueInt, Int: 7}}, symbols, types, schemas, nil))
+		tAssert.Error(validateEvaluatedOutputSchema("User", map[string]Value{"name": {Kind: ValueString, String: "Ada"}, "extra": {Kind: ValueString, String: "x"}}, symbols, types, schemas, nil))
+		tAssert.Error(validateEvaluatedOutputSchema("Missing", map[string]Value{}, symbols, types, schemas, nil))
+
+		tAssert.NoError(validateEvaluatedValueAgainstType(Value{Kind: ValueNull}, valueType{kind: ValueString, nullable: true}, symbols, types, schemas, nil))
+		tAssert.Error(validateEvaluatedValueAgainstType(Value{Kind: ValueNull}, valueType{kind: ValueString}, symbols, types, schemas, nil))
+		tAssert.NoError(validateEvaluatedValueAgainstType(Value{Kind: ValueString, String: "Ada"}, valueType{choiceValues: []Value{{Kind: ValueString, String: "Ada"}}}, symbols, types, schemas, nil))
+		tAssert.Error(validateEvaluatedValueAgainstType(Value{Kind: ValueString, String: "Bea"}, valueType{choiceValues: []Value{{Kind: ValueString, String: "Ada"}}}, symbols, types, schemas, nil))
+		tAssert.NoError(validateEvaluatedValueAgainstType(Value{Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Ada"}}}, valueType{kind: ValueRecord, schemaName: "User", record: &schema}, symbols, types, schemas, nil))
+		tAssert.Error(validateEvaluatedValueAgainstType(Value{Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueInt, Int: 7}}}, valueType{kind: ValueRecord, schemaName: "User", record: &schema}, symbols, types, schemas, nil))
+		tAssert.Error(validateEvaluatedValueAgainstType(Value{Kind: ValueRecord, Record: map[string]Value{"extra": {Kind: ValueString, String: "x"}}}, valueType{kind: ValueRecord, record: &schema}, symbols, types, schemas, nil))
+	})
+
+	It("covers validation helper branches", func() {
+		vars := newVariableRegistry()
+		symbols := newSymbolTable()
+		types := newTypeRegistry()
+		schemas := newSchemaRegistry()
+		schema := ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}, {Name: "age", Optional: true, Type: ast.PrimitiveType{Name: "int"}}}}
+		schemas.Add("User", schema)
+		symbols.Add("name", symbolKindVariable)
+		vars.Add("name", valueType{kind: ValueString})
+
+		tAssert.NoError(validateRecordLiteral(ast.RecordLiteral{Fields: []ast.RecordField{{Name: "name", Value: ast.StringLiteral{Lexeme: `"Ada"`}}}}, "User", vars, symbols, types, schemas, nil))
+		tAssert.Error(validateRecordLiteral(ast.RecordLiteral{}, "Missing", vars, symbols, types, schemas, nil))
+		tAssert.NoError(validateRecordLiteralAgainstRecordType(ast.RecordLiteral{Fields: []ast.RecordField{{Name: "name", Value: ast.StringLiteral{Lexeme: `"Ada"`}}}}, schema, "User", vars, symbols, types, schemas, nil))
+		tAssert.Error(validateRecordLiteralAgainstRecordType(ast.RecordLiteral{Fields: []ast.RecordField{{Name: "name", Value: ast.IntLiteral{Lexeme: "7"}}}}, schema, "", vars, symbols, types, schemas, nil))
+		tAssert.NoError(validateEvaluatedValueAgainstVariantMembers(Value{Kind: ValueString, String: "Ada"}, []valueType{{kind: ValueString}}, symbols, types, schemas, nil))
+		tAssert.Error(validateEvaluatedValueAgainstVariantMembers(Value{Kind: ValueString, String: "Ada"}, []valueType{{kind: ValueInt}}, symbols, types, schemas, nil))
+		tAssert.NoError(validateExpressionAgainstVariantMembers(ast.StringLiteral{Lexeme: `"Ada"`}, []valueType{{kind: ValueString}}, vars, symbols, types, schemas, nil))
+		tAssert.Error(validateExpressionAgainstVariantMembers(ast.StringLiteral{Lexeme: `"Ada"`}, []valueType{{kind: ValueInt}}, vars, symbols, types, schemas, nil))
+		tAssert.Error(validateOutputSchema("Missing", []ast.OutputField{{Name: "name", Value: ast.StringLiteral{Lexeme: `"Ada"`}}}, vars, symbols, types, schemas, nil))
+		tAssert.NoError(validateOutputSchema("User", []ast.OutputField{{Name: "name", Value: ast.StringLiteral{Lexeme: `"Ada"`}}}, vars, symbols, types, schemas, nil))
+		tAssert.Error(validateRecordType(ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.NamedType{Name: "Missing"}}}}, symbols, types, schemas, nil))
+		tAssert.NoError(validateRecordType(schema, symbols, types, schemas, nil))
+	})
+
+	It("covers evaluation branches", func() {
+		vars := newValueEnvironment()
+		symbols := newSymbolTable()
+		types := newTypeRegistry()
+		schemas := newSchemaRegistry()
+		vars.Add("name", Value{Kind: ValueString, String: "Ada"})
+		symbols.Add("name", symbolKindVariable)
+		schemas.Add("User", ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}})
+
+		_, err := evaluatePrefix(ast.PrefixExpression{Operator: lexer.TokenBang, Right: ast.IntLiteral{Lexeme: "1"}}, vars, Value{}, symbols, types, schemas, nil)
+		tAssert.Error(err)
+		_, err = evaluatePrefix(ast.PrefixExpression{Operator: lexer.TokenTilde, Right: ast.BooleanLiteral{Value: true}}, vars, Value{}, symbols, types, schemas, nil)
+		tAssert.Error(err)
+		_, err = evaluatePrefix(ast.PrefixExpression{Operator: lexer.TokenMinus, Right: ast.BooleanLiteral{Value: true}}, vars, Value{}, symbols, types, schemas, nil)
+		tAssert.Error(err)
+		_, err = evaluatePrefix(ast.PrefixExpression{Operator: lexer.TokenPlus, Right: ast.BooleanLiteral{Value: true}}, vars, Value{}, symbols, types, schemas, nil)
+		tAssert.Error(err)
+		_, err = evaluatePrefix(ast.PrefixExpression{Operator: lexer.TokenBang, Right: ast.BooleanLiteral{Value: false}}, vars, Value{}, symbols, types, schemas, nil)
+		tAssert.NoError(err)
+		_, err = evaluatePrefix(ast.PrefixExpression{Operator: lexer.TokenQuestion, Right: ast.BooleanLiteral{Value: false}}, vars, Value{}, symbols, types, schemas, nil)
+		tAssert.Error(err)
+
+		_, err = evaluateInfix(ast.InfixExpression{Operator: lexer.TokenAndAnd, Left: ast.BooleanLiteral{Value: true}, Right: ast.IntLiteral{Lexeme: "1"}}, vars, Value{}, symbols, types, schemas, nil)
+		tAssert.Error(err)
+		_, err = evaluateInfix(ast.InfixExpression{Operator: lexer.TokenOrOr, Left: ast.BooleanLiteral{Value: false}, Right: ast.IntLiteral{Lexeme: "1"}}, vars, Value{}, symbols, types, schemas, nil)
+		tAssert.Error(err)
+		_, err = evaluateInfix(ast.InfixExpression{Operator: lexer.TokenPlus, Left: ast.StringLiteral{Lexeme: `"a"`}, Right: ast.IntLiteral{Lexeme: "1"}}, vars, Value{}, symbols, types, schemas, nil)
+		tAssert.Error(err)
+		_, err = evaluateInfix(ast.InfixExpression{Operator: lexer.TokenEqualEqual, Left: ast.StringLiteral{Lexeme: `"a"`}, Right: ast.StringLiteral{Lexeme: `"a"`}}, vars, Value{}, symbols, types, schemas, nil)
+		tAssert.NoError(err)
+		_, err = evaluateInfix(ast.InfixExpression{Operator: lexer.TokenLess, Left: ast.IntLiteral{Lexeme: "1"}, Right: ast.IntLiteral{Lexeme: "2"}}, vars, Value{}, symbols, types, schemas, nil)
+		tAssert.NoError(err)
+
+		_, err = evaluateEquality(lexer.TokenEqualEqual, Value{Kind: ValueRecord}, Value{Kind: ValueRecord})
+		tAssert.Error(err)
+		_, err = evaluateComparison(lexer.TokenLess, Value{Kind: ValueString, String: "x"}, Value{Kind: ValueInt, Int: 1})
+		tAssert.Error(err)
+		_, err = compareNumbers(lexer.TokenPlus, 1, 2)
+		tAssert.Error(err)
+		_, err = evaluateSelfReference(ast.SelfReference{Path: []string{"missing"}}, Value{Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Ada"}}})
+		tAssert.Error(err)
+		_, err = evaluateSelfReference(ast.SelfReference{Path: []string{"name"}}, Value{Kind: ValueString, String: "Ada"})
+		tAssert.Error(err)
+		tAssert.Error(validateExpressionAgainstVariantMembers(ast.StringLiteral{Lexeme: `"Ada"`}, []valueType{{kind: ValueInt}, {kind: ValueInt}}, newVariableRegistry(), symbols, types, schemas, nil))
+		_, err = evaluateLogicalAnd(ast.InfixExpression{Left: ast.BooleanLiteral{Value: true}, Right: ast.IntLiteral{Lexeme: "1"}}, vars, Value{}, symbols, types, schemas, nil)
+		tAssert.Error(err)
+		_, err = evaluateLogicalOr(ast.InfixExpression{Left: ast.BooleanLiteral{Value: false}, Right: ast.IntLiteral{Lexeme: "1"}}, vars, Value{}, symbols, types, schemas, nil)
+		tAssert.Error(err)
+		_, err = evaluateConditional(ast.ConditionalExpression{Condition: ast.IntLiteral{Lexeme: "1"}, Then: ast.StringLiteral{Lexeme: `"Ada"`}, Else: ast.StringLiteral{Lexeme: `"Bob"`}}, vars, Value{}, symbols, types, schemas, nil)
+		tAssert.Error(err)
+		_, err = evaluateRecordLiteral(ast.RecordLiteral{Fields: []ast.RecordField{{Name: "name", Value: ast.StringLiteral{Lexeme: `"Ada"`}}, {Name: "name", Value: ast.StringLiteral{Lexeme: `"Bob"`}}}}, vars, Value{}, symbols, types, schemas, nil)
+		tAssert.Error(err)
+		_, err = evaluateArrayLiteral(ast.ArrayLiteral{Elements: []ast.Expression{ast.StringLiteral{Lexeme: `"Ada"`}}}, vars, Value{}, symbols, types, schemas, nil)
+		tAssert.NoError(err)
 	})
 
 	It("converts runtime value types back to AST type references", func() {
@@ -3597,6 +3977,12 @@ var _ = Describe("Processor helpers", func() {
 	})
 
 	It("covers string escaping and conditional inference helpers", func() {
+		parsedDoc, err := parseDocString(`"""docs"""`)
+		tAssert.NoError(err)
+		tAssert.Equal("docs", parsedDoc.String)
+		_, err = parseDocString(`"""docs`)
+		tAssert.Error(err)
+
 		unescaped, length, err := unescapeSequence(`\u0041`)
 		tAssert.NoError(err)
 		tAssert.Equal("A", unescaped)
@@ -3622,6 +4008,9 @@ var _ = Describe("Processor helpers", func() {
 	})
 
 	It("covers arithmetic, parsing, and type resolution helpers", func() {
+		_, err := parseInterpolatedString("unterminated", newValueEnvironment(), Value{}, newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
+		tAssert.Error(err)
+
 		intValue, err := parseInt("42")
 		tAssert.NoError(err)
 		tAssert.Equal(int64(42), intValue.Int)
@@ -3711,5 +4100,77 @@ int base = 1;
 
 		_, err = evaluateExpression(ast.Identifier{Name: "missing"}, newValueEnvironment(), Value{}, newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
 		tAssert.Error(err)
+	})
+
+	It("covers escaped string content helpers", func() {
+		content, _, err := stringContent(`"""abc\n"""`)
+		tAssert.NoError(err)
+		tAssert.Contains(content, "abc")
+		_, _, err = stringContent(`"""\x`)
+		tAssert.Error(err)
+		_, err = decodeStringLexeme(`"hello"`, false, func(s string) (string, error) { return s, nil })
+		tAssert.NoError(err)
+		_, err = decodeStringLexeme(`"unterminated`, false, func(s string) (string, error) { return s, nil })
+		tAssert.Error(err)
+	})
+
+	It("covers validation and inference branches", func() {
+		symbols := newSymbolTable()
+		types := newTypeRegistry()
+		schemas := newSchemaRegistry()
+		variables := newVariableRegistry()
+		symbols.Add("name", symbolKindVariable)
+		variables.Add("name", valueType{kind: ValueString})
+		schemas.Add("User", ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}})
+		symbols.Add("Missing", symbolKindType)
+		types.AddAlias("Missing", ast.PrimitiveType{Name: "string"})
+
+		tAssert.NoError(validateDataOutputExpression(ast.Identifier{Name: "name"}, symbols, map[string]struct{}{}, map[string]struct{}{}))
+		tAssert.NoError(validateDataOutputExpression(ast.Identifier{Name: "missing"}, symbols, map[string]struct{}{}, map[string]struct{}{}))
+		tAssert.NoError(validateOutputSchema("User", []ast.OutputField{{Name: "name", Value: ast.StringLiteral{Lexeme: `"Ada"`}}}, variables, symbols, types, schemas, nil))
+		_, err := resolveValueType(ast.NamedType{Name: "Missing"}, symbols, types, schemas, nil)
+		tAssert.NoError(err)
+		_, err = inferExpressionType(ast.Identifier{Name: "name"}, variables, symbols, types, schemas, nil)
+		tAssert.NoError(err)
+		_, err = inferExpressionType(ast.BooleanLiteral{Value: true}, variables, symbols, types, schemas, nil)
+		tAssert.NoError(err)
+		_, err = inferExpressionType(ast.NullLiteral{}, variables, symbols, types, schemas, nil)
+		tAssert.NoError(err)
+		_, err = inferExpressionType(ast.ArrayLiteral{Elements: []ast.Expression{ast.IntLiteral{Lexeme: "1"}, ast.StringLiteral{Lexeme: `"Ada"`}}}, variables, symbols, types, schemas, nil)
+		tAssert.NoError(err)
+		_, err = inferExpressionType(ast.RecordLiteral{}, variables, symbols, types, schemas, nil)
+		tAssert.NoError(err)
+		_, err = inferExpressionType(ast.SelfReference{}, variables, symbols, types, schemas, nil)
+		tAssert.NoError(err)
+		_, err = inferExpressionType(ast.ConditionalExpression{Condition: ast.BooleanLiteral{Value: true}, Then: ast.IntLiteral{Lexeme: "1"}, Else: ast.IntLiteral{Lexeme: "2"}}, variables, symbols, types, schemas, nil)
+		tAssert.NoError(err)
+		_, err = inferPrefixType(ast.PrefixExpression{Operator: lexer.TokenBang, Right: ast.BooleanLiteral{Value: true}}, variables, symbols, types, schemas, nil)
+		tAssert.NoError(err)
+		_, err = inferPrefixType(ast.PrefixExpression{Operator: lexer.TokenMinus, Right: ast.IntLiteral{Lexeme: "1"}}, variables, symbols, types, schemas, nil)
+		tAssert.NoError(err)
+		_, err = inferInfixType(ast.InfixExpression{Left: ast.IntLiteral{Lexeme: "1"}, Operator: lexer.TokenPlus, Right: ast.IntLiteral{Lexeme: "2"}}, variables, symbols, types, schemas, nil)
+		tAssert.NoError(err)
+		_, err = inferInfixType(ast.InfixExpression{Left: ast.BooleanLiteral{Value: true}, Operator: lexer.TokenAndAnd, Right: ast.BooleanLiteral{Value: false}}, variables, symbols, types, schemas, nil)
+		tAssert.NoError(err)
+		err = validateExpressionAgainstType(ast.StringLiteral{Lexeme: `"Ada"`}, valueType{kind: ValueString}, variables, symbols, types, schemas, nil)
+		tAssert.NoError(err)
+		err = validateExpressionAgainstType(ast.ArrayLiteral{Elements: []ast.Expression{ast.IntLiteral{Lexeme: "1"}}}, valueType{kind: ValueArray, element: &valueType{kind: ValueInt}}, variables, symbols, types, schemas, nil)
+		tAssert.NoError(err)
+		err = validateExpressionAgainstType(ast.RecordLiteral{}, valueType{kind: ValueRecord, record: &ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}}, variables, symbols, types, schemas, nil)
+		tAssert.Error(err)
+		err = validateEvaluatedValueAgainstType(Value{Kind: ValueString, String: "Ada"}, valueType{kind: ValueString}, symbols, types, schemas, nil)
+		tAssert.NoError(err)
+		err = validateEvaluatedValueAgainstType(Value{Kind: ValueArray, Array: []Value{{Kind: ValueInt, Int: 1}}}, valueType{kind: ValueArray, element: &valueType{kind: ValueInt}}, symbols, types, schemas, nil)
+		tAssert.NoError(err)
+		err = validateEvaluatedValueAgainstType(Value{Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Ada"}}}, valueType{kind: ValueRecord, record: &ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}}, symbols, types, schemas, nil)
+		tAssert.NoError(err)
+		err = validateEvaluatedOutputSchema("User", map[string]Value{"name": {Kind: ValueString, String: "Ada"}}, symbols, types, schemas, nil)
+		tAssert.NoError(err)
+		err = validateOutputSchema("User", []ast.OutputField{{Name: "name", Value: ast.IntLiteral{Lexeme: "1"}}}, variables, symbols, types, schemas, nil)
+		tAssert.Error(err)
+		_, err = evaluateLogicalAnd(ast.InfixExpression{Left: ast.BooleanLiteral{Value: true}, Right: ast.BooleanLiteral{Value: false}}, newValueEnvironment(), Value{}, symbols, types, schemas, nil)
+		tAssert.NoError(err)
+		_, err = evaluateLogicalOr(ast.InfixExpression{Left: ast.BooleanLiteral{Value: false}, Right: ast.BooleanLiteral{Value: true}}, newValueEnvironment(), Value{}, symbols, types, schemas, nil)
+		tAssert.NoError(err)
 	})
 })
