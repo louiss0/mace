@@ -2251,3 +2251,38 @@ var _ = Describe("analyzer declaration utility coverage helpers", func() {
 		}
 	})
 })
+
+var _ = Describe("analyzer small branch coverage helpers", func() {
+	It("covers residual token, diagnostic, and summary branches", func() {
+		candidates := []arrayAccessCandidate{{Bracket: lexer.Token{Type: lexer.TokenLBracket, Lexeme: "["}, Index: &lexer.Token{Type: lexer.TokenInt, Lexeme: "1"}, Level: 2}}
+		_, ok := outOfRangeArrayAccessToken(candidates, processor.DiagnosticError{Fields: processor.DiagnosticFields{Level: 1, Index: "1"}})
+		tAssert.False(ok)
+		_, ok = outOfRangeArrayAccessToken(candidates, processor.DiagnosticError{Fields: processor.DiagnosticFields{Level: 2, Index: "2"}})
+		tAssert.False(ok)
+		_, ok = outOfRangeArrayAccessToken([]arrayAccessCandidate{{Level: 1}}, processor.DiagnosticError{Fields: processor.DiagnosticFields{Level: 1, Index: "1"}})
+		tAssert.False(ok)
+
+		file := ast.File{Output: ast.OutputBlock{DataFields: []ast.OutputField{{Name: "known"}}}}
+		tAssert.Equal(diagnosticTypeSelfForwardReference, classifySelfReferenceCode(file, "known"))
+		tAssert.Equal(diagnosticTypeUnknownSelfField, classifySelfReferenceCode(file, "missing"))
+		tAssert.Equal(0, outputFieldIndex(file, "known"))
+		tAssert.Equal(-1, outputFieldIndex(file, "missing"))
+
+		text := "[output = data]\n{\n  unknown: 1;\n  duplicate: 1;\n  duplicate: 2;\n}\n"
+		tokens := lexAnalysisTokens(text)
+		_, ok = unknownFieldEditRange(text, ast.File{}, tokens, `unknown field "unknown"`)
+		tAssert.True(ok)
+		_, ok = duplicateFieldEditRange(text, tokens, `duplicate field "duplicate"`)
+		tAssert.True(ok)
+		_, ok = unknownSchemaDiagnostic(tokens, `unknown schema "Missing"`)
+		tAssert.False(ok)
+
+		tAssert.Equal(`"hi"`, summarizeValue(processor.Value{Kind: processor.ValueString, String: "hi"}))
+		tAssert.Equal("2", summarizeValue(processor.Value{Kind: processor.ValueInt, Int: 2}))
+		tAssert.Equal("1.5", summarizeValue(processor.Value{Kind: processor.ValueFloat, Float: 1.5}))
+		tAssert.Equal("true", summarizeValue(processor.Value{Kind: processor.ValueBoolean, Boolean: true}))
+		tAssert.Equal("{ a: 1 }", summarizeValue(processor.Value{Kind: processor.ValueRecord, Record: map[string]processor.Value{"a": {Kind: processor.ValueInt, Int: 1}}}))
+		tAssert.Empty(DocumentPath(protocol.DocumentUri("not a uri")))
+		tAssert.Equal("ab", identifierPrefixAt("abc", protocol.Position{Character: 2}))
+	})
+})

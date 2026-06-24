@@ -2059,3 +2059,20 @@ var _ = Describe("completion import-as coverage helpers", func() {
 		tAssert.False(ok)
 	})
 })
+
+var _ = Describe("completion line and placeholder coverage helpers", func() {
+	It("covers current-line and placeholder helper branches", func() {
+		text := "first\nsecond line"
+		tAssert.Equal("sec", currentLinePrefix(text, protocol.Position{Line: 1, Character: 3}))
+		tAssert.Equal("", currentLinePrefix(text, protocol.Position{Line: 9, Character: 1}))
+		tAssert.Equal("ond line", currentLineSuffix(text, protocol.Position{Line: 1, Character: 3}))
+		tAssert.Equal("first", currentLineSuffix(text, protocol.Position{Line: 9, Character: 1}))
+		pos, ok := completionPlaceholderPosition("a + b", protocol.Position{Character: 3}, "+")
+		tAssert.True(ok)
+		tAssert.Equal(protocol.Position{Character: 3}, pos)
+		_, ok = completionPlaceholderPosition("a + b", protocol.Position{Character: 5}, "+")
+		tAssert.False(ok)
+		_, ok = completionPlaceholderPosition("a + b", protocol.Position{Line: 2}, "+")
+		tAssert.False(ok)
+	})
+})
