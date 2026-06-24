@@ -2286,3 +2286,88 @@ var _ = Describe("analyzer small branch coverage helpers", func() {
 		tAssert.Equal("ab", identifierPrefixAt("abc", protocol.Position{Character: 2}))
 	})
 })
+
+var _ = Describe("analyzer code action coverage helpers", func() {
+	It("covers import resolution diagnostics and quick fixes", func() {
+		workspace, err := os.MkdirTemp("", "mace-import-actions-*")
+		tAssert.NoError(err)
+		defer os.RemoveAll(workspace)
+		documentPath := filepath.Join(workspace, "consumer.mace")
+		writeAnalysisFile(workspace, "shared.mace", `[output = schema]
+{
+  User: { name: string; };
+}`)
+		writeAnalysisFile(workspace, "renamed.mace", `[output = schema]
+{
+}`)
+		text := `|===|
+from "./shared.mace" import Usr;
+from "./rename.mace" import Missing;
+|===|
+[output = data]
+{
+}`
+		tokens := lexAnalysisTokens(text)
+		file := ast.File{Imports: []ast.ImportDeclaration{
+			{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "Usr"}}},
+			{Path: ast.StringLiteral{Lexeme: `"./rename.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "Missing"}}},
+		}}
+		actions := importResolutionCodeActions(text, file, tokens, documentPath)
+		titles := lo.Map(actions, func(action analysisCodeActionCandidate, _ int) string { return action.Action.Title })
+		tAssert.Contains(titles, "Open source output block")
+		tAssert.Contains(titles, "Explain why symbol is not importable")
+		tAssert.Contains(titles, "Create missing imported file")
+		tAssert.Contains(titles, "Update import path after file rename")
+		tAssert.Contains(titles, "Replace unavailable imported symbol with User")
+		diagnostics := unavailableImportDiagnostics(file, tokens, documentPath)
+		tAssert.NotEmpty(diagnostics)
+		unavailable := unavailableImportNameSet(file, documentPath)
+		tAssert.Contains(unavailable, importNameKey("./shared.mace", "Usr"))
+		tAssert.Equal("./shared.mace\x00Usr", importNameKey("./shared.mace", "Usr"))
+		closest, ok := closestName("Usr", []string{"User"})
+		tAssert.True(ok)
+		tAssert.Equal("User", closest)
+		_, ok = closestName("CompletelyDifferent", []string{"User"})
+		tAssert.False(ok)
+		tAssert.Equal(0, levenshteinDistance("same", "same"))
+		tAssert.NotEmpty(exportedOutputNames(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData, DataFields: []ast.OutputField{{Name: "value"}}}}))
+	})
+
+	It("covers semantic and documentation code action aggregators", func() {
+		documentPath := filepath.Join(os.TempDir(), "mace-actions.mace")
+		text := `|===|
+type Alias: string;
+string value = "x";
+schema User: { name: string; };
+|===|
+[output = data, schema = User]
+{
+}`
+		tokens := lexAnalysisTokens(text)
+		file := ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{
+			ast.TypeDeclaration{NameToken: lexer.Token{Line: 2, Column: 6, Lexeme: "Alias"}, Name: "Alias", Type: ast.PrimitiveType{Name: "string"}},
+			ast.VariableDeclaration{NameToken: lexer.Token{Line: 3, Column: 8, Lexeme: "value"}, Name: "value", HasValue: true, Type: ast.PrimitiveType{Name: "string"}, Value: ast.StringLiteral{Lexeme: `"x"`}},
+			ast.SchemaDeclaration{NameToken: lexer.Token{Line: 4, Column: 8, Lexeme: "User"}, Name: "User", Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}},
+		}}, Output: ast.OutputBlock{Mode: ast.OutputModeData, Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchema, Value: "User"}}}}
+		diagnostic := diagnosticWithCode(protocol.Range{}, protocol.DiagnosticSeverityError, diagnosticTypeRecordDoesNotMatchSchema, `missing required field "name"`)
+		actions := semanticCodeActions(text, file, tokens, documentPath, diagnostic, `missing required field "name"`)
+		tAssert.NotEmpty(actions)
+		tAssert.NotNil(documentationCodeActions(text, file, tokens, documentPath))
+		tAssert.Nil(documentationCodeActions(text, file, tokens, ""))
+		candidates := editorRefactorCodeActions(text, file, tokens, documentPath)
+		tAssert.NotEmpty(candidates)
+		tAssert.Nil(editorRefactorCodeActions(text, file, tokens, ""))
+	})
+})
+
+var _ = Describe("analyzer removal action coverage helpers", func() {
+	It("covers remove declaration action branches", func() {
+		text := "|===|\nstring unused = \"x\";\n|===|\n[output = data]{}\n"
+		tokens := lexAnalysisTokens(text)
+		nameToken := lexer.Token{Line: 2, Column: 8, Lexeme: "unused"}
+		actions := removeDeclarationAction(text, tokens, filepath.Join(os.TempDir(), "remove.mace"), protocol.Range{}, nameToken, "Remove unused variable")
+		tAssert.NotEmpty(actions)
+		tAssert.Nil(removeDeclarationAction(text, tokens, "", protocol.Range{}, nameToken, "Remove"))
+		tAssert.Nil(removeDeclarationAction(text, tokens, filepath.Join(os.TempDir(), "remove.mace"), protocol.Range{}, lexer.Token{Line: 99, Column: 1, Lexeme: "missing"}, "Remove"))
+	})
+})

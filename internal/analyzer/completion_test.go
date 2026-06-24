@@ -2076,3 +2076,109 @@ var _ = Describe("completion line and placeholder coverage helpers", func() {
 		tAssert.False(ok)
 	})
 })
+
+var _ = Describe("completion placeholder path coverage helpers", func() {
+	It("covers placeholder and expression path branches", func() {
+		path, ok := placeholderPath(ast.Identifier{Name: completionPlaceholderIdentifier})
+		tAssert.True(ok)
+		tAssert.Empty(path)
+		path, ok = placeholderPath(ast.MemberAccess{Target: ast.Identifier{Name: "user"}, Name: completionPlaceholderIdentifier})
+		tAssert.True(ok)
+		tAssert.Equal([]string{"user"}, path)
+		path, ok = placeholderPath(ast.MemberAccess{Target: ast.Identifier{Name: completionPlaceholderIdentifier}, Name: "name"})
+		tAssert.True(ok)
+		tAssert.Equal([]string{"name"}, path)
+		path, ok = placeholderPath(ast.ArrayLiteral{Elements: []ast.Expression{ast.RecordLiteral{Fields: []ast.RecordField{{Name: "field", Value: ast.Identifier{Name: completionPlaceholderIdentifier}}}}}})
+		tAssert.True(ok)
+		tAssert.Equal([]string{completionArrayPathSegment, "field"}, path)
+		path, ok = placeholderPath(ast.InfixExpression{Left: ast.Identifier{Name: "x"}, Right: ast.PrefixExpression{Right: ast.Identifier{Name: completionPlaceholderIdentifier}}})
+		tAssert.True(ok)
+		tAssert.Empty(path)
+		path, ok = placeholderPath(ast.ConditionalExpression{Condition: ast.Identifier{Name: "condition"}, Then: ast.Identifier{Name: "then"}, Else: ast.Identifier{Name: completionPlaceholderIdentifier}})
+		tAssert.True(ok)
+		tAssert.Empty(path)
+		_, ok = placeholderPath(ast.StringLiteral{})
+		tAssert.False(ok)
+		_, ok = expressionPath(ast.Identifier{})
+		tAssert.False(ok)
+		_, ok = expressionPath(ast.MemberAccess{Target: ast.Identifier{Name: "user"}})
+		tAssert.False(ok)
+		path, ok = expressionPath(ast.MemberAccess{Target: ast.Identifier{Name: "user"}, Name: "name"})
+		tAssert.True(ok)
+		tAssert.Equal([]string{"user", "name"}, path)
+	})
+
+	It("covers placeholder completion type helpers directly", func() {
+		model := completionModel{schemas: map[string]ast.RecordType{"User": {Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}}}
+		file := ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.VariableDeclaration{HasValue: true, Type: ast.NamedType{Name: "User"}, Value: ast.MemberAccess{Target: ast.Identifier{Name: completionPlaceholderIdentifier}, Name: "name"}}}}}
+		_, path, ok := placeholderCompletionType(file, model)
+		tAssert.True(ok)
+		tAssert.Equal([]string{"name"}, path)
+		_, _, ok = placeholderCompletionType(ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.VariableDeclaration{HasValue: true, Type: ast.NamedType{Name: "Missing"}, Value: ast.MemberAccess{Target: ast.Identifier{Name: completionPlaceholderIdentifier}, Name: "name"}}}}}, model)
+		tAssert.False(ok)
+		outputFile := ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData, Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchema, Value: "User"}}, DataFields: []ast.OutputField{{Name: "name", Value: ast.Identifier{Name: completionPlaceholderIdentifier}}}}}
+		_, path, ok = placeholderOutputCompletionType(outputFile, model)
+		tAssert.True(ok)
+		tAssert.Equal([]string{"name"}, path)
+		_, _, ok = placeholderOutputCompletionType(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeSchema}}, model)
+		tAssert.False(ok)
+	})
+})
+
+var _ = Describe("completion parse-file helper coverage", func() {
+	It("covers parse input and member type helper branches directly", func() {
+		model := completionModel{schemas: map[string]ast.RecordType{"Input": {Fields: []ast.SchemaField{{Name: "name", Optional: true, Type: ast.PrimitiveType{Name: "string"}}}}}}
+		record, ok := parseInputCompletionRecord(ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParse, Value: "Input"}}}}, model, ".", ".", nil)
+		tAssert.True(ok)
+		tAssert.Len(record.Fields, 1)
+		_, ok = parseInputCompletionRecord(ast.File{}, model, ".", ".", nil)
+		tAssert.False(ok)
+		typeRef, ok, guarded := parseMemberCompletionType(ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Optional: true, Type: ast.PrimitiveType{Name: "string"}}}}, []string{"name"}, completionModel{}, map[string]struct{}{})
+		tAssert.False(ok)
+		tAssert.True(guarded)
+		_, ok, guarded = parseMemberCompletionType(ast.PrimitiveType{Name: "string"}, []string{"name"}, completionModel{}, nil)
+		tAssert.False(ok)
+		tAssert.False(guarded)
+		typeRef, ok, guarded = parseMemberCompletionType(ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Optional: true, Type: ast.PrimitiveType{Name: "string"}}}}, []string{"name"}, completionModel{}, map[string]struct{}{"name": {}})
+		tAssert.True(ok)
+		tAssert.False(guarded)
+		tAssert.IsType(ast.PrimitiveType{}, typeRef)
+	})
+
+	It("covers parse_file imported record helpers with temporary files", func() {
+		workspace, err := os.MkdirTemp("", "mace-parse-file-completion-*")
+		tAssert.NoError(err)
+		defer os.RemoveAll(workspace)
+		writeCompletionFile := func(name string, contents string) string {
+			path := filepath.Join(workspace, name)
+			tAssert.NoError(os.WriteFile(path, []byte(contents), 0o600))
+			return path
+		}
+		_ = writeCompletionFile("schema.mace", `|===|
+schema User: { name: string; };
+|===|
+[output = schema]
+{
+  User: User;
+}`)
+		directives := []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"./schema.mace"`}}
+		defs := parseFileOutputDeclarationDefinitions(directives, workspace, workspace, map[string]completionModel{})
+		tAssert.NotEmpty(defs)
+		record, ok := parseFileOutputSchemaRecord(directives, workspace, workspace, map[string]completionModel{})
+		tAssert.True(ok)
+		tAssert.Len(record.Fields, 1)
+		record, ok = parseFileOutputExportedRecord(directives, workspace, workspace, map[string]completionModel{})
+		tAssert.True(ok)
+		tAssert.Len(record.Fields, 1)
+		badDirectives := []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"./missing.mace"`}}
+		tAssert.Empty(parseFileOutputDeclarationDefinitions(badDirectives, workspace, workspace, map[string]completionModel{}))
+		_, ok = parseFileOutputSchemaRecord(badDirectives, workspace, workspace, map[string]completionModel{})
+		tAssert.False(ok)
+		_, ok = parseFileOutputExportedRecord(badDirectives, workspace, workspace, map[string]completionModel{})
+		tAssert.False(ok)
+		tAssert.True(hasParseFileOnlyOutput(directives))
+		tAssert.False(hasParseFileOnlyOutput(append(directives, ast.OutputDirective{Kind: ast.OutputDirectiveSchema, Value: "User"})))
+		tAssert.True(outputKeyCompletionContext("  name"))
+		tAssert.False(outputKeyCompletionContext("  name:"))
+	})
+})
