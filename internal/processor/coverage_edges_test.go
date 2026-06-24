@@ -515,3 +515,45 @@ from "./cycle_a.mace" import A;
 		t.Fatalf("none=%v err=%v", none, err)
 	}
 }
+
+func TestCoverageEdgesTypeNamesAndUnionRecords(t *testing.T) {
+	stringType := valueType{kind: ValueString}
+	for _, typ := range []valueType{
+		{choiceValues: []Value{{Kind: ValueString, String: "Ada"}}, nullable: true},
+		{kind: ValueNull}, {kind: ValueString}, {kind: ValueInt}, {kind: ValueFloat}, {kind: ValueHexInt}, {kind: ValueHexFloat}, {kind: ValueBoolean},
+		{kind: ValueArray}, {kind: ValueArray, element: &stringType},
+		{kind: ValueRecord}, {kind: ValueRecord, schemaName: "User"}, {kind: ValueRecord, element: &stringType},
+		{members: []valueType{{kind: ValueString}, {kind: ValueInt}}},
+		{kind: ValueUnknown, nullable: true},
+	} {
+		if typ.name() == "" {
+			t.Fatalf("empty name for %#v", typ)
+		}
+	}
+
+	symbols := newSymbolTable()
+	types := newTypeRegistry()
+	schemas := newSchemaRegistry()
+	left := ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}
+	right := ast.RecordType{Fields: []ast.SchemaField{{Name: "age", Optional: true, Type: ast.PrimitiveType{Name: "int"}}}}
+	schemas.Add("Left", left)
+	types.AddAlias("RightAlias", right)
+	types.AddAlias("UnionAlias", ast.UnionType{Members: []ast.TypeReference{ast.NamedType{Name: "Left"}, ast.NamedType{Name: "RightAlias"}}})
+	record, err := resolveUnionRecordType(ast.NamedType{Name: "UnionAlias"}, symbols, types, schemas)
+	if err != nil || len(record.Fields) != 2 {
+		t.Fatalf("record=%v err=%v", record, err)
+	}
+	_, err = resolveUnionRecordType(ast.UnionType{Members: []ast.TypeReference{left, ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "int"}}}}}}, symbols, types, schemas)
+	if err == nil {
+		t.Fatal("expected duplicate incompatible field error")
+	}
+	types.AddAlias("BadAlias", ast.PrimitiveType{Name: "string"})
+	for _, ref := range []ast.TypeReference{ast.NamedType{Name: "Missing"}, ast.NamedType{Name: "BadAlias"}, ast.PrimitiveType{Name: "string"}} {
+		if _, err := resolveUnionRecordType(ref, symbols, types, schemas); err == nil {
+			t.Fatalf("expected union record error for %T", ref)
+		}
+	}
+	if err := validateVariantValueTypes([]valueType{{kind: ValueNull}}); err == nil {
+		t.Fatal("expected invalid variant member")
+	}
+}
