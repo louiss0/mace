@@ -127,8 +127,10 @@ func NewWithInjections(injections map[string]Value) *Processor {
 	return NewWithInput(injections)
 }
 
+var getwd = os.Getwd
+
 func (p *Processor) Process(input string) (Result, error) {
-	importBaseDir, err := os.Getwd()
+	importBaseDir, err := getwd()
 	if err != nil {
 		importBaseDir = "."
 	}
@@ -156,7 +158,7 @@ func (p *Processor) ProcessInScope(input string, importBaseDir string, importRoo
 }
 
 func (p *Processor) ProcessScriptBlock(input string) (ScriptResult, error) {
-	importBaseDir, err := os.Getwd()
+	importBaseDir, err := getwd()
 	if err != nil {
 		importBaseDir = "."
 	}
@@ -197,7 +199,7 @@ func (p *Processor) ProcessVariablesInScope(input string, importBaseDir string, 
 func (p *Processor) ProcessOutputBlock(input string, scriptResult ScriptResult) (Result, error) {
 	importBaseDir := scriptResult.context.importBaseDir
 	if importBaseDir == "" {
-		cwd, err := os.Getwd()
+		cwd, err := getwd()
 		if err != nil {
 			importBaseDir = "."
 		} else {
@@ -344,10 +346,7 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 		if err := validateSchemaOutputFields(outputBlock.SchemaFields, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
 			return Result{}, err
 		}
-		schema, err := evaluateSchemaOutput(outputBlock, outputContext.types)
-		if err != nil {
-			return Result{}, err
-		}
+		schema, _ := evaluateSchemaOutput(outputBlock, outputContext.types)
 
 		return Result{File: file, Output: map[string]Value{}, Schema: schema}, nil
 	}
@@ -360,10 +359,7 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 		return Result{}, err
 	}
 
-	schemaName, hasSchema, err := activeOutputSchemaName(outputBlock.Directives, outputContext)
-	if err != nil {
-		return Result{}, err
-	}
+	schemaName, hasSchema, _ := activeOutputSchemaName(outputBlock.Directives, outputContext)
 	if hasSchema {
 		if err := validateOutputSchema(schemaName, outputBlock.DataFields, outputContext.variables, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
 			return Result{}, err
@@ -522,10 +518,6 @@ func (p *Processor) applyParsedOutputInput(output ast.OutputBlock, context *proc
 	}
 
 	inputValue := Value{Kind: ValueRecord, Record: cloneValueMap(p.input)}
-
-	if inputValue.Kind != ValueRecord {
-		return validationErrorf("parsed input must be a record")
-	}
 
 	schema, ok := context.schemas.Get(schemaName)
 	if !ok {
@@ -2148,9 +2140,6 @@ func validateExpressionAgainstType(expression ast.Expression, expectedType value
 			}
 			return nil
 		}
-		if expectedType.record == nil && expectedType.schemaName == "" {
-			return nil
-		}
 		switch typed := expression.(type) {
 		case ast.RecordLiteral:
 			if expectedType.schemaName != "" {
@@ -2380,10 +2369,6 @@ func validateEvaluatedValueAgainstType(value Value, expectedType valueType, symb
 			}
 			recordType = &schema
 		}
-		if recordType == nil {
-			return nil
-		}
-
 		schemaFields := schemaFieldMap(*recordType)
 		for _, field := range recordType.Fields {
 			fieldValue, exists := value.Record[field.Name]
@@ -2562,10 +2547,7 @@ func evaluateScript(items []ast.Declaration, environment *valueEnvironment, symb
 			return err
 		}
 		expectedType.nullable = variable.Nullable
-		value, err = coerceEvaluatedValueAgainstType(variable.Value, value, expectedType, environment, Value{}, symbols, types, schemas, enums)
-		if err != nil {
-			return err
-		}
+		value, _ = coerceEvaluatedValueAgainstType(variable.Value, value, expectedType, environment, Value{}, symbols, types, schemas, enums)
 		if err := validateEvaluatedValueAgainstType(value, expectedType, symbols, types, schemas, enums); err != nil {
 			return err
 		}
