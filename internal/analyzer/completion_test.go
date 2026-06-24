@@ -2035,3 +2035,27 @@ var _ = Describe("completion delimiter coverage helpers", func() {
 		tAssert.Equal("", completionExpressionClosers("abc", len("abc")+1))
 	})
 })
+
+var _ = Describe("completion import-as coverage helpers", func() {
+	It("covers import-as data record helper branches directly", func() {
+		model := completionModel{schemas: map[string]ast.RecordType{"User": {Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}}}
+		record, ok := importAsDataRecord(ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchema, Value: "User"}}}}, model)
+		tAssert.True(ok)
+		tAssert.Len(record.Fields, 1)
+		record, ok = importAsDataRecord(ast.File{Output: ast.OutputBlock{DataFields: []ast.OutputField{{Name: "value", Value: ast.IntLiteral{Lexeme: "1"}}}}}, completionModel{})
+		tAssert.True(ok)
+		tAssert.Equal("value", record.Fields[0].Name)
+		_, ok = importAsDataRecord(ast.File{}, completionModel{})
+		tAssert.False(ok)
+	})
+
+	It("covers imported member root failure branches directly", func() {
+		_, _, ok := importedMemberCompletionRootType(ast.File{}, nil, ".", ".", nil)
+		tAssert.False(ok)
+		file := ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./missing.mace"`}, ImportAs: &ast.ImportedIdentifier{Name: "data"}}}}
+		_, _, ok = importedMemberCompletionRootType(file, []string{"other"}, ".", ".", nil)
+		tAssert.False(ok)
+		_, _, ok = importedMemberCompletionRootType(file, []string{"data"}, ".", ".", nil)
+		tAssert.False(ok)
+	})
+})

@@ -2214,3 +2214,40 @@ var _ = Describe("analyzer scalar diagnostic coverage helpers", func() {
 		tAssert.Equal("record literal", expressionSummary(ast.RecordLiteral{}))
 	})
 })
+
+var _ = Describe("analyzer declaration utility coverage helpers", func() {
+	It("covers declaration, import, and usage helper branches", func() {
+		tAssert.Equal("[]", defaultLiteralForTypeName("array<string>"))
+		tAssert.Equal("0", defaultLiteralForTypeName("int"))
+		tAssert.Equal("0.0", defaultLiteralForTypeName("float"))
+		tAssert.Equal("0x0", defaultLiteralForTypeName("hex_int"))
+		tAssert.Equal("0x0.0", defaultLiteralForTypeName("hex_float"))
+		tAssert.Equal("false", defaultLiteralForTypeName("boolean"))
+		tAssert.Equal(`""`, defaultLiteralForTypeName("string"))
+
+		declaration := ast.VariableDeclaration{Name: "inserted", Type: ast.PrimitiveType{Name: "string"}}
+		newScript := prependScriptItem(nil, declaration)
+		tAssert.Len(newScript.Items, 1)
+		existing := prependScriptItem(&ast.ScriptBlock{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./a.mace"`}}}, Items: []ast.Declaration{ast.VariableDeclaration{Name: "old"}}}, declaration)
+		tAssert.Len(existing.Imports, 1)
+		tAssert.Len(existing.Items, 2)
+
+		text := `from "./shared.mace" import Remote: Local, Other;`
+		tokens := lexAnalysisTokens(text)
+		importDecl := ast.ImportDeclaration{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}}
+		token, ok := importEntryToken(tokens, importDecl, ast.ImportedIdentifier{Name: "Remote", Alias: "Local"})
+		tAssert.True(ok)
+		tAssert.Equal("Local", token.Lexeme)
+		token, ok = importEntryToken(tokens, importDecl, ast.ImportedIdentifier{Name: "Other"})
+		tAssert.True(ok)
+		tAssert.Equal("Other", token.Lexeme)
+		_, ok = importIdentifierToken(tokens, importDecl, "Local")
+		tAssert.False(ok)
+
+		file := ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.VariableDeclaration{HasValue: true, Name: "local", Value: ast.InfixExpression{Left: ast.Identifier{Name: "left"}, Right: ast.ArrayAccess{Target: ast.MemberAccess{Target: ast.Identifier{Name: "record"}, Name: "field"}}}}}}, Output: ast.OutputBlock{DataFields: []ast.OutputField{{Name: "out", Value: ast.ConditionalExpression{Condition: ast.Identifier{Name: "cond"}, Then: ast.ArrayLiteral{Elements: []ast.Expression{ast.Identifier{Name: "then"}}}, Else: ast.RecordLiteral{Fields: []ast.RecordField{{Name: "else", Value: ast.PrefixExpression{Right: ast.Identifier{Name: "otherwise"}}}}}}}}}}
+		used := usedVariableNames(file)
+		for _, name := range []string{"left", "record", "cond", "then", "otherwise"} {
+			tAssert.Contains(used, name)
+		}
+	})
+})
