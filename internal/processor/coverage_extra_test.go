@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -145,6 +146,152 @@ int value = 1;
 		_, _ = resolveExportedTypeReference(unknownTypeRef, context.types, context.schemas, map[string]struct{}{}, map[string]struct{}{})
 		_, _ = resolveExportedRecordType(ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.NamedType{Name: "Thing"}}}}, context.types, context.schemas, map[string]struct{}{}, map[string]struct{}{})
 		_, _ = resolveExportedRecordType(ast.RecordType{Fields: []ast.SchemaField{{Name: "broken", Type: unknownTypeRef}}}, context.types, context.schemas, map[string]struct{}{}, map[string]struct{}{})
+	})
+
+	It("covers remaining processor edge branches", func() {
+		workspace, err := os.MkdirTemp("", "processor-edge-*")
+		tAssert.NoError(err)
+		defer func() { _ = os.RemoveAll(workspace) }()
+
+		remoteServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/schema.mace":
+				_, _ = io.WriteString(w, `[output = schema]
+{ Foo: Foo; Bar: Bar; }`)
+			case "/nested/schema.mace":
+				_, _ = io.WriteString(w, `[output = schema]
+{ Nested: Nested; }`)
+			default:
+				w.WriteHeader(http.StatusNotFound)
+			}
+		}))
+		defer remoteServer.Close()
+
+		schemaNamesFile := writeFixtureFile(workspace, "schema-names.mace", `[output = schema]
+{ Foo: Foo; Bar: Bar; }`)
+		mismatchNamesFile := writeFixtureFile(workspace, "schema-mismatch.mace", `[output = schema]
+{ Foo: Bar; }`)
+		dataFile := writeFixtureFile(workspace, "data.mace", `[output = data]
+{ value = "x"; }`)
+		badFile := writeFixtureFile(workspace, "bad.mace", `not valid`)
+		cycleA := writeFixtureFile(workspace, "cycle-a.mace", `from "./cycle-b.mace" import Foo;
+[output = schema]
+{ Foo: string; }`)
+		_ = writeFixtureFile(workspace, "cycle-b.mace", `from "./cycle-a.mace" import Foo;
+[output = schema]
+{ Foo: string; }`)
+
+		processor := New()
+		oldGetwd := getwd
+		getwd = func() (string, error) { return "", errors.New("boom") }
+		_, _ = processor.ProcessOutputBlock(`[output = data]
+{ value = "x"; }`, ScriptResult{context: newProcessContext("", "")})
+		getwd = oldGetwd
+
+		badContext := newProcessContext(workspace, workspace)
+		badContext.symbols.Add("User", symbolKindSchema)
+		badContext.schemas.Add("User", ast.RecordType{Fields: []ast.SchemaField{{Name: "value", Type: ast.PrimitiveType{Name: "string"}}}})
+		badContext.symbols.Add("input", symbolKindVariable)
+		badContext.variables.Add("input", valueType{kind: ValueString})
+		badContext.environment.Add("input", Value{Kind: ValueRecord, Record: map[string]Value{"value": {Kind: ValueString, String: "x"}}})
+		_, _ = processor.processParsedOutput(ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchema, Value: "User"}}, DataFields: []ast.OutputField{{Name: "value", Value: ast.Identifier{Name: "input"}}}}, ast.File{}, badContext)
+
+		_, _ = resolveBoundedPath(workspace, workspace, "../escape.mace")
+		_, _ = resolveBoundedPath(remoteServer.URL+"/", remoteServer.URL+"/", "./schema.mace")
+		_, _ = resolveBoundedRemotePath(remoteServer.URL+"/", remoteServer.URL+"/", "./schema.mace", remoteServer.URL+"/nested/schema.mace")
+		_, _ = resolveBoundedRemotePath(remoteServer.URL+"/", remoteServer.URL+"/", "./schema.mace", "https://other.example.com/schema.mace")
+		_, _ = parseRemoteURL("ftp://example.com/schema.mace")
+		_, _ = parseRemoteURL(remoteServer.URL + "/schema.mace")
+		_, _ = readMaceSource(filepath.Join(workspace, "missing.mace"))
+		_, _ = readMaceSource(remoteServer.URL + "/missing.mace")
+
+		_, _ = loadImportExports(cycleA, workspace, true, map[string]map[string]importedDeclaration{}, map[string]struct{}{})
+		_, _ = loadSchemaFileDeclarations(cycleA, workspace, map[string]map[string]ast.Declaration{}, map[string]struct{}{})
+		_, _ = loadImportExports(badFile, workspace, true, map[string]map[string]importedDeclaration{}, map[string]struct{}{})
+		_, _ = loadSchemaFileDeclarations(badFile, workspace, map[string]map[string]ast.Declaration{}, map[string]struct{}{})
+
+		_, _ = resolveSchemaFileDeclarations([]ast.OutputDirective{{Kind: ast.OutputDirectiveSchemaFile, Value: strconv.Quote(filepath.Base(schemaNamesFile))}, {Kind: ast.OutputDirectiveSchemaFile, Value: strconv.Quote(filepath.Base(schemaNamesFile))}}, workspace, workspace)
+		_, _ = resolveSchemaFileDeclarations([]ast.OutputDirective{{Kind: ast.OutputDirectiveSchemaFile, Value: strconv.Quote(filepath.Base(dataFile))}}, workspace, workspace)
+		_, _ = resolveSchemaFileDeclarations([]ast.OutputDirective{{Kind: ast.OutputDirectiveSchemaFile, Value: strconv.Quote(filepath.Base(schemaNamesFile))}, {Kind: ast.OutputDirectiveParseFile, Value: strconv.Quote(filepath.Base(schemaNamesFile))}}, workspace, workspace)
+		_, _ = resolveOutputSchemaNames([]ast.OutputDirective{{Kind: ast.OutputDirectiveSchemaFile, Value: strconv.Quote(filepath.Base(schemaNamesFile))}}, ast.OutputDirectiveSchemaFile, workspace, workspace)
+		_, _ = resolveOutputSchemaNames([]ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: strconv.Quote(filepath.Base(schemaNamesFile))}}, ast.OutputDirectiveParseFile, workspace, workspace)
+		_, _ = resolveOutputSchemaNames([]ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: strconv.Quote(filepath.Base(mismatchNamesFile))}}, ast.OutputDirectiveParseFile, workspace, workspace)
+		_, _ = resolveOutputSchemaNames([]ast.OutputDirective{{Kind: ast.OutputDirectiveSchemaFile, Value: strconv.Quote(filepath.Base(badFile))}}, ast.OutputDirectiveSchemaFile, workspace, workspace)
+
+		validationSymbols := newSymbolTable()
+		validationTypes := newTypeRegistry()
+		validationSchemas := newSchemaRegistry()
+		validationVariables := newVariableRegistry()
+		validationSchemas.Add("User", ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}, Description: "name"}}})
+		validationSymbols.Add("User", symbolKindSchema)
+		validationSymbols.Add("Thing", symbolKindType)
+		validationSymbols.Add("Imported", symbolKindImport)
+		validationSymbols.Add("record", symbolKindVariable)
+		validationSymbols.Add("scalar", symbolKindVariable)
+		validationVariables.Add("record", valueType{kind: ValueRecord, schemaName: "User", record: &ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}})
+		validationVariables.Add("scalar", valueType{kind: ValueString})
+		validationTypes.AddAlias("Thing", ast.PrimitiveType{Name: "string"})
+		validationDocs := map[string]ast.DocDeclaration{"Thing": {Target: "Thing"}}
+		declaredKinds := map[string]symbolKind{"User": symbolKindSchema, "Thing": symbolKindType, "record": symbolKindVariable, "scalar": symbolKindVariable}
+		_ = validateDeclaration(ast.VariableDeclaration{Name: "missing", Type: ast.PrimitiveType{Name: "string"}}, validationSymbols, validationTypes, validationSchemas, nil, validationVariables, map[string]struct{}{}, validationDocs, declaredKinds)
+		_ = validateDeclaration(ast.TypeDeclaration{Name: "Thing", Type: ast.PrimitiveType{Name: "string"}, Description: "docs"}, validationSymbols, validationTypes, validationSchemas, nil, validationVariables, map[string]struct{}{}, validationDocs, declaredKinds)
+		_ = validateDeclaration(ast.SchemaDeclaration{Name: "User", Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}, Description: "name"}}}}, validationSymbols, validationTypes, validationSchemas, nil, validationVariables, map[string]struct{}{}, map[string]ast.DocDeclaration{"User": {Target: "User", Kind: ast.DocumentationKindSchema, Documentation: ast.Documentation{Props: map[string]ast.StringLiteral{"name": {Lexeme: `"x"`}}}}}, declaredKinds)
+		var unknownDeclaration ast.Declaration
+		_ = validateDeclaration(unknownDeclaration, validationSymbols, validationTypes, validationSchemas, nil, validationVariables, map[string]struct{}{}, validationDocs, declaredKinds)
+
+		_ = validateTypeReference(ast.ArrayType{Element: ast.RecordMapType{Value: ast.PrimitiveType{Name: "string"}}}, validationSymbols, validationTypes, validationSchemas, nil)
+		_ = validateTypeReference(ast.RecordMapType{Value: ast.NamedType{Name: "Thing"}}, validationSymbols, validationTypes, validationSchemas, nil)
+		_ = validateTypeReference(ast.UnionType{Members: []ast.TypeReference{ast.NamedType{Name: "User"}}}, validationSymbols, validationTypes, validationSchemas, nil)
+		_ = validateTypeReference(ast.UnionType{Members: []ast.TypeReference{ast.NamedType{Name: "Thing"}}}, validationSymbols, validationTypes, validationSchemas, nil)
+		_ = validateTypeReference(ast.VariantType{Members: []ast.TypeReference{ast.PrimitiveType{Name: "string"}, ast.PrimitiveType{Name: "int"}}}, validationSymbols, validationTypes, validationSchemas, nil)
+		_ = validateTypeReference(ast.ChoiceType{Members: []ast.Expression{ast.StringLiteral{Lexeme: `"x"`}}}, validationSymbols, validationTypes, validationSchemas, nil)
+		_ = validateTypeReference(ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}, {Name: "name", Type: ast.PrimitiveType{Name: "int"}}}}, validationSymbols, validationTypes, validationSchemas, nil)
+		_ = validateTypeReference(ast.NamedType{Name: "Missing"}, validationSymbols, validationTypes, validationSchemas, nil)
+		_ = validateTypeReference(ast.NamedType{Name: "Imported"}, validationSymbols, validationTypes, validationSchemas, nil)
+		var unknownTypeReference ast.TypeReference
+		_ = validateTypeReference(unknownTypeReference, validationSymbols, validationTypes, validationSchemas, nil)
+
+		_ = validateDocDeclaration(ast.DocDeclaration{Target: "Missing"}, validationSymbols, validationSchemas, validationVariables, map[string]struct{}{}, declaredKinds)
+		_ = validateDocDeclaration(ast.DocDeclaration{Target: "Thing"}, validationSymbols, validationSchemas, validationVariables, map[string]struct{}{"Thing": {}}, declaredKinds)
+		_ = validateDocDeclaration(ast.DocDeclaration{Target: "User", Kind: ast.DocumentationKindSchema, Documentation: ast.Documentation{Props: map[string]ast.StringLiteral{"missing": {Lexeme: `"x"`}}}}, validationSymbols, validationSchemas, validationVariables, map[string]struct{}{}, declaredKinds)
+		_ = validateDocDeclaration(ast.DocDeclaration{Target: "scalar", Kind: ast.DocumentationKindSchema, Documentation: ast.Documentation{Props: map[string]ast.StringLiteral{"name": {Lexeme: `"x"`}}}}, validationSymbols, validationSchemas, validationVariables, map[string]struct{}{}, declaredKinds)
+		_ = validateDocDeclaration(ast.DocDeclaration{Target: "record", Kind: ast.DocumentationKindGeneral, Documentation: ast.Documentation{Props: map[string]ast.StringLiteral{"name": {Lexeme: `"x"`}}}}, validationSymbols, validationSchemas, validationVariables, map[string]struct{}{}, declaredKinds)
+
+		_ = validateOutputDirectiveStructure(ast.OutputBlock{Doc: &ast.StringLiteral{Lexeme: `"doc"`}})
+		_ = validateOutputDirectiveStructure(ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveOutput}, {Kind: ast.OutputDirectiveOutput}}})
+		_ = validateOutputDirectiveStructure(ast.OutputBlock{Mode: ast.OutputModeSchema, Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchema, Value: "User"}}})
+		_ = validateOutputDirectiveStructure(ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParse, Value: "User"}, {Kind: ast.OutputDirectiveParseFile, Value: `"schema.mace"`}}})
+		_ = validateOutputDirectiveStructure(ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchemaFile, Value: `"schema.mace"`}}})
+
+		_ = validateSchemaOutputFields([]ast.OutputSchemaField{{Name: "name", Type: ast.NamedType{Name: "record"}}}, validationSymbols, validationTypes, validationSchemas, nil)
+		_ = validateSchemaOutputFields([]ast.OutputSchemaField{{Name: "dup", Type: ast.PrimitiveType{Name: "string"}}, {Name: "dup", Type: ast.PrimitiveType{Name: "int"}}}, validationSymbols, validationTypes, validationSchemas, nil)
+		_ = validateSchemaOutputFieldType(ast.ArrayType{Element: ast.NamedType{Name: "record"}}, validationSymbols)
+		_ = validateSchemaOutputFieldType(ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.NamedType{Name: "record"}}}}, validationSymbols)
+		_ = validateSchemaOutputFieldType(ast.NamedType{Name: "record"}, validationSymbols)
+
+		_ = typeReferenceFromValueType(valueType{choiceValues: []Value{{Kind: ValueString, String: "x"}}})
+		_ = typeReferenceFromValueType(valueType{members: []valueType{{kind: ValueString}, {kind: ValueInt}}})
+		_ = typeReferenceFromValueType(valueType{kind: ValueArray})
+		_ = typeReferenceFromValueType(valueType{kind: ValueArray, element: &valueType{kind: ValueString}})
+		_ = typeReferenceFromValueType(valueType{kind: ValueRecord, schemaName: "User"})
+		_ = typeReferenceFromValueType(valueType{kind: ValueRecord, element: &valueType{kind: ValueInt}})
+		_ = typeReferenceFromValueType(valueType{kind: ValueRecord, record: &ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}})
+		_, _ = resolveBoundedPath(workspace, workspace, "schema-names.mace")
+		_, _ = resolveImportsWithState(ast.File{}, workspace, workspace, true, map[string]map[string]importedDeclaration{}, map[string]struct{}{})
+		_, _ = resolveImportsWithState(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: strconv.Quote(filepath.Base(schemaNamesFile))}, ImportAs: &ast.ImportedIdentifier{Name: "Alias"}}, {Path: ast.StringLiteral{Lexeme: strconv.Quote(filepath.Base(dataFile))}, ImportAs: &ast.ImportedIdentifier{Name: "Alias"}}}}, workspace, workspace, true, map[string]map[string]importedDeclaration{}, map[string]struct{}{})
+		_, _ = loadImportExports(schemaNamesFile, workspace, true, map[string]map[string]importedDeclaration{}, map[string]struct{}{})
+		_, _ = loadImportExports(schemaNamesFile, workspace, true, map[string]map[string]importedDeclaration{schemaNamesFile: {}}, map[string]struct{}{})
+		_, _ = loadSchemaFileDeclarations(schemaNamesFile, workspace, map[string]map[string]ast.Declaration{}, map[string]struct{}{})
+		_, _ = collectImportExports(ast.OutputBlock{Mode: ast.OutputModeSchema, SchemaFields: []ast.OutputSchemaField{{Name: "profile", Type: ast.NamedType{Name: "User"}}}}, badContext)
+		_, _ = collectImportExports(ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchema, Value: "User"}}, DataFields: []ast.OutputField{{Name: "value", Value: ast.Identifier{Name: "input"}}}}, badContext)
+		_, _, _ = outputParseSchemaName([]ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: strconv.Quote(filepath.Base(schemaNamesFile))}}, badContext)
+		_, _, _ = outputParseSchemaName([]ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: strconv.Quote(filepath.Base(mismatchNamesFile))}}, badContext)
+		_ = validateOutputDirectiveStructure(ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParse, Value: "User"}}})
+		_ = validateTypeReference(ast.UnionType{Members: []ast.TypeReference{ast.NamedType{Name: "Missing"}}}, validationSymbols, validationTypes, validationSchemas, nil)
+		_ = validateDocDeclaration(ast.DocDeclaration{Target: "record", Kind: ast.DocumentationKindSchema, Documentation: ast.Documentation{Summary: &ast.StringLiteral{Lexeme: `"doc"`}, Description: &ast.StringLiteral{Lexeme: `"""desc"""`}, Props: map[string]ast.StringLiteral{"name": {Lexeme: `"x"`}}}}, validationSymbols, validationSchemas, validationVariables, map[string]struct{}{}, declaredKinds)
+		_ = processor.applyParsedOutputInput(ast.OutputBlock{}, &badContext)
+		_ = processor.applyParsedOutputInput(ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParse, Value: "Missing"}}}, &badContext)
+		_ = processor.applyParsedOutputInput(ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParse, Value: "User"}}}, &badContext)
 	})
 
 	It("covers remaining validation and evaluation helpers", func() {

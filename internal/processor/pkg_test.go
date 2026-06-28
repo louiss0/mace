@@ -241,7 +241,9 @@ var _ = Describe("Path helpers", func() {
 		tAssert.NoError(err)
 		tAssert.Equal("https://example.com/root/child/file.mace", resolved)
 
-		_, err = resolveImportPath("/workspace", "/absolute/file.mace")
+		absolutePath, pathErr := filepath.Abs("absolute/file.mace")
+		tAssert.NoError(pathErr)
+		_, err = resolveImportPath("/workspace", absolutePath)
 		tAssert.ErrorContains(err, "must be relative")
 
 		bounded, err := resolveImportPathInScope("/workspace", "/workspace", "nested/file.mace", true)

@@ -128,11 +128,15 @@ func TestCoverageEdgesScalarAndOperators(t *testing.T) {
 }
 
 func TestCoverageEdgesTypesAndPaths(t *testing.T) {
-	_, err := resolveBoundedPath("/workspace", "/workspace", "/abs.mace")
+	absPath, err := filepath.Abs("abs.mace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = resolveBoundedPath(filepath.Dir(absPath), filepath.Dir(absPath), absPath)
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	_, err = resolveBoundedPath("/workspace", "/workspace", "../abs.mace")
+	_, err = resolveBoundedPath(filepath.Dir(absPath), filepath.Dir(absPath), "../abs.mace")
 	if err == nil {
 		t.Fatal("expected error")
 	}

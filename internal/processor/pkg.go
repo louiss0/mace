@@ -435,9 +435,6 @@ func buildProcessContextWithState(imports []ast.ImportDeclaration, script *ast.S
 	}
 
 	for _, importedDecl := range imported {
-		if context.symbols.Has(importedDecl.name) {
-			return processContext{}, validationErrorf("duplicate import %q", importedDecl.name)
-		}
 		switch importedDecl.kind {
 		case symbolKindType:
 			context.symbols.Add(importedDecl.name, symbolKindType)
@@ -449,8 +446,6 @@ func buildProcessContextWithState(imports []ast.ImportDeclaration, script *ast.S
 			context.symbols.Add(importedDecl.name, symbolKindVariable)
 			context.variables.Add(importedDecl.name, importedDecl.vtype)
 			context.environment.Add(importedDecl.name, importedDecl.value)
-		default:
-			return processContext{}, validationErrorf("unknown import %q", importedDecl.name)
 		}
 	}
 
@@ -496,8 +491,6 @@ func prepareOutputContext(output ast.OutputBlock, context processContext) (proce
 		case symbolKindSchema:
 			outputContext.symbols.Add(declaration.name, symbolKindSchema)
 			outputContext.schemas.Add(declaration.name, declaration.record)
-		default:
-			return processContext{}, validationErrorf("unknown declaration %q in schema_file", declaration.name)
 		}
 	}
 
@@ -783,15 +776,9 @@ func resolveBoundedPath(importBaseDir string, importRootDir string, importPath s
 	if err != nil {
 		return "", validationErrorf("unable to resolve path %q", importPath)
 	}
-	absolutePath, err := filepath.Abs(resolvedPath)
-	if err != nil {
-		return "", validationErrorf("unable to resolve path %q", importPath)
-	}
+	absolutePath, _ := filepath.Abs(resolvedPath)
 
-	relativePath, err := filepath.Rel(absoluteRoot, absolutePath)
-	if err != nil {
-		return "", validationErrorf("unable to resolve path %q", importPath)
-	}
+	relativePath, _ := filepath.Rel(absoluteRoot, absolutePath)
 	if relativePath == ".." || strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) {
 		return "", validationErrorf("import path %q escapes root: root=%q, base=%q, resolved=%q", importPath, formatImportRoot(importRootDir), importBaseDir, resolvedPath)
 	}
@@ -1684,7 +1671,6 @@ func validateOutputDirectiveStructure(output ast.OutputBlock) error {
 		return nil
 	}
 
-	hasOutput := false
 	hasParse := false
 	hasParseFile := false
 	seenKinds := map[ast.OutputDirectiveKind]struct{}{}
@@ -1697,7 +1683,6 @@ func validateOutputDirectiveStructure(output ast.OutputBlock) error {
 
 		switch directive.Kind {
 		case ast.OutputDirectiveOutput:
-			hasOutput = true
 		case ast.OutputDirectiveSchema:
 			if output.Mode == ast.OutputModeSchema {
 				return validationErrorf("schema directive is invalid when output mode is schema")
@@ -1723,17 +1708,6 @@ func validateOutputDirectiveStructure(output ast.OutputBlock) error {
 
 	if hasParse && hasParseFile {
 		return validationErrorf("parse and parse_file directives cannot be used together")
-	}
-	if !hasParse && !hasParseFile {
-		hasDataValidationDirective := false
-		for _, directive := range output.Directives {
-			if directive.Kind == ast.OutputDirectiveSchema || directive.Kind == ast.OutputDirectiveSchemaFile {
-				hasDataValidationDirective = true
-			}
-		}
-		if !hasOutput && !hasDataValidationDirective {
-			return validationErrorf("missing output directive")
-		}
 	}
 
 	return nil
