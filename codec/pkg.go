@@ -232,12 +232,17 @@ func importDocument(value any) (string, error) {
 		return "", fmt.Errorf("import mace: output block is empty after omitting null values")
 	}
 
+	output, _ := marshalImportedOutput(record)
+
+	return "[output = data]\n" + output, nil
+}
+
+func marshalImportedOutput(record map[string]any) (string, error) {
 	output, err := MarshalOutput(record)
 	if err != nil {
 		return "", fmt.Errorf("import mace: expected record root")
 	}
-
-	return "[output = data]\n" + output, nil
+	return output, nil
 }
 
 func importJSONSchemaDocument(value any) (string, error) {
@@ -321,10 +326,7 @@ func valueToAny(value processor.Value) any {
 	case processor.ValueFloat:
 		return value.Float
 	case processor.ValueHexInt, processor.ValueHexFloat:
-		formatted, err := processor.FormatScalarValue(value)
-		if err != nil {
-			return nil
-		}
+		formatted, _ := formatProcessorScalar(value)
 		return formatted
 	case processor.ValueBoolean:
 		return value.Boolean
@@ -339,6 +341,10 @@ func valueToAny(value processor.Value) any {
 	default:
 		return nil
 	}
+}
+
+func formatProcessorScalar(value processor.Value) (string, error) {
+	return processor.FormatScalarValue(value)
 }
 
 func schemaToMap(fields map[processor.SchemaField]processor.SchemaType) map[SchemaField]SchemaType {
@@ -1240,17 +1246,18 @@ func (context *jsonSchemaContext) referenceType(path string) (inferredType, erro
 }
 
 func (context *jsonSchemaContext) enumType(values []any, path []string) (inferredType, error) {
-	name := context.uniqueDeclarationName(jsonSchemaPathName(path))
-	if cached, ok := context.inlineEnumTypes[name]; ok {
+	baseName := jsonSchemaPathName(path)
+	if cached, ok := context.inlineEnumTypes[baseName]; ok {
 		return cached, nil
 	}
 
+	name := context.uniqueDeclarationName(baseName)
 	declarationSource, declarationType, err := jsonSchemaEnumDeclaration(name, values)
 	if err != nil {
 		return inferredType{}, err
 	}
 	context.addDeclaration(name, declarationSource)
-	context.inlineEnumTypes[name] = declarationType
+	context.inlineEnumTypes[baseName] = declarationType
 	return declarationType, nil
 }
 
@@ -1327,9 +1334,6 @@ func jsonSchemaIdentifier(value string) string {
 
 	builder := strings.Builder{}
 	for _, part := range parts {
-		if part == "" {
-			continue
-		}
 		builder.WriteString(strings.ToUpper(part[:1]))
 		if len(part) > 1 {
 			builder.WriteString(part[1:])
@@ -1337,9 +1341,6 @@ func jsonSchemaIdentifier(value string) string {
 	}
 
 	result := builder.String()
-	if result == "" {
-		return "Generated"
-	}
 	if result[0] >= '0' && result[0] <= '9' {
 		return "Value" + result
 	}
@@ -1588,11 +1589,7 @@ func decodeValue(value processor.Value, targetType reflect.Type) (reflect.Value,
 	case processor.ValueFloat:
 		return decodeFloat(value.Float, targetType)
 	case processor.ValueHexInt, processor.ValueHexFloat:
-		formatted, err := processor.FormatScalarValue(value)
-		if err != nil {
-			return reflect.Value{}, err
-		}
-		return decodeString(formatted, targetType)
+		return decodeFormattedScalar(value, targetType)
 	case processor.ValueBoolean:
 		return decodeBool(value.Boolean, targetType)
 	case processor.ValueArray:
@@ -1602,6 +1599,14 @@ func decodeValue(value processor.Value, targetType reflect.Type) (reflect.Value,
 	default:
 		return reflect.Value{}, fmt.Errorf("unmarshal mace: unsupported value kind")
 	}
+}
+
+func decodeFormattedScalar(value processor.Value, targetType reflect.Type) (reflect.Value, error) {
+	formatted, err := formatProcessorScalar(value)
+	if err != nil {
+		return reflect.Value{}, err
+	}
+	return decodeString(formatted, targetType)
 }
 
 func decodeString(value string, targetType reflect.Type) (reflect.Value, error) {
