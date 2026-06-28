@@ -224,4 +224,34 @@ string value = "x";
 	_, _ = coerceEvaluatedValueAgainstType(ast.ArrayLiteral{Elements: []ast.Expression{ast.StringLiteral{Lexeme: `"Ada"`}}}, Value{Kind: ValueArray, Array: []Value{{Kind: ValueString, String: "Ada"}}}, valueType{kind: ValueArray, element: &valueType{kind: ValueString}}, newValueEnvironment(), Value{}, symbols, types, schemas, nil)
 	_, _ = evaluateLogicalAnd(ast.InfixExpression{Left: ast.BooleanLiteral{Value: false}, Right: ast.BooleanLiteral{Value: true}}, newValueEnvironment(), Value{}, symbols, types, schemas, nil)
 	_, _ = evaluateLogicalOr(ast.InfixExpression{Left: ast.BooleanLiteral{Value: true}, Right: ast.BooleanLiteral{Value: false}}, newValueEnvironment(), Value{}, symbols, types, schemas, nil)
+
+	ctx3 := newProcessContext(workspace, workspace)
+	ctx3.symbols.Add("User", symbolKindSchema)
+	ctx3.schemas.Add("User", record)
+	ctx3.variables.Add("profile", valueType{kind: ValueRecord, schemaName: "User"})
+	ctx3.environment.Add("profile", Value{Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Ada"}}})
+	_, _ = collectImportExports(ast.OutputBlock{Mode: ast.OutputModeSchema, SchemaFields: []ast.OutputSchemaField{{Name: "profile", Type: ast.NamedType{Name: "User"}}, {Name: "attrs", Type: ast.RecordMapType{Value: ast.PrimitiveType{Name: "string"}}}}}, ctx3)
+	_, _ = collectImportExports(ast.OutputBlock{Mode: ast.OutputModeData, Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchema, Value: "User"}}, DataFields: []ast.OutputField{{Name: "profile", Value: ast.Identifier{Name: "profile"}}}}, ctx3)
+	_, _ = schemaFieldImportDeclaration(ast.OutputSchemaField{Name: "attrs", Type: ast.RecordMapType{Value: ast.PrimitiveType{Name: "string"}}}, ctx3)
+	_, _ = exportedOutputFieldType(ast.OutputField{Name: "profile", Value: ast.Identifier{Name: "profile"}}, ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchema, Value: "User"}}}, ctx3)
+	_, _ = exportedOutputFieldType(ast.OutputField{Name: "missing", Value: ast.Identifier{Name: "profile"}}, ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchema, Value: "Missing"}}}, ctx3)
+
+	_, _ = resolveBoundedPath("https://example.com/root/dir/", "https://example.com/root/", "ok.mace")
+	_, _ = resolveBoundedRemotePath("https://example.com/root/dir/", "https://example.com/root/", "ok.mace", "https://example.com/root/dir/ok.mace")
+	_, _ = resolveBoundedRemotePath("https://example.com/root/dir/", "https://example.com/root/", "ok.mace", "https://example.com/other/ok.mace")
+}
+
+func TestCoverageBranchEdgesFixtures(t *testing.T) {
+	if _, err := New().ProcessFile("../../fixtures/processor/imports/consumer.mace"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New().ProcessFile("../../fixtures/output/schema-file/working-schema.mace"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New().ProcessFile("../../fixtures/processor/imports/base.mace"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New().ProcessFile("../../fixtures/processor/imports/other.mace"); err != nil {
+		t.Fatal(err)
+	}
 }
