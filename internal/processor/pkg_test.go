@@ -241,9 +241,8 @@ var _ = Describe("Path helpers", func() {
 		tAssert.NoError(err)
 		tAssert.Equal("https://example.com/root/child/file.mace", resolved)
 
-		resolved, err = resolveImportPath("/workspace", "/absolute/file.mace")
-		tAssert.NoError(err)
-		tAssert.Contains(resolved, "absolute")
+		_, err = resolveImportPath("/workspace", "/absolute/file.mace")
+		tAssert.ErrorContains(err, "must be relative")
 
 		bounded, err := resolveImportPathInScope("/workspace", "/workspace", "nested/file.mace", true)
 		tAssert.NoError(err)
@@ -3637,7 +3636,6 @@ int value = 1;
 		_, err = loadImportExports(server.URL+"/remote.mace", server.URL, false, cache, stack)
 		tAssert.NoError(err)
 	})
-
 
 	It("validates output directive shapes and references", func() {
 		symbols := newSymbolTable()

@@ -1871,3 +1871,503 @@ func lexAnalysisTokens(text string) []lexer.Token {
 		}
 	}
 }
+
+var _ = Describe("analyzer coverage helpers", func() {
+	It("covers remaining small public and helper branches", func() {
+		text := "[output = data]\n{\n  alpha: 1;\n}\n"
+		snapshot := analyzeDocument(text)
+
+		tAssert.Nil(Hover("", snapshot, protocol.Position{}))
+		tAssert.NotNil(Hover("array", snapshot, protocol.Position{Character: 1}))
+		tAssert.NotNil(Hover("[schema = User]", snapshot, protocol.Position{Character: 2}))
+		tAssert.NotNil(Hover("schema User", snapshot, protocol.Position{Character: 1}))
+		tAssert.Nil(Hover("missing", snapshot, protocol.Position{Character: 1}))
+		tAssert.Empty(DocumentSymbols("", analysisSnapshot{}))
+		_, ok := PrepareRename(snapshot, protocol.Position{Line: 99})
+		tAssert.False(ok)
+		_, ok = Rename(text, snapshot, "file:///doc.mace", protocol.Position{Line: 99}, "renamed")
+		tAssert.False(ok)
+		_, ok = Rename(text, snapshot, "file:///doc.mace", protocol.Position{Line: 2, Character: 4}, "")
+		tAssert.False(ok)
+
+		_, err := resolveBoundedPathInRoot("/tmp", "/tmp", "/abs.mace")
+		tAssert.Error(err)
+		_, err = resolveRootBoundedPathInRoot("/tmp/root/sub", "/tmp/root", "other.mace")
+		tAssert.NoError(err)
+		_, err = resolveRootBoundedPathInRoot("/tmp/root", "/tmp/root", "../outside.mace")
+		tAssert.Error(err)
+		tAssert.Equal("./", formatImportRoot(""))
+		tAssert.Equal("/", formatImportRoot(string(filepath.Separator)))
+		tAssert.Contains(fileURI("C:/tmp/doc.mace"), "file:///")
+		_, err = parseFile("\x00")
+		tAssert.Error(err)
+		_, err = parseExpression("\x00")
+		tAssert.Error(err)
+
+		tAssert.Equal("union[string, int]", typeReferenceDetail(ast.UnionType{Members: []ast.TypeReference{ast.PrimitiveType{Name: "string"}, ast.PrimitiveType{Name: "int"}}}))
+		tAssert.Equal("variant[string, int]", typeReferenceDetail(ast.VariantType{Members: []ast.TypeReference{ast.PrimitiveType{Name: "string"}, ast.PrimitiveType{Name: "int"}}}))
+		tAssert.Equal("choice[\"a\", 1]", typeReferenceDetail(ast.ChoiceType{Members: []ast.Expression{ast.StringLiteral{Lexeme: `"a"`}, ast.IntLiteral{Lexeme: "1"}}}))
+		tAssert.Equal("unknown", typeReferenceDetail(ast.RecordMapType{Value: ast.PrimitiveType{Name: "string"}}))
+		start, end := nameRange("abc", "missing")
+		tAssert.Equal(protocol.Position{}, start)
+		tAssert.Equal(protocol.Position{}, end)
+		tAssert.Empty(identifierPrefixAt("abc", protocol.Position{Line: 2}))
+		identifier, ok := identifierAt("abc", protocol.Position{Line: 2})
+		tAssert.True(ok)
+		tAssert.Equal("abc", identifier)
+		_, ok = identifierRangeAt("..", protocol.Position{Character: 1})
+		tAssert.False(ok)
+		tAssert.False(isDirectivePosition("abc", protocol.Position{Line: 2}))
+		tAssert.False(isDirectivePosition("abc", protocol.Position{Character: 1}))
+		tAssert.False(isDirectivePosition("[x] abc", protocol.Position{Character: 5}))
+		tAssert.Equal(protocol.UInteger(3), utf16LineLength("a😀\nrest"))
+	})
+
+	It("covers refactor and edit helper branches", func() {
+		file := ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData, DataFields: []ast.OutputField{{Name: "a", Value: ast.IntLiteral{Lexeme: "1"}}, {Name: "b", Value: ast.IntLiteral{Lexeme: "1"}}}}}
+		actions := []string{}
+		addExpressionRefactorActions("[output = data]\n{\n  a: 1;\n  b: 1;\n}", file, protocol.Range{}, func(title string, _ protocol.Range, _ string) { actions = append(actions, title) })
+		tAssert.Contains(actions, "Rewrite expression to use $self")
+		tAssert.Equal("", simpleExpressionText(ast.ArrayLiteral{}))
+		tAssert.Equal("false", simpleExpressionText(ast.BooleanLiteral{}))
+		tAssert.Equal("'abc'", convertStringLiteralForm(`"abc"`))
+		tAssert.Equal(`"abc"`, convertStringLiteralForm(`'abc'`))
+		tAssert.Equal(`"abc"`, convertStringLiteralForm(`"""abc"""`))
+		tAssert.IsType(ast.HexIntLiteral{}, defaultExpressionForType(ast.PrimitiveType{Name: "hex_int"}))
+		tAssert.IsType(ast.HexFloatLiteral{}, defaultExpressionForType(ast.PrimitiveType{Name: "hex_float"}))
+		tAssert.IsType(ast.RecordLiteral{}, defaultExpressionForType(ast.RecordType{}))
+		tAssert.IsType(ast.PrimitiveType{}, inferredTypeFromExpression(ast.HexIntLiteral{}))
+		tAssert.IsType(ast.PrimitiveType{}, inferredTypeFromExpression(ast.HexFloatLiteral{}))
+		tAssert.IsType(ast.ArrayType{}, inferredTypeFromExpression(ast.ArrayLiteral{}))
+		tAssert.IsType(ast.RecordType{}, inferredTypeFromExpression(ast.RecordLiteral{}))
+
+		tokens := lexAnalysisTokens("|===|\nstring value = \"x\";\n|===|\n[output = data]\n{\n}\n")
+		_, ok := documentationInsertRange("no script", nil)
+		tAssert.False(ok)
+		_, ok = declarationSemicolonInsertRange("", tokens, lexer.Token{Line: 99, Column: 1, Lexeme: "missing"})
+		tAssert.False(ok)
+		_, _, ok = missingSchemaFieldEdit("{}", ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeSchema}}, `missing required field "x"`)
+		tAssert.False(ok)
+		_, ok = unknownFieldEditRange("", ast.File{}, nil, "no match")
+		tAssert.False(ok)
+		_, ok = duplicateFieldEditRange("", nil, "no match")
+		tAssert.False(ok)
+		_, _, ok = missingImportEdit("", ast.File{Script: &ast.ScriptBlock{}}, nil, `unknown type "User"`)
+		tAssert.False(ok)
+		_, _, ok = moveImportsToTopEdit("", ast.File{}, nil, "other")
+		tAssert.False(ok)
+		_, ok = duplicateDeclarationEditRange("", ast.File{}, nil, "other")
+		tAssert.False(ok)
+		_, _, ok = declarationOperatorEdit("", lexAnalysisTokens("a: b"), "expected '='")
+		tAssert.True(ok)
+		_, _, ok = declarationOperatorEdit("", lexAnalysisTokens("a = b"), "expected ':'")
+		tAssert.True(ok)
+		_, _, ok = selfOrderingEdit("", ast.File{}, nil, "other")
+		tAssert.False(ok)
+		_, ok = invalidDirectiveComboEditRange("[output = schema]", ast.File{}, lexAnalysisTokens("[output = schema]"), "other")
+		tAssert.False(ok)
+		tAssert.Equal("TODO", placeholderForType(ast.File{}, "Custom"))
+	})
+})
+
+var _ = Describe("analyzer diagnostic coverage helpers", func() {
+	It("covers semantic diagnostic helper branches directly", func() {
+		tokens := lexAnalysisTokens("|===|\nint count = \"bad\";\narray<int> values = [1, 2];\nnullable string maybe = null;\n|===|\n[output = data]\n{\n  result: values[4];\n  field: missing;\n}\n")
+		file := ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{
+			ast.VariableDeclaration{HasValue: true, Type: ast.PrimitiveType{Name: "int"}, Name: "count", Value: ast.StringLiteral{Lexeme: `"bad"`}},
+			ast.VariableDeclaration{HasValue: true, Type: ast.ArrayType{Element: ast.PrimitiveType{Name: "int"}}, Name: "values", Value: ast.ArrayLiteral{Elements: []ast.Expression{ast.IntLiteral{Lexeme: "1"}, ast.StringLiteral{Lexeme: `"two"`}}}},
+		}}, Output: ast.OutputBlock{DataFields: []ast.OutputField{{Name: "result"}}}}
+
+		diagnostic, ok := variableTypeMismatchDiagnostic(file, tokens, processor.DiagnosticError{Code: processor.CodeTypeMismatch, Message: "bad", Fields: processor.DiagnosticFields{Expected: "int", Actual: "string"}})
+		tAssert.True(ok)
+		tAssert.Equal(string(diagnosticTypeInitializerMismatch), requireDiagnosticCode(diagnostic))
+		_, ok = variableTypeMismatchDiagnostic(ast.File{}, tokens, processor.DiagnosticError{Code: processor.CodeTypeMismatch})
+		tAssert.False(ok)
+		_, ok = variableTypeMismatchDiagnostic(file, tokens, processor.DiagnosticError{Code: processor.CodeInternal})
+		tAssert.False(ok)
+
+		diagnostic, ok = nullUsageDiagnostic(tokens, processor.DiagnosticError{Code: processor.CodeInvalidNullUsage, Message: "null bad"})
+		tAssert.True(ok)
+		tAssert.Equal(string(diagnosticTypeInvalidNullUsage), requireDiagnosticCode(diagnostic))
+		_, ok = nullUsageDiagnostic(tokens, processor.DiagnosticError{Code: processor.CodeInternal})
+		tAssert.False(ok)
+
+		diagnostic, ok = mixedArrayLiteralDiagnostic(file, tokens, "array literal has mixed element types")
+		tAssert.True(ok)
+		tAssert.Equal(string(diagnosticTypeMixedArrayLiteral), requireDiagnosticCode(diagnostic))
+		_, ok = mixedArrayLiteralDiagnostic(ast.File{}, tokens, "array literal has mixed element types")
+		tAssert.False(ok)
+		_, ok = mixedArrayLiteralDiagnostic(file, tokens, "other")
+		tAssert.False(ok)
+
+		candidates := arrayAccessCandidates(tokens)
+		tAssert.NotEmpty(candidates)
+		token, ok := invalidArrayAccessToken(candidates, processor.DiagnosticError{Fields: processor.DiagnosticFields{Level: 1}})
+		tAssert.True(ok)
+		tAssert.Equal("[", token.Lexeme)
+		token, ok = outOfRangeArrayAccessToken(candidates, processor.DiagnosticError{Fields: processor.DiagnosticFields{Level: 1, Index: "4"}})
+		tAssert.True(ok)
+		tAssert.Equal("4", token.Lexeme)
+		diagnostic, ok = arrayAccessDiagnostic(tokens, processor.DiagnosticError{Code: processor.CodeArrayIndexOutOfRange, Message: "range", Fields: processor.DiagnosticFields{Level: 1, Index: "4"}}, "range")
+		tAssert.True(ok)
+		tAssert.Equal(string(diagnosticTypeInvalidArrayAccess), requireDiagnosticCode(diagnostic))
+		diagnostic, ok = arrayAccessDiagnostic(tokens, processor.DiagnosticError{Code: processor.CodeArrayValueRequired, Message: "array", Fields: processor.DiagnosticFields{Level: 1}}, "array")
+		tAssert.True(ok)
+		tAssert.Equal(string(diagnosticTypeInvalidArrayAccess), requireDiagnosticCode(diagnostic))
+		_, ok = arrayAccessDiagnostic(tokens, processor.DiagnosticError{Code: processor.CodeInternal}, "other")
+		tAssert.False(ok)
+
+		expected, actual, ok := parseExpectedAndActualType("processor: type mismatch: expected int, got string")
+		tAssert.True(ok)
+		tAssert.Equal("int", expected)
+		tAssert.Equal("string", actual)
+		_, _, ok = parseExpectedAndActualType("processor: type mismatch: expected int")
+		tAssert.False(ok)
+
+		diagnostic, ok = schemaDiagnostic(tokens, processor.DiagnosticError{Code: processor.CodeMissingRequiredField, Message: "missing", Fields: processor.DiagnosticFields{Schema: "count"}}, "missing")
+		tAssert.True(ok)
+		tAssert.Equal(string(diagnosticTypeRecordDoesNotMatchSchema), requireDiagnosticCode(diagnostic))
+		_, ok = schemaDiagnostic(tokens, processor.DiagnosticError{Code: processor.CodeMissingRequiredField}, "missing")
+		tAssert.False(ok)
+		diagnostic, ok = unknownSchemaDiagnostic(tokens, `unknown schema "count"`)
+		tAssert.True(ok)
+		tAssert.Equal(string(diagnosticDirectiveUnknownSchemaName), requireDiagnosticCode(diagnostic))
+		_, ok = unknownSchemaDiagnostic(tokens, "other")
+		tAssert.False(ok)
+		diagnostic, ok = selfReferenceDiagnostic(file, tokens, processor.DiagnosticError{Code: processor.CodeSelfReferenceUnknown, Message: "self", Fields: processor.DiagnosticFields{Name: "result"}}, "self")
+		tAssert.True(ok)
+		tAssert.Equal(string(diagnosticTypeSelfForwardReference), requireDiagnosticCode(diagnostic))
+		_, ok = selfReferenceDiagnostic(file, tokens, processor.DiagnosticError{Code: processor.CodeInternal}, "self")
+		tAssert.False(ok)
+		diagnostic, ok = dataOutputValueDiagnostic(tokens, processor.DiagnosticError{Code: processor.CodeOutputValueDeclaration, Message: "data", Fields: processor.DiagnosticFields{Name: "field"}}, "data")
+		tAssert.True(ok)
+		tAssert.Equal(string(diagnosticTypeUnknownIdentifier), requireDiagnosticCode(diagnostic))
+		_, ok = schemaOutputFieldDiagnostic(tokens, processor.DiagnosticError{Code: processor.CodeInternal}, "schema")
+		tAssert.False(ok)
+	})
+
+	It("covers summary and documentation helper branches directly", func() {
+		known := map[string]string{"name": "string"}
+		typeName, ok := expressionTypeSummary(ast.Identifier{Name: "name"}, known)
+		tAssert.True(ok)
+		tAssert.Equal("string", typeName)
+		typeName, ok = arrayExpressionTypeSummary(ast.ArrayLiteral{}, known)
+		tAssert.True(ok)
+		tAssert.Equal("array<unknown>", typeName)
+		typeName, ok = arrayExpressionTypeSummary(ast.ArrayLiteral{Elements: []ast.Expression{ast.IntLiteral{Lexeme: "1"}, ast.StringLiteral{Lexeme: `"x"`}}}, known)
+		tAssert.True(ok)
+		tAssert.Equal("array<variant[int, string]>", typeName)
+		_, ok = expressionTypeSummary(ast.RecordLiteral{}, known)
+		tAssert.False(ok)
+
+		file := ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{
+			ast.TypeDeclaration{Name: "Alias", Description: "Inline docs", Type: ast.PrimitiveType{Name: "string"}},
+			ast.DocDeclaration{Target: "Alias", Documentation: ast.Documentation{Summary: &ast.StringLiteral{Lexeme: `"Summary"`}, Description: &ast.StringLiteral{Lexeme: `'''`}, Props: map[string]ast.StringLiteral{"field": {Lexeme: `"Field docs"`}}}},
+		}}}
+		tAssert.Contains(declarationDocumentation(file, "Alias"), "Inline docs")
+		tAssert.Equal("multi", stringLiteralMarkdown(ast.StringLiteral{Lexeme: `"""multi"""`}))
+		tAssert.Equal("single", stringLiteralMarkdown(ast.StringLiteral{Lexeme: `'single'`}))
+		tAssert.Equal(`"bad`, stringLiteralMarkdown(ast.StringLiteral{Lexeme: `"bad`}))
+		tAssert.Equal("one\n\ntwo", joinDocumentation("one", " ", "two"))
+		tAssert.Equal("nullable string maybe", variableDeclarationDetail(ast.VariableDeclaration{Nullable: true, Type: ast.PrimitiveType{Name: "string"}, Name: "maybe"}))
+		tAssert.Equal("string name = \"Ada\"", variableDeclarationDetail(ast.VariableDeclaration{HasValue: true, Type: ast.PrimitiveType{Name: "string"}, Name: "name", Value: ast.StringLiteral{Lexeme: `"Ada"`}}))
+
+		tAssert.Equal("unknown", summarizeValue(processor.Value{Kind: processor.ValueKind(999)}))
+		tAssert.Equal("[1, false]", summarizeValue(processor.Value{Kind: processor.ValueArray, Array: []processor.Value{{Kind: processor.ValueInt, Int: 1}, {Kind: processor.ValueBoolean}}}))
+		tAssert.Equal("{ a: string, b: array<unknown> }", valueTypeSummary(processor.Value{Kind: processor.ValueRecord, Record: map[string]processor.Value{"b": {Kind: processor.ValueArray}, "a": {Kind: processor.ValueString}}}))
+		tAssert.Equal("runtime value", expressionSummary(nil))
+		tAssert.Equal("expression", expressionSummary(ast.PrefixExpression{}))
+		tAssert.Nil(fileScriptDeclarations(ast.File{}))
+		tAssert.NotNil(fileScriptDeclarations(file))
+	})
+})
+
+var _ = Describe("analyzer formatting coverage helpers", func() {
+	It("covers CRLF formatting and script delimiter validation", func() {
+		formatted := formatDocumentText("|=====|\r\nstring value = \"x\";\r\n|=====|\r\n")
+		tAssert.Contains(formatted, "\r\n")
+		tAssert.False(isScriptDelimiterLine("|==x|"))
+		tAssert.False(isScriptDelimiterLine("====="))
+		tAssert.True(isScriptDelimiterLine("|=====|"))
+	})
+})
+
+var _ = Describe("analyzer rename coverage helpers", func() {
+	It("renames imported alias references and external imported definitions", func() {
+		workspace, err := os.MkdirTemp("", "mace-rename-coverage-*")
+		tAssert.NoError(err)
+		sharedPath := writeAnalysisFile(workspace, "shared.mace", `|===|
+string remote = "value";
+|===|
+[output = data]
+{
+  remote: remote;
+}`)
+		documentPath := filepath.Join(workspace, "consumer.mace")
+		text := `|===|
+from "./shared.mace" import remote: local;
+|===|
+[output = data]
+{
+  value: local;
+}`
+		snapshot := AnalyzeDocumentAtInRoot(text, documentPath, workspace)
+		tAssert.Empty(Diagnostics(snapshot))
+		uri := protocol.DocumentUri(fileURI(documentPath))
+
+		edit, ok := Rename(text, snapshot, uri, protocol.Position{Line: 5, Character: 10}, "renamed")
+		tAssert.True(ok)
+		tAssert.Contains(edit.Changes, uri)
+		tAssert.Len(edit.Changes[uri], 2)
+		target := localImportRenameTarget(snapshot, protocol.Position{Line: 5, Character: 10}, semanticSymbol{Name: "local"})
+		tAssert.False(target.ok)
+
+		text = `|===|
+from "./shared.mace" import remote;
+|===|
+[output = data]
+{
+  value: remote;
+}`
+		snapshot = AnalyzeDocumentAtInRoot(text, documentPath, workspace)
+		tAssert.Empty(Diagnostics(snapshot))
+		edit, ok = Rename(text, snapshot, uri, protocol.Position{Line: 5, Character: 10}, "renamed")
+		tAssert.True(ok)
+		tAssert.Contains(edit.Changes, protocol.DocumentUri(fileURI(sharedPath)))
+	})
+
+	It("covers direct rename token matching edge branches", func() {
+		tokens := lexAnalysisTokens("field: value\nvalue")
+		symbol := semanticSymbol{Name: "value", Kind: protocol.CompletionItemKindFunction, Range: tokenProtocolRange(tokens[2]), Definition: protocol.Location{Range: tokenProtocolRange(tokens[2])}}
+		snapshot := analysisSnapshot{tokens: tokens}
+		tAssert.False(renameTokenMatchesSymbol(snapshot, 0, tokenProtocolRange(tokens[0]), symbol))
+		symbol.Kind = protocol.CompletionItemKindVariable
+		tAssert.True(renameTokenMatchesSymbol(snapshot, 3, tokenProtocolRange(tokens[3]), symbol))
+		tAssert.True(sameLocation(protocol.Location{URI: "file:///a", Range: tokenProtocolRange(tokens[0])}, protocol.Location{URI: "file:///a", Range: tokenProtocolRange(tokens[0])}))
+		tAssert.False(rangesEqual(tokenProtocolRange(tokens[0]), tokenProtocolRange(tokens[2])))
+	})
+})
+
+var _ = Describe("analyzer remaining low-coverage helpers", func() {
+	It("covers successful quick-fix edit helper branches", func() {
+		text := `|===|
+string a = "x";
+string a = "y";
+|===|
+[output = data]{result: a;}`
+		tokens := lexAnalysisTokens(text)
+		_, formatted, ok := moveImportsToTopEdit(text, ast.File{}, tokens, "import declarations must appear at top of script block")
+		tAssert.True(ok)
+		tAssert.NotEmpty(formatted)
+		_, ok = duplicateDeclarationEditRange(text, ast.File{}, tokens, `duplicate declaration "a"`)
+		tAssert.True(ok)
+		_, _, ok = selfOrderingEdit(text, ast.File{}, tokens, "unknown self reference forward")
+		tAssert.True(ok)
+		tAssert.Equal(`""`, placeholderForType(ast.File{}, "string"))
+		tAssert.Equal("0", placeholderForType(ast.File{}, "int"))
+		tAssert.Equal("0.0", placeholderForType(ast.File{}, "float"))
+		tAssert.Equal("0x0", placeholderForType(ast.File{}, "hex_int"))
+		tAssert.Equal("0x0.0", placeholderForType(ast.File{}, "hex_float"))
+		tAssert.Equal("false", placeholderForType(ast.File{}, "boolean"))
+	})
+
+	It("covers parse validation filtering branches", func() {
+		file := ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParse, Value: "Input"}}}}
+		tAssert.True(shouldIgnoreParseValidationError(file, processor.DiagnosticError{Code: processor.CodeMissingRequiredField, Message: "missing"}))
+		tAssert.True(shouldIgnoreParseValidationError(file, processor.DiagnosticError{Code: processor.CodeInternal, Message: "unknown field \"x\""}))
+		tAssert.True(shouldIgnoreParseValidationError(file, processor.DiagnosticError{Code: processor.CodeInternal, Message: "field is not optional in schema"}))
+		tAssert.False(shouldIgnoreParseValidationError(file, processor.DiagnosticError{Code: processor.CodeInternal, Message: "other"}))
+		tAssert.False(shouldIgnoreParseValidationError(ast.File{}, processor.DiagnosticError{Code: processor.CodeMissingRequiredField, Message: "missing"}))
+		tAssert.False(shouldIgnoreParseValidationError(file, fmt.Errorf("plain")))
+		tAssert.True(hasParseValidationDirective([]ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile}}))
+		diagnostic, ok := parseDirectiveWarningDiagnostic("[parse = Input]{}", file)
+		tAssert.True(ok)
+		tAssert.Equal(string(diagnosticDirectiveParseValuesUnknown), requireDiagnosticCode(diagnostic))
+	})
+})
+
+var _ = Describe("analyzer scalar diagnostic coverage helpers", func() {
+	It("covers remaining scalar expression and output diagnostic branches", func() {
+		tokens := lexAnalysisTokens("[output = schema]\n{\n  broken: Missing;\n}\n")
+		diagnostic, ok := schemaOutputFieldDiagnostic(tokens, processor.DiagnosticError{Code: processor.CodeInvalidOutputSchemaField, Message: "invalid", Fields: processor.DiagnosticFields{Name: "broken"}}, "invalid")
+		tAssert.True(ok)
+		tAssert.Equal(string(diagnosticTypeInvalidOutputSchemaField), requireDiagnosticCode(diagnostic))
+		_, ok = schemaOutputFieldDiagnostic(tokens, processor.DiagnosticError{Code: processor.CodeInvalidOutputSchemaField, Fields: processor.DiagnosticFields{Name: "missing"}}, "invalid")
+		tAssert.False(ok)
+
+		for _, expression := range []ast.Expression{ast.FloatLiteral{}, ast.HexIntLiteral{}, ast.HexFloatLiteral{}, ast.BooleanLiteral{}} {
+			_, ok = expressionTypeSummary(expression, nil)
+			tAssert.True(ok)
+		}
+		_, ok = expressionTypeSummary(ast.Identifier{Name: "missing"}, map[string]string{})
+		tAssert.False(ok)
+		_, ok = arrayExpressionTypeSummary(ast.ArrayLiteral{Elements: []ast.Expression{ast.RecordLiteral{}}}, nil)
+		tAssert.False(ok)
+		tAssert.Equal("float", valueTypeSummary(processor.Value{Kind: processor.ValueFloat}))
+		tAssert.Equal("hex_int", valueTypeSummary(processor.Value{Kind: processor.ValueHexInt}))
+		tAssert.Equal("hex_float", valueTypeSummary(processor.Value{Kind: processor.ValueHexFloat}))
+		tAssert.Equal("boolean", valueTypeSummary(processor.Value{Kind: processor.ValueBoolean}))
+		tAssert.Equal("array<string>", valueTypeSummary(processor.Value{Kind: processor.ValueArray, Array: []processor.Value{{Kind: processor.ValueString}}}))
+		tAssert.Equal("unknown", valueTypeSummary(processor.Value{Kind: processor.ValueKind(999)}))
+		tAssert.Equal("true", expressionSummary(ast.BooleanLiteral{Value: true}))
+		tAssert.Equal("array literal", expressionSummary(ast.ArrayLiteral{}))
+		tAssert.Equal("record literal", expressionSummary(ast.RecordLiteral{}))
+	})
+})
+
+var _ = Describe("analyzer declaration utility coverage helpers", func() {
+	It("covers declaration, import, and usage helper branches", func() {
+		tAssert.Equal("[]", defaultLiteralForTypeName("array<string>"))
+		tAssert.Equal("0", defaultLiteralForTypeName("int"))
+		tAssert.Equal("0.0", defaultLiteralForTypeName("float"))
+		tAssert.Equal("0x0", defaultLiteralForTypeName("hex_int"))
+		tAssert.Equal("0x0.0", defaultLiteralForTypeName("hex_float"))
+		tAssert.Equal("false", defaultLiteralForTypeName("boolean"))
+		tAssert.Equal(`""`, defaultLiteralForTypeName("string"))
+
+		declaration := ast.VariableDeclaration{Name: "inserted", Type: ast.PrimitiveType{Name: "string"}}
+		newScript := prependScriptItem(nil, declaration)
+		tAssert.Len(newScript.Items, 1)
+		existing := prependScriptItem(&ast.ScriptBlock{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./a.mace"`}}}, Items: []ast.Declaration{ast.VariableDeclaration{Name: "old"}}}, declaration)
+		tAssert.Len(existing.Imports, 1)
+		tAssert.Len(existing.Items, 2)
+
+		text := `from "./shared.mace" import Remote: Local, Other;`
+		tokens := lexAnalysisTokens(text)
+		importDecl := ast.ImportDeclaration{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}}
+		token, ok := importEntryToken(tokens, importDecl, ast.ImportedIdentifier{Name: "Remote", Alias: "Local"})
+		tAssert.True(ok)
+		tAssert.Equal("Local", token.Lexeme)
+		token, ok = importEntryToken(tokens, importDecl, ast.ImportedIdentifier{Name: "Other"})
+		tAssert.True(ok)
+		tAssert.Equal("Other", token.Lexeme)
+		_, ok = importIdentifierToken(tokens, importDecl, "Local")
+		tAssert.False(ok)
+
+		file := ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.VariableDeclaration{HasValue: true, Name: "local", Value: ast.InfixExpression{Left: ast.Identifier{Name: "left"}, Right: ast.ArrayAccess{Target: ast.MemberAccess{Target: ast.Identifier{Name: "record"}, Name: "field"}}}}}}, Output: ast.OutputBlock{DataFields: []ast.OutputField{{Name: "out", Value: ast.ConditionalExpression{Condition: ast.Identifier{Name: "cond"}, Then: ast.ArrayLiteral{Elements: []ast.Expression{ast.Identifier{Name: "then"}}}, Else: ast.RecordLiteral{Fields: []ast.RecordField{{Name: "else", Value: ast.PrefixExpression{Right: ast.Identifier{Name: "otherwise"}}}}}}}}}}
+		used := usedVariableNames(file)
+		for _, name := range []string{"left", "record", "cond", "then", "otherwise"} {
+			tAssert.Contains(used, name)
+		}
+	})
+})
+
+var _ = Describe("analyzer small branch coverage helpers", func() {
+	It("covers residual token, diagnostic, and summary branches", func() {
+		candidates := []arrayAccessCandidate{{Bracket: lexer.Token{Type: lexer.TokenLBracket, Lexeme: "["}, Index: &lexer.Token{Type: lexer.TokenInt, Lexeme: "1"}, Level: 2}}
+		_, ok := outOfRangeArrayAccessToken(candidates, processor.DiagnosticError{Fields: processor.DiagnosticFields{Level: 1, Index: "1"}})
+		tAssert.False(ok)
+		_, ok = outOfRangeArrayAccessToken(candidates, processor.DiagnosticError{Fields: processor.DiagnosticFields{Level: 2, Index: "2"}})
+		tAssert.False(ok)
+		_, ok = outOfRangeArrayAccessToken([]arrayAccessCandidate{{Level: 1}}, processor.DiagnosticError{Fields: processor.DiagnosticFields{Level: 1, Index: "1"}})
+		tAssert.False(ok)
+
+		file := ast.File{Output: ast.OutputBlock{DataFields: []ast.OutputField{{Name: "known"}}}}
+		tAssert.Equal(diagnosticTypeSelfForwardReference, classifySelfReferenceCode(file, "known"))
+		tAssert.Equal(diagnosticTypeUnknownSelfField, classifySelfReferenceCode(file, "missing"))
+		tAssert.Equal(0, outputFieldIndex(file, "known"))
+		tAssert.Equal(-1, outputFieldIndex(file, "missing"))
+
+		text := "[output = data]\n{\n  unknown: 1;\n  duplicate: 1;\n  duplicate: 2;\n}\n"
+		tokens := lexAnalysisTokens(text)
+		_, ok = unknownFieldEditRange(text, ast.File{}, tokens, `unknown field "unknown"`)
+		tAssert.True(ok)
+		_, ok = duplicateFieldEditRange(text, tokens, `duplicate field "duplicate"`)
+		tAssert.True(ok)
+		_, ok = unknownSchemaDiagnostic(tokens, `unknown schema "Missing"`)
+		tAssert.False(ok)
+
+		tAssert.Equal(`"hi"`, summarizeValue(processor.Value{Kind: processor.ValueString, String: "hi"}))
+		tAssert.Equal("2", summarizeValue(processor.Value{Kind: processor.ValueInt, Int: 2}))
+		tAssert.Equal("1.5", summarizeValue(processor.Value{Kind: processor.ValueFloat, Float: 1.5}))
+		tAssert.Equal("true", summarizeValue(processor.Value{Kind: processor.ValueBoolean, Boolean: true}))
+		tAssert.Equal("{ a: 1 }", summarizeValue(processor.Value{Kind: processor.ValueRecord, Record: map[string]processor.Value{"a": {Kind: processor.ValueInt, Int: 1}}}))
+		tAssert.Empty(DocumentPath(protocol.DocumentUri("not a uri")))
+		tAssert.Equal("ab", identifierPrefixAt("abc", protocol.Position{Character: 2}))
+	})
+})
+
+var _ = Describe("analyzer code action coverage helpers", func() {
+	It("covers import resolution diagnostics and quick fixes", func() {
+		workspace, err := os.MkdirTemp("", "mace-import-actions-*")
+		tAssert.NoError(err)
+		defer os.RemoveAll(workspace)
+		documentPath := filepath.Join(workspace, "consumer.mace")
+		writeAnalysisFile(workspace, "shared.mace", `[output = schema]
+{
+  User: { name: string; };
+}`)
+		writeAnalysisFile(workspace, "renamed.mace", `[output = schema]
+{
+}`)
+		text := `|===|
+from "./shared.mace" import Usr;
+from "./rename.mace" import Missing;
+|===|
+[output = data]
+{
+}`
+		tokens := lexAnalysisTokens(text)
+		file := ast.File{Imports: []ast.ImportDeclaration{
+			{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "Usr"}}},
+			{Path: ast.StringLiteral{Lexeme: `"./rename.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "Missing"}}},
+		}}
+		actions := importResolutionCodeActions(text, file, tokens, documentPath)
+		titles := lo.Map(actions, func(action analysisCodeActionCandidate, _ int) string { return action.Action.Title })
+		tAssert.Contains(titles, "Open source output block")
+		tAssert.Contains(titles, "Explain why symbol is not importable")
+		tAssert.Contains(titles, "Create missing imported file")
+		tAssert.Contains(titles, "Update import path after file rename")
+		tAssert.Contains(titles, "Replace unavailable imported symbol with User")
+		diagnostics := unavailableImportDiagnostics(file, tokens, documentPath)
+		tAssert.NotEmpty(diagnostics)
+		unavailable := unavailableImportNameSet(file, documentPath)
+		tAssert.Contains(unavailable, importNameKey("./shared.mace", "Usr"))
+		tAssert.Equal("./shared.mace\x00Usr", importNameKey("./shared.mace", "Usr"))
+		closest, ok := closestName("Usr", []string{"User"})
+		tAssert.True(ok)
+		tAssert.Equal("User", closest)
+		_, ok = closestName("CompletelyDifferent", []string{"User"})
+		tAssert.False(ok)
+		tAssert.Equal(0, levenshteinDistance("same", "same"))
+		tAssert.NotEmpty(exportedOutputNames(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData, DataFields: []ast.OutputField{{Name: "value"}}}}))
+	})
+
+	It("covers semantic and documentation code action aggregators", func() {
+		documentPath := filepath.Join(os.TempDir(), "mace-actions.mace")
+		text := `|===|
+type Alias: string;
+string value = "x";
+schema User: { name: string; };
+|===|
+[output = data, schema = User]
+{
+}`
+		tokens := lexAnalysisTokens(text)
+		file := ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{
+			ast.TypeDeclaration{NameToken: lexer.Token{Line: 2, Column: 6, Lexeme: "Alias"}, Name: "Alias", Type: ast.PrimitiveType{Name: "string"}},
+			ast.VariableDeclaration{NameToken: lexer.Token{Line: 3, Column: 8, Lexeme: "value"}, Name: "value", HasValue: true, Type: ast.PrimitiveType{Name: "string"}, Value: ast.StringLiteral{Lexeme: `"x"`}},
+			ast.SchemaDeclaration{NameToken: lexer.Token{Line: 4, Column: 8, Lexeme: "User"}, Name: "User", Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}},
+		}}, Output: ast.OutputBlock{Mode: ast.OutputModeData, Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchema, Value: "User"}}}}
+		diagnostic := diagnosticWithCode(protocol.Range{}, protocol.DiagnosticSeverityError, diagnosticTypeRecordDoesNotMatchSchema, `missing required field "name"`)
+		actions := semanticCodeActions(text, file, tokens, documentPath, diagnostic, `missing required field "name"`)
+		tAssert.NotEmpty(actions)
+		tAssert.NotNil(documentationCodeActions(text, file, tokens, documentPath))
+		tAssert.Nil(documentationCodeActions(text, file, tokens, ""))
+		candidates := editorRefactorCodeActions(text, file, tokens, documentPath)
+		tAssert.NotEmpty(candidates)
+		tAssert.Nil(editorRefactorCodeActions(text, file, tokens, ""))
+	})
+})
+
+var _ = Describe("analyzer removal action coverage helpers", func() {
+	It("covers remove declaration action branches", func() {
+		text := "|===|\nstring unused = \"x\";\n|===|\n[output = data]{}\n"
+		tokens := lexAnalysisTokens(text)
+		nameToken := lexer.Token{Line: 2, Column: 8, Lexeme: "unused"}
+		actions := removeDeclarationAction(text, tokens, filepath.Join(os.TempDir(), "remove.mace"), protocol.Range{}, nameToken, "Remove unused variable")
+		tAssert.NotEmpty(actions)
+		tAssert.Nil(removeDeclarationAction(text, tokens, "", protocol.Range{}, nameToken, "Remove"))
+		tAssert.Nil(removeDeclarationAction(text, tokens, filepath.Join(os.TempDir(), "remove.mace"), protocol.Range{}, lexer.Token{Line: 99, Column: 1, Lexeme: "missing"}, "Remove"))
+	})
+})
