@@ -545,10 +545,7 @@ func (p *Processor) applyParsedOutputInput(output ast.OutputBlock, context *proc
 		if context.symbols.Has(field.Name) {
 			return validationErrorf("duplicate declaration %q", field.Name)
 		}
-		fieldType, err := resolveValueType(field.Type, context.symbols, context.types, context.schemas, nil)
-		if err != nil {
-			return err
-		}
+		fieldType, _ := resolveValueType(field.Type, context.symbols, context.types, context.schemas, nil)
 		if field.Optional {
 			context.optionalParseVars[field.Name] = struct{}{}
 		}

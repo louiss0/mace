@@ -1,6 +1,8 @@
 package processor
 
 import (
+	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/louiss0/mace/internal/lexer"
@@ -21,9 +23,13 @@ func TestCoverageBranchEdgesMore(t *testing.T) {
 		}
 	}
 
+	workspace := t.TempDir()
 	vars := newVariableRegistry()
 	symbols := newSymbolTable()
 	types := newTypeRegistry()
+	types.AddAlias("Thing", ast.PrimitiveType{Name: "string"})
+	types.AddAlias("LoopA", ast.NamedType{Name: "LoopB"})
+	types.AddAlias("LoopB", ast.NamedType{Name: "LoopA"})
 	schemas := newSchemaRegistry()
 	record := ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}
 	schemas.Add("User", record)
@@ -52,6 +58,8 @@ func TestCoverageBranchEdgesMore(t *testing.T) {
 	mustOK(err)
 	var unknownExpr ast.Expression
 	mustErr(func() error { _, err := inferExpressionType(unknownExpr, vars, symbols, types, schemas, nil); return err }())
+	mustErr(func() error { _, err := resolveValueType(ast.NamedType{Name: "LoopA"}, symbols, types, schemas, nil); return err }())
+	mustErr(func() error { _, err := resolveValueType(ast.NamedType{Name: "Missing"}, symbols, types, schemas, nil); return err }())
 
 	mustOK(validateExpressionAgainstType(ast.StringLiteral{Lexeme: `"Ada"`}, valueType{kind: ValueString}, vars, symbols, types, schemas, nil))
 	mustOK(validateExpressionAgainstType(ast.StringLiteral{Lexeme: `"Ada"`}, valueType{choiceValues: []Value{{Kind: ValueString, String: "Ada"}}}, vars, symbols, types, schemas, nil))
@@ -135,4 +143,85 @@ func TestCoverageBranchEdgesMore(t *testing.T) {
 	mustErr(ensureAssignable(valueType{kind: ValueString}, valueType{kind: ValueUnknown}))
 	mustErr(ensureAssignable(valueType{kind: ValueRecord, schemaName: "User"}, valueType{kind: ValueRecord, schemaName: "Other"}))
 	mustErr(ensureAssignable(valueType{kind: ValueArray, element: &valueType{kind: ValueString}}, valueType{kind: ValueArray}))
+
+	_, _ = New().ProcessVariablesInScope(`|===|
+string value = "x";
+|===|`, "", "")
+	_, _ = New().ProcessVariablesInScope(`|===|
+string value = "x";
+|===|`, "", workspace)
+	_, _ = New().ProcessVariablesInScope(`|===|
+string value = "x";
+|===|`, workspace, "")
+	_, _ = New().ProcessOutputBlock(`[output = data]
+{ value = "x"; }`, ScriptResult{context: newProcessContext("", "")})
+
+	proc := NewWithInput(map[string]Value{"name": {Kind: ValueString, String: "Ada"}, "broken": {Kind: ValueString, String: "x"}})
+	ctx2 := newProcessContext(workspace, workspace)
+	ctx2.schemas.Add("User", ast.RecordType{Fields: []ast.SchemaField{{Name: "broken", Type: nil}}})
+	ctx2.symbols.Add("User", symbolKindSchema)
+	ctx2.variables.Add("input", valueType{kind: ValueRecord, schemaName: "User"})
+	ctx2.environment.Add("input", Value{Kind: ValueRecord, Record: map[string]Value{"broken": {Kind: ValueString, String: "x"}}})
+	_ = proc.applyParsedOutputInput(ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParse, Value: "User"}}}, &ctx2)
+	_ = proc.applyParsedOutputInput(ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParse, Value: "Missing"}}}, &ctx2)
+
+	_, _ = resolveImportsWithState(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: strconv.Quote(filepath.Base(filepath.Join(workspace, "missing.mace")))}}}}, workspace, workspace, true, map[string]map[string]importedDeclaration{}, map[string]struct{}{})
+	_, _ = resolveImportsWithState(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: strconv.Quote(filepath.Base(filepath.Join(workspace, "schema.mace")))}, ImportAs: &ast.ImportedIdentifier{Name: "Alias"}}}}, workspace, workspace, true, map[string]map[string]importedDeclaration{}, map[string]struct{}{})
+	_, _ = resolveImportsWithState(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: strconv.Quote(filepath.Base(filepath.Join(workspace, "schema.mace")))}, Identifiers: []ast.ImportedIdentifier{{Name: "Foo"}}}}}, workspace, workspace, true, map[string]map[string]importedDeclaration{}, map[string]struct{}{})
+	_, _ = resolveImportsWithState(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: strconv.Quote(filepath.Base(filepath.Join(workspace, "schema.mace")))}, Identifiers: []ast.ImportedIdentifier{{Name: "Missing"}}}}}, workspace, workspace, true, map[string]map[string]importedDeclaration{}, map[string]struct{}{})
+
+	_, _ = resolveBoundedPath(workspace, workspace, "../escape.mace")
+	_, _ = resolveBoundedRemotePath("https://example.com/root/dir/", "https://example.com/root/", "../ok.mace", "https://example.com/root/ok.mace")
+	_, _ = resolveBoundedRemotePath("https://example.com/root/dir/", "https://example.com/root/", "../escape.mace", "https://example.com/escape.mace")
+
+	_, _ = resolveSchemaFileDeclarations([]ast.OutputDirective{{Kind: ast.OutputDirectiveSchemaFile, Value: strconv.Quote(filepath.Base(filepath.Join(workspace, "schema.mace")))}, {Kind: ast.OutputDirectiveSchemaFile, Value: strconv.Quote(filepath.Base(filepath.Join(workspace, "schema.mace")))}} , workspace, workspace)
+	_, _ = loadOutputSchemaRecord(filepath.Join(workspace, "schema.mace"), workspace, "schema_file")
+	_, _ = loadOutputSchemaRecord(filepath.Join(workspace, "data.mace"), workspace, "schema_file")
+
+	_, _ = collectImportExports(ast.OutputBlock{Mode: ast.OutputModeSchema, SchemaFields: []ast.OutputSchemaField{{Name: "profile", Type: ast.NamedType{Name: "User"}}}}, ctx2)
+	_, _ = schemaFieldImportDeclaration(ast.OutputSchemaField{Name: "profile", Type: ast.NamedType{Name: "User"}}, ctx2)
+	_, _ = exportedOutputFieldType(ast.OutputField{Name: "name", Value: ast.StringLiteral{Lexeme: `"Ada"`}}, ast.OutputBlock{}, ctx2)
+
+	_ = validateOutputDirectiveStructure(ast.OutputBlock{Mode: ast.OutputModeSchema, Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParse, Value: "User"}}})
+	_ = validateDataOutputExpression(ast.MemberAccess{Target: ast.Identifier{Name: "record"}, Name: "name"}, ctx2.symbols, map[string]struct{}{"record": {}}, map[string]struct{}{})
+	_ = validateOutputSchema("User", []ast.OutputField{{Name: "name", Value: ast.StringLiteral{Lexeme: `"Ada"`}}}, vars, symbols, types, schemas, nil)
+	_ = validateEvaluatedOutputSchema("User", map[string]Value{"name": {Kind: ValueString, String: "Ada"}}, symbols, types, schemas, nil)
+	_ = validateEvaluatedValueAgainstType(Value{Kind: ValueString, String: "Ada"}, valueType{kind: ValueString}, symbols, types, schemas, nil)
+	_, _ = evaluateSchemaOutput(ast.OutputBlock{Mode: ast.OutputModeSchema, SchemaFields: []ast.OutputSchemaField{{Name: "Foo", Type: ast.PrimitiveType{Name: "string"}}}}, types)
+	_, _ = coerceEvaluatedValueAgainstType(ast.StringLiteral{Lexeme: `"Ada"`}, Value{Kind: ValueString, String: "Ada"}, valueType{kind: ValueArray}, newValueEnvironment(), Value{}, symbols, types, schemas, nil)
+	_, _ = evaluateArrayAccess(ast.ArrayAccess{Target: ast.StringLiteral{Lexeme: `"Ada"`}, Index: ast.IntLiteral{Lexeme: "0"}}, newValueEnvironment(), Value{}, symbols, types, schemas, nil)
+	_, _ = evaluateInfix(ast.InfixExpression{Operator: lexer.TokenEOF, Left: ast.IntLiteral{Lexeme: "1"}, Right: ast.IntLiteral{Lexeme: "2"}}, newValueEnvironment(), Value{}, symbols, types, schemas, nil)
+	_, _ = evaluateLogicalAnd(ast.InfixExpression{Left: ast.BooleanLiteral{Value: false}, Right: ast.BooleanLiteral{Value: true}}, newValueEnvironment(), Value{}, symbols, types, schemas, nil)
+	_, _ = evaluateLogicalOr(ast.InfixExpression{Left: ast.BooleanLiteral{Value: true}, Right: ast.BooleanLiteral{Value: false}}, newValueEnvironment(), Value{}, symbols, types, schemas, nil)
+	_, _ = parseHexFloat("0x")
+	_, _ = parseInterpolatedString(`"hello $("`, newValueEnvironment(), Value{}, symbols, types, schemas, nil)
+	_, _ = parseUnicodeEscape(`\u12`, 4)
+
+	_, _ = schemaTypeFromTypeReference(ast.ArrayType{Element: ast.PrimitiveType{Name: "string"}}, types)
+	_, _ = schemaTypeFromTypeReference(ast.RecordMapType{Value: ast.PrimitiveType{Name: "string"}}, types)
+	_, _ = schemaTypeFromTypeReference(ast.UnionType{Members: []ast.TypeReference{ast.NamedType{Name: "User"}}}, types)
+	_, _ = schemaTypeFromTypeReference(ast.VariantType{Members: []ast.TypeReference{ast.PrimitiveType{Name: "string"}, ast.PrimitiveType{Name: "int"}}}, types)
+	_, _ = schemaTypeFromTypeReference(ast.ChoiceType{Members: []ast.Expression{ast.StringLiteral{Lexeme: `"Ada"`}}}, types)
+	_, _ = schemaTypeFromTypeReference(ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}, types)
+	_, _ = schemaTypeFromTypeReference(ast.NamedType{Name: "User"}, types)
+	_, _ = schemaTypeFromTypeReference(nil, types)
+
+	_, _ = resolveExportedTypeReference(ast.ArrayType{Element: ast.NamedType{Name: "Thing"}}, types, schemas, map[string]struct{}{}, map[string]struct{}{})
+	_, _ = resolveExportedTypeReference(ast.RecordMapType{Value: ast.NamedType{Name: "Thing"}}, types, schemas, map[string]struct{}{}, map[string]struct{}{})
+	_, _ = resolveExportedTypeReference(ast.UnionType{Members: []ast.TypeReference{ast.NamedType{Name: "User"}, ast.NamedType{Name: "Missing"}}}, types, schemas, map[string]struct{}{}, map[string]struct{}{})
+	_, _ = resolveExportedTypeReference(ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.NamedType{Name: "Thing"}}}}, types, schemas, map[string]struct{}{}, map[string]struct{}{})
+	_, _ = resolveExportedTypeReference(ast.NamedType{Name: "User"}, types, schemas, map[string]struct{}{}, map[string]struct{}{})
+	_, _ = resolveExportedTypeReference(ast.NamedType{Name: "Missing"}, types, schemas, map[string]struct{}{}, map[string]struct{}{})
+
+	_ = validateOutputDirectiveStructure(ast.OutputBlock{Mode: ast.OutputModeSchema, Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParse, Value: "User"}}})
+	_ = validateDataOutputExpression(ast.MemberAccess{Target: ast.Identifier{Name: "record"}, Name: "name"}, ctx2.symbols, map[string]struct{}{"record": {}}, map[string]struct{}{"record": {}})
+	_ = validateOutputSchema("User", []ast.OutputField{{Name: "name", Optional: true, Value: ast.StringLiteral{Lexeme: `"Ada"`}}}, vars, symbols, types, schemas, nil)
+	_ = validateEvaluatedOutputSchema("User", map[string]Value{"extra": {Kind: ValueString, String: "Ada"}}, symbols, types, schemas, nil)
+	_ = validateEvaluatedValueAgainstType(Value{Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Ada"}}}, valueType{kind: ValueRecord, schemaName: "Missing"}, symbols, types, schemas, nil)
+	_ = validateEvaluatedValueAgainstType(Value{Kind: ValueRecord, Record: map[string]Value{"extra": {Kind: ValueString, String: "Ada"}}}, valueType{kind: ValueRecord, record: &record}, symbols, types, schemas, nil)
+	_, _ = evaluateSchemaOutput(ast.OutputBlock{Mode: ast.OutputModeSchema, SchemaFields: []ast.OutputSchemaField{{Name: "Foo", Type: ast.PrimitiveType{Name: "string"}}}}, types)
+	_, _ = evaluateSchemaOutput(ast.OutputBlock{Mode: ast.OutputModeData}, types)
+	_, _ = coerceEvaluatedValueAgainstType(ast.ArrayLiteral{Elements: []ast.Expression{ast.StringLiteral{Lexeme: `"Ada"`}}}, Value{Kind: ValueArray, Array: []Value{{Kind: ValueString, String: "Ada"}}}, valueType{kind: ValueArray, element: &valueType{kind: ValueString}}, newValueEnvironment(), Value{}, symbols, types, schemas, nil)
+	_, _ = evaluateLogicalAnd(ast.InfixExpression{Left: ast.BooleanLiteral{Value: false}, Right: ast.BooleanLiteral{Value: true}}, newValueEnvironment(), Value{}, symbols, types, schemas, nil)
+	_, _ = evaluateLogicalOr(ast.InfixExpression{Left: ast.BooleanLiteral{Value: true}, Right: ast.BooleanLiteral{Value: false}}, newValueEnvironment(), Value{}, symbols, types, schemas, nil)
 }
