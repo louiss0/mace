@@ -3067,3 +3067,57 @@ var _ = Describe("analyzer parse input completion follow-up coverage", func() {
 		tAssert.False(ok)
 	})
 })
+
+var _ = Describe("analyzer parsed variable member completion follow-up coverage", func() {
+	It("covers guarded, unguarded, and imported member completion branches", func() {
+		workspace, err := os.MkdirTemp("", "mace-parsed-member-completion-*")
+		tAssert.NoError(err)
+		defer func() { _ = os.RemoveAll(workspace) }()
+		writeAnalysisFile(workspace, "data.mace", `[output = data]
+{
+  profile: { name: "Ada"; };
+}`)
+		documentPath := filepath.Join(workspace, "doc.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+
+		text := `|===|
+schema Runtime: { profile?: { name: string; }; };
+|===|
+[output = data, parse = Runtime]
+{
+  value: profile.
+}`
+		position := positionFromIndex(text, strings.Index(text, "profile.")+len("profile."))
+		items, handled := parsedVariableMemberCompletionItems(document{text: text}, uri, currentLinePrefix(text, position), position)
+		tAssert.True(handled)
+		tAssert.Empty(items)
+
+		guardedText := `|===|
+schema Runtime: { profile?: { name: string; }; };
+|===|
+[output = data, parse = Runtime]
+{
+  value: "profile" in input ? profile.
+}`
+		position = positionFromIndex(guardedText, strings.Index(guardedText, "profile.\n")+len("profile."))
+		items, handled = parsedVariableMemberCompletionItems(document{text: guardedText}, uri, currentLinePrefix(guardedText, position), position)
+		tAssert.True(handled)
+		tAssert.NotEmpty(items)
+
+		importedText := `|===|
+from "./data.mace" import-as Data;
+|===|
+[output = data]
+{
+  value: Data.profile.
+}`
+		position = positionFromIndex(importedText, strings.Index(importedText, "Data.profile.")+len("Data.profile."))
+		items, handled = parsedVariableMemberCompletionItems(document{text: importedText}, uri, currentLinePrefix(importedText, position), position)
+		tAssert.True(handled)
+		tAssert.NotEmpty(items)
+
+		items, handled = parsedVariableMemberCompletionItems(document{text: "value: plain"}, uri, "value: plain", protocol.Position{Character: 6})
+		tAssert.False(handled)
+		tAssert.Nil(items)
+	})
+})
