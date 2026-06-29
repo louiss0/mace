@@ -26,10 +26,7 @@ func resolveChoiceValues(members []ast.Expression, types *typeRegistry, seen map
 			return nil, err
 		}
 		for _, value := range resolved {
-			key, ok := scalarValueKey(value)
-			if !ok {
-				return nil, validationErrorf("choice members must use scalar literals")
-			}
+			key, _ := scalarValueKey(value)
 			if _, exists := seenValues[key]; exists {
 				continue
 			}

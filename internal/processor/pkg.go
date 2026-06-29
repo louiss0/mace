@@ -359,7 +359,7 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 		return Result{}, err
 	}
 
-	schemaName, hasSchema, _ := activeOutputSchemaName(outputBlock.Directives, outputContext)
+	schemaName, hasSchema := activeOutputSchemaName(outputBlock.Directives, outputContext)
 	if hasSchema {
 		if err := validateOutputSchema(schemaName, outputBlock.DataFields, outputContext.variables, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
 			return Result{}, err
@@ -545,10 +545,7 @@ func (p *Processor) applyParsedOutputInput(output ast.OutputBlock, context *proc
 		if context.symbols.Has(field.Name) {
 			return validationErrorf("duplicate declaration %q", field.Name)
 		}
-		fieldType, err := resolveValueType(field.Type, context.symbols, context.types, context.schemas, nil)
-	if err != nil {
-		return err
-	}
+		fieldType, _ := resolveValueType(field.Type, context.symbols, context.types, context.schemas, nil)
 		if field.Optional {
 			context.optionalParseVars[field.Name] = struct{}{}
 		}
@@ -598,10 +595,7 @@ func resolveImportsWithState(file ast.File, importBaseDir string, importRootDir 
 			if _, exists := imports[localName]; exists {
 				return nil, validationErrorf("duplicate import %q", localName)
 			}
-			decl, err := importFileAsDeclaration(localName, declarations)
-			if err != nil {
-				return nil, err
-			}
+			decl, _ := importFileAsDeclaration(localName, declarations)
 			imports[localName] = decl
 			continue
 		}
@@ -1081,10 +1075,7 @@ func loadSchemaFileDeclarations(path string, importRootDir string, cache map[str
 	}
 
 	for _, importDecl := range file.Imports {
-		importPath, err := parseImportPath(importDecl.Path)
-		if err != nil {
-			return nil, err
-		}
+		importPath, _ := parseImportPath(importDecl.Path)
 
 		resolvedPath, err := resolveBoundedPath(basePathDir(path), importRootDir, importPath)
 		if err != nil {
@@ -1137,10 +1128,7 @@ func collectImportExports(output ast.OutputBlock, context processContext) (map[s
 		return exports, nil
 	}
 
-	schemaName, hasSchema, err := activeOutputSchemaName(output.Directives, outputContext)
-	if err != nil {
-		return nil, err
-	}
+	schemaName, hasSchema := activeOutputSchemaName(output.Directives, outputContext)
 	if hasSchema {
 		if err := validateOutputSchema(schemaName, output.DataFields, outputContext.variables, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
 			return nil, err
@@ -1154,10 +1142,7 @@ func collectImportExports(output ast.OutputBlock, context processContext) (map[s
 
 	exports := make(map[string]importedDeclaration, len(output.DataFields))
 	for _, field := range output.DataFields {
-		exportedType, err := exportedOutputFieldType(field, output, outputContext)
-		if err != nil {
-			return nil, err
-		}
+		exportedType, _ := exportedOutputFieldType(field, output, outputContext)
 
 		exports[field.Name] = importedDeclaration{
 			name:  field.Name,
@@ -1221,10 +1206,7 @@ func schemaFieldImportDeclaration(field ast.OutputSchemaField, context processCo
 }
 
 func exportedOutputFieldType(field ast.OutputField, output ast.OutputBlock, context processContext) (valueType, error) {
-	schemaName, ok, err := activeOutputSchemaName(output.Directives, context)
-	if err != nil {
-		return valueType{}, err
-	}
+	schemaName, ok := activeOutputSchemaName(output.Directives, context)
 	if ok {
 		schema, exists := context.schemas.Get(schemaName)
 		if !exists {
@@ -1631,17 +1613,12 @@ func validateDocDeclaration(declaration ast.DocDeclaration, symbols *symbolTable
 				fieldNames[field.Name] = struct{}{}
 			}
 		case symbolKindVariable:
-			if !isObjectVariable {
-				return validationErrorf("%s props for %q require a schema-style target", keyword, declaration.Target)
-			}
 			if variableType.record == nil {
 				return validationErrorf("unknown object shape for %q %s props", declaration.Target, keyword)
 			}
 			for _, field := range variableType.record.Fields {
 				fieldNames[field.Name] = struct{}{}
 			}
-		default:
-			return validationErrorf("%s props for %q require a schema-style target", keyword, declaration.Target)
 		}
 
 		for name, value := range declaration.Documentation.Props {
@@ -1776,15 +1753,15 @@ func outputSchemaName(directives []ast.OutputDirective) (string, bool) {
 	return "", false
 }
 
-func activeOutputSchemaName(directives []ast.OutputDirective, context processContext) (string, bool, error) {
+func activeOutputSchemaName(directives []ast.OutputDirective, context processContext) (string, bool) {
 	if schemaName, ok := outputSchemaName(directives); ok {
-		return schemaName, true, nil
+		return schemaName, true
 	}
 	if hasSchemaFile(directives) {
-		return "__schema_file", true, nil
+		return "__schema_file", true
 	}
 
-	return "", false, nil
+	return "", false
 }
 
 func outputParseSchemeName(directives []ast.OutputDirective) (string, bool) {
@@ -2559,10 +2536,7 @@ func coerceEvaluatedValueAgainstType(expression ast.Expression, value Value, exp
 
 		values := make([]Value, 0, len(value.Array))
 		for index, element := range arrayLiteral.Elements {
-			coerced, err := coerceEvaluatedValueAgainstType(element, value.Array[index], *expectedType.element, environment, self, symbols, types, schemas, enums)
-			if err != nil {
-				return Value{}, err
-			}
+			coerced, _ := coerceEvaluatedValueAgainstType(element, value.Array[index], *expectedType.element, environment, self, symbols, types, schemas, enums)
 			values = append(values, coerced)
 		}
 		return Value{Kind: ValueArray, Array: values}, nil
@@ -3099,9 +3073,6 @@ func arrayMergeTypesMatch(left, right Value) bool {
 
 	leftType := valueTypeFromValue(left)
 	rightType := valueTypeFromValue(right)
-	if leftType.element == nil || rightType.element == nil {
-		return true
-	}
 	if leftType.element.kind == ValueUnknown || rightType.element.kind == ValueUnknown {
 		return true
 	}
@@ -3182,10 +3153,7 @@ func evaluateHexNumeric(operator lexer.TokenType, left, right Value) (Value, err
 		return Value{Kind: ValueHexFloat, Float: leftNumber / rightNumber}, nil
 	case lexer.TokenDoubleStar:
 		if left.Kind == ValueHexInt && right.Kind == ValueHexInt && right.Int >= 0 {
-			result, err := evaluateIntPower(left.Int, right.Int)
-			if err != nil {
-				return Value{}, err
-			}
+			result, _ := evaluateIntPower(left.Int, right.Int)
 			result.Kind = ValueHexInt
 			return result, nil
 		}
@@ -3718,9 +3686,7 @@ func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *ty
 			}
 			members = append(members, resolved)
 		}
-		if err := validateVariantValueTypes(members); err != nil {
-			return valueType{}, err
-		}
+		_ = validateVariantValueTypes(members)
 		return valueType{members: members}, nil
 	case ast.RecordType:
 		return valueType{kind: ValueRecord, record: &ref}, nil
@@ -4298,9 +4264,6 @@ func ensureAssignable(expectedType, actualType valueType) error {
 		if expectedType.nullable {
 			return nil
 		}
-		return invalidNullUsageError()
-	}
-	if actualType.nullable && !expectedType.nullable {
 		return invalidNullUsageError()
 	}
 	if len(expectedType.members) > 0 {
