@@ -1170,9 +1170,6 @@ func currentLineSuffix(text string, position protocol.Position) string {
 
 func stringLiteralCompletionContext(text string, position protocol.Position) (stringCompletionContext, bool) {
 	index := positionIndex(text, position)
-	if index < 0 {
-		return stringCompletionContext{}, false
-	}
 
 	lineStart := strings.LastIndexByte(text[:index], '\n') + 1
 	lineEnd := strings.IndexByte(text[index:], '\n')

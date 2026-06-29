@@ -3170,5 +3170,8 @@ Color color =
 		context, ok = stringLiteralCompletionContext("first: \"closed\"; second: \"op", protocol.Position{Character: 27})
 		tAssert.True(ok)
 		tAssert.Equal("o", context.prefix)
+		context, ok = stringLiteralCompletionContext("value: \"a\\\"b\"", protocol.Position{Character: 9})
+		tAssert.True(ok)
+		tAssert.Equal("a", context.prefix)
 	})
 })
