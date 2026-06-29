@@ -2870,3 +2870,75 @@ schema Local: { id: int; };
 	})
 
 })
+
+var _ = Describe("analyzer lowest-percentage completion helpers", func() {
+	It("targets placeholder file construction and line context fallbacks", func() {
+		text := "|===|\nstring name = \n"
+		position := protocol.Position{Line: 1, Character: protocol.UInteger(len("string name = "))}
+		file, ok := completionFileWithPlaceholder(text, position)
+		tAssert.True(ok)
+		tAssert.NotNil(file)
+		file, ok = completionFileWithExpressionPlaceholder(text, len(text), len(text))
+		tAssert.True(ok)
+		tAssert.NotNil(file)
+		_, ok = completionFileWithPlaceholder("no script", protocol.Position{Line: 9})
+		tAssert.False(ok)
+		_, ok = completionFileWithExpressionPlaceholder("abc", -1, 1)
+		tAssert.False(ok)
+		_, ok = completionFileWithExpressionPlaceholder("abc", 2, 1)
+		tAssert.False(ok)
+		_, ok = completionFileWithExpressionPlaceholder("abc", 0, 99)
+		tAssert.False(ok)
+		_, ok = partialScriptFileWithPlaceholder("no delimiter here", protocol.Position{})
+		tAssert.False(ok)
+		_, ok = partialScriptFileWithPlaceholder("|===|\nstring name = completion;", protocol.Position{Line: 1, Character: 14})
+		tAssert.True(ok)
+
+		tAssert.Equal("", currentLinePrefix("one", protocol.Position{Line: 2}))
+		tAssert.Equal("one", currentLineSuffix("one", protocol.Position{Line: 2}))
+		value, ok := stringLiteralValue(ast.StringLiteral{Lexeme: `"unterminated`})
+		tAssert.False(ok)
+		tAssert.Equal("", value)
+		_, ok = stringLiteralCompletionContext("value: \"unterminated", protocol.Position{Character: 8})
+		tAssert.True(ok)
+		_, ok = stringLiteralCompletionContext("value: no-string", protocol.Position{Character: 8})
+		tAssert.False(ok)
+	})
+
+	It("targets directive and semantic action low-coverage branches", func() {
+		workspace, err := os.MkdirTemp("", "mace-analyzer-lowest-*")
+		tAssert.NoError(err)
+		defer func() { _ = os.RemoveAll(workspace) }()
+		documentPath := filepath.Join(workspace, "doc.mace")
+		text := `|===|
+schema User: { name: string; };
+|===|
+[output = data, schema = User]
+{
+}`
+		file, err := parseFile(text)
+		tAssert.NoError(err)
+		tokens := lexAnalysisTokens(text)
+		diagnostic := diagnosticWithCode(protocol.Range{}, protocol.DiagnosticSeverityError, diagnosticTypeRecordDoesNotMatchSchema, `missing required field "name"`)
+		actions := semanticCodeActions(text, file, tokens, documentPath, diagnostic, `missing required field "name"`)
+		tAssert.NotEmpty(actions)
+		tAssert.Nil(semanticCodeActions(text, file, tokens, "", diagnostic, `missing required field "name"`))
+
+		doc := document{text: text, analysis: AnalyzeCompletionContextInRoot(text, documentPath, workspace, protocol.Position{Line: 3, Character: 28})}
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		items, handled := directiveCompletionItems(doc, uri, "[output = ")
+		tAssert.True(handled)
+		tAssert.NotEmpty(items)
+		items, handled = directiveCompletionItems(doc, uri, "[output = data, ")
+		tAssert.True(handled)
+		tAssert.NotEmpty(items)
+		items, handled = directiveCompletionItems(doc, uri, "[output = schema, schema = ")
+		tAssert.True(handled)
+		tAssert.Empty(items)
+		items, handled = directiveCompletionItems(doc, uri, "[output = data, schema = U")
+		tAssert.True(handled)
+		tAssert.NotEmpty(items)
+		_, handled = directiveCompletionItems(doc, uri, "not a directive")
+		tAssert.False(handled)
+	})
+})
