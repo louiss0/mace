@@ -3121,3 +3121,54 @@ from "./data.mace" import-as Data;
 		tAssert.Nil(items)
 	})
 })
+
+var _ = Describe("analyzer focused three-function coverage", func() {
+	It("adds focused coverage for directive, initializer, and string literal completion helpers", func() {
+		workspace, err := os.MkdirTemp("", "mace-three-function-coverage-*")
+		tAssert.NoError(err)
+		defer func() { _ = os.RemoveAll(workspace) }()
+		writeAnalysisFile(workspace, "schema.mace", `[output = schema]
+{
+  User: { name: string; };
+}`)
+		documentPath := filepath.Join(workspace, "doc.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+
+		directiveDoc := document{text: `|===|
+schema Local: { name: string; };
+|===|
+[output = data, schema_file = "./sch"]
+{}`}
+		items, handled := directiveCompletionItems(directiveDoc, uri, `[output = data, schema_file = "./sch`)
+		tAssert.True(handled)
+		tAssert.NotEmpty(items)
+		items, handled = directiveCompletionItems(directiveDoc, uri, `[output = data, parse_file = "./sch`)
+		tAssert.True(handled)
+		tAssert.NotEmpty(items)
+		items, handled = directiveCompletionItems(directiveDoc, uri, `[output = data, sch`)
+		tAssert.True(handled)
+		tAssert.NotEmpty(items)
+
+		initializerText := `|===|
+type Color: choice["red", "blue"];
+Color color = 
+|===|
+[output = data]
+{}`
+		initializerPosition := positionFromIndex(initializerText, strings.Index(initializerText, "Color color = ")+len("Color color = "))
+		items, handled = initializerCompletionItems(document{text: initializerText}, uri, initializerPosition)
+		tAssert.True(handled)
+		tAssert.NotEmpty(items)
+		items, handled = initializerCompletionItems(document{text: "|===|\nstring value = \n|===|\n[output = data]{}"}, uri, protocol.Position{Line: 1, Character: 1})
+		tAssert.False(handled)
+		tAssert.Nil(items)
+
+		context, ok := stringLiteralCompletionContext("value: 'it\\'s red'", protocol.Position{Character: 13})
+		tAssert.True(ok)
+		tAssert.Equal("it\\'s", context.prefix)
+		tAssert.Greater(context.end, context.start)
+		context, ok = stringLiteralCompletionContext("first: \"closed\"; second: \"op", protocol.Position{Character: 27})
+		tAssert.True(ok)
+		tAssert.Equal("o", context.prefix)
+	})
+})
