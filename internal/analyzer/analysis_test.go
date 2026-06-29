@@ -2371,3 +2371,127 @@ var _ = Describe("analyzer removal action coverage helpers", func() {
 		tAssert.Nil(removeDeclarationAction(text, tokens, filepath.Join(os.TempDir(), "remove.mace"), protocol.Range{}, lexer.Token{Line: 99, Column: 1, Lexeme: "missing"}, "Remove"))
 	})
 })
+
+var _ = Describe("Analyzer package edge helpers", func() {
+	It("covers path resolution and URI helper edge cases", func() {
+		workspace, err := os.MkdirTemp("", "mace-analyzer-paths-*")
+		tAssert.NoError(err)
+		subdir := filepath.Join(workspace, "project", "nested")
+		tAssert.NoError(os.MkdirAll(subdir, 0o755))
+
+		resolved, err := resolveBoundedPath(subdir, "./schema.mace")
+		tAssert.NoError(err)
+		tAssert.Equal(filepath.Join(subdir, "schema.mace"), resolved)
+
+		_, err = resolveBoundedPath(subdir, filepath.Join(string(filepath.Separator), "tmp", "schema.mace"))
+		tAssert.Error(err)
+
+		_, err = resolveRootBoundedPathInRoot(subdir, filepath.Join(workspace, "project"), "../outside.mace")
+		tAssert.Error(err)
+
+		resolved, err = resolveRootBoundedPathInRoot(subdir, filepath.Join(workspace, "project"), "./schema.mace")
+		tAssert.NoError(err)
+		tAssert.Equal(filepath.Join(subdir, "schema.mace"), resolved)
+
+		tAssert.Equal("./", formatImportRoot(""))
+		tAssert.Equal("./", formatImportRoot("."))
+		tAssert.Equal("project/", formatImportRoot(filepath.Join(workspace, "project")))
+
+		windowsURI := fileURI("C:/Users/Ada/schema.mace")
+		tAssert.Contains(windowsURI, "file:///C:/Users/Ada/schema.mace")
+		tAssert.Equal("", DocumentPath(protocol.DocumentUri("not a uri")))
+	})
+
+	It("covers identifier, position, and hover edge cases", func() {
+		text := "[output = data]\n{\n  title: \"hi😀\";\n}"
+		tAssert.Equal("out", identifierPrefixAt(text, protocol.Position{Line: 0, Character: 4}))
+		identifier, ok := identifierAt(text, protocol.Position{Line: 0, Character: 2})
+		tAssert.True(ok)
+		tAssert.Equal("output", identifier)
+		_, ok = identifierAt(text, protocol.Position{Line: 1, Character: 0})
+		tAssert.False(ok)
+
+		rangeValue, ok := identifierRangeAt(text, protocol.Position{Line: 99, Character: 0})
+		tAssert.False(ok)
+		tAssert.Equal(protocol.Range{}, rangeValue)
+		tAssert.True(isDirectivePosition(text, protocol.Position{Line: 0, Character: 2}))
+		tAssert.False(isDirectivePosition(text, protocol.Position{Line: 2, Character: 2}))
+		tAssert.Equal(protocol.UInteger(5), utf16LineLength("hi😀!\nignored"))
+
+		snapshot := analyzeDocument(text)
+		tAssert.NotNil(Hover(text, snapshot, protocol.Position{Line: 0, Character: 2}))
+		tAssert.Nil(Hover(text, snapshot, protocol.Position{Line: 1, Character: 0}))
+	})
+
+	It("covers public symbol and rename fallback branches", func() {
+		tAssert.Empty(DocumentSymbols("", analysisSnapshot{}))
+		text := `|===|
+type Alias: string;
+schema User: { name: string; };
+|===|
+[output = schema]
+{
+  name: string;
+}`
+		snapshot := analyzeDocument(text)
+		symbols := DocumentSymbols(text, snapshot)
+		tAssert.NotEmpty(symbols)
+		_, ok := PrepareRename(snapshot, protocol.Position{Line: 99, Character: 0})
+		tAssert.False(ok)
+		edit, ok := Rename(text, snapshot, protocol.DocumentUri("file:///tmp/doc.mace"), protocol.Position{Line: 1, Character: 5}, "")
+		tAssert.False(ok)
+		tAssert.Nil(edit)
+	})
+
+	It("covers hover documentation and rename edit edge cases", func() {
+		text := "Imported"
+		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{Character: 8}}
+		documented := analysisSnapshot{
+			text: text,
+			symbols: []semanticSymbol{{
+				Name:          "Imported",
+				Detail:        "import Imported: string",
+				Documentation: "Imported documentation.",
+				Range:         rangeValue,
+			}},
+		}
+		hover := Hover(text, documented, protocol.Position{Character: 2})
+		tAssert.NotNil(hover)
+		if hover != nil {
+			content, ok := hover.Contents.(protocol.MarkupContent)
+			tAssert.True(ok)
+			if ok {
+				tAssert.Contains(content.Value, "Imported documentation.")
+			}
+		}
+
+		snapshot := analysisSnapshot{
+			text:        text,
+			documentURI: protocol.DocumentUri("file:///workspace/current.mace"),
+			tokens:      []lexer.Token{{Type: lexer.TokenIdentifier, Lexeme: "Imported", Line: 1, Column: 1}},
+			symbols: []semanticSymbol{{
+				Name:   "Imported",
+				Origin: symbolOriginImport,
+				Range:  rangeValue,
+				Definition: protocol.Location{
+					URI:   protocol.DocumentUri("file:///workspace/shared.mace"),
+					Range: rangeValue,
+				},
+			}},
+		}
+		edit, ok := Rename(text, snapshot, protocol.DocumentUri("file:///workspace/fallback.mace"), protocol.Position{Character: 2}, "Renamed")
+		tAssert.True(ok)
+		if edit != nil {
+			tAssert.Contains(edit.Changes, protocol.DocumentUri("file:///workspace/current.mace"))
+			tAssert.Contains(edit.Changes, protocol.DocumentUri("file:///workspace/shared.mace"))
+		}
+	})
+
+	It("covers additional directive and root-boundary helper branches", func() {
+		tAssert.False(isDirectivePosition("output = data]", protocol.Position{Character: 3}))
+		tAssert.True(isDirectivePosition("[output = data", protocol.Position{Character: 5}))
+		_, err := resolveRootBoundedPathInRoot("/workspace", "/workspace", filepath.Join(string(filepath.Separator), "tmp", "schema.mace"))
+		tAssert.Error(err)
+	})
+
+})
