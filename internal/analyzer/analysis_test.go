@@ -2942,3 +2942,71 @@ schema User: { name: string; };
 		tAssert.False(handled)
 	})
 })
+
+var _ = Describe("analyzer low-percentage helper follow-up coverage", func() {
+	It("covers remaining low-percentage analysis helper branches", func() {
+		tAssert.Equal("1.5", simpleExpressionText(ast.FloatLiteral{Lexeme: "1.5"}))
+		tAssert.Equal("value", simpleExpressionText(ast.Identifier{Name: "value"}))
+
+		text := `[output = schema, schema_file = "./schema.mace"]
+{}`
+		rangeValue, ok := invalidDirectiveComboEditRange(text, ast.File{}, lexAnalysisTokens(text), "schema_file directive is invalid when output mode is schema")
+		tAssert.True(ok)
+		tAssert.NotEqual(protocol.Range{}, rangeValue)
+
+		tokens := lexAnalysisTokens(`from "./shared.mace" import Remote: Local;`)
+		_, ok = importAliasToken(tokens, ast.ImportDeclaration{Path: ast.StringLiteral{Lexeme: `"./other.mace"`}}, ast.ImportedIdentifier{Name: "Remote", Alias: "Local"})
+		tAssert.False(ok)
+		_, ok = importAliasToken(tokens, ast.ImportDeclaration{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}}, ast.ImportedIdentifier{Name: "Missing", Alias: "Local"})
+		tAssert.False(ok)
+
+		file := ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{
+			ast.TypeDeclaration{Name: "Alias", Type: ast.PrimitiveType{Name: "string"}},
+			ast.VariableDeclaration{Name: "skip", HasValue: false, Type: ast.ArrayType{Element: ast.PrimitiveType{Name: "int"}}},
+			ast.VariableDeclaration{Name: "notArray", HasValue: true, Type: ast.PrimitiveType{Name: "int"}, Value: ast.IntLiteral{Lexeme: "1"}},
+			ast.VariableDeclaration{Name: "values", HasValue: true, Type: ast.ArrayType{Element: ast.PrimitiveType{Name: "int"}}, Value: ast.ArrayLiteral{Elements: []ast.Expression{ast.IntLiteral{Lexeme: "1"}, ast.StringLiteral{Lexeme: `"x"`}}}},
+		}}}
+		diagnostic, ok := mixedArrayLiteralDiagnostic(file, lexAnalysisTokens(`array<int> values = [1, "x"];`), "array literal has mixed element types")
+		tAssert.True(ok)
+		tAssert.Equal(string(diagnosticTypeMixedArrayLiteral), requireDiagnosticCode(diagnostic))
+		_, ok = mixedArrayLiteralDiagnostic(file, lexAnalysisTokens(`array<int> other = [1, "x"];`), "array literal has mixed element types")
+		tAssert.False(ok)
+	})
+})
+
+var _ = Describe("analyzer semantic action branch coverage", func() {
+	It("routes additional diagnostics through semantic code actions", func() {
+		documentPath := filepath.Join(os.TempDir(), "semantic-actions.mace")
+		cases := []struct {
+			text    string
+			message string
+			title   string
+		}{
+			{`[output = data]
+{
+  name: "Ada";
+  name: "Bea";
+}`, `duplicate output field "name"`, "Remove duplicate field"},
+			{`|===|
+string value: "x";
+|===|
+[output = data]
+{}`, "expected '='", "Fix declaration operator"},
+			{`[output = schema, schema = User]
+{}`, "schema directive is invalid when output mode is schema", "Fix invalid output directive combination"},
+			{`[output = data]
+{
+  result: $self.later;
+  later: 1;
+}`, "unknown self reference forward", "Move referenced field before $self use"},
+		}
+
+		for _, test := range cases {
+			file, _ := parseFile(test.text)
+			tokens := lexAnalysisTokens(test.text)
+			actions := semanticCodeActions(test.text, file, tokens, documentPath, protocol.Diagnostic{Range: fullDocumentRange(test.text)}, test.message)
+			_, ok := lo.Find(actions, func(action analysisCodeActionCandidate) bool { return action.Action.Title == test.title })
+			tAssert.True(ok, test.title)
+		}
+	})
+})
