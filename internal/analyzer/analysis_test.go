@@ -3010,3 +3010,60 @@ string value: "x";
 		}
 	})
 })
+
+var _ = Describe("analyzer parse input completion follow-up coverage", func() {
+	It("covers parse-file declaration and member completion helpers", func() {
+		workspace, err := os.MkdirTemp("", "mace-parse-input-completion-*")
+		tAssert.NoError(err)
+		defer func() { _ = os.RemoveAll(workspace) }()
+		writeAnalysisFile(workspace, "runtime.mace", `[output = schema]
+{
+  Runtime: { env: string; profile?: { name: string; }; };
+  Other: string;
+}`)
+		writeAnalysisFile(workspace, "data.mace", `[output = data]
+{
+  profile: { name: "Ada"; };
+}`)
+
+		file := ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData, Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"./runtime.mace"`}}}}
+		cache := map[string]completionModel{}
+		model := completionModel{aliases: map[string]ast.TypeReference{}, schemas: map[string]ast.RecordType{}, variables: map[string]ast.TypeReference{}}
+		defs := parseInputDeclarationDefinitions(file, workspace, workspace)
+		tAssert.NotEmpty(defs)
+		record, ok := parseFileOutputSchemaRecord(file.Output.Directives, workspace, workspace, cache)
+		tAssert.True(ok)
+		tAssert.NotEmpty(record.Fields)
+		exported, ok := parseFileOutputExportedRecord(file.Output.Directives, workspace, workspace, cache)
+		tAssert.True(ok)
+		tAssert.Len(exported.Fields, 2)
+		rootType, typeOK, guarded := parseInputMemberCompletionRootType(file, model, []string{"Runtime", "profile"}, workspace, workspace, cache, map[string]struct{}{})
+		tAssert.False(typeOK)
+		tAssert.True(guarded)
+		tAssert.Nil(rootType)
+		rootType, typeOK, guarded = parseInputMemberCompletionRootType(file, model, []string{"Runtime", "profile"}, workspace, workspace, cache, map[string]struct{}{"profile": {}})
+		tAssert.True(typeOK)
+		tAssert.False(guarded)
+		tAssert.NotNil(rootType)
+
+		file.Output.Directives = []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"./missing.mace"`}}
+		tAssert.Empty(parseInputDeclarationDefinitions(file, workspace, workspace))
+		_, ok = parseFileOutputSchemaRecord(file.Output.Directives, workspace, workspace, map[string]completionModel{})
+		tAssert.False(ok)
+		_, ok = parseFileOutputExportedRecord(file.Output.Directives, workspace, workspace, map[string]completionModel{})
+		tAssert.False(ok)
+
+		importFile := ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./data.mace"`}, ImportAs: &ast.ImportedIdentifier{Name: "Data"}}}}
+		rootType, importedModel, ok := importedMemberCompletionRootType(importFile, []string{"Data"}, workspace, workspace, map[string]completionModel{})
+		tAssert.True(ok)
+		tAssert.NotNil(rootType)
+		tAssert.NotNil(importedModel.schemas)
+		rootType, _, ok = importedMemberCompletionRootType(importFile, []string{"Data", "profile"}, workspace, workspace, map[string]completionModel{})
+		tAssert.True(ok)
+		tAssert.NotNil(rootType)
+		_, _, ok = importedMemberCompletionRootType(importFile, nil, workspace, workspace, map[string]completionModel{})
+		tAssert.False(ok)
+		_, _, ok = importedMemberCompletionRootType(importFile, []string{"Missing"}, workspace, workspace, map[string]completionModel{})
+		tAssert.False(ok)
+	})
+})
