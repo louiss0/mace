@@ -2495,3 +2495,378 @@ schema User: { name: string; };
 	})
 
 })
+
+var _ = Describe("analyzer completion coverage helpers", func() {
+	completionAt := func(textWithCursor string, documentPath string, root string) []protocol.CompletionItem {
+		cursor := strings.Index(textWithCursor, "•")
+		tAssert.NotEqual(-1, cursor)
+		text := strings.Replace(textWithCursor, "•", "", 1)
+		position := positionFromIndex(text, cursor)
+		snapshot := AnalyzeCompletionContextInRoot(text, documentPath, root, position)
+		return CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+	}
+
+	It("covers import, directive, initializer, and self completion paths", func() {
+		workspace, err := os.MkdirTemp("", "mace-analyzer-completion-*")
+		tAssert.NoError(err)
+		defer func() { _ = os.RemoveAll(workspace) }()
+
+		writeAnalysisFile(workspace, "shared.mace", `[output = schema]
+{
+  User: { name: string; tags: array<string>; };
+  Role: string;
+}`)
+		writeAnalysisFile(workspace, "runtime.mace", `[output = schema]
+{
+  Runtime: { env: string; profile: { name: string; }; };
+}`)
+		documentPath := filepath.Join(workspace, "consumer.mace")
+
+		items := completionAt(`|===|
+from "./sh•
+|===|
+[output = data]
+{}`, documentPath, workspace)
+		tAssert.NotEmpty(items)
+
+		items = completionAt(`|===|
+from "./shared.mace" import U•
+|===|
+[output = data]
+{}`, documentPath, workspace)
+		tAssert.NotEmpty(items)
+
+		items = completionAt(`|===|
+from "./shared.mace" import User;
+schema Local: { name: string; tags: array<string>; };
+|===|
+[output = data, schema = L•]
+{
+  name: "Ada";
+}`, documentPath, workspace)
+		tAssert.NotEmpty(items)
+
+		items = completionAt(`|===|
+from "./shared.mace" import User;
+|===|
+[output = data, schema_file = "./sh•"]
+{}`, documentPath, workspace)
+		tAssert.Empty(items)
+
+		items = completionAt(`|===|
+schema User: { name: string; tags: array<string>; };
+|===|
+[output = data, schema = User]
+{
+  name: •
+}`, documentPath, workspace)
+		tAssert.NotEmpty(items)
+
+		items = completionAt(`|===|
+schema Runtime: { env: string; profile: { name: string; }; };
+|===|
+[output = data, parse = Runtime]
+{
+  value: profile.•
+}`, documentPath, workspace)
+		tAssert.NotEmpty(items)
+
+		items = completionAt(`[output = data]
+{
+  profile: { name: "Ada"; };
+  value: $self.profile.•
+}`, documentPath, workspace)
+		tAssert.NotEmpty(items)
+
+		items = completionAt(`|===|
+array<string> names = ["Ada"];
+string first = names[•];
+|===|
+[output = data]
+{}`, documentPath, workspace)
+		tAssert.NotEmpty(items)
+
+		items = completionAt(`|===|
+type Color: choice["red", "blue"];
+Color color = "r•";
+|===|
+[output = data]
+{}`, documentPath, workspace)
+		tAssert.NotEmpty(items)
+
+		items = completionAt(`|===|
+type Color: choice["red", "blue"];
+schema User: { favorite: Color; };
+|===|
+[output = data, schema = User]
+{
+  favorite: "b•";
+}`, documentPath, workspace)
+		tAssert.NotEmpty(items)
+
+		items = completionAt(`[output = data]
+{
+  value: $se•
+}`, documentPath, workspace)
+		tAssert.NotEmpty(items)
+	})
+
+	It("covers direct completion helper edge branches", func() {
+		model := completionModel{
+			aliases: map[string]ast.TypeReference{
+				"Alias": ast.PrimitiveType{Name: "string"},
+			},
+			schemas: map[string]ast.RecordType{
+				"User": {Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}, {Name: "tags", Type: ast.ArrayType{Element: ast.PrimitiveType{Name: "string"}}}}},
+			},
+			variables: map[string]ast.TypeReference{},
+		}
+
+		position, ok := completionPlaceholderPosition("name  : value", protocol.Position{Character: 4}, ":")
+		tAssert.True(ok)
+		tAssert.Equal(protocol.UInteger(7), position.Character)
+		_, ok = completionPlaceholderPosition("name value", protocol.Position{Character: 4}, ":")
+		tAssert.False(ok)
+
+		tAssert.Equal("}])", completionExpressionClosers("value: call([{", len("value: call([{")))
+		tAssert.Equal("", completionExpressionClosers("value", -1))
+		tAssert.Equal([]byte{'('}, popCompletionDelimiter([]byte{'('}, '['))
+		tAssert.Empty(popCompletionDelimiter([]byte{'('}, '('))
+
+		path, ok := trailingMemberAccessPath("  profile.name.")
+		tAssert.True(ok)
+		tAssert.Equal([]string{"profile", "name"}, path)
+		_, ok = trailingMemberAccessPath("$self.profile.")
+		tAssert.False(ok)
+		_, ok = trailingMemberAccessPath("profile..")
+		tAssert.False(ok)
+
+		path, ok = placeholderPath(ast.RecordLiteral{Fields: []ast.RecordField{{Name: "profile", Value: ast.ArrayLiteral{Elements: []ast.Expression{ast.MemberAccess{Target: ast.Identifier{Name: completionPlaceholderIdentifier}, Name: "name"}}}}}})
+		tAssert.True(ok)
+		tAssert.Equal([]string{"profile", completionArrayPathSegment, "name"}, path)
+		path, ok = placeholderPath(ast.ConditionalExpression{Condition: ast.BooleanLiteral{Value: true}, Then: ast.Identifier{Name: "other"}, Else: ast.Identifier{Name: completionPlaceholderIdentifier}})
+		tAssert.True(ok)
+		tAssert.Empty(path)
+		_, ok = expressionPath(ast.MemberAccess{Target: ast.Identifier{}, Name: "name"})
+		tAssert.False(ok)
+
+		typeRef, ok := completionTypeAtPath(ast.NamedType{Name: "User"}, []string{"tags", completionArrayPathSegment}, model)
+		tAssert.True(ok)
+		tAssert.Equal(ast.PrimitiveType{Name: "string"}, typeRef)
+		_, ok = completionTypeAtPath(ast.NamedType{Name: "User"}, []string{"missing"}, model)
+		tAssert.False(ok)
+
+		items := completionItemsForType(ast.ChoiceType{Members: []ast.Expression{ast.StringLiteral{Lexeme: `"red"`}, ast.StringLiteral{Lexeme: `"blue"`}}}, model, completionOptions{unquotedStringChoices: true, unquotedStringChoiceText: "r"})
+		tAssert.Len(items, 1)
+		tAssert.Equal("red", items[0].Label)
+		items = completionItemsForType(ast.NamedType{Name: "User"}, model, completionOptions{allowSchemaLiteral: true})
+		tAssert.NotEmpty(items)
+		tAssert.NotEmpty(completionItemsForMemberTarget(ast.NamedType{Name: "User"}, model))
+		tAssert.Empty(completionItemsForValueMembers(processor.Value{Kind: processor.ValueString}))
+		tAssert.NotEmpty(completionItemsForValueMembers(processor.Value{Kind: processor.ValueRecord, Record: map[string]processor.Value{"name": {Kind: processor.ValueString}}}))
+
+		value := syntheticCompletionValue(ast.NamedType{Name: "User"}, model, 3)
+		tAssert.Equal(processor.ValueRecord, value.Kind)
+		tAssert.Equal(processor.ValueUnknown, syntheticCompletionValue(ast.NamedType{Name: "User"}, model, 0).Kind)
+		tAssert.Equal(`""`, defaultLiteralForType(ast.PrimitiveType{Name: "unknown"}, model, map[string]struct{}{}))
+		tAssert.Equal("[]", defaultLiteralForType(ast.ArrayType{Element: ast.PrimitiveType{Name: "string"}}, model, map[string]struct{}{}))
+		tAssert.Equal("{}", defaultLiteralForType(ast.NamedType{Name: "User"}, model, map[string]struct{}{recordTypeDetail(model.schemas["User"]): {}}))
+	})
+	It("covers filesystem and partial-output completion helpers", func() {
+		workspace, err := os.MkdirTemp("", "mace-analyzer-completion-fs-*")
+		tAssert.NoError(err)
+		defer func() { _ = os.RemoveAll(workspace) }()
+		sharedPath := writeAnalysisFile(workspace, "shared.mace", `[output = schema]
+{
+  User: { name: string; };
+  Alias: string;
+}`)
+		writeAnalysisFile(workspace, "nested/child.mace", `[output = data] { value: 1; }`)
+		documentPath := filepath.Join(workspace, "consumer.mace")
+		uri := protocol.DocumentUri(fileURI(documentPath))
+
+		pathValue, ok := documentPathFromURI(uri)
+		tAssert.True(ok)
+		tAssert.Equal(documentPath, pathValue)
+		_, ok = documentPathFromURI(protocol.DocumentUri("https://example.com/file.mace"))
+		tAssert.False(ok)
+		_, ok = documentPathFromURI(protocol.DocumentUri("file:///%ZZ"))
+		tAssert.False(ok)
+
+		items := relativePathItems(document{}, uri, "./", nil, true)
+		tAssert.NotEmpty(items)
+		items = relativePathItems(document{}, protocol.DocumentUri("not a uri"), "./", nil, true)
+		tAssert.Empty(items)
+
+		symbols, ok := importableSymbols(uri, workspace, "./shared.mace")
+		tAssert.True(ok)
+		tAssert.NotEmpty(symbols)
+		identifiers, ok := importableIdentifiers(uri, workspace, "./shared.mace")
+		tAssert.True(ok)
+		tAssert.Contains(identifiers, "User")
+		_, ok = importableSymbols(protocol.DocumentUri("not a uri"), workspace, "./shared.mace")
+		tAssert.False(ok)
+		_, ok = importableSymbols(uri, workspace, "./missing.mace")
+		tAssert.False(ok)
+
+		text := `|===|
+from "./shared.mace" import User;
+schema Local: { id: int; };
+|===|
+[output = data, schema = `
+		doc := document{text: text, analysis: AnalyzeDocumentAtInRoot(text+"Local] {}", documentPath, workspace)}
+		names := availableSchemaNames(doc, uri, "[output = data, schema = ")
+		tAssert.Contains(names, "Local")
+		tAssert.NotNil(completionFile(doc, "[output = data"))
+		tAssert.Nil(completionFile(document{text: "no output here"}, ""))
+		tAssert.Nil(completionFile(document{text: "[output = data]"}, "[output = data]"))
+		tAssert.Contains(importedPaths(doc, "[output = data"), "./shared.mace")
+		tAssert.Empty(importedPaths(document{text: "[output = data]"}, "[output = data"))
+		tAssert.Equal(workspace, completionRoot(analysisSnapshot{importRootDir: workspace}, uri))
+
+		partialText := `[output = data]
+{
+  profile: { name: "Ada"; };
+  value: $self.profile.
+}`
+		position := positionFromIndex(partialText, strings.Index(partialText, "$self.profile.")+len("$self.profile."))
+		result, ok := partialOutputResult(document{text: partialText}, uri, position)
+		tAssert.True(ok)
+		tAssert.Contains(result.Output, "profile")
+		value, ok := selfCompletionValue(document{text: partialText}, uri, position, []string{"profile"})
+		tAssert.True(ok)
+		tAssert.Equal(processor.ValueRecord, value.Kind)
+		tAssert.Contains(selfCompletionEntries(value), "name")
+		_, ok = selfCompletionValue(document{text: partialText}, uri, position, []string{"profile", "missing"})
+		tAssert.False(ok)
+		tAssert.Nil(selfCompletionEntries(processor.Value{Kind: processor.ValueString}))
+
+		tokens := lexAnalysisTokens(partialText)
+		openIndex, ok := outputBlockOpenIndex(partialText, tokens)
+		tAssert.True(ok)
+		ranges, ok := outputFieldRanges(partialText, tokens, openIndex)
+		tAssert.True(ok)
+		tAssert.NotEmpty(ranges)
+		_, ok = outputBlockOpenIndex("|===|\n{\n|===|", lexAnalysisTokens("|===|\n{\n|===|"))
+		tAssert.False(ok)
+		_, ok = outputFieldRanges("{}", lexAnalysisTokens("{}"), 0)
+		tAssert.False(ok)
+		tAssert.False(isOutputFieldHeader([]lexer.Token{{Type: lexer.TokenIdentifier}}, 0))
+
+		_ = sharedPath
+	})
+
+	It("covers remaining focused analyzer helper fallbacks", func() {
+		tokens := lexAnalysisTokens("value: null;")
+		_, ok := nullUsageDiagnostic(tokens, processor.DiagnosticError{Code: processor.CodeInvalidNullUsage, Message: "null"})
+		tAssert.True(ok)
+		_, ok = nullUsageDiagnostic(lexAnalysisTokens("value: 1;"), processor.DiagnosticError{Code: processor.CodeInvalidNullUsage, Message: "null"})
+		tAssert.False(ok)
+
+		file := ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"./runtime.mace"`}}}}
+		_, ok = parseInputSemanticSchemaName(file, ".")
+		tAssert.False(ok)
+		file.Output.Directives = append(file.Output.Directives, ast.OutputDirective{Kind: ast.OutputDirectiveSchema, Value: "Runtime"})
+		name, ok := parseInputSemanticSchemaName(file, ".")
+		tAssert.True(ok)
+		tAssert.Equal("Runtime", name)
+
+		path, prefix, ok := selfCompletionContext("value: $self.profile.na")
+		tAssert.True(ok)
+		tAssert.Equal([]string{"profile"}, path)
+		tAssert.Equal("na", prefix)
+		path, prefix, ok = selfCompletionContext("value: $self.profile.")
+		tAssert.True(ok)
+		tAssert.Equal([]string{"profile"}, path)
+		tAssert.Equal("", prefix)
+		_, _, ok = selfCompletionContext("value: $self.profile[0]")
+		tAssert.False(ok)
+
+		model := completionModel{aliases: map[string]ast.TypeReference{}, schemas: map[string]ast.RecordType{}, variables: map[string]ast.TypeReference{}}
+		_, _, ok = placeholderOutputCompletionType(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeSchema}}, model)
+		tAssert.False(ok)
+		_, _, ok = placeholderParseInputCompletionType(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeSchema}}, model, ".", ".")
+		tAssert.False(ok)
+	})
+
+	It("covers additional analysis helper fallback branches directly", func() {
+		record := ast.RecordType{Fields: []ast.SchemaField{{Name: "profile", Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}}}}
+		updated, ok := replaceSchemaFieldType(record, []string{"profile", "name"}, ast.PrimitiveType{Name: "int"})
+		tAssert.True(ok)
+		tAssert.Equal(ast.PrimitiveType{Name: "int"}, updated.Fields[0].Type.(ast.RecordType).Fields[0].Type)
+		_, ok = replaceSchemaFieldType(record, nil, ast.PrimitiveType{Name: "int"})
+		tAssert.False(ok)
+		_, ok = replaceSchemaFieldType(record, []string{"missing"}, ast.PrimitiveType{Name: "int"})
+		tAssert.False(ok)
+		_, ok = replaceSchemaFieldType(record, []string{"profile", "missing"}, ast.PrimitiveType{Name: "int"})
+		tAssert.False(ok)
+
+		schemaFile := ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeSchema, SchemaFields: []ast.OutputSchemaField{{Name: "User", Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}}}}}
+		symbol, ok := importedImportAsSemanticSymbol(schemaFile, filepath.Join(os.TempDir(), "shared.mace"), "Shared")
+		tAssert.True(ok)
+		tAssert.Equal(protocol.CompletionItemKindStruct, symbol.Kind)
+		dataFile := ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData, DataFields: []ast.OutputField{{Name: "value", Value: ast.StringLiteral{Lexeme: `"x"`}}}}}
+		symbol, ok = importedImportAsSemanticSymbol(dataFile, filepath.Join(os.TempDir(), "data.mace"), "Data")
+		tAssert.True(ok)
+		tAssert.Equal(protocol.CompletionItemKindVariable, symbol.Kind)
+		_, ok = importedImportAsSemanticSymbol(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeSchema}}, filepath.Join(os.TempDir(), "empty.mace"), "Empty")
+		tAssert.False(ok)
+
+		_, ok = importAndScriptCleanupRange("[output = data]{}")
+		tAssert.False(ok)
+		_, ok = importAndScriptCleanupRange("   [output = data]{}")
+		tAssert.False(ok)
+		rangeValue, ok := importAndScriptCleanupRange("|===|\nstring value = \"x\";\n|===|\n[output = data]{}")
+		tAssert.True(ok)
+		tAssert.Equal(protocol.Position{}, rangeValue.Start)
+		tAssert.NotEqual(protocol.Position{}, rangeValue.End)
+		tAssert.Equal("", quotedName("no quotes"))
+		tAssert.Equal("", quotedName("unterminated \"quote"))
+		tAssert.Equal("name", quotedName(`unknown "name" here`))
+	})
+
+	It("covers choice, union, and default literal completion helpers", func() {
+		model := completionModel{
+			aliases: map[string]ast.TypeReference{
+				"Color": ast.ChoiceType{Members: []ast.Expression{ast.StringLiteral{Lexeme: `"red"`}, ast.StringLiteral{Lexeme: `"blue"`}}},
+				"Loop":  ast.NamedType{Name: "Loop"},
+			},
+			schemas: map[string]ast.RecordType{
+				"Left":  {Fields: []ast.SchemaField{{Name: "id", Type: ast.PrimitiveType{Name: "string"}, Optional: true}}},
+				"Right": {Fields: []ast.SchemaField{{Name: "id", Type: ast.PrimitiveType{Name: "string"}}, {Name: "age", Type: ast.PrimitiveType{Name: "int"}}}},
+			},
+			variables: map[string]ast.TypeReference{},
+		}
+
+		members, ok := completionChoiceMemberValues(ast.Identifier{Name: "Color"}, model, map[string]struct{}{})
+		tAssert.True(ok)
+		tAssert.Len(members, 2)
+		_, ok = completionChoiceMemberValues(ast.Identifier{Name: "Missing"}, model, map[string]struct{}{})
+		tAssert.False(ok)
+		_, ok = completionChoiceMemberValues(ast.Identifier{Name: "Loop"}, model, map[string]struct{}{})
+		tAssert.False(ok)
+		_, ok = completionChoiceMemberValues(ast.RecordLiteral{}, model, map[string]struct{}{})
+		tAssert.False(ok)
+
+		choice, ok := completionChoiceFromMembers([]ast.Expression{ast.Identifier{Name: "Color"}, ast.StringLiteral{Lexeme: `"red"`}}, model, map[string]struct{}{})
+		tAssert.True(ok)
+		tAssert.Len(choice.members, 2)
+		_, ok = completionChoiceFromMembers([]ast.Expression{ast.Identifier{Name: "Missing"}}, model, map[string]struct{}{})
+		tAssert.False(ok)
+
+		record, ok := completionUnionRecord([]ast.TypeReference{ast.NamedType{Name: "Left"}, ast.NamedType{Name: "Right"}}, model, map[string]struct{}{})
+		tAssert.True(ok)
+		tAssert.Len(record.Fields, 2)
+		_, ok = completionUnionRecord([]ast.TypeReference{ast.NamedType{Name: "Left"}, ast.PrimitiveType{Name: "string"}}, model, map[string]struct{}{})
+		tAssert.False(ok)
+		_, ok = completionUnionRecord([]ast.TypeReference{ast.RecordType{Fields: []ast.SchemaField{{Name: "id", Type: ast.PrimitiveType{Name: "string"}}}}, ast.RecordType{Fields: []ast.SchemaField{{Name: "id", Type: ast.PrimitiveType{Name: "int"}}}}}, model, map[string]struct{}{})
+		tAssert.False(ok)
+
+		tAssert.Equal(`"red"`, defaultLiteralForType(ast.NamedType{Name: "Color"}, model, map[string]struct{}{}))
+		tAssert.Equal(`""`, defaultLiteralForType(ast.ChoiceType{}, model, map[string]struct{}{}))
+		tAssert.Equal(`"red"`, defaultLiteralForType(ast.VariantType{Members: []ast.TypeReference{ast.NamedType{Name: "Color"}, ast.NamedType{Name: "Left"}}}, model, map[string]struct{}{}))
+		tAssert.Equal("{}", defaultLiteralForType(ast.VariantType{Members: []ast.TypeReference{ast.NamedType{Name: "Missing"}}}, model, map[string]struct{}{}))
+		tAssert.Equal("{}", defaultLiteralForType(ast.NamedType{Name: "Missing"}, model, map[string]struct{}{}))
+	})
+
+})
