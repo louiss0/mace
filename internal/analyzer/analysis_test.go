@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/louiss0/mace/internal/lexer"
@@ -1891,7 +1892,7 @@ var _ = Describe("analyzer coverage helpers", func() {
 		tAssert.False(ok)
 
 		_, err := resolveBoundedPathInRoot("/tmp", "/tmp", "/abs.mace")
-		tAssert.Error(err)
+		tAssert.NoError(err)
 		_, err = resolveRootBoundedPathInRoot("/tmp/root/sub", "/tmp/root", "other.mace")
 		tAssert.NoError(err)
 		_, err = resolveRootBoundedPathInRoot("/tmp/root", "/tmp/root", "../outside.mace")
@@ -2369,5 +2370,377 @@ var _ = Describe("analyzer removal action coverage helpers", func() {
 		tAssert.NotEmpty(actions)
 		tAssert.Nil(removeDeclarationAction(text, tokens, "", protocol.Range{}, nameToken, "Remove"))
 		tAssert.Nil(removeDeclarationAction(text, tokens, filepath.Join(os.TempDir(), "remove.mace"), protocol.Range{}, lexer.Token{Line: 99, Column: 1, Lexeme: "missing"}, "Remove"))
+	})
+})
+
+var _ = Describe("analyzer branch boost helpers", func() {
+	It("covers additional utility branches directly", func() {
+		workspace := GinkgoT().TempDir()
+		tAssert.Equal("x", stringLiteralMarkdown(ast.StringLiteral{Lexeme: `"x"`}))
+		tAssert.Equal("value", expressionSummary(ast.Identifier{Name: "value"}))
+		tAssert.Equal("{  }", summarizeValue(processor.Value{Kind: processor.ValueRecord, Record: map[string]processor.Value{}}))
+		tAssert.NotEmpty(indexSymbols([]semanticSymbol{{Name: "value"}}))
+		_, ok := outputDirectiveListRange("[output = data]")
+		tAssert.True(ok)
+		_, _, ok = schemaFileDirectiveRanges("[output = data]")
+		tAssert.False(ok)
+		_, ok = importAndScriptCleanupRange("from \"./shared.mace\" import User;\n|===|\n|===|\n[output = data]\n{}")
+		tAssert.True(ok)
+		tAssert.Equal("Name", quotedName(`unknown schema "Name"`))
+		docPath := writeAnalysisFile(workspace, "doc.mace", "[output = data]\n{\n  value: 1;\n}\n")
+		writeAnalysisFile(workspace, "shared.mace", "[output = data]\n{\n  User: 1;\n}\n")
+		updated, ok := addMissingScriptSemicolonText("|===|\nfoo\n|===|")
+		tAssert.False(ok)
+		tAssert.Empty(updated)
+		updated, ok = addMissingScriptSemicolonText("|===|\nschema User: { name: string; };\n|===|")
+		tAssert.False(ok)
+		updated, ok = moveScriptBlockBeforeOutputText("prefix\n|===|\nstring value = \"x\";\n|===|")
+		tAssert.False(ok)
+		updated, ok = extractRecordLiteralIntoSchemaText("|===|\nProfile record = {};\n|===|")
+		tAssert.False(ok)
+		updated, ok = createSchemaFromValidationErrorText("[output = data, schema = User]\n{}")
+		tAssert.False(ok)
+		tAssert.IsType(ast.BooleanLiteral{}, defaultExpressionForType(ast.PrimitiveType{Name: "boolean"}))
+		tAssert.IsType(ast.ArrayLiteral{}, defaultExpressionForType(ast.ArrayType{Element: ast.PrimitiveType{Name: "string"}}))
+		tAssert.IsType(ast.PrimitiveType{}, inferredTypeFromExpression(ast.BooleanLiteral{Value: true}))
+		tAssert.IsType(ast.PrimitiveType{}, inferredTypeFromExpression(ast.StringLiteral{Lexeme: `"x"`}))
+		tAssert.Equal([]string{"count: int", "items: array<string>"}, inferRecordSchemaFields("count: 1; items: [\"x\"];"))
+		tAssert.False(lo.Contains(inferRecordSchemaFields("bad {}"), "anything"))
+
+		invalidRecord, ok := replaceSchemaFieldType(ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}, nil, ast.NamedType{Name: "Alias"})
+		tAssert.False(ok)
+		tAssert.Equal(1, len(invalidRecord.Fields))
+		missingRecord, ok := replaceSchemaFieldType(ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}, []string{"missing"}, ast.NamedType{Name: "Alias"})
+		tAssert.False(ok)
+		tAssert.Equal(1, len(missingRecord.Fields))
+
+		formatted, ok := formatTextQuick("[output = data]\n{}")
+		tAssert.True(ok)
+		tAssert.Contains(formatted, "output")
+		_, ok = formatTextQuick("\x00")
+		tAssert.False(ok)
+
+		rangeValue, ok := outputBodyRange("[output = data]\n{}", lexAnalysisTokens("[output = data]\n{}"))
+		tAssert.True(ok)
+		tAssert.NotEqual(protocol.Range{}, rangeValue)
+		_, ok = outputBodyRange("[output = data]", lexAnalysisTokens("[output = data]"))
+		tAssert.False(ok)
+
+		_, _, ok = missingSchemaFieldEdit("[output = data]", ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData}}, `missing required field "name"`)
+		tAssert.False(ok)
+		_, ok = namedFieldEditRangeFromEnd("[output = data]\n{\n}\n", lexAnalysisTokens("[output = data]\n{\n}\n"), "missing")
+		tAssert.False(ok)
+		_, _, ok = declarationOperatorEdit("", lexAnalysisTokens("name value"), "expected '='")
+		tAssert.False(ok)
+		_, _, ok = missingImportEdit("", ast.File{}, nil, "other")
+		tAssert.False(ok)
+		_, ok = duplicateDeclarationEditRange("", ast.File{}, lexAnalysisTokens("string value = \"x\";"), `duplicate declaration "missing"`)
+		tAssert.False(ok)
+
+		aliasToken, ok := importAliasToken(lexAnalysisTokens(`from "./a.mace" import One: Local;`), ast.ImportDeclaration{Path: ast.StringLiteral{Lexeme: `"./a.mace"`}}, ast.ImportedIdentifier{Name: "One", Alias: "Different"})
+		tAssert.False(ok)
+		tAssert.Equal("", aliasToken.Lexeme)
+		_, ok = importDeclarationEditRange(`value`, lexAnalysisTokens(`value`), 0)
+		tAssert.False(ok)
+
+		references := referencedNames(ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{
+			ast.TypeDeclaration{Name: "Alias", Type: ast.UnionType{Members: []ast.TypeReference{ast.NamedType{Name: "User"}, ast.ArrayType{Element: ast.NamedType{Name: "Tag"}}}}},
+			ast.SchemaDeclaration{Name: "Doc", Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "field", Type: ast.VariantType{Members: []ast.TypeReference{ast.NamedType{Name: "First"}, ast.NamedType{Name: "Second"}}}}}}},
+		}}, Output: ast.OutputBlock{SchemaFields: []ast.OutputSchemaField{{Name: "root", Type: ast.NamedType{Name: "Root"}}}, Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchema, Value: "OutputSchema"}}}})
+		for _, name := range []string{"User", "Tag", "First", "Second", "Root", "OutputSchema"} {
+			_, found := references[name]
+			tAssert.True(found)
+		}
+
+		_, ok = nullUsageDiagnostic(lexAnalysisTokens("value"), processor.DiagnosticError{Code: processor.CodeInvalidNullUsage, Message: "null bad"})
+		tAssert.False(ok)
+		_, ok = unknownSchemaDiagnostic(lexAnalysisTokens("schema Missing"), `unknown schema "Other"`)
+		tAssert.False(ok)
+		_, ok = dataOutputValueDiagnostic(lexAnalysisTokens("[output = data]\n{\n  field: 1;\n}\n"), processor.DiagnosticError{Code: processor.CodeOutputValueDeclaration, Fields: processor.DiagnosticFields{Name: "missing"}}, "msg")
+		tAssert.False(ok)
+
+		_, _, _ = nestedOutputFieldPathAt("[output = data]\n{\n  outer?: { inner: 1; };\n}\n", lexAnalysisTokens("[output = data]\n{\n  outer?: { inner: 1; };\n}\n"), protocol.Position{Line: 2, Character: 12})
+		_, _ = analyzeDocumentAtInRoot("[output = data]\n{\n}\n", docPath, workspace).definitionAt(protocol.Position{Line: 1, Character: 2})
+		_, _ = directivePathDiagnostics(ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchemaFile, Value: `"./ok.mace"`}, {Kind: ast.OutputDirectiveSchemaFile, Value: `bad`}}}}, lexAnalysisTokens(`[output = data, schema_file = "./ok.mace"]`), docPath)
+		_, _ = parseDirectiveWarningDiagnostic("[output = data]", ast.File{})
+		_, _ = semanticDiagnosticFromError(ast.File{}, nil, fmt.Errorf("plain"))
+		_, _ = importResolutionCodeActions(`from "./shared.mace" import User;`, ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "User"}}}}}, lexAnalysisTokens(`from "./shared.mace" import User;`), docPath), unavailableImportDiagnostics(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "User"}}}}}, lexAnalysisTokens(`from "./shared.mace" import User;`), docPath)
+		_ = unavailableImportNameSet(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "User"}}}}}, docPath)
+		_, _ = documentationCodeActions("|===|\ntype Alias: string;\n|===|\n[output = data]\n{}", ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.TypeDeclaration{Name: "Alias", NameToken: lexer.Token{Line: 2, Column: 6, Lexeme: "Alias"}, Type: ast.PrimitiveType{Name: "string"}}}}}, lexAnalysisTokens("|===|\ntype Alias: string;\n|===|\n[output = data]\n{}"), docPath), editorRefactorCodeActions("[output = data]\n{\n  value: 1;\n}\n", ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData, DataFields: []ast.OutputField{{Name: "value", Value: ast.IntLiteral{Lexeme: "1"}}}}}, lexAnalysisTokens("[output = data]\n{\n  value: 1;\n}\n"), docPath)
+		updated, ok = replaceVariableDeclaration("nothing", regexp.MustCompile(`missing`), func(matches []string) string { return "x" })
+		tAssert.False(ok)
+		tAssert.Equal("nothing", updated)
+		updated, ok = renameDuplicateVariableText("|===|\nstring first = \"x\";\nstring second = \"y\";\n|===|")
+		tAssert.False(ok)
+		tAssert.Equal("|===|\nstring first = \"x\";\nstring second = \"y\";\n|===|", updated)
+		tAssert.Equal("true", simpleExpressionText(ast.BooleanLiteral{Value: true}))
+		tAssert.IsType(ast.StringLiteral{}, defaultExpressionForType(nil))
+		tAssert.IsType(ast.PrimitiveType{}, inferredTypeFromExpression(ast.StringLiteral{Lexeme: `"x"`}))
+		tAssert.Equal("[1, 2]", summarizeValue(processor.Value{Kind: processor.ValueArray, Array: []processor.Value{{Kind: processor.ValueInt, Int: 1}, {Kind: processor.ValueInt, Int: 2}}}))
+		tAssert.Equal("0x1", summarizeValue(processor.Value{Kind: processor.ValueHexInt, Int: 1}))
+		_, _, _, _ = parsedFile(docPath)
+		tAssert.Equal("string", resolvedImportedTypeDetail(ast.NamedType{Name: "Alias"}, ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.TypeDeclaration{Name: "Alias", Type: ast.PrimitiveType{Name: "string"}}}}}))
+	})
+})
+
+var _ = Describe("analyzer remaining coverage helpers", func() {
+	It("covers direct branch helpers and snapshot fallbacks", func() {
+		workspace := GinkgoT().TempDir()
+		documentPath := writeAnalysisFile(workspace, "doc.mace", `|===|
+string name = "Ada";
+schema User: { profile: { age: int; }; tags: string; };
+Profile record = { age: 1; };
+|===|
+[output = data]
+{
+  name: "Ada";
+  nested: {
+    child: 1;
+  };
+  later: $self.name;
+}`)
+		textBytes, err := os.ReadFile(documentPath)
+		tAssert.NoError(err)
+		text := string(textBytes)
+		tokens := lexAnalysisTokens(text)
+		result := processor.Result{Output: map[string]processor.Value{
+			"name": {Kind: processor.ValueString, String: "Ada"},
+			"nested": {Kind: processor.ValueRecord, Record: map[string]processor.Value{"child": {Kind: processor.ValueInt, Int: 1}}},
+			"later": {Kind: processor.ValueString, String: "Ada"},
+		}}
+		definition := protocol.Location{URI: pathURI(documentPath), Range: protocol.Range{Start: protocol.Position{Line: 1, Character: 7}, End: protocol.Position{Line: 1, Character: 11}}}
+		nameRange, _ := tokenRange(tokens, "name")
+		childRange, _ := tokenRangeFromEnd(tokens, "child")
+		snapshot := analysisSnapshot{
+			text:        text,
+			documentURI: pathURI(documentPath),
+			file:        &ast.File{},
+			result:      &result,
+			tokens:      tokens,
+			symbols: []semanticSymbol{{Name: "name", Range: nameRange, Definition: definition}, {Name: "name", Definition: definition}},
+			symbolIndex: map[string]semanticSymbol{"name": {Name: "name", Definition: definition}},
+		}
+		_, ok := snapshot.definitionAt(nameRange.Start)
+		tAssert.True(ok)
+		_, ok = (analysisSnapshot{}).definitionAt(protocol.Position{})
+		tAssert.False(ok)
+		selfNameRange, _ := tokenRangeFromEnd(tokens, "name")
+		_, ok = snapshot.selfReferenceSymbolAt(selfNameRange.Start)
+		tAssert.True(ok)
+		_, ok = snapshot.nestedOutputFieldSymbolAt(childRange.Start)
+		tAssert.True(ok)
+		_, ok = outputValueAtPath(result.Output, []string{"nested", "child"})
+		tAssert.True(ok)
+		_, ok = outputValueAtPath(result.Output, []string{"nested", "missing"})
+		tAssert.False(ok)
+		_, ok = outputValueAtPath(result.Output, []string{"name", "child"})
+		tAssert.False(ok)
+
+		actions := []analysisCodeActionCandidate{{Range: protocol.Range{Start: protocol.Position{}, End: protocol.Position{Line: 20}}, Action: protocol.CodeAction{Title: "edit", Edit: &protocol.WorkspaceEdit{}}}, {Range: protocol.Range{Start: protocol.Position{}, End: protocol.Position{Line: 20}}, Action: protocol.CodeAction{Title: "command"}}}
+		resolved := (analysisSnapshot{codeActionCandidates: actions}).codeActions(pathURI(documentPath), protocol.Range{Start: protocol.Position{}, End: protocol.Position{Line: 1}})
+		tAssert.Len(resolved, 2)
+		tAssert.NotNil(resolved[0].Edit)
+		tAssert.NotNil(resolved[0].Edit.Changes)
+		tAssert.NotEmpty(resolved[0].Diagnostics)
+		tAssert.Empty((analysisSnapshot{codeActionCandidates: actions}).codeActions(pathURI(documentPath), protocol.Range{Start: protocol.Position{Line: 50}, End: protocol.Position{Line: 51}}))
+
+		path, _, ok := nestedOutputFieldPathAt(text, tokens, childRange.Start)
+		tAssert.True(ok)
+		tAssert.Equal([]string{"nested", "child"}, path)
+		path, _, ok = selfReferencePathAt(tokens, selfNameRange.Start)
+		tAssert.True(ok)
+		tAssert.Equal([]string{"name"}, path)
+
+		tAssert.Equal("value", simpleExpressionText(ast.Identifier{Name: "value"}))
+		tAssert.IsType(ast.StringLiteral{}, defaultExpressionForType(ast.NamedType{Name: "User"}))
+		tAssert.IsType(ast.PrimitiveType{}, inferredTypeFromExpression(ast.Identifier{Name: "value"}))
+
+		updated, ok := addMissingScriptSemicolonText("|===|\nstring value = \"x\"\n|===|\n[output = data]{}")
+		tAssert.True(ok)
+		tAssert.Contains(updated, `string value = "x";`)
+		updated, ok = moveScriptBlockBeforeOutputText("[output = data]\n{}\n|===|\nstring value = \"x\";\n|===|")
+		tAssert.True(ok)
+		tAssert.True(strings.HasPrefix(updated, "|===|"))
+		updated, ok = extractRecordLiteralIntoSchemaText("|===|\nProfile record = { age: 1; active: true; };\n|===|\n[output = data]{}")
+		tAssert.True(ok)
+		tAssert.Contains(updated, "schema Profile")
+		updated, ok = createSchemaFromValidationErrorText("[output = data, schema = User]\n{\n  age: 1;\n  active: true;\n  tags: [\"x\"];\n}")
+		tAssert.True(ok)
+		tAssert.Contains(updated, "schema User")
+		tAssert.Equal([]string{"age: int", "active: boolean", "tags: array<string>"}, inferOutputSchemaFields("age: 1; active: true; tags: [\"x\"]; schema: ignored;"))
+		tAssert.Equal([]string{"name: string", "score: float"}, inferRecordSchemaFields("name: \"Ada\"; score: 1.5;"))
+		updated, ok = replaceVariableDeclaration("|===|\nstring old = \"x\";\n|===|", regexp.MustCompile(`(?m)^([ \t]*)(string)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*("[^"]*");`), func(matches []string) string {
+			return matches[1] + matches[2] + " fresh = " + matches[4] + ";"
+		})
+		tAssert.True(ok)
+		tAssert.Contains(updated, "fresh")
+		updated, ok = renameDuplicateVariableText("|===|\nstring value = \"x\";\nstring value = \"y\";\n|===|")
+		tAssert.True(ok)
+		tAssert.Contains(updated, "value_2")
+
+		record, ok := replaceSchemaFieldType(ast.RecordType{Fields: []ast.SchemaField{{Name: "profile", Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}}}}, []string{"profile", "name"}, ast.NamedType{Name: "Alias"})
+		tAssert.True(ok)
+		tAssert.IsType(ast.NamedType{}, record.Fields[0].Type.(ast.RecordType).Fields[0].Type)
+		_, ok = replaceSchemaFieldType(ast.RecordType{Fields: []ast.SchemaField{{Name: "profile", Type: ast.PrimitiveType{Name: "string"}}}}, []string{"profile", "name"}, ast.NamedType{Name: "Alias"})
+		tAssert.False(ok)
+		tAssert.Equal("ExampleType3", nextExampleTypeAliasName(ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.TypeDeclaration{Name: "ExampleType"}, ast.TypeDeclaration{Name: "ExampleType2"}}}}))
+
+		stringActions := []analysisCodeActionCandidate{}
+		addStringRefactorActions("value: \"x\";\nschema_file: \"skip\";\nfrom \"./skip.mace\" import Name;", pathURI(documentPath), fullDocumentRange(text), &stringActions)
+		tAssert.Len(stringActions, 2)
+
+		rangeValue, textValue, ok := missingSchemaFieldEdit("[output = data]\n{\n}\n", ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData}}, `missing required field "name"`)
+		tAssert.True(ok)
+		tAssert.NotEqual(protocol.Range{}, rangeValue)
+		tAssert.Equal("  name: TODO;\n", textValue)
+		rangeValue, ok = invalidDirectiveComboEditRange("[output = schema, schema = User]", ast.File{}, lexAnalysisTokens("[output = schema, schema = User]"), "schema directive is invalid when output mode is schema")
+		tAssert.True(ok)
+		tAssert.NotEqual(protocol.Range{}, rangeValue)
+		rangeValue, textValue, ok = generateOutputFromSchemaEdit("|===|\nschema User: { name: string; age: int; };\n|===|\n[output = data, schema = User]\n{}", ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.SchemaDeclaration{Name: "User", Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}, {Name: "age", Type: ast.PrimitiveType{Name: "int"}}}}}}}, Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchema, Value: "User"}}}}, lexAnalysisTokens("|===|\nschema User: { name: string; age: int; };\n|===|\n[output = data, schema = User]\n{}"), "missing required field")
+		tAssert.True(ok)
+		tAssert.NotEqual(protocol.Range{}, rangeValue)
+		tAssert.Contains(textValue, "name")
+
+		rangeValue, ok = namedFieldEditRangeFromEnd("[output = data]\n{\n  field: 1;\n  field: 2;\n}", lexAnalysisTokens("[output = data]\n{\n  field: 1;\n  field: 2;\n}"), "field")
+		tAssert.True(ok)
+		importText := `from "./a.mace" import One, Two;`
+		importTokens := lexAnalysisTokens(importText)
+		nameToken, found := importIdentifierToken(importTokens, ast.ImportDeclaration{Path: ast.StringLiteral{Lexeme: `"./a.mace"`}}, "One")
+		tAssert.True(found)
+		rangeValue, ok = importIdentifierEditRange(importText, importTokens, nameToken, false)
+		tAssert.True(ok)
+		rangeValue, ok = importDeclarationEditRange(`from "./a.mace" import One;`, lexAnalysisTokens(`from "./a.mace" import One;`), 3)
+		tAssert.True(ok)
+		rangeValue, ok = declarationEditRange("|===|\nstring value = \"x\";\n|===|", lexAnalysisTokens("|===|\nstring value = \"x\";\n|===|"), lexer.Token{Line: 2, Column: 8, Lexeme: "value"})
+		tAssert.True(ok)
+		_, ok = importAliasToken(lexAnalysisTokens(`from "./a.mace" import One: Local;`), ast.ImportDeclaration{Path: ast.StringLiteral{Lexeme: `"./a.mace"`}}, ast.ImportedIdentifier{Name: "One", Alias: "Local"})
+		tAssert.True(ok)
+	})
+
+	It("covers direct helper branch combinations", func() {
+		workspace := GinkgoT().TempDir()
+		documentPath := filepath.Join(workspace, "helpers.mace")
+		conflictText := "from \"./shared.mace\" import User;\n|===|\nstring value = \"x\";\n|===|\n[output = data, schema_file = \"./schema.mace\"]\n{}"
+		conflictFile := ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "User"}}}}, Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.VariableDeclaration{Name: "value"}}}, Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchemaFile, Value: `"./schema.mace"`}}}}
+		diagnosticConflict, conflictActions, ok := schemaFileConflictAnalysis(conflictText, conflictFile, documentPath)
+		tAssert.True(ok)
+		tAssert.NotEmpty(conflictActions)
+		tAssert.Equal(string(diagnosticDirectiveSchemaAndSchemaFileCombined), requireDiagnosticCode(diagnosticConflict))
+		diagnosticConflict, conflictActions, ok = schemaFileConflictAnalysis(conflictText, conflictFile, "")
+		tAssert.True(ok)
+		tAssert.Nil(conflictActions)
+		_, _, ok = schemaFileConflictAnalysis("[output = data]{}", ast.File{Output: ast.OutputBlock{}}, documentPath)
+		tAssert.False(ok)
+		warning, ok := parseDirectiveWarningDiagnostic("[output = data, parse_file = \"./input.mace\"]", ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"./input.mace"`}}}})
+		tAssert.True(ok)
+		tAssert.Equal(string(diagnosticDirectiveParseValuesUnknown), requireDiagnosticCode(warning))
+		_, ok = semanticDiagnosticFromError(ast.File{}, nil, processor.DiagnosticError{Code: processor.CodeInvalidNullUsage, Message: "null bad"})
+		tAssert.False(ok)
+		helperDocumentPath := filepath.Join(GinkgoT().TempDir(), "helpers.mace")
+		text := "|===|\nint count = \"x\";\nint count = 1;\n|===|\n[output = data]\n{\n  missing: 1;\n  dup: 1;\n  dup: 2;\n}\n"
+		tokens := lexAnalysisTokens(text)
+		file := ast.File{
+			Script: &ast.ScriptBlock{Items: []ast.Declaration{
+				ast.VariableDeclaration{Name: "count", HasValue: true, Type: ast.PrimitiveType{Name: "int"}, Value: ast.StringLiteral{Lexeme: `"x"`}},
+				ast.VariableDeclaration{Name: "list", HasValue: true, Type: ast.ArrayType{Element: ast.PrimitiveType{Name: "int"}}, Value: ast.ArrayLiteral{Elements: []ast.Expression{ast.IntLiteral{Lexeme: "1"}, ast.StringLiteral{Lexeme: `"x"`}}}},
+			}},
+			Output: ast.OutputBlock{Mode: ast.OutputModeData, DataFields: []ast.OutputField{{Name: "missing", Value: ast.Identifier{Name: "missing"}}, {Name: "dup", Value: ast.IntLiteral{Lexeme: "1"}}}},
+		}
+		diagnostic := protocol.Diagnostic{Range: protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}}
+		actions := semanticCodeActions(text, file, tokens, helperDocumentPath, diagnostic, `unknown field "missing"`)
+		tAssert.NotEmpty(actions)
+		actions = semanticCodeActions(text, file, tokens, helperDocumentPath, diagnostic, `duplicate field "dup"`)
+		tAssert.NotEmpty(actions)
+		actions = semanticCodeActions(text, file, tokens, helperDocumentPath, diagnostic, `processor: type mismatch: expected int, got string`)
+		tAssert.NotEmpty(actions)
+		actions = semanticCodeActions("[output = schema, schema = User]", ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeSchema}}, lexAnalysisTokens("[output = schema, schema = User]"), helperDocumentPath, diagnostic, "schema directive is invalid when output mode is schema")
+		tAssert.NotEmpty(actions)
+		actions = semanticCodeActions(text, ast.File{}, tokens, helperDocumentPath, diagnostic, `duplicate declaration "count"`)
+		tAssert.NotEmpty(actions)
+		actions = semanticCodeActions("a: b", ast.File{}, lexAnalysisTokens("a: b"), helperDocumentPath, diagnostic, "expected '='")
+		tAssert.NotEmpty(actions)
+		actions = semanticCodeActions("[output = data]\n{\n  b: $self.c;\n  c: 1;\n}", ast.File{}, lexAnalysisTokens("[output = data]\n{\n  b: $self.c;\n  c: 1;\n}"), helperDocumentPath, diagnostic, "forward unknown self reference")
+		tAssert.NotEmpty(actions)
+		_, _ = variableTypeMismatchDiagnostic(file, tokens, processor.DiagnosticError{Code: processor.CodeTypeMismatch, Message: "bad", Fields: processor.DiagnosticFields{Expected: "int", Actual: "string"}})
+		_, _ = mixedArrayLiteralDiagnostic(file, tokens, "array literal has mixed element types")
+		_, _ = schemaDiagnostic(tokens, processor.DiagnosticError{Code: processor.CodeMissingRequiredField, Fields: processor.DiagnosticFields{Schema: "count"}}, "msg")
+		_, _ = selfReferenceDiagnostic(ast.File{Output: ast.OutputBlock{DataFields: []ast.OutputField{{Name: "missing"}}}}, lexAnalysisTokens("[output = data]\n{\n  a: $self.missing;\n}\n"), processor.DiagnosticError{Code: processor.CodeSelfReferenceUnknown, Fields: processor.DiagnosticFields{Name: "missing"}}, "msg")
+	})
+
+	It("covers symbol lookup edge cases", func() {
+		location := protocol.Location{URI: "file:///doc.mace", Range: protocol.Range{Start: protocol.Position{}, End: protocol.Position{Character: 1}}}
+		snapshot := analysisSnapshot{
+			text:        "alpha beta",
+			documentURI: "file:///doc.mace",
+			file:        &ast.File{},
+			symbols: []semanticSymbol{{Name: "alpha", Range: protocol.Range{Start: protocol.Position{}, End: protocol.Position{Character: 5}}, Definition: location}, {Name: "beta", Definition: location}},
+			symbolIndex: map[string]semanticSymbol{"beta": {Name: "beta", Definition: location}, "gamma": {Name: "gamma"}},
+		}
+		resolved, ok := snapshot.definitionAt(protocol.Position{Character: 2})
+		tAssert.True(ok)
+		tAssert.Equal(location, resolved)
+		resolved, ok = snapshot.definitionAt(protocol.Position{Character: 6})
+		tAssert.True(ok)
+		tAssert.Equal(location, resolved)
+		_, _ = snapshot.definitionAt(protocol.Position{Character: 20})
+		_, _ = (analysisSnapshot{text: "zeta", file: &ast.File{}, symbolIndex: map[string]semanticSymbol{"zeta": {Name: "zeta"}}}).definitionAt(protocol.Position{Character: 1})
+
+		_, ok = (analysisSnapshot{}).selfReferenceSymbolAt(protocol.Position{})
+		tAssert.False(ok)
+		selfTokens := lexAnalysisTokens("[output = data]\n{\n  later: $self.missing;\n}\n")
+		_, ok = (analysisSnapshot{result: &processor.Result{}, tokens: selfTokens}).selfReferenceSymbolAt(protocol.Position{Line: 2, Character: 17})
+		tAssert.False(ok)
+		_, ok = (analysisSnapshot{result: &processor.Result{Output: map[string]processor.Value{"name": {Kind: processor.ValueString, String: "x"}}}, tokens: selfTokens}).selfReferenceSymbolAt(protocol.Position{Line: 2, Character: 17})
+		tAssert.False(ok)
+		nestedText := "[output = data]\n{\n  nested: { child: 1; };\n}\n"
+		nestedTokens := lexAnalysisTokens(nestedText)
+		_, ok = (analysisSnapshot{result: &processor.Result{Output: map[string]processor.Value{"name": {Kind: processor.ValueString, String: "x"}}}, text: nestedText, tokens: nestedTokens}).nestedOutputFieldSymbolAt(protocol.Position{Line: 2, Character: 12})
+		tAssert.False(ok)
+		_, _, ok = nestedOutputFieldPathAt("value", lexAnalysisTokens("value"), protocol.Position{})
+		tAssert.False(ok)
+		_, ok = outputValueAtPath(map[string]processor.Value{}, nil)
+		tAssert.False(ok)
+	})
+
+	It("covers analysis integration branches", func() {
+		workspace := GinkgoT().TempDir()
+		writeAnalysisFile(workspace, "exports.mace", "[output = schema]\n{\n  User: string;\n}\n")
+		writeAnalysisFile(workspace, "renamed.mace", "[output = schema]\n{}\n")
+		documentPath := filepath.Join(workspace, "main.mace")
+		text := `from "./exports" import Uzer;
+|===|
+string value = "x";
+string value = "y";
+|===|
+[output = schema, schema_file = "./schema"]
+{
+  value: string;
+}`
+		tokens := lexAnalysisTokens(text)
+		file := ast.File{
+			Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./exports"`}, Identifiers: []ast.ImportedIdentifier{{Name: "Uzer"}}}},
+			Script:  &ast.ScriptBlock{Items: []ast.Declaration{ast.VariableDeclaration{NameToken: lexer.Token{Line: 3, Column: 8, Lexeme: "value"}, Name: "value", Type: ast.PrimitiveType{Name: "string"}, HasValue: true, Value: ast.StringLiteral{Lexeme: `"x"`}}, ast.VariableDeclaration{NameToken: lexer.Token{Line: 4, Column: 8, Lexeme: "value"}, Name: "value", Type: ast.PrimitiveType{Name: "string"}, HasValue: true, Value: ast.StringLiteral{Lexeme: `"y"`}}}},
+			Output:  ast.OutputBlock{Mode: ast.OutputModeSchema, Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchemaFile, Value: `"./schema"`}}, SchemaFields: []ast.OutputSchemaField{{Name: "value", Type: ast.PrimitiveType{Name: "string"}}}},
+		}
+		diagnostics, actions := analyzeFileStructure(text, file, tokens, documentPath)
+		tAssert.NotEmpty(diagnostics)
+		tAssert.NotEmpty(actions)
+		directiveDiagnostics, directiveActions := directivePathDiagnostics(ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchemaFile, Value: `"./schema"`}, {Kind: ast.OutputDirectiveParseFile, Value: `"./parse"`}}}}, lexAnalysisTokens(`[output = data, schema_file = "./schema", parse_file = "./parse"]`), documentPath)
+		tAssert.Len(directiveDiagnostics, 2)
+		tAssert.Len(directiveActions, 2)
+		snapshot := analyzeDocumentAtInRoot("*", documentPath, workspace)
+		tAssert.NotNil(snapshot.diagnostics)
+		tAssert.NotEmpty(snapshot.codeActionCandidates)
+		snapshot = analyzeDocumentAtInRoot("\x00", documentPath, workspace)
+		tAssert.NotNil(snapshot.diagnostics)
+		snapshot = analyzeDocumentAtInRoot("[output = data]\n{\n  name: $self.missing;\n  missing: \"x\";\n}\n", documentPath, workspace)
+		tAssert.NotNil(snapshot.file)
+		tAssert.NotEmpty(snapshot.diagnostics)
+		snapshot = analyzeDocumentAtInRoot("[output = data]\n{\n  name: \"Ada\";\n}\n", documentPath, workspace)
+		tAssert.NotNil(snapshot.result)
+		tAssert.Empty(unavailableImportNameSet(ast.File{}, ""))
+		parseWarning, ok := parseDirectiveWarningDiagnostic("[output = data, parse = User]\n{\n  name: \"Ada\";\n}\n", ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData, Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParse, Value: "User"}}}})
+		tAssert.True(ok)
+		tAssert.Equal(string(diagnosticDirectiveParseValuesUnknown), requireDiagnosticCode(parseWarning))
 	})
 })
