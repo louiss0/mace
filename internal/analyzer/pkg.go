@@ -572,9 +572,6 @@ func positionFromIndex(text string, index int) protocol.Position {
 
 func identifierPrefixAt(text string, position protocol.Position) string {
 	index := positionIndex(text, position)
-	if index < 0 {
-		return ""
-	}
 
 	start := index
 	for start > 0 && isIdentifierCharacter(text[start-1]) {
@@ -592,18 +589,11 @@ func identifierAt(text string, position protocol.Position) (string, bool) {
 
 	start := positionIndex(text, rangeValue.Start)
 	end := positionIndex(text, rangeValue.End)
-	if start < 0 || end < start || end > len(text) {
-		return "", false
-	}
-
 	return text[start:end], true
 }
 
 func identifierRangeAt(text string, position protocol.Position) (protocol.Range, bool) {
 	index := positionIndex(text, position)
-	if index < 0 || index > len(text) {
-		return protocol.Range{}, false
-	}
 
 	start := index
 	for start > 0 && isIdentifierCharacter(text[start-1]) {
@@ -624,9 +614,6 @@ func identifierRangeAt(text string, position protocol.Position) (protocol.Range,
 
 func isDirectivePosition(text string, position protocol.Position) bool {
 	index := positionIndex(text, position)
-	if index < 0 || index > len(text) {
-		return false
-	}
 
 	openIndex := strings.LastIndex(text[:index], "[")
 	if openIndex < 0 {
@@ -686,11 +673,7 @@ func utf16LineLength(text string) protocol.UInteger {
 			break
 		}
 
-		runeLength := utf16.RuneLen(runeValue)
-		if runeLength < 0 {
-			continue
-		}
-		lineLength += protocol.UInteger(runeLength)
+		lineLength += protocol.UInteger(utf16.RuneLen(runeValue))
 	}
 
 	return lineLength

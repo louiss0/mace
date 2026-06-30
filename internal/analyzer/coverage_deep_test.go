@@ -1,12 +1,12 @@
 package analyzer
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
+	"github.com/louiss0/mace/internal/lexer"
 	"github.com/louiss0/mace/internal/parser/ast"
 	"github.com/louiss0/mace/internal/processor"
 	. "github.com/onsi/ginkgo/v2"
@@ -144,6 +144,20 @@ from "./shared.mace" import User, Runtime;
 		_, _ = unquotedStringChoiceLabel(`"Ada"`)
 		_, _ = unquotedStringChoiceLabel("Ada")
 		_ = buildCompletionModel(ast.File{}, root, root, map[string]completionModel{})
+		_, _, _ = importedCompletionModel(sharedPath, root, map[string]completionModel{})
+		_ = parseFileOutputDeclarationDefinitions(snapshot.file.Output.Directives, root, root, map[string]completionModel{})
+		_, _ = parseFileOutputSchemaRecord(snapshot.file.Output.Directives, root, root, map[string]completionModel{})
+		_, _ = parseFileOutputExportedRecord(snapshot.file.Output.Directives, root, root, map[string]completionModel{})
+		_, _, _ = importedMemberCompletionRootType(*snapshot.file, []string{"User"}, root, root, map[string]completionModel{})
+		_, _ = importAsSchemaRecord(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeSchema, SchemaFields: []ast.OutputSchemaField{{Name: "User", Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}}}}}, completionModel{schemas: map[string]ast.RecordType{"User": {Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}}})
+		_, _ = importAsDataRecord(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData, DataFields: []ast.OutputField{{Name: "user", Value: ast.StringLiteral{Lexeme: `"x"`}}}}}, completionModel{})
+		_ = parseInputDeclarationDefinitions(ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"./shared.mace"`}}}}, root, root)
+		_, _ = parseInputCompletionRecord(ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParse, Value: "User"}, {Kind: ast.OutputDirectiveSchema, Value: "User"}, {Kind: ast.OutputDirectiveParseFile, Value: `"./shared.mace"`}}}}, completionModel{schemas: map[string]ast.RecordType{"User": {Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}}}, root, root, map[string]completionModel{})
+		_, _ = completionChoiceFromMembers([]ast.Expression{ast.StringLiteral{Lexeme: `"Ada"`}, ast.IntLiteral{Lexeme: "1"}}, completionModel{}, map[string]struct{}{})
+		_, _ = completionChoiceMemberValues(ast.StringLiteral{Lexeme: `"Ada"`}, completionModel{}, map[string]struct{}{})
+		_ = defaultLiteralForType(ast.NamedType{Name: "Alias"}, completionModel{aliases: map[string]ast.TypeReference{"Alias": ast.PrimitiveType{Name: "string"}}}, map[string]struct{}{})
+		_, _ = directoryEntries(root, root, "./", nil, true)
+		_ = itemsFromDeclarations([]declarationDefinition{{Name: "User", Kind: protocol.CompletionItemKindStruct, Detail: "schema"}}, "Us")
 	})
 
 	It("covers resolution and completion value helpers", func() {
@@ -218,6 +232,112 @@ string digits = ["x", "y"];
 		_, _ = parsedVariableMemberCompletionItems(doc, uri, "user.profile.", protocol.Position{Line: 6, Character: 18})
 	})
 
+	It("covers analysis helper branches", func() {
+		workspace := GinkgoT().TempDir()
+		sharedPath := filepath.Join(workspace, "shared.mace")
+		tAssert.NoError(os.WriteFile(sharedPath, []byte(`
+[output = schema]
+{
+  User: { name: string; profile: { city: string; }; tags: string; };
+  Runtime: { env: string; };
+}
+`), 0o644))
+		documentPath := filepath.Join(workspace, "doc.mace")
+		text := `|===|
+from "./shared.mace" import User, Runtime;
+type Alias: string;
+schema Doc: { field: string; };
+Profile record = { age: 1; active: true; };
+|===|
+[output = data, schema = User, schema_file = "./shared.mace", parse = Runtime, parse_file = "./shared.mace"]
+{
+  user: { name: "Ada"; profile: { city: "LA"; }; tags: "x"; };
+  list: ["a", "b"];
+  mixed: ["a", 1];
+  item: values[0];
+  self_ref: $self.user.profile;
+}
+`
+		tAssert.NoError(os.WriteFile(documentPath, []byte(text), 0o644))
+		snapshot := AnalyzeDocumentAtInRoot(text, documentPath, workspace)
+		uri := protocol.DocumentUri(fileURI(documentPath))
+		_ = AnalyzeDocumentAt(text, documentPath)
+		_ = Diagnostics(snapshot)
+		_ = DocumentSymbols(text, snapshot)
+		_ = Hover(text, snapshot, protocol.Position{Line: 8, Character: 10})
+		_, _ = Definition(snapshot, protocol.Position{Line: 2, Character: 6})
+		_ = CodeActions(snapshot, uri, protocol.Range{})
+		_ = simpleExpressionText(ast.BooleanLiteral{Value: true})
+		_ = simpleExpressionText(ast.Identifier{Name: "value"})
+		_ = defaultExpressionForType(ast.PrimitiveType{Name: "hex_int"})
+		_ = inferredTypeFromExpression(ast.HexFloatLiteral{Lexeme: "0x0.0"})
+		_ = stringLiteralMarkdown(ast.StringLiteral{Lexeme: `"Ada"`})
+		_, _ = parseInputSemanticSchemaName(ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParse, Value: "Runtime"}}}}, workspace)
+		_, _ = parseInputSemanticSchemaName(ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"./shared.mace"`}}}}, workspace)
+		_ = importedSemanticSymbols(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "User"}, {Name: "Runtime"}}}}}, documentPath)
+		_, _ = importedImportAsSemanticSymbol(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeSchema, SchemaFields: []ast.OutputSchemaField{{Name: "User"}}}}, documentPath, "Shared")
+		_, _, _, _ = parsedFile(documentPath)
+		_ = summarizeValue(processor.Value{Kind: processor.ValueArray, Array: []processor.Value{{Kind: processor.ValueInt, Int: 1}}})
+		_ = expressionSummary(ast.MemberAccess{Target: ast.Identifier{Name: "user"}, Name: "profile"})
+		_ = indexSymbols([]semanticSymbol{{Name: "a"}})
+		_, _ = outputDirectiveListRange("[output = data, schema = User]")
+		_, _, _ = schemaFileDirectiveRanges("[output = data, schema_file = \"./shared.mace\"]")
+		_, _ = importAndScriptCleanupRange(text)
+		_ = quotedName(`unknown schema "Name"`)
+		_, _ = addMissingScriptSemicolonText(text)
+		_, _ = moveScriptBlockBeforeOutputText(text)
+		_, _ = extractRecordLiteralIntoSchemaText(text)
+		_ = inferRecordSchemaFields("count: 1; items: [\"x\"];")
+		_, _ = replaceVariableDeclaration(text, regexp.MustCompile(`(?m)^([ \t]*)(string)\s+([A-Za-z_][A-Za-z0-9_]*)\s*;`), func(matches []string) string {
+			return matches[1] + matches[2] + " " + matches[3] + " = \"\";"
+		})
+		_, _ = renameDuplicateVariableText(text)
+		_ = semanticCodeActions(text, ast.File{}, lexAnalysisTokens(text), documentPath, protocol.Diagnostic{}, "unknown field \"field\"")
+		_ = semanticCodeActions(text, ast.File{}, lexAnalysisTokens(text), documentPath, protocol.Diagnostic{}, "duplicate field \"field\"")
+		_ = semanticCodeActions(text, ast.File{}, lexAnalysisTokens(text), documentPath, protocol.Diagnostic{}, "processor: type mismatch: expected string, got int")
+		_ = semanticCodeActions(text, ast.File{}, lexAnalysisTokens(text), documentPath, protocol.Diagnostic{}, "schema directive is invalid when output mode is schema")
+		_ = semanticCodeActions(text, ast.File{}, lexAnalysisTokens(text), documentPath, protocol.Diagnostic{}, "missing required field \"field\"")
+		_ = semanticCodeActions(text, ast.File{}, lexAnalysisTokens(text), documentPath, protocol.Diagnostic{}, "import path not found")
+		_ = importResolutionCodeActions(text, ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "User"}}, ImportAs: &ast.ImportedIdentifier{Name: "Shared"}}}}, lexAnalysisTokens(text), documentPath)
+		_ = unavailableImportDiagnostics(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "Missing"}}}}}, lexAnalysisTokens(text), documentPath)
+		_ = unavailableImportNameSet(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "Missing"}}}}}, documentPath)
+		_ = documentationCodeActions(text, ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.TypeDeclaration{Name: "Alias", NameToken: lexer.Token{Line: 3, Column: 6, Lexeme: "Alias"}, Type: ast.PrimitiveType{Name: "string"}}, ast.VariableDeclaration{Name: "value", NameToken: lexer.Token{Line: 3, Column: 6, Lexeme: "value"}, Type: ast.PrimitiveType{Name: "string"}}}}}, lexAnalysisTokens(text), documentPath)
+		_ = editorRefactorCodeActions(text, ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.SchemaDeclaration{Name: "Doc", NameToken: lexer.Token{Line: 4, Column: 8, Lexeme: "Doc"}, Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "field", Type: ast.PrimitiveType{Name: "string"}}}}}, ast.VariableDeclaration{Name: "record", NameToken: lexer.Token{Line: 5, Column: 1, Lexeme: "record"}, Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "age", Type: ast.PrimitiveType{Name: "int"}}}}, Value: ast.RecordLiteral{Fields: []ast.RecordField{{Name: "age", Value: ast.IntLiteral{Lexeme: "1"}}}}}}}, Output: ast.OutputBlock{Mode: ast.OutputModeData, Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveOutput, Value: "data"}}, DataFields: []ast.OutputField{{Name: "user", Value: ast.Identifier{Name: "user"}}}}}, lexAnalysisTokens(text), documentPath)
+		addStringRefactorActions(text, uri, fullDocumentRange(text), &[]analysisCodeActionCandidate{})
+		schemaFile := ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.SchemaDeclaration{Name: "Doc", NameToken: lexer.Token{Line: 4, Column: 8, Lexeme: "Doc"}, Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "field", Type: ast.PrimitiveType{Name: "string"}}, {Name: "field", Type: ast.PrimitiveType{Name: "string"}}}}}}}}
+		addSchemaDeclarationRefactorActions(text, schemaFile, lexAnalysisTokens(text), func(string, protocol.Range, ast.File) {})
+		variableFile := ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.VariableDeclaration{Name: "record", NameToken: lexer.Token{Line: 5, Column: 1, Lexeme: "record"}, Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "age", Type: ast.PrimitiveType{Name: "int"}}}}, Value: ast.RecordLiteral{Fields: []ast.RecordField{{Name: "age", Value: ast.IntLiteral{Lexeme: "1"}}}}}}}}
+		addVariableDeclarationRefactorActions(text, variableFile, lexAnalysisTokens(text), func(string, protocol.Range, ast.File) {})
+		_, _ = replaceSchemaFieldType(ast.RecordType{Fields: []ast.SchemaField{{Name: "profile", Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}}}}, []string{"profile", "name"}, ast.NamedType{Name: "Alias"})
+		_, _ = replaceSchemaFieldType(ast.RecordType{Fields: []ast.SchemaField{{Name: "profile", Type: ast.PrimitiveType{Name: "string"}}}}, []string{"profile", "name"}, ast.NamedType{Name: "Alias"})
+		_ = documentationCodeActions(text, ast.File{}, lexAnalysisTokens(text), documentPath)
+		_ = editorRefactorCodeActions(text, ast.File{}, lexAnalysisTokens(text), documentPath)
+		_ = analyzeDocumentAtInRoot(text, documentPath, workspace)
+
+		singleSchemaPath := filepath.Join(workspace, "single.mace")
+		tAssert.NoError(os.WriteFile(singleSchemaPath, []byte(`
+[output = schema]
+{
+  Only: { value: string; };
+}
+`), 0o644))
+		_, _ = parseInputSemanticSchemaName(ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"./single.mace"`}}}}, workspace)
+		_ = importedSemanticSymbols(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./single.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "Only"}}, ImportAs: &ast.ImportedIdentifier{Name: "Alias"}}}}, documentPath)
+		_, _ = importedImportAsSemanticSymbol(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeSchema, SchemaFields: []ast.OutputSchemaField{{Name: "Only"}}}}, documentPath, "Alias")
+		_, _ = importedImportAsSemanticSymbol(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData, DataFields: []ast.OutputField{{Name: "Only", Value: ast.StringLiteral{Lexeme: `"x"`}}}}}, documentPath, "Alias")
+		_, _ = addMissingScriptSemicolonText("|===|\ntype Alias: string\n|===|")
+		_, _ = moveScriptBlockBeforeOutputText("[output = data]\n{}\n|===|\ntype Alias: string;\n|===|")
+		_, _ = extractRecordLiteralIntoSchemaText("|===|\nProfile record = { age: 1; active: true; };\n|===|")
+		_, _ = replaceVariableDeclaration("string value = \"x\";", regexp.MustCompile(`(?m)^([ \t]*)(string)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*("[^"]*");`), func(matches []string) string { return matches[1] + matches[2] + " fresh = " + matches[4] + ";" })
+		_, _ = semanticDiagnosticFromError(ast.File{}, nil, processor.DiagnosticError{Code: processor.CodeInvalidNullUsage, Message: "null bad"})
+		_, _ = semanticDiagnosticFromError(ast.File{}, nil, processor.DiagnosticError{Code: processor.CodeTypeMismatch, Message: "processor: type mismatch: expected string, got int"})
+		_ = importResolutionCodeActions(text, ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./single.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "Only"}}, ImportAs: &ast.ImportedIdentifier{Name: "Alias"}}}}, lexAnalysisTokens(text), documentPath)
+		_ = unavailableImportDiagnostics(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./single.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "Missing"}}}}}, lexAnalysisTokens(text), documentPath)
+		_ = unavailableImportNameSet(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./single.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "Missing"}}}}}, documentPath)
+		_ = documentationCodeActions(text, ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.TypeDeclaration{Name: "Alias", NameToken: lexer.Token{Line: 3, Column: 6, Lexeme: "Alias"}, Type: ast.PrimitiveType{Name: "string"}}, ast.SchemaDeclaration{Name: "Doc", NameToken: lexer.Token{Line: 4, Column: 8, Lexeme: "Doc"}, Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "field", Type: ast.PrimitiveType{Name: "string"}}}}}, ast.VariableDeclaration{Name: "value", NameToken: lexer.Token{Line: 3, Column: 6, Lexeme: "value"}, Type: ast.PrimitiveType{Name: "string"}}}}}, lexAnalysisTokens(text), documentPath)
+		_ = editorRefactorCodeActions(text, ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.SchemaDeclaration{Name: "Doc", NameToken: lexer.Token{Line: 4, Column: 8, Lexeme: "Doc"}, Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "field", Type: ast.PrimitiveType{Name: "string"}}}}}, ast.VariableDeclaration{Name: "record", NameToken: lexer.Token{Line: 5, Column: 1, Lexeme: "record"}, Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "age", Type: ast.PrimitiveType{Name: "int"}}}}, Value: ast.RecordLiteral{Fields: []ast.RecordField{{Name: "age", Value: ast.IntLiteral{Lexeme: "1"}}}}}}}, Output: ast.OutputBlock{Mode: ast.OutputModeData, Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveOutput, Value: "data"}}, DataFields: []ast.OutputField{{Name: "user", Value: ast.Identifier{Name: "user"}}}}}, lexAnalysisTokens(text), documentPath)
+	})
+
 	It("covers completion item entry points", func() {
 		workspace := GinkgoT().TempDir()
 		sharedPath := filepath.Join(workspace, "shared.mace")
@@ -238,6 +358,7 @@ string value = "x";
   result: 
   member: user.
   index: values[
+  selfy: $self.user.
 }
 `
 		tAssert.NoError(os.WriteFile(documentPath, []byte(text), 0o644))
@@ -256,7 +377,10 @@ string value = "x";
 		_, _ = initializerCompletionItems(doc, uri, protocol.Position{Line: 2, Character: 18})
 		_, _ = outputInitializerCompletionItems(doc, uri, protocol.Position{Line: 5, Character: 11})
 		_ = completionItems(doc, uri, protocol.Position{Line: 0, Character: 5})
+		_ = completionItems(doc, uri, protocol.Position{Line: 2, Character: 16})
 		_ = completionItems(doc, uri, protocol.Position{Line: 5, Character: 11})
 		_ = completionItems(doc, uri, protocol.Position{Line: 6, Character: 14})
+		_ = completionItems(doc, uri, protocol.Position{Line: 7, Character: 18})
+		_ = completionItems(doc, uri, protocol.Position{Line: 8, Character: 17})
 	})
 })

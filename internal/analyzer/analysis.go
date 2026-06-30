@@ -832,9 +832,6 @@ func inferOutputSchemaFields(text string) []string {
 func inferRecordSchemaFields(record string) []string {
 	matches := regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^;{}]+)`).FindAllStringSubmatch(record, -1)
 	return lo.FilterMap(matches, func(match []string, _ int) (string, bool) {
-		if len(match) < 3 {
-			return "", false
-		}
 		return match[1] + ": " + inferredTypeNameFromLiteral(strings.TrimSpace(match[2])), true
 	})
 }
@@ -991,9 +988,6 @@ func defaultLiteralForTypeName(name string) string {
 func replaceVariableDeclaration(text string, pattern *regexp.Regexp, replacement func([]string) string) (string, bool) {
 	updated := pattern.ReplaceAllStringFunc(text, func(declaration string) string {
 		matches := pattern.FindStringSubmatch(declaration)
-		if len(matches) == 0 {
-			return declaration
-		}
 		return replacement(matches)
 	})
 	return updated, updated != text
