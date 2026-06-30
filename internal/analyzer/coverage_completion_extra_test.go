@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/louiss0/mace/internal/lexer"
+	"github.com/samber/lo"
 	"github.com/louiss0/mace/internal/parser/ast"
 	"github.com/louiss0/mace/internal/processor"
 	. "github.com/onsi/ginkgo/v2"
@@ -959,6 +960,468 @@ string value = "Bee";
 		_ = defaultLiteralForType(ast.PrimitiveType{Name: "boolean"}, completionModel{}, map[string]struct{}{})
 	})
 
+	It("covers remaining completion branch gaps", func() {
+		workspace := GinkgoT().TempDir()
+		root := filepath.Join(workspace, "root")
+		tAssert.NoError(os.MkdirAll(root, 0o755))
+
+		aliasPath := filepath.Join(root, "alias-data.mace")
+		tAssert.NoError(os.WriteFile(aliasPath, []byte(`[output = data]
+{
+  user: { name: "Ada"; tags: ["x", "y"]; };
+}`), 0o644))
+
+		schemaPath := filepath.Join(root, "schema-out.mace")
+		tAssert.NoError(os.WriteFile(schemaPath, []byte(`[output = schema]
+{
+  User: { name: string; };
+  ChoiceWrap: choice["a", "b"];
+}`), 0o644))
+
+		parsePath := filepath.Join(root, "parse-out.mace")
+		tAssert.NoError(os.WriteFile(parsePath, []byte(`[output = schema]
+{
+  Runtime: { env: string; nested: { city: string; }; };
+}`), 0o644))
+
+		badParsePath := filepath.Join(root, "bad-parse.mace")
+		tAssert.NoError(os.WriteFile(badParsePath, []byte(`not mace`), 0o644))
+
+		uri := protocol.DocumentUri(fileURI(filepath.Join(root, "doc.mace")))
+		parseDirectives := []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"./parse-out.mace"`}}
+		badParseDirectives := []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"./missing.mace"`}, {Kind: ast.OutputDirectiveParseFile, Value: `"./bad-parse.mace"`}}
+
+		tAssert.Equal([]string{"output"}, lo.Map(lo.Must(directiveCompletionItems(document{}, "file:///doc.mace", "[")), func(item protocol.CompletionItem, _ int) string { return item.Label }))
+		items, handled := directiveCompletionItems(document{}, "file:///doc.mace", "[output = data, parse_file = \"")
+		tAssert.True(handled)
+		tAssert.NotNil(items)
+		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "[output = data, schema = User")
+		tAssert.True(handled)
+		tAssert.NotNil(items)
+		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "[output = data, parse = Runtime")
+		tAssert.True(handled)
+		tAssert.NotNil(items)
+		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "[output = data, parse")
+		tAssert.True(handled)
+		tAssert.NotNil(items)
+		_, ok := directivePrefix("prefix[")
+		tAssert.False(ok)
+
+		ctx, ok := stringLiteralCompletionContext(`value: "Ada`, protocol.Position{Line: 0, Character: 11})
+		tAssert.True(ok)
+		tAssert.Equal("Ada", ctx.prefix)
+		_, ok = stringLiteralCompletionContext(`value: "A\\"da`, protocol.Position{Line: 0, Character: 11})
+		tAssert.True(ok)
+		_, ok = stringLiteralCompletionContext(`value: "Ada {x`, protocol.Position{Line: 0, Character: 13})
+		tAssert.True(ok)
+		_, ok = stringLiteralCompletionContext(`value: plain`, protocol.Position{Line: 0, Character: 8})
+		tAssert.False(ok)
+
+		symbols, ok := importableSymbols(uri, root, "./alias-data.mace")
+		tAssert.True(ok)
+		tAssert.NotEmpty(symbols)
+		_, ok = importableSymbols(uri, root, "./missing.mace")
+		tAssert.False(ok)
+		schemaSymbols, ok := importableSymbols(uri, root, "./schema-out.mace")
+		tAssert.True(ok)
+		tAssert.Contains(lo.Map(schemaSymbols, func(symbol importableSymbol, _ int) string { return symbol.Name }), "User")
+		_, ok = documentPathFromURI(protocol.DocumentUri("file:///%zz"))
+		tAssert.False(ok)
+
+		schemaNames := availableSchemaNames(document{text: "[output = schema", analysis: analysisSnapshot{}}, uri, "output = schema")
+		tAssert.NotNil(schemaNames)
+		tAssert.Nil(availableSchemaNames(document{text: "plain", analysis: analysisSnapshot{}}, uri, "plain"))
+		importDocumentText := "|===|\nfrom \"./alias-data.mace\" import user;\n|===|\n[output = data] {}"
+		importPaths := importedPaths(document{text: importDocumentText, analysis: AnalyzeDocumentAt(importDocumentText, filepath.Join(root, "imports.mace"))}, `from "./alias-data.mace" import user;`)
+		tAssert.Equal([]string{"./alias-data.mace"}, importPaths)
+
+		selfText := `[output = data]
+{
+  user: "Ada";
+}`
+		selfDoc := document{text: selfText, analysis: AnalyzeDocumentAt(selfText, filepath.Join(root, "self.mace"))}
+		_, ok = selfCompletionValue(selfDoc, protocol.DocumentUri(fileURI(filepath.Join(root, "self.mace"))), protocol.Position{Line: 2, Character: 8}, []string{"user", "name"})
+		tAssert.False(ok)
+		_, ok = selfCompletionValue(selfDoc, protocol.DocumentUri(fileURI(filepath.Join(root, "self.mace"))), protocol.Position{Line: 2, Character: 8}, []string{"missing"})
+		tAssert.False(ok)
+
+		_, ok = partialOutputResult(document{text: "plain", analysis: analysisSnapshot{}}, uri, protocol.Position{Line: 0, Character: 0})
+		tAssert.False(ok)
+		_, ok = partialOutputResult(document{text: "[output = data]\n{}", analysis: analysisSnapshot{}}, uri, protocol.Position{Line: 0, Character: 0})
+		tAssert.False(ok)
+		_, ok = partialOutputResult(document{text: "[output = data]\n{}", analysis: analysisSnapshot{}}, uri, protocol.Position{Line: 10, Character: 0})
+		tAssert.False(ok)
+		_, ok = outputFieldRanges("[output = data]", lexAnalysisTokens("[output = data]"), 0)
+		tAssert.False(ok)
+		tAssert.False(isOutputFieldHeader(lexAnalysisTokens("value"), 0))
+
+		_, _, ok = placeholderOutputCompletionType(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData}}, completionModel{})
+		tAssert.False(ok)
+		fileWithParsePlaceholder := ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData, Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"./parse-out.mace"`}}, DataFields: []ast.OutputField{{Name: "nested", Value: ast.MemberAccess{Target: ast.Identifier{Name: "nested"}, Name: completionPlaceholderIdentifier}}}}}
+		_, _, ok = placeholderParseInputCompletionType(fileWithParsePlaceholder, completionModel{}, root, root)
+		tAssert.True(ok)
+
+		path, ok := trailingMemberAccessPath("user.")
+		tAssert.True(ok)
+		tAssert.Equal([]string{"user"}, path)
+
+		choiceValue := syntheticCompletionValue(ast.ChoiceType{Members: []ast.Expression{ast.StringLiteral{Lexeme: `"x"`}}}, completionModel{}, 2)
+		tAssert.Equal(processor.ValueString, choiceValue.Kind)
+		unknownValue := syntheticCompletionValue(ast.PrimitiveType{Name: "wat"}, completionModel{}, 2)
+		tAssert.Equal(processor.ValueUnknown, unknownValue.Kind)
+		label, ok := unquotedStringChoiceLabel(`"Ada"`)
+		tAssert.True(ok)
+		tAssert.Equal("Ada", label)
+
+		model := buildCompletionModel(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeSchema, SchemaFields: []ast.OutputSchemaField{{Name: "User", Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "tags", Type: ast.ArrayType{Element: ast.PrimitiveType{Name: "string"}}}}}}, {Name: "ChoiceWrap", Type: ast.ChoiceType{Members: []ast.Expression{ast.StringLiteral{Lexeme: `"a"`}}}}}}, Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./schema-out.mace"`}}}}, root, root, map[string]completionModel{})
+		mergeDirectiveCompletionModels(&model, []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"./parse-out.mace"`}}, root, root, map[string]completionModel{})
+		defs := parseFileOutputDeclarationDefinitions(parseDirectives, root, root, map[string]completionModel{})
+		tAssert.NotEmpty(defs)
+		tAssert.Empty(parseFileOutputDeclarationDefinitions(badParseDirectives, root, root, map[string]completionModel{}))
+		record, ok := parseFileOutputSchemaRecord(parseDirectives, root, root, map[string]completionModel{})
+		tAssert.True(ok)
+		tAssert.NotEmpty(record.Fields)
+		_, ok = parseFileOutputSchemaRecord(badParseDirectives, root, root, map[string]completionModel{})
+		tAssert.False(ok)
+		record, ok = parseFileOutputExportedRecord(parseDirectives, root, root, map[string]completionModel{})
+		tAssert.True(ok)
+		tAssert.NotEmpty(record.Fields)
+		_, ok = parseFileOutputExportedRecord([]ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"./missing.mace"`}}, root, root, map[string]completionModel{})
+		tAssert.False(ok)
+
+		importAsFile := ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./alias-data.mace"`}, ImportAs: &ast.ImportedIdentifier{Name: "Shared"}}}}
+		rootType, importedModel, ok := importedMemberCompletionRootType(importAsFile, []string{"Shared"}, root, root, map[string]completionModel{})
+		tAssert.True(ok)
+		tAssert.NotEqual(completionModel{}, importedModel)
+		tAssert.NotNil(rootType)
+		_, _, ok = importedMemberCompletionRootType(importAsFile, []string{"Shared", "user"}, root, root, map[string]completionModel{})
+		tAssert.True(ok)
+		_, _, ok = importedMemberCompletionRootType(importAsFile, []string{"Shared", "missing"}, root, root, map[string]completionModel{})
+		tAssert.False(ok)
+		_, _, ok = importedMemberCompletionRootType(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./missing.mace"`}, ImportAs: &ast.ImportedIdentifier{Name: "Shared"}}}}, []string{"Shared"}, root, root, map[string]completionModel{})
+		tAssert.False(ok)
+		_, _, ok = importedMemberCompletionRootType(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./schema-out.mace"`}, ImportAs: &ast.ImportedIdentifier{Name: "Shared"}}}}, []string{"Shared"}, root, root, map[string]completionModel{})
+		tAssert.False(ok)
+
+		fieldType, ok := completionOutputFieldType(ast.ArrayLiteral{Elements: []ast.Expression{ast.StringLiteral{Lexeme: `"x"`}}}, model)
+		tAssert.True(ok)
+		tAssert.IsType(ast.ArrayType{}, fieldType)
+		fieldType, ok = completionOutputFieldType(ast.RecordLiteral{Fields: []ast.RecordField{{Name: "name", Value: ast.StringLiteral{Lexeme: `"x"`}}}}, model)
+		tAssert.True(ok)
+
+		resolved := resolveCompletionType(ast.NamedType{Name: "User"}, model, map[string]struct{}{})
+		_ = resolved
+		resolved = resolveCompletionType(ast.ArrayType{Element: ast.PrimitiveType{Name: "string"}}, model, map[string]struct{}{})
+		tAssert.Equal(completionTypeArray, resolved.kind)
+		resolved = resolveCompletionType(ast.NamedType{Name: "Loop"}, completionModel{aliases: map[string]ast.TypeReference{"Loop": ast.NamedType{Name: "Loop"}}}, map[string]struct{}{})
+		tAssert.Equal(completionTypeUnknown, resolved.kind)
+		resolved = resolveCompletionType(ast.NamedType{Name: "ChoiceWrap"}, model, map[string]struct{}{})
+		_ = resolved
+		resolved = resolveCompletionType(ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}, model, map[string]struct{}{})
+		tAssert.Equal(completionTypeSchema, resolved.kind)
+
+		choice, ok := completionChoiceFromMembers([]ast.Expression{ast.Identifier{Name: "Mode"}}, completionModel{aliases: map[string]ast.TypeReference{"Mode": ast.ChoiceType{Members: []ast.Expression{ast.StringLiteral{Lexeme: `"a"`}, ast.StringLiteral{Lexeme: `"a"`}}}}}, map[string]struct{}{})
+		tAssert.True(ok)
+		tAssert.Len(choice.members, 1)
+		members, ok := completionChoiceMemberValues(ast.Identifier{Name: "Bad"}, completionModel{aliases: map[string]ast.TypeReference{"Bad": ast.PrimitiveType{Name: "string"}}}, map[string]struct{}{})
+		tAssert.False(ok)
+		tAssert.Nil(members)
+		members, ok = completionChoiceMemberValues(ast.Identifier{Name: "Loop"}, completionModel{aliases: map[string]ast.TypeReference{"Loop": ast.ChoiceType{Members: []ast.Expression{ast.Identifier{Name: "Loop"}}}}}, map[string]struct{}{"Loop": {}})
+		tAssert.False(ok)
+		tAssert.Nil(members)
+		members, ok = completionChoiceMemberValues(ast.NullLiteral{}, completionModel{}, map[string]struct{}{})
+		tAssert.False(ok)
+		tAssert.Nil(members)
+		tAssert.Equal(`""`, defaultLiteralForType(ast.PrimitiveType{Name: "mystery"}, model, map[string]struct{}{}))
+		tAssert.Equal(`""`, defaultLiteralForType(ast.ChoiceType{}, model, map[string]struct{}{}))
+		tAssert.Equal("{}", defaultLiteralForType(ast.RecordMapType{Value: ast.PrimitiveType{Name: "string"}}, model, map[string]struct{}{}))
+	})
+
+	It("covers targeted completion zero-count branches", func() {
+		workspace := GinkgoT().TempDir()
+		root := filepath.Join(workspace, "root")
+		tAssert.NoError(os.MkdirAll(root, 0o755))
+
+		dataImportPath := filepath.Join(root, "data-import.mace")
+		tAssert.NoError(os.WriteFile(dataImportPath, []byte(`[output = data]
+{
+  user: { name: "Ada"; };
+  items: ["a", "b"];
+}`), 0o644))
+		schemaImportPath := filepath.Join(root, "schema-import.mace")
+		tAssert.NoError(os.WriteFile(schemaImportPath, []byte(`[output = schema]
+{
+  User: { name: string; };
+}`), 0o644))
+		emptySchemaPath := filepath.Join(root, "empty-schema.mace")
+		tAssert.NoError(os.WriteFile(emptySchemaPath, []byte(`[output = schema]
+{
+}`), 0o644))
+		invalidFilePath := filepath.Join(root, "invalid.mace")
+		tAssert.NoError(os.WriteFile(invalidFilePath, []byte(`not mace`), 0o644))
+
+		uri := protocol.DocumentUri(fileURI(filepath.Join(root, "doc.mace")))
+
+		outputStringText := `|===|
+schema User: { user: string; };
+|===|
+[output = data, schema = User]
+{
+  user: "A";
+}`
+		outputStringPath := filepath.Join(root, "output-string.mace")
+		tAssert.NoError(os.WriteFile(outputStringPath, []byte(outputStringText), 0o644))
+		outputStringDoc := document{text: outputStringText, analysis: AnalyzeDocumentAt(outputStringText, outputStringPath)}
+		items, handled := outputInitializerCompletionItems(outputStringDoc, protocol.DocumentUri(fileURI(outputStringPath)), protocol.Position{Line: 5, Character: 10})
+		tAssert.True(handled)
+		items, handled = outputInitializerCompletionItems(document{text: `[output = data]
+{
+  value: $self.user.
+}`, analysis: analysisSnapshot{}}, uri, protocol.Position{Line: 2, Character: 20})
+		tAssert.False(handled)
+		tAssert.Nil(items)
+
+		guardedText := `|===|
+schema Runtime: { user?: { name: string; }; };
+|===|
+[output = data, parse = Runtime]
+{
+  result: "user" in user ? user.
+}`
+		guardedPath := filepath.Join(root, "guarded.mace")
+		tAssert.NoError(os.WriteFile(guardedPath, []byte(guardedText), 0o644))
+		guardedDoc := document{text: guardedText, analysis: AnalyzeDocumentAt(guardedText, guardedPath)}
+		items, handled = parsedVariableMemberCompletionItems(guardedDoc, protocol.DocumentUri(fileURI(guardedPath)), `  result: "user" in user ? user.`, protocol.Position{Line: 5, Character: 33})
+		tAssert.True(handled)
+		tAssert.NotNil(items)
+
+		importedMemberText := "|===|\nfrom \"./data-import.mace\" import-as Shared;\n|===|\n[output = data]\n{\n  result: Shared.user.\n}"
+		importedMemberPath := filepath.Join(root, "imported-member.mace")
+		tAssert.NoError(os.WriteFile(importedMemberPath, []byte(importedMemberText), 0o644))
+		importedMemberDoc := document{text: importedMemberText, analysis: AnalyzeDocumentAt(importedMemberText, importedMemberPath)}
+		items, handled = parsedVariableMemberCompletionItems(importedMemberDoc, protocol.DocumentUri(fileURI(importedMemberPath)), `  result: Shared.user.`, protocol.Position{Line: 5, Character: 22})
+		tAssert.True(handled)
+
+		arrayScriptText := "|===|\nstring label;\narray<string> values = [\"a\", \"b\"];\narray<string> unresolved = [missing];\narray<string> bad_local = null;\n|===|\n[output = data] {}\n"
+		arrayScriptPath := filepath.Join(root, "array-script.mace")
+		tAssert.NoError(os.WriteFile(arrayScriptPath, []byte(arrayScriptText), 0o644))
+		arrayIndexText := `[output = data]
+{
+  items: [1, 2];
+  result: $self.items[
+}`
+		arrayIndexDoc := document{text: arrayIndexText}
+		items, handled = arrayIndexCompletionItems(arrayIndexDoc, uri, protocol.Position{Line: 3, Character: protocol.UInteger(len(`  result: $self.items[`))}, "  result: $self.items[", completionScopeOutput)
+		tAssert.True(handled)
+		tAssert.Equal([]string{"0", "1"}, lo.Map(items, func(item protocol.CompletionItem, _ int) string { return item.Label }))
+		_, ok := resolveLocalArrayCompletionTarget(arrayScriptText, protocol.Position{Line: 5, Character: 0}, ast.Identifier{Name: "values"})
+		_, ok = resolveLocalCompletionValue(ast.ArrayLiteral{Elements: []ast.Expression{ast.Identifier{Name: "missing"}}}, map[string]ast.Expression{}, map[string]struct{}{})
+		tAssert.False(ok)
+		_, ok = resolveLocalCompletionValue(ast.NullLiteral{}, map[string]ast.Expression{}, map[string]struct{}{})
+		tAssert.False(ok)
+
+		_ = scriptVariablesForOutput("`", uri)
+		_, ok = resolveCompletionValue(ast.ArrayLiteral{Elements: []ast.Expression{ast.Identifier{Name: "missing"}}}, nil, processor.Value{})
+		tAssert.False(ok)
+		_, ok = resolveCompletionValue(ast.RecordLiteral{Fields: []ast.RecordField{{Name: "value", Value: ast.Identifier{Name: "missing"}}}}, nil, processor.Value{})
+		tAssert.False(ok)
+		_, ok = resolveCompletionValue(ast.FloatLiteral{Lexeme: "1..2"}, nil, processor.Value{})
+		tAssert.False(ok)
+
+		items, handled = importCompletionItems(document{text: `from "./missing.mace" import User`, analysis: analysisSnapshot{}}, `from "./missing.mace" import User`, uri)
+		tAssert.True(handled)
+		tAssert.Empty(items)
+		items, handled = importCompletionItems(document{text: `from "./missing.mace" imp`, analysis: analysisSnapshot{}}, `from "./missing.mace" imp`, uri)
+		tAssert.True(handled)
+		tAssert.Empty(items)
+		items, handled = importCompletionItems(document{text: `from "./data-import.mace" imp`, analysis: analysisSnapshot{}}, `from "./data-import.mace" imp`, uri)
+		tAssert.True(handled)
+		tAssert.Equal([]string{"import"}, lo.Map(items, func(item protocol.CompletionItem, _ int) string { return item.Label }))
+
+		items, handled = directiveCompletionItems(document{}, uri, `[output = schema, schema = User`)
+		tAssert.True(handled)
+		tAssert.Empty(items)
+		items, handled = directiveCompletionItems(document{}, uri, `[output = schema, parse = User`)
+		tAssert.True(handled)
+		tAssert.Empty(items)
+		items, handled = directiveCompletionItems(document{}, uri, `[output = data,`)
+		tAssert.True(handled)
+		tAssert.NotNil(items)
+		_, ok = directivePrefix(`x[`)
+		tAssert.False(ok)
+
+		_, ok = stringLiteralCompletionContext("value: \"Ada\\nnext", protocol.Position{Line: 0, Character: 11})
+		tAssert.True(ok)
+		_, ok = stringLiteralCompletionContext("value: \"Ada\\", protocol.Position{Line: 0, Character: 11})
+		tAssert.True(ok)
+
+		_, ok = importableSymbols(uri, root, "../escape.mace")
+		tAssert.False(ok)
+		_, ok = importableSymbols(uri, root, "./invalid.mace")
+		tAssert.False(ok)
+		schemaSymbols, ok := importableSymbols(uri, root, "./schema-import.mace")
+		tAssert.True(ok)
+		tAssert.NotEmpty(schemaSymbols)
+		_, _ = documentPathFromURI(protocol.DocumentUri("file:///tmp/%zz"))
+
+		schemaNames := availableSchemaNames(document{text: "prefix[", analysis: analysisSnapshot{}}, uri, "output = schema")
+		_ = schemaNames
+		_ = availableSchemaNames(document{text: "[bad", analysis: analysisSnapshot{}}, uri, "output = data")
+		badImportFile := ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `bad`}}}}
+		tAssert.Empty(importedPaths(document{text: "", analysis: analysisSnapshot{file: &badImportFile}}, ""))
+
+		stringSelfDoc := document{text: `[output = data]
+{
+  user: "Ada";
+}`, analysis: AnalyzeDocumentAt(`[output = data]
+{
+  user: "Ada";
+}`, filepath.Join(root, "self-string.mace"))}
+		_, ok = selfCompletionValue(stringSelfDoc, uri, protocol.Position{Line: 2, Character: 8}, []string{"user", "name"})
+		tAssert.False(ok)
+		_, ok = partialOutputResult(document{text: "`", analysis: analysisSnapshot{}}, uri, protocol.Position{Line: 0, Character: 0})
+		tAssert.False(ok)
+		_, ok = partialOutputResult(document{text: `[output = data]
+{}`, analysis: analysisSnapshot{}}, uri, protocol.Position{Line: 5, Character: 0})
+		tAssert.False(ok)
+		_, ok = outputFieldRanges("{ value: 1", lexAnalysisTokens("{ value: 1"), 0)
+		tAssert.False(ok)
+		tAssert.False(isOutputFieldHeader(lexAnalysisTokens("value"), len(lexAnalysisTokens("value"))-1))
+
+		_, _, ok = placeholderOutputCompletionType(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeSchema}}, completionModel{})
+		tAssert.False(ok)
+		placeholderFile := ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData, Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParse, Value: "Runtime"}}, DataFields: []ast.OutputField{{Name: "user", Value: ast.MemberAccess{Target: ast.Identifier{Name: "user"}, Name: completionPlaceholderIdentifier}}}}}
+		_, _, ok = placeholderParseInputCompletionType(placeholderFile, completionModel{schemas: map[string]ast.RecordType{"Runtime": {Fields: []ast.SchemaField{{Name: "user", Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}}}}}}, root, root)
+		_, ok = trailingMemberAccessPath("1.user")
+		tAssert.False(ok)
+
+		_, ok = unquotedStringChoiceLabel(`"\q"`)
+		tAssert.False(ok)
+
+		model := buildCompletionModel(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"../escape.mace"`}}}}, root, root, map[string]completionModel{})
+		mergeDirectiveCompletionModels(&model, []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"../escape.mace"`}}, root, root, map[string]completionModel{})
+		badDirectives := []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `bad`}, {Kind: ast.OutputDirectiveParseFile, Value: `"../escape.mace"`}}
+		tAssert.Nil(parseFileOutputDeclarationDefinitions(badDirectives, root, root, map[string]completionModel{}))
+		_, ok = parseFileOutputSchemaRecord(badDirectives, root, root, map[string]completionModel{})
+		tAssert.False(ok)
+		_, ok = parseFileOutputExportedRecord(badDirectives, root, root, map[string]completionModel{})
+		tAssert.False(ok)
+		emptyDirectives := []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"./empty-schema.mace"`}}
+		_, ok = parseFileOutputExportedRecord(emptyDirectives, root, root, map[string]completionModel{})
+		tAssert.False(ok)
+
+		_, _, ok = importedMemberCompletionRootType(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `bad`}, ImportAs: &ast.ImportedIdentifier{Name: "Shared"}}}}, []string{"Shared"}, root, root, map[string]completionModel{})
+		tAssert.False(ok)
+		_, _, ok = importedMemberCompletionRootType(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"../escape.mace"`}, ImportAs: &ast.ImportedIdentifier{Name: "Shared"}}}}, []string{"Shared"}, root, root, map[string]completionModel{})
+		tAssert.False(ok)
+		_, _, ok = importedMemberCompletionRootType(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./missing.mace"`}, ImportAs: &ast.ImportedIdentifier{Name: "Shared"}}}}, []string{"Shared"}, root, root, map[string]completionModel{})
+		tAssert.False(ok)
+		_, _, ok = importedMemberCompletionRootType(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./schema-import.mace"`}, ImportAs: &ast.ImportedIdentifier{Name: "Shared"}}}}, []string{"Shared", "user"}, root, root, map[string]completionModel{})
+		tAssert.False(ok)
+
+		_, ok = completionOutputFieldType(ast.ArrayLiteral{Elements: []ast.Expression{ast.NullLiteral{}}}, completionModel{})
+		tAssert.False(ok)
+		_, ok = completionChoiceFromMembers([]ast.Expression{ast.Identifier{Name: "Missing"}}, completionModel{}, map[string]struct{}{})
+		tAssert.False(ok)
+		_, _ = completionChoiceMemberValues(ast.Identifier{Name: "Mode"}, completionModel{aliases: map[string]ast.TypeReference{"Mode": ast.ChoiceType{Members: []ast.Expression{ast.StringLiteral{Lexeme: `"a"`}}}}}, map[string]struct{}{"other": {}})
+		_, ok = completionChoiceMemberValues(ast.RecordLiteral{}, completionModel{}, map[string]struct{}{})
+		tAssert.False(ok)
+		tAssert.Equal("{}", defaultLiteralForType(ast.RecordMapType{Value: ast.PrimitiveType{Name: "string"}}, completionModel{}, map[string]struct{}{}))
+	})
+
+	It("covers final completion zero-count branches", func() {
+		workspace := GinkgoT().TempDir()
+		root := filepath.Join(workspace, "root")
+		tAssert.NoError(os.MkdirAll(root, 0o755))
+		uri := protocol.DocumentUri(fileURI(filepath.Join(root, "doc.mace")))
+
+		text := `|===|
+schema User: { user: string; };
+|===|
+[output = data, schema = User]
+{
+  user: "A";
+}`
+		path := filepath.Join(root, "doc.mace")
+		tAssert.NoError(os.WriteFile(path, []byte(text), 0o644))
+		doc := document{text: text, analysis: AnalyzeDocumentAt(text, path)}
+		_, _ = outputInitializerCompletionItems(doc, protocol.DocumentUri(fileURI(path)), protocol.Position{Line: 5, Character: 10})
+
+		noCompletionsText := `[output = data]
+{
+  result:
+}`
+		noCompletionsPath := filepath.Join(root, "none.mace")
+		tAssert.NoError(os.WriteFile(noCompletionsPath, []byte(noCompletionsText), 0o644))
+		_, _ = outputInitializerCompletionItems(document{text: noCompletionsText, analysis: AnalyzeDocumentAt(noCompletionsText, noCompletionsPath)}, protocol.DocumentUri(fileURI(noCompletionsPath)), protocol.Position{Line: 2, Character: 9})
+		_, _ = outputInitializerCompletionItems(document{text: "[output = data]\n{\n  value: $self.user.\n}", analysis: analysisSnapshot{}}, uri, protocol.Position{Line: 2, Character: 20})
+
+		guardedText := `|===|
+schema Runtime: { user?: { name: string; }; };
+|===|
+[output = data, parse = Runtime]
+{
+  result: user.
+}`
+		guardedPath := filepath.Join(root, "guarded.mace")
+		tAssert.NoError(os.WriteFile(guardedPath, []byte(guardedText), 0o644))
+		guardedDoc := document{text: guardedText, analysis: AnalyzeDocumentAt(guardedText, guardedPath)}
+		items, handled := parsedVariableMemberCompletionItems(guardedDoc, protocol.DocumentUri(fileURI(guardedPath)), `  result: user.`, protocol.Position{Line: 5, Character: 15})
+		tAssert.True(handled)
+		tAssert.Empty(items)
+
+		localArrayText := "|===|\nschema User: { name: string; };\narray<string> values = [\"a\"];\n|===|\n[output = data] {}\n"
+		_, _ = resolveLocalArrayCompletionTarget(localArrayText, protocol.Position{Line: 3, Character: 0}, ast.Identifier{Name: "values"})
+		arrayPrefixText := `[output = data]
+{
+  items: [1, 2];
+  result: $self.items[1
+}`
+		_, _ = arrayIndexCompletionItems(document{text: arrayPrefixText}, uri, protocol.Position{Line: 3, Character: protocol.UInteger(len(`  result: $self.items[1`))}, "  result: $self.items[1", completionScopeOutput)
+
+		items, handled = directiveCompletionItems(document{}, uri, `[output = schema, parse_file = "`)
+		tAssert.True(handled)
+		tAssert.Empty(items)
+		items, handled = directiveCompletionItems(document{}, uri, `[output = data,`)
+		tAssert.True(handled)
+		tAssert.NotEmpty(items)
+		_, prefixOk := directivePrefix(`x[`)
+		tAssert.False(prefixOk)
+
+		_, importOK := importableSymbols(uri, root, `../outside.mace`)
+		tAssert.False(importOK)
+		_, uriOK := documentPathFromURI(protocol.DocumentUri(`file:///tmp/%zz`))
+		tAssert.False(uriOK)
+
+		selfDocText := `[output = data]
+{
+  user: "Ada";
+  result: user.name;
+}`
+		selfPath := filepath.Join(root, "self.mace")
+		tAssert.NoError(os.WriteFile(selfPath, []byte(selfDocText), 0o644))
+		_, selfOK := selfCompletionValue(document{text: selfDocText, analysis: AnalyzeDocumentAt(selfDocText, selfPath)}, protocol.DocumentUri(fileURI(selfPath)), protocol.Position{Line: 3, Character: 10}, []string{"user", "name"})
+		tAssert.False(selfOK)
+
+		_, _, placeholderOK := placeholderOutputCompletionType(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData}}, completionModel{})
+		tAssert.False(placeholderOK)
+		_, trailingOK := trailingMemberAccessPath("user.1")
+		tAssert.False(trailingOK)
+
+		_ = buildCompletionModel(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"../outside.mace"`}}}}, root, root, map[string]completionModel{})
+		mergeDirectiveCompletionModels(&completionModel{}, []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"../outside.mace"`}}, root, root, map[string]completionModel{})
+		_ = parseFileOutputDeclarationDefinitions([]ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"../outside.mace"`}}, root, root, map[string]completionModel{})
+		_, _ = parseFileOutputSchemaRecord([]ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"../outside.mace"`}}, root, root, map[string]completionModel{})
+		_, _ = parseFileOutputExportedRecord([]ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"../outside.mace"`}}, root, root, map[string]completionModel{})
+		_, _, _ = importedMemberCompletionRootType(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./missing.mace"`}, ImportAs: &ast.ImportedIdentifier{Name: "Shared"}}}}, []string{"Shared"}, root, root, map[string]completionModel{})
+		_, _, _ = importedMemberCompletionRootType(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"../outside.mace"`}, ImportAs: &ast.ImportedIdentifier{Name: "Shared"}}}}, []string{"Shared"}, root, root, map[string]completionModel{})
+
+		_ = resolveCompletionType(ast.UnionType{Members: []ast.TypeReference{ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}, ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "int"}}}}}}, completionModel{}, map[string]struct{}{})
+		_ = resolveCompletionType(ast.ChoiceType{Members: []ast.Expression{ast.Identifier{Name: "Missing"}}}, completionModel{}, map[string]struct{}{})
+		_ = resolveCompletionType(ast.NamedType{Name: "Alias"}, completionModel{aliases: map[string]ast.TypeReference{"Alias": ast.PrimitiveType{Name: "string"}}}, map[string]struct{}{"existing": {}})
+		tAssert.Equal("{}", defaultLiteralForType(ast.VariantType{Members: []ast.TypeReference{ast.RecordMapType{Value: ast.PrimitiveType{Name: "string"}}}}, completionModel{}, map[string]struct{}{}))
+	})
+
 	It("covers additional completion pure helper branches", func() {
 		workspace := GinkgoT().TempDir()
 		root := filepath.Join(workspace, "root")
@@ -993,5 +1456,102 @@ string value = "Bee";
 		_, _ = completionUnionRecord([]ast.TypeReference{ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}, ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "int"}}}}}, completionModel{}, map[string]struct{}{})
 		_ = defaultLiteralForType(ast.PrimitiveType{Name: "float"}, completionModel{}, map[string]struct{}{})
 		_ = defaultLiteralForType(ast.PrimitiveType{Name: "boolean"}, completionModel{}, map[string]struct{}{})
+	})
+
+	It("covers targeted remaining completion branches", func() {
+		workspace := GinkgoT().TempDir()
+		root := filepath.Join(workspace, "root")
+		tAssert.NoError(os.MkdirAll(root, 0o755))
+		tAssert.NoError(os.WriteFile(filepath.Join(root, "schema-out.mace"), []byte(`[output = schema]
+{
+  User: { name: string; profile: { city: string; }; };
+}`), 0o644))
+		tAssert.NoError(os.WriteFile(filepath.Join(root, "alias-data.mace"), []byte(`[output = data]
+{
+  user: { name: "Ada"; profile: { city: "LA"; }; };
+}`), 0o644))
+
+		stringDocText := `[output = data, schema = User, schema_file = "./schema-out.mace"]
+{
+  value: "Ada"
+}`
+		stringDocPath := filepath.Join(root, "string-doc.mace")
+		tAssert.NoError(os.WriteFile(stringDocPath, []byte(stringDocText), 0o644))
+		stringDoc := document{text: stringDocText, analysis: AnalyzeDocumentAt(stringDocText, stringDocPath)}
+		stringURI := protocol.DocumentUri(fileURI(stringDocPath))
+		_, _ = outputInitializerCompletionItems(stringDoc, stringURI, protocol.Position{Line: 2, Character: 12})
+
+		guardText := `[output = data]
+{
+  value: $self.user.
+}`
+		guardPath := filepath.Join(root, "guard.mace")
+		tAssert.NoError(os.WriteFile(guardPath, []byte(guardText), 0o644))
+		guardDoc := document{text: guardText, analysis: AnalyzeDocumentAt(guardText, guardPath)}
+		_, handled := outputInitializerCompletionItems(guardDoc, protocol.DocumentUri(fileURI(guardPath)), protocol.Position{Line: 2, Character: 20})
+		tAssert.False(handled)
+
+		memberText := `|===|
+from "./alias-data.mace" import-as Shared;
+|===|
+[output = data]
+{
+  value: Shared.user.
+}`
+		memberPath := filepath.Join(root, "member.mace")
+		tAssert.NoError(os.WriteFile(memberPath, []byte(memberText), 0o644))
+		memberDoc := document{text: memberText, analysis: AnalyzeDocumentAt(memberText, memberPath)}
+		_, _ = parsedVariableMemberCompletionItems(memberDoc, protocol.DocumentUri(fileURI(memberPath)), "  value: Shared.user.", protocol.Position{Line: 5, Character: 21})
+
+		arrayItems, handled := arrayIndexCompletionItems(document{text: "", analysis: analysisSnapshot{}}, protocol.DocumentUri("file:///tmp/doc.mace"), protocol.Position{}, "values[1", completionScopeOutput)
+		tAssert.True(handled)
+		tAssert.Empty(arrayItems)
+
+		localArrayText := "|===|\narray<string> items = [\"x\"];\n|===|\n[output = data] {}"
+		_, _ = resolveLocalArrayCompletionTarget(localArrayText, protocol.Position{Line: 2, Character: 0}, ast.Identifier{Name: "items"})
+
+		_, handled = importCompletionItems(document{}, `from "./missing.mace" imp`, protocol.DocumentUri(fileURI(filepath.Join(root, "x.mace"))))
+		tAssert.True(handled)
+		_, handled = directiveCompletionItems(document{}, protocol.DocumentUri(fileURI(filepath.Join(root, "x.mace"))), "[output = data, schema = User")
+		tAssert.True(handled)
+		_, handled = directiveCompletionItems(document{}, protocol.DocumentUri(fileURI(filepath.Join(root, "x.mace"))), "[output = data, unknown")
+		tAssert.True(handled)
+		_, _ = directivePrefix("[output = data")
+
+		_, importableOK := importableSymbols(protocol.DocumentUri("file:///tmp/%zz"), root, "./alias-data.mace")
+		tAssert.False(importableOK)
+
+		selfText := `[output = data]
+{
+  user: { name: "Ada"; };
+}`
+		selfDoc := document{text: selfText, analysis: AnalyzeDocumentAt(selfText, filepath.Join(root, "self-ok.mace"))}
+		_, _ = selfCompletionValue(selfDoc, protocol.DocumentUri(fileURI(filepath.Join(root, "self-ok.mace"))), protocol.Position{Line: 2, Character: 10}, []string{"user"})
+		_, partialOK := partialOutputResult(document{text: "plain", analysis: analysisSnapshot{}}, protocol.DocumentUri(fileURI(filepath.Join(root, "plain.mace"))), protocol.Position{Line: 99, Character: 0})
+		tAssert.False(partialOK)
+
+		_, _, _ = placeholderOutputCompletionType(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeSchema, SchemaFields: []ast.OutputSchemaField{{Name: "User", Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}}}}}, completionModel{})
+		_, trailingOK := trailingMemberAccessPath("user?.")
+		tAssert.False(trailingOK)
+
+		_ = buildCompletionModel(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"bad`}}}}, root, root, map[string]completionModel{})
+		mergeDirectiveCompletionModels(&completionModel{}, []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"bad`}}, root, root, map[string]completionModel{})
+		tAssert.Empty(parseFileOutputDeclarationDefinitions([]ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"bad`}}, root, root, map[string]completionModel{}))
+		_, schemaRecordOK := parseFileOutputSchemaRecord([]ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"bad`}}, root, root, map[string]completionModel{})
+		tAssert.False(schemaRecordOK)
+		_, exportedRecordOK := parseFileOutputExportedRecord([]ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"bad`}}, root, root, map[string]completionModel{})
+		tAssert.False(exportedRecordOK)
+
+		_, _, importedOK := importedMemberCompletionRootType(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./alias-data.mace"`}, ImportAs: &ast.ImportedIdentifier{Name: "Shared"}}}}, []string{"Shared", "user"}, root, root, map[string]completionModel{})
+		_ = importedOK
+		_, _, importedOK = importedMemberCompletionRootType(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: "bad"}, ImportAs: &ast.ImportedIdentifier{Name: "Shared"}}}}, []string{"Shared"}, root, root, map[string]completionModel{})
+		tAssert.False(importedOK)
+		_, _, importedOK = importedMemberCompletionRootType(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./schema-out.mace"`}, ImportAs: &ast.ImportedIdentifier{Name: "Shared"}}}}, []string{"Shared"}, root, root, map[string]completionModel{})
+		tAssert.False(importedOK)
+
+		cyclicModel := completionModel{aliases: map[string]ast.TypeReference{"Alias": ast.NamedType{Name: "Alias"}}}
+		tAssert.Equal(completionType{}, resolveCompletionType(ast.NamedType{Name: "Alias"}, cyclicModel, map[string]struct{}{}))
+		tAssert.Equal(completionType{}, resolveCompletionType(ast.NamedType{Name: "Missing"}, completionModel{}, map[string]struct{}{}))
+		tAssert.Equal("{}", defaultLiteralForType(ast.NamedType{Name: "Missing"}, completionModel{}, map[string]struct{}{}))
 	})
 })

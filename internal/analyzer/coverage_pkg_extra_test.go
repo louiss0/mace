@@ -146,8 +146,9 @@ schema_doc User {
 		_ = Hover(text, snapshot, protocol.Position{Line: 2, Character: 1})
 		_ = DocumentSymbols(text, snapshot)
 		_ = DocumentSymbols(text, analysisSnapshot{file: &file, result: snapshot.result})
-		_, _ = resolveRootBoundedPathInRoot("C:/base", "C:/root", "D:/outside.mace")
+		_, _ = resolveRootBoundedPathInRoot(`D:\base`, `C:\root`, `.\outside.mace`)
 		_, _ = resolveRootBoundedPathInRoot(filepath.Join(workspace, "sub"), filepath.Join(workspace, "root"), "./outside.mace")
+		_, _ = resolveRootBoundedPathInRoot(workspace, workspace, filepath.Join(workspace, "abs.mace"))
 		_, _ = resolveRootBoundedPathInRoot(workspace, workspace, "../outside.mace")
 		_, _ = resolveRootBoundedPathInRoot(workspace, workspace, "./nested/file.mace")
 		_, _ = resolveBoundedPathInRoot(workspace, workspace, filepath.Join(workspace, "abs.mace"))
@@ -160,6 +161,30 @@ schema_doc User {
 		renameSnapshot := analysisSnapshot{text: renameText, tokens: lexAnalysisTokens(renameText), symbols: []semanticSymbol{{Name: "value", Kind: protocol.CompletionItemKindClass, Range: protocol.Range{Start: renameStart, End: renameEnd}, Definition: protocol.Location{URI: uri, Range: protocol.Range{}}}}}
 		renameSnapshot.symbolIndex = indexSymbols(renameSnapshot.symbols)
 		_, _ = Rename(renameText, renameSnapshot, uri, protocol.Position{Line: 0, Character: 1}, "renamed")
+		aliasText := `|===|
+from "./shared.mace" import User:alias;
+string value = alias;
+|===|
+[output = data]
+{
+  value: alias;
+}
+`
+		aliasURI := protocol.DocumentUri(fileURI(filepath.Join(workspace, "alias.mace")))
+		aliasSnapshot := AnalyzeDocumentAt(aliasText, filepath.Join(workspace, "alias.mace"))
+		_, _ = Rename(aliasText, aliasSnapshot, aliasURI, protocol.Position{Line: 2, Character: 16}, "renamed_alias")
+		aliasTokens := lexAnalysisTokens(aliasText)
+		usageStart := protocol.Position{Line: 2, Character: 15}
+		usageEnd := protocol.Position{Line: 2, Character: 20}
+		manualAliasSnapshot := analysisSnapshot{
+			text:        aliasText,
+			documentURI: aliasURI,
+			tokens:      aliasTokens,
+			file: &ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "User", Alias: "alias"}}}}},
+			symbols: []semanticSymbol{{Name: "alias", Kind: protocol.CompletionItemKindVariable, Origin: symbolOriginImport, Range: protocol.Range{Start: usageStart, End: usageEnd}, Definition: protocol.Location{URI: protocol.DocumentUri(fileURI(filepath.Join(workspace, "shared.mace"))), Range: protocol.Range{}}}},
+		}
+		manualAliasSnapshot.symbolIndex = indexSymbols(manualAliasSnapshot.symbols)
+		_, _ = Rename(aliasText, manualAliasSnapshot, aliasURI, usageStart, "renamed_alias")
 		_, _ = identifierAt("alias_name", protocol.Position{Line: 0, Character: 5})
 		_, _ = identifierAt(" alias", protocol.Position{Line: 0, Character: 0})
 		_ = isDirectivePosition("[output = data]", protocol.Position{Line: 0, Character: 1})

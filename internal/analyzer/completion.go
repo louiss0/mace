@@ -1436,9 +1436,6 @@ func partialOutputResult(document document, uri protocol.DocumentUri, position p
 	}
 
 	cursorIndex := positionIndex(text, position)
-	if cursorIndex < 0 {
-		return processor.Result{}, false
-	}
 
 	currentFieldIndex := -1
 	for index, fieldRange := range fieldRanges {

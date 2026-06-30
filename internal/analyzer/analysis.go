@@ -998,9 +998,6 @@ func renameDuplicateVariableText(text string) (string, bool) {
 	seen := map[string]struct{}{}
 	updated := pattern.ReplaceAllStringFunc(text, func(line string) string {
 		matches := pattern.FindStringSubmatch(line)
-		if len(matches) == 0 {
-			return line
-		}
 		name := matches[2]
 		if _, ok := seen[name]; ok {
 			return matches[1] + name + "_2" + matches[3]
@@ -2503,7 +2500,7 @@ func importDeclarationEditRange(text string, tokens []lexer.Token, nameIndex int
 
 func referencedNames(file ast.File) map[string]struct{} {
 	names := usedVariableNames(file)
-	visitType := func(typeReference ast.TypeReference) {}
+	var visitType func(typeReference ast.TypeReference)
 	visitType = func(typeReference ast.TypeReference) {
 		switch typed := typeReference.(type) {
 		case ast.NamedType:
@@ -2607,7 +2604,7 @@ func removeDeclarationAction(text string, tokens []lexer.Token, documentPath str
 
 func usedVariableNames(file ast.File) map[string]struct{} {
 	usedNames := map[string]struct{}{}
-	visit := func(expression ast.Expression) {}
+	var visit func(expression ast.Expression)
 	visit = func(expression ast.Expression) {
 		switch typed := expression.(type) {
 		case ast.Identifier:
