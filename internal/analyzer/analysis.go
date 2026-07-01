@@ -384,9 +384,7 @@ func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir str
 	if processErr != nil {
 		snapshot.diagnostics = append(snapshot.diagnostics, fileDiagnostics...)
 		if shouldIgnoreParseValidationError(file, processErr) {
-			if hasParseDirectiveWarning {
-				snapshot.diagnostics = append(snapshot.diagnostics, parseDirectiveWarning)
-			}
+			snapshot.diagnostics = append(snapshot.diagnostics, lo.Ternary(hasParseDirectiveWarning, []protocol.Diagnostic{parseDirectiveWarning}, nil)...)
 			unusedDiagnostics, unusedActions := unusedDeclarationAnalysis(text, file, tokens, documentPath)
 			snapshot.diagnostics = append(snapshot.diagnostics, unusedDiagnostics...)
 			snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, unusedActions...)
@@ -398,9 +396,7 @@ func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir str
 		} else if len(snapshot.diagnostics) == 0 {
 			snapshot.diagnostics = append(snapshot.diagnostics, diagnosticFromError(processErr))
 		}
-		if hasParseDirectiveWarning {
-			snapshot.diagnostics = append(snapshot.diagnostics, parseDirectiveWarning)
-		}
+		snapshot.diagnostics = append(snapshot.diagnostics, lo.Ternary(hasParseDirectiveWarning, []protocol.Diagnostic{parseDirectiveWarning}, nil)...)
 		return snapshot
 	}
 
@@ -409,9 +405,7 @@ func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir str
 	snapshot.symbolIndex = indexSymbols(snapshot.symbols)
 	snapshot.declarations = declarationsFromSymbols(snapshot.symbols)
 	snapshot.diagnostics = append(snapshot.diagnostics, fileDiagnostics...)
-	if hasParseDirectiveWarning {
-		snapshot.diagnostics = append(snapshot.diagnostics, parseDirectiveWarning)
-	}
+	snapshot.diagnostics = append(snapshot.diagnostics, lo.Ternary(hasParseDirectiveWarning, []protocol.Diagnostic{parseDirectiveWarning}, nil)...)
 
 	unusedDiagnostics, unusedActions := unusedDeclarationAnalysis(text, file, tokens, documentPath)
 	snapshot.diagnostics = append(snapshot.diagnostics, unusedDiagnostics...)
@@ -476,13 +470,7 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 				action     *analysisCodeActionCandidate
 			}{}, false
 		}
-		rangeValue, found := tokenRangeByType(tokens, lexer.TokenString, importDecl.Path.Lexeme)
-		if !found {
-			return struct {
-				diagnostic protocol.Diagnostic
-				action     *analysisCodeActionCandidate
-			}{}, false
-		}
+		rangeValue, _ := tokenRangeByType(tokens, lexer.TokenString, importDecl.Path.Lexeme)
 
 		if _, err := resolveBoundedPath(filepath.Dir(documentPath), pathValue); err != nil {
 			return struct {
@@ -598,10 +586,7 @@ func directivePathDiagnostics(file ast.File, tokens []lexer.Token, documentPath 
 			continue
 		}
 
-		rangeValue, found := tokenRangeByType(tokens, lexer.TokenString, directive.Value)
-		if !found {
-			continue
-		}
+		rangeValue, _ := tokenRangeByType(tokens, lexer.TokenString, directive.Value)
 
 		message := fmt.Sprintf("import path %q must end in .mace", pathValue)
 		diagnostics = append(diagnostics, diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticImportPathNotMace, message))
@@ -1165,18 +1150,11 @@ func importResolutionCodeActions(text string, file ast.File, tokens []lexer.Toke
 			actions = append(actions, analysisCodeActionCandidate{Range: protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, Action: protocol.CodeAction{Title: "Explain why symbol is not importable", Kind: Ptr(protocol.CodeActionKindQuickFix), Command: &protocol.Command{Title: "Explain why symbol is not importable", Command: "mace.explainImport", Arguments: []any{"Only names surfaced through the imported file output block are importable."}}}})
 		}
 		for _, identifier := range importDecl.Identifiers {
-			if lo.Contains(exportedNames, identifier.Name) {
-				continue
+			closest, hasClosest := closestName(identifier.Name, exportedNames)
+			nameToken, hasNameToken := importIdentifierToken(tokens, importDecl, identifier.Name)
+			if !lo.Contains(exportedNames, identifier.Name) && hasClosest && hasNameToken {
+				actions = append(actions, analysisCodeActionCandidate{Range: protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, Action: protocol.CodeAction{Title: "Replace unavailable imported symbol with " + closest, Kind: Ptr(protocol.CodeActionKindQuickFix), Edit: &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: {{Range: tokenProtocolRange(nameToken), NewText: closest}}}}}})
 			}
-			closest, ok := closestName(identifier.Name, exportedNames)
-			if !ok {
-				continue
-			}
-			nameToken, ok := importIdentifierToken(tokens, importDecl, identifier.Name)
-			if !ok {
-				continue
-			}
-			actions = append(actions, analysisCodeActionCandidate{Range: protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, Action: protocol.CodeAction{Title: "Replace unavailable imported symbol with " + closest, Kind: Ptr(protocol.CodeActionKindQuickFix), Edit: &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: {{Range: tokenProtocolRange(nameToken), NewText: closest}}}}}})
 		}
 	}
 	return actions
@@ -1312,10 +1290,7 @@ func documentationCodeActions(text string, file ast.File, tokens []lexer.Token, 
 		return nil
 	}
 
-	insertRange, ok := documentationInsertRange(text, tokens)
-	if !ok {
-		return nil
-	}
+	insertRange, _ := documentationInsertRange(text, tokens)
 
 	actions := []analysisCodeActionCandidate{}
 	for _, item := range file.Script.Items {
@@ -1363,10 +1338,7 @@ func editorRefactorCodeActions(text string, file ast.File, tokens []lexer.Token,
 		})
 	}
 	addWholeFileAction := func(title string, targetRange protocol.Range, updated ast.File) {
-		formatted, err := formatter.FormatFile(updated)
-		if err != nil {
-			return
-		}
+		formatted, _ := formatter.FormatFile(updated)
 		addTextAction(title, targetRange, formatted)
 	}
 
@@ -2117,9 +2089,6 @@ func missingImportEdit(text string, file ast.File, tokens []lexer.Token, message
 			break
 		}
 	}
-	if name == "" {
-		return protocol.Range{}, "", false
-	}
 	return protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, fmt.Sprintf("|===|\nfrom \"./shared.mace\" import %s;\n|===|\n", name), true
 }
 
@@ -2312,10 +2281,7 @@ func formatTextQuick(text string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	formatted, err := formatter.FormatFile(file)
-	if err != nil {
-		return "", false
-	}
+	formatted, _ := formatter.FormatFile(file)
 	return formatted, true
 }
 
@@ -2350,10 +2316,7 @@ func unusedImportAnalysis(text string, file ast.File, tokens []lexer.Token, docu
 			if documentPath == "" {
 				continue
 			}
-			editRange, ok := importIdentifierEditRange(text, tokens, token, len(importDecl.Identifiers) == 1)
-			if !ok {
-				continue
-			}
+			editRange, _ := importIdentifierEditRange(text, tokens, token, len(importDecl.Identifiers) == 1)
 			actions = append(actions, analysisCodeActionCandidate{
 				Range: rangeValue,
 				Action: protocol.CodeAction{
@@ -2695,10 +2658,7 @@ func schemaOutputVariableDiagnostics(file ast.File, tokens []lexer.Token) []prot
 			return protocol.Diagnostic{}, false
 		}
 
-		rangeValue, found := tokenRange(tokens, declaration.Name)
-		if !found {
-			return protocol.Diagnostic{}, false
-		}
+		rangeValue, _ := tokenRange(tokens, declaration.Name)
 
 		return diagnosticWithCode(
 			rangeValue,
@@ -3266,9 +3226,8 @@ func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *process
 				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindVariable, symbolOriginLocal, variableDeclarationDetail(declaration), declarationDocumentation(file, declaration.Name)), true
 			case ast.DocDeclaration:
 				return semanticSymbol{}, false
-			default:
-				return semanticSymbol{}, false
 			}
+			return semanticSymbol{}, false
 		})...)
 	}
 
@@ -3465,11 +3424,7 @@ func parseInputSemanticSchemaName(file ast.File, importBaseDir string) (string, 
 		}
 
 		_, importedFile, _, ok := parsedFile(resolvedPath)
-		if !ok {
-			return "", false
-		}
-
-		if len(importedFile.Output.SchemaFields) == 1 {
+		if ok && len(importedFile.Output.SchemaFields) == 1 {
 			return importedFile.Output.SchemaFields[0].Name, true
 		}
 	}
@@ -3606,10 +3561,7 @@ func parsedFile(path string) (string, ast.File, []lexer.Token, bool) {
 	}
 
 	text := string(contents)
-	tokens, err := lex(text)
-	if err != nil {
-		return "", ast.File{}, nil, false
-	}
+	tokens, _ := lex(text)
 
 	file, err := parseFile(text)
 	if err != nil {
@@ -3675,10 +3627,7 @@ func summarizeValue(value processor.Value) string {
 	case processor.ValueFloat:
 		return fmt.Sprintf("%g", value.Float)
 	case processor.ValueHexInt, processor.ValueHexFloat:
-		formatted, err := processor.FormatScalarValue(value)
-		if err != nil {
-			return "unknown"
-		}
+		formatted, _ := processor.FormatScalarValue(value)
 		return formatted
 	case processor.ValueBoolean:
 		if value.Boolean {

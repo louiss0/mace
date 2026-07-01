@@ -227,9 +227,7 @@ func Rename(text string, snapshot Snapshot, uri protocol.DocumentUri, position p
 	}
 
 	if localImportRename.ok {
-		if !hasTextEditAtRange(edits[currentURI], localImportRename.rangeValue) {
-			edits[currentURI] = append(edits[currentURI], protocol.TextEdit{Range: localImportRename.rangeValue, NewText: newName})
-		}
+		edits[currentURI] = appendTextEditIfMissing(edits[currentURI], protocol.TextEdit{Range: localImportRename.rangeValue, NewText: newName})
 	} else if symbol.Origin == symbolOriginImport {
 		definitionURI := symbol.Definition.URI
 		if definitionURI != "" && definitionURI != currentURI {
@@ -284,6 +282,13 @@ func hasTextEditAtRange(edits []protocol.TextEdit, rangeValue protocol.Range) bo
 		}
 	}
 	return false
+}
+
+func appendTextEditIfMissing(edits []protocol.TextEdit, edit protocol.TextEdit) []protocol.TextEdit {
+	if hasTextEditAtRange(edits, edit.Range) {
+		return edits
+	}
+	return append(edits, edit)
 }
 
 func renameTokenMatchesSymbol(snapshot Snapshot, index int, rangeValue protocol.Range, symbol semanticSymbol) bool {

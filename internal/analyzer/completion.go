@@ -205,16 +205,8 @@ func outputInitializerCompletionItems(document document, uri protocol.DocumentUr
 	}
 	expectedType, path, ok := placeholderOutputCompletionType(*file, model)
 	if !ok {
-		expectedType, path, ok = placeholderParseInputCompletionType(*file, model, importBaseDir, importRootDir)
-		if ok {
-			items := completionItemsForType(expectedType, model, completionOptions{allowSchemaLiteral: len(path) > 1})
-			return sortCompletionItems(mergeCompletionItems(items, declarationItems)), true
-		}
 		items := mergeCompletionItems(parseInputItems, declarationItems)
-		if len(items) == 0 {
-			return nil, false
-		}
-		return sortCompletionItems(items), true
+		return sortCompletionItems(items), len(items) > 0
 	}
 
 	items := completionItemsForType(expectedType, model, completionOptions{allowSchemaLiteral: len(path) > 1})
@@ -1014,11 +1006,6 @@ func directiveCompletionItems(document document, uri protocol.DocumentUri, lineP
 		return schemaFileItems(document, uri, linePrefix, matches[1]), true
 	}
 
-	if strings.HasSuffix(content, ",") {
-		options := nextDirectiveDefinitions(parts)
-		return itemsFromDefinitions(options, ""), true
-	}
-
 	prefix := trailingIdentifierPrefix(lastPart)
 	options := nextDirectiveDefinitions(parts[:len(parts)-1])
 	return itemsFromDefinitions(options, prefix), true
@@ -1261,10 +1248,7 @@ func documentPathFromURI(uri protocol.DocumentUri) (string, bool) {
 		return "", false
 	}
 
-	path, err := url.PathUnescape(parsed.Path)
-	if err != nil {
-		return "", false
-	}
+	path, _ := url.PathUnescape(parsed.Path)
 
 	if len(path) >= 3 && path[0] == '/' && path[2] == ':' {
 		path = path[1:]

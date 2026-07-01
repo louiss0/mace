@@ -3,6 +3,7 @@ package analyzer
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/louiss0/mace/internal/lexer"
@@ -1334,6 +1335,8 @@ schema Runtime: { user?: { name: string; }; };
 		root := filepath.Join(workspace, "root")
 		tAssert.NoError(os.MkdirAll(root, 0o755))
 		uri := protocol.DocumentUri(fileURI(filepath.Join(root, "doc.mace")))
+		absoluteImportPath := filepath.ToSlash(filepath.Join(root, "absolute.mace"))
+		absoluteImportLexeme := strconv.Quote(absoluteImportPath)
 
 		text := `|===|
 schema User: { user: string; };
@@ -1347,13 +1350,31 @@ schema User: { user: string; };
 		doc := document{text: text, analysis: AnalyzeDocumentAt(text, path)}
 		_, _ = outputInitializerCompletionItems(doc, protocol.DocumentUri(fileURI(path)), protocol.Position{Line: 5, Character: 10})
 
+		parseOnlyText := `|===|
+schema Runtime: { result: { name: string; }; user: string; };
+|===|
+[output = data, parse = Runtime]
+{
+  result: {
+    name:
+  };
+}`
+		parseOnlyPath := filepath.Join(root, "parse-only.mace")
+		tAssert.NoError(os.WriteFile(parseOnlyPath, []byte(parseOnlyText), 0o644))
+		parseOnlyDoc := document{text: parseOnlyText, analysis: AnalyzeDocumentAt(parseOnlyText, parseOnlyPath)}
+		parseOnlyItems, parseOnlyHandled := outputInitializerCompletionItems(parseOnlyDoc, protocol.DocumentUri(fileURI(parseOnlyPath)), protocol.Position{Line: 6, Character: protocol.UInteger(len(`    name:`))})
+		tAssert.True(parseOnlyHandled)
+		tAssert.NotEmpty(parseOnlyItems)
+
 		noCompletionsText := `[output = data]
 {
-  result:
+  result: {
+    name:
+  };
 }`
 		noCompletionsPath := filepath.Join(root, "none.mace")
 		tAssert.NoError(os.WriteFile(noCompletionsPath, []byte(noCompletionsText), 0o644))
-		_, _ = outputInitializerCompletionItems(document{text: noCompletionsText, analysis: AnalyzeDocumentAt(noCompletionsText, noCompletionsPath)}, protocol.DocumentUri(fileURI(noCompletionsPath)), protocol.Position{Line: 2, Character: 9})
+		_, _ = outputInitializerCompletionItems(document{text: noCompletionsText, analysis: AnalyzeDocumentAt(noCompletionsText, noCompletionsPath)}, protocol.DocumentUri(fileURI(noCompletionsPath)), protocol.Position{Line: 3, Character: protocol.UInteger(len(`    name:`))})
 		_, _ = outputInitializerCompletionItems(document{text: "[output = data]\n{\n  value: $self.user.\n}", analysis: analysisSnapshot{}}, uri, protocol.Position{Line: 2, Character: 20})
 
 		guardedText := `|===|
@@ -1385,13 +1406,15 @@ schema Runtime: { user?: { name: string; }; };
 		items, handled = directiveCompletionItems(document{}, uri, `[output = data,`)
 		tAssert.True(handled)
 		tAssert.NotEmpty(items)
-		_, prefixOk := directivePrefix(`x[`)
+		_, prefixOk := directivePrefix(` [x[`)
 		tAssert.False(prefixOk)
 
-		_, importOK := importableSymbols(uri, root, `../outside.mace`)
+		_, importOK := importableSymbols(uri, root, absoluteImportPath)
 		tAssert.False(importOK)
-		_, uriOK := documentPathFromURI(protocol.DocumentUri(`file:///tmp/%zz`))
+		_, uriOK := documentPathFromURI(protocol.DocumentUri(`file:///tmp/%2`))
 		tAssert.False(uriOK)
+		_, windowsPathOK := documentPathFromURI(protocol.DocumentUri(`file:///C:/tmp/test.mace`))
+		tAssert.True(windowsPathOK)
 
 		selfDocText := `[output = data]
 {
@@ -1405,16 +1428,25 @@ schema Runtime: { user?: { name: string; }; };
 
 		_, _, placeholderOK := placeholderOutputCompletionType(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData}}, completionModel{})
 		tAssert.False(placeholderOK)
-		_, trailingOK := trailingMemberAccessPath("user.1")
+		_, _, schemaModePlaceholderOK := placeholderOutputCompletionType(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeSchema}}, completionModel{})
+		tAssert.False(schemaModePlaceholderOK)
+		_, _, missingPlaceholderOK := placeholderOutputCompletionType(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData, Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchema, Value: "User"}}, DataFields: []ast.OutputField{{Name: "user", Value: ast.StringLiteral{Lexeme: `"Ada"`}}}}}, completionModel{schemas: map[string]ast.RecordType{"User": {Fields: []ast.SchemaField{{Name: "user", Type: ast.PrimitiveType{Name: "string"}}}}}})
+		tAssert.False(missingPlaceholderOK)
+		_, trailingOK := trailingMemberAccessPath("user.1.")
 		tAssert.False(trailingOK)
 
-		_ = buildCompletionModel(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"../outside.mace"`}}}}, root, root, map[string]completionModel{})
-		mergeDirectiveCompletionModels(&completionModel{}, []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"../outside.mace"`}}, root, root, map[string]completionModel{})
-		_ = parseFileOutputDeclarationDefinitions([]ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"../outside.mace"`}}, root, root, map[string]completionModel{})
-		_, _ = parseFileOutputSchemaRecord([]ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"../outside.mace"`}}, root, root, map[string]completionModel{})
-		_, _ = parseFileOutputExportedRecord([]ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"../outside.mace"`}}, root, root, map[string]completionModel{})
+		_ = buildCompletionModel(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: absoluteImportLexeme}}}}, root, root, map[string]completionModel{})
+		mergeDirectiveCompletionModels(&completionModel{}, []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: absoluteImportLexeme}}, root, root, map[string]completionModel{})
+		_ = parseFileOutputDeclarationDefinitions([]ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: absoluteImportLexeme}}, root, root, map[string]completionModel{})
+		_, _ = parseFileOutputSchemaRecord([]ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: absoluteImportLexeme}}, root, root, map[string]completionModel{})
+		_, _ = parseFileOutputExportedRecord([]ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: absoluteImportLexeme}}, root, root, map[string]completionModel{})
 		_, _, _ = importedMemberCompletionRootType(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./missing.mace"`}, ImportAs: &ast.ImportedIdentifier{Name: "Shared"}}}}, []string{"Shared"}, root, root, map[string]completionModel{})
-		_, _, _ = importedMemberCompletionRootType(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"../outside.mace"`}, ImportAs: &ast.ImportedIdentifier{Name: "Shared"}}}}, []string{"Shared"}, root, root, map[string]completionModel{})
+		_, _, _ = importedMemberCompletionRootType(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: absoluteImportLexeme}, ImportAs: &ast.ImportedIdentifier{Name: "Shared"}}}}, []string{"Shared"}, root, root, map[string]completionModel{})
+		tAssert.NoError(os.WriteFile(filepath.Join(root, "empty-data.mace"), []byte(`[output = data]
+{
+}`), 0o644))
+		_, _, emptyImportOK := importedMemberCompletionRootType(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./empty-data.mace"`}, ImportAs: &ast.ImportedIdentifier{Name: "Shared"}}}}, []string{"Shared"}, root, root, map[string]completionModel{})
+		tAssert.False(emptyImportOK)
 
 		_ = resolveCompletionType(ast.UnionType{Members: []ast.TypeReference{ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}, ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "int"}}}}}}, completionModel{}, map[string]struct{}{})
 		_ = resolveCompletionType(ast.ChoiceType{Members: []ast.Expression{ast.Identifier{Name: "Missing"}}}, completionModel{}, map[string]struct{}{})
@@ -1516,6 +1548,9 @@ from "./alias-data.mace" import-as Shared;
 		tAssert.True(handled)
 		_, handled = directiveCompletionItems(document{}, protocol.DocumentUri(fileURI(filepath.Join(root, "x.mace"))), "[output = data, unknown")
 		tAssert.True(handled)
+		commaItems, commaHandled := directiveCompletionItems(document{}, protocol.DocumentUri(fileURI(filepath.Join(root, "x.mace"))), "[output = data,")
+		tAssert.True(commaHandled)
+		tAssert.NotNil(commaItems)
 		_, _ = directivePrefix("[output = data")
 
 		_, importableOK := importableSymbols(protocol.DocumentUri("file:///tmp/%zz"), root, "./alias-data.mace")
@@ -1527,6 +1562,7 @@ from "./alias-data.mace" import-as Shared;
 }`
 		selfDoc := document{text: selfText, analysis: AnalyzeDocumentAt(selfText, filepath.Join(root, "self-ok.mace"))}
 		_, _ = selfCompletionValue(selfDoc, protocol.DocumentUri(fileURI(filepath.Join(root, "self-ok.mace"))), protocol.Position{Line: 2, Character: 10}, []string{"user"})
+		_, _ = outputInitializerCompletionItems(document{text: "[output = data]\n{\n  value:\n}\n", analysis: AnalyzeDocumentAt("[output = data]\n{\n  value:\n}\n", filepath.Join(root, "empty-items.mace"))}, protocol.DocumentUri(fileURI(filepath.Join(root, "empty-items.mace"))), protocol.Position{Line: 2, Character: 8})
 		_, partialOK := partialOutputResult(document{text: "plain", analysis: analysisSnapshot{}}, protocol.DocumentUri(fileURI(filepath.Join(root, "plain.mace"))), protocol.Position{Line: 99, Character: 0})
 		tAssert.False(partialOK)
 
@@ -1537,6 +1573,8 @@ from "./alias-data.mace" import-as Shared;
 		_ = buildCompletionModel(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"bad`}}}}, root, root, map[string]completionModel{})
 		mergeDirectiveCompletionModels(&completionModel{}, []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"bad`}}, root, root, map[string]completionModel{})
 		tAssert.Empty(parseFileOutputDeclarationDefinitions([]ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"bad`}}, root, root, map[string]completionModel{}))
+		_, pathURIOK := documentPathFromURI(protocol.DocumentUri("file:///%"))
+		tAssert.False(pathURIOK)
 		_, schemaRecordOK := parseFileOutputSchemaRecord([]ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"bad`}}, root, root, map[string]completionModel{})
 		tAssert.False(schemaRecordOK)
 		_, exportedRecordOK := parseFileOutputExportedRecord([]ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"bad`}}, root, root, map[string]completionModel{})

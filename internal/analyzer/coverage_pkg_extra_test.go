@@ -59,6 +59,8 @@ string value = "x";
 		_ = sameLocation(protocol.Location{URI: uri}, protocol.Location{URI: uri})
 		_ = rangesEqual(protocol.Range{}, protocol.Range{})
 		_ = hasTextEditAtRange([]protocol.TextEdit{{Range: protocol.Range{}}}, protocol.Range{})
+		_ = appendTextEditIfMissing([]protocol.TextEdit{{Range: protocol.Range{}}}, protocol.TextEdit{Range: protocol.Range{}})
+		_ = appendTextEditIfMissing(nil, protocol.TextEdit{Range: protocol.Range{}})
 
 		_, _ = resolveRootBoundedPathInRoot(workspace, workspace, "./nested/file.mace")
 		_, _ = resolveRootBoundedPathInRoot(workspace, workspace, "../outside.mace")
@@ -185,6 +187,18 @@ string value = alias;
 		}
 		manualAliasSnapshot.symbolIndex = indexSymbols(manualAliasSnapshot.symbols)
 		_, _ = Rename(aliasText, manualAliasSnapshot, aliasURI, usageStart, "renamed_alias")
+		foreignURI := protocol.DocumentUri(fileURI(filepath.Join(workspace, "shared.mace")))
+		importRenameText := `from "./shared.mace" import User:alias;
+alias`
+		importRenameSnapshot := analysisSnapshot{
+			text:        importRenameText,
+			documentURI: aliasURI,
+			tokens:      lexAnalysisTokens(importRenameText),
+			file: &ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "User", Alias: "alias"}}}}},
+			symbols: []semanticSymbol{{Name: "alias", Kind: protocol.CompletionItemKindClass, Origin: symbolOriginImport, Range: protocol.Range{Start: protocol.Position{Line: 1, Character: 0}, End: protocol.Position{Line: 1, Character: 5}}, Definition: protocol.Location{URI: foreignURI, Range: protocol.Range{Start: protocol.Position{Line: 0, Character: 0}, End: protocol.Position{Line: 0, Character: 5}}}}},
+		}
+		importRenameSnapshot.symbolIndex = indexSymbols(importRenameSnapshot.symbols)
+		_, _ = Rename(importRenameText, importRenameSnapshot, aliasURI, protocol.Position{Line: 1, Character: 1}, "renamed_alias")
 		_, _ = identifierAt("alias_name", protocol.Position{Line: 0, Character: 5})
 		_, _ = identifierAt(" alias", protocol.Position{Line: 0, Character: 0})
 		_ = isDirectivePosition("[output = data]", protocol.Position{Line: 0, Character: 1})

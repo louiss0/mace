@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 
 	"github.com/louiss0/mace/internal/lexer"
 	"github.com/louiss0/mace/internal/parser/ast"
@@ -357,23 +358,98 @@ Profile record = { age: 1; active: true; };
 
 		_, _ = parseDirectiveWarningDiagnostic("plain", ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParse, Value: "User"}}}})
 		_, _ = semanticDiagnosticFromError(ast.File{}, nil, fmt.Errorf("plain"))
+		_, _ = semanticDiagnosticFromError(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeSchema}}, lexAnalysisTokens("value"), processor.DiagnosticError{Code: processor.CodeInvalidOutputSchemaField, Fields: processor.DiagnosticFields{Name: "value"}, Message: `schema output field "value" is ignored`})
+		_, _ = semanticDiagnosticFromError(ast.File{}, lexAnalysisTokens(`[output = data]
+{ value: [1, "x"]; }`), fmt.Errorf("array literal has mixed element types"))
 		_, _, _ = missingImportEdit("plain", ast.File{}, nil, `unknown identifier "Missing"`)
 		_, _ = fieldEditRangeAt("value: 1", lexAnalysisTokens("value: 1"), 0)
+		_, _ = fieldEditRangeAt(" value: 1;\r\n", lexAnalysisTokens(" value: 1;"), 0)
 		_, _ = formatTextQuick("not valid mace")
-		_, _ = importIdentifierEditRange("from \"./a.mace\" import Foo, Bar;", lexAnalysisTokens("from \"./a.mace\" import Foo, Bar;"), lexer.Token{Line: 1, Column: 30, Lexeme: "Bar"}, false)
-		_, _ = importIdentifierEditRange("from \"./a.mace\" import Foo;", lexAnalysisTokens("from \"./a.mace\" import Foo;"), lexer.Token{Line: 1, Column: 25, Lexeme: "Foo"}, true)
+		addStringActions := []analysisCodeActionCandidate{}
+		addStringRefactorActions("\x00", protocol.DocumentUri("file:///tmp/test.mace"), protocol.Range{}, &addStringActions)
+		barText := "from \"./a.mace\" import Foo , Bar;"
+		barTokens := lexAnalysisTokens(barText)
+		barToken := barTokens[5]
+		_, _ = importIdentifierEditRange(barText, barTokens, barToken, false)
+		aliasText := "from \"./a.mace\" import One: Local;"
+		aliasTokens := lexAnalysisTokens(aliasText)
+		oneToken, _ := importIdentifierToken(aliasTokens, ast.ImportDeclaration{Path: ast.StringLiteral{Lexeme: `"./a.mace"`}}, "One")
+		_, _ = importIdentifierEditRange(aliasText, aliasTokens, oneToken, false)
+		fooTokens := lexAnalysisTokens("from \"./a.mace\" import Foo;")
+		_, _ = importIdentifierEditRange("from \"./a.mace\" import Foo;", fooTokens, fooTokens[3], true)
+		declCRLFText := "from \"./a.mace\" import Foo;\r\n"
+		declCRLFTokens := lexAnalysisTokens(declCRLFText)
+		_, _ = importDeclarationEditRange(declCRLFText, declCRLFTokens, 3)
+		declText := "type X = string;\r\n"
+		declTokens := lexAnalysisTokens(declText)
+		_, _ = declarationEditRange(declText, declTokens, declTokens[1])
 		_, _ = importDeclarationEditRange("from \"./a.mace\" import Foo\r\n", lexAnalysisTokens("from \"./a.mace\" import Foo\r\n"), 3)
 		_, _ = importDeclarationEditRange("from \"./a.mace\" import Foo", lexAnalysisTokens("from \"./a.mace\" import Foo"), 3)
+		_, _ = unusedDeclarationAnalysis("|===|\nstring value = \"x\";\n|===|\n[output = schema]\n{}", ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.VariableDeclaration{Name: "value", NameToken: lexer.Token{Line: 2, Column: 8, Lexeme: "value"}, Type: ast.PrimitiveType{Name: "string"}, HasValue: true, Value: ast.StringLiteral{Lexeme: `"x"`}}}}, Output: ast.OutputBlock{Mode: ast.OutputModeSchema}}, lexAnalysisTokens("|===|\nstring value = \"x\";\n|===|\n[output = schema]\n{}"), documentPath)
+		_, _ = unusedImportAnalysis("from \"./a.mace\" import Foo;", ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./a.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "Foo"}}}}}, lexAnalysisTokens("from \"./a.mace\" import Foo;"), "")
+		_, _ = unusedImportAnalysis("from \"./a.mace\" import Foo;", ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./a.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "Foo"}}}}}, lexAnalysisTokens("from \"./a.mace\" import Foo;"), "")
 		_, _ = renameDuplicateVariableText("string value = \"x\";\nstring value = \"y\";")
 		_, _ = parseInputSemanticSchemaName(ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `\"./schema.mace\"`}, {Kind: ast.OutputDirectiveSchema, Value: "Runtime"}}}}, schemaImportDir)
+		_, _ = parseInputSemanticSchemaName(ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: strconv.Quote(filepath.Join(schemaImportDir, "schema.mace"))}}}}, schemaImportDir)
+		_, _ = parseInputSemanticSchemaName(ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `\"../schema.mace\"`}}}}, schemaImportDir)
+		badSchemaImportPath := filepath.Join(schemaImportDir, "bad.mace")
+		tAssert.NoError(os.WriteFile(badSchemaImportPath, []byte("["), 0o644))
+		_, _ = parseInputSemanticSchemaName(ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `\"./bad.mace\"`}}}}, schemaImportDir)
+		_, _ = parseInputSemanticSchemaName(ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: strconv.Quote(badSchemaImportPath)}}}}, schemaImportDir)
 		_ = importedSemanticSymbols(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./schema.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "Runtime"}}}}}, filepath.Join(schemaImportDir, "doc.mace"))
+		_ = importedSemanticSymbols(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"../schema.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "Runtime"}}}}}, filepath.Join(schemaImportDir, "doc.mace"))
 		_ = importedSemanticSymbols(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./schema.mace"`}, ImportAs: &ast.ImportedIdentifier{Name: "Shared"}}}}, filepath.Join(schemaImportDir, "doc.mace"))
+		_ = importedSemanticSymbols(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: strconv.Quote(filepath.Join(schemaImportDir, "schema.mace"))}, Identifiers: []ast.ImportedIdentifier{{Name: "Runtime"}}}}}, filepath.Join(schemaImportDir, "doc.mace"))
+		tAssert.NoError(os.WriteFile(filepath.Join(schemaImportDir, "empty-data.mace"), []byte("[output = data]\n{}"), 0o644))
+		_ = importedSemanticSymbols(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./empty-data.mace"`}, ImportAs: &ast.ImportedIdentifier{Name: "Shared"}}}}, filepath.Join(schemaImportDir, "doc.mace"))
 		_, _ = importedImportAsSemanticSymbol(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData, DataFields: []ast.OutputField{{Name: "value", Value: ast.StringLiteral{Lexeme: `"x"`}}}}}, schemaImportPath, "Shared")
+		_, _ = importedImportAsSemanticSymbol(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeSchema}}, schemaImportPath, "Shared")
+		_, _ = importedImportAsSemanticSymbol(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData}}, badSchemaImportPath, "Shared")
+		_ = importedSemanticSymbols(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: strconv.Quote(badSchemaImportPath)}, Identifiers: []ast.ImportedIdentifier{{Name: "Runtime"}}}}}, filepath.Join(schemaImportDir, "doc.mace"))
 		_, _, _, _ = parsedFile(schemaImportPath)
+		_, _, _, _ = parsedFile(badSchemaImportPath)
 		_ = summarizeValue(processor.Value{Kind: processor.ValueString, String: "x"})
+		_ = summarizeValue(processor.Value{Kind: processor.ValueHexInt, Int: 1})
 		_ = summarizeValue(processor.Value{Kind: processor.ValueRecord, Record: map[string]processor.Value{"name": {Kind: processor.ValueString, String: "Ada"}}})
 		_ = expressionSummary(ast.SelfReference{Path: []string{"user", "name"}})
+		_ = expressionSummary(ast.FloatLiteral{Lexeme: "1.0"})
 		_ = quotedName("two words")
+		_ = quotedName(`unknown schema \"Name`)
+		_ = analyzeDocumentAtInRoot(`[output = data, parse = Runtime]\n{\n  value: 1;\n}`, "", workspace)
+		_ = AnalyzeDocumentAtInRoot(`[output = data, parse = Runtime]
+{
+  value: 1;
+}`, documentPath, workspace)
+		_ = AnalyzeDocumentAtInRoot(`|===|
+schema Runtime: { value: int; };
+|===|
+[output = data, parse = Runtime]
+{
+  value: 1;
+}`, documentPath, workspace)
+		_ = AnalyzeDocumentAtInRoot(`[output = data, parse = Runtime]
+{
+  value: 1;
+}`, documentPath, documentPath)
+		_, _ = analyzeFileStructure(`from bad import x;`, ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: "bad"}}}}, lexAnalysisTokens(`from bad import x;`), documentPath)
+		_, _ = directivePathDiagnostics(ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchemaFile, Value: "bad"}}}}, lexAnalysisTokens(`[schema_file = bad]`), documentPath)
+		_ = importResolutionCodeActions(`from "./missing.mace" import Foo;`, ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./missing.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "Foo"}}}}}, lexAnalysisTokens(`from "./missing.mace" import Foo;`), documentPath)
+		_ = importResolutionCodeActions(`from "./renamed.mace" import Foo;`, ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./renamed.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "Foo"}}}}}, lexAnalysisTokens(`from "./renamed.mace" import Foo;`), documentPath)
+		tAssert.NoError(os.WriteFile(filepath.Join(workspace, "invalid-import.mace"), []byte("["), 0o644))
+		_ = importResolutionCodeActions(`from "./invalid-import.mace" import Missing;`, ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./invalid-import.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "Missing"}}}}}, lexAnalysisTokens(`from "./invalid-import.mace" import Missing;`), documentPath)
+		_ = importResolutionCodeActions(`from "./schema.mace" import ZZZ;`, ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./schema.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "ZZZ"}}}}}, lexAnalysisTokens(`from "./schema.mace" import ZZZ;`), documentPath)
+		_ = importResolutionCodeActions(`from "./schema.mace" import Usr;`, ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./schema.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "Usr"}}}}}, nil, documentPath)
+		_ = documentationCodeActions("type Alias: string", ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.TypeDeclaration{Name: "Alias", NameToken: lexer.Token{Line: 1, Column: 6, Lexeme: "Alias"}, Type: ast.PrimitiveType{Name: "string"}}}}}, lexAnalysisTokens("type Alias: string"), documentPath)
+		_, _ = replaceSchemaFieldType(ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}, []string{"name", "child"}, ast.PrimitiveType{Name: "int"})
+		_, _ = replaceSchemaFieldType(ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "child", Type: ast.PrimitiveType{Name: "string"}}}}}}}, []string{"name", "child", "leaf"}, ast.PrimitiveType{Name: "int"})
+		mixedFile := ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.TypeDeclaration{Name: "Alias"}, ast.VariableDeclaration{Name: "values", NameToken: lexer.Token{Line: 1, Column: 1, Lexeme: "values"}, HasValue: false}}}}
+		mixedTokens := lexAnalysisTokens("values = [1, \"x\"]; ")
+		_, _ = semanticDiagnosticFromError(ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.VariableDeclaration{Name: "values", NameToken: lexer.Token{Line: 1, Column: 1, Lexeme: "values"}, HasValue: true, Value: ast.ArrayLiteral{Elements: []ast.Expression{ast.IntLiteral{Lexeme: "1"}, ast.StringLiteral{Lexeme: `"x"`}}}}}}}, mixedTokens, fmt.Errorf("array literal has mixed element types"))
+		_, _ = mixedArrayLiteralDiagnostic(mixedFile, lexAnalysisTokens("values"), "array literal has mixed element types")
+		_, _ = variableTypeMismatchDiagnostic(ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.VariableDeclaration{Name: "x", Type: ast.PrimitiveType{Name: "string"}, HasValue: true, Value: ast.StringLiteral{Lexeme: `"x"`}}}}}, nil, processor.DiagnosticError{Code: processor.CodeTypeMismatch, Fields: processor.DiagnosticFields{Expected: "string", Actual: "int"}, Message: "bad"})
+		_, _ = variableTypeMismatchDiagnostic(ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.VariableDeclaration{Name: "x", Type: ast.PrimitiveType{Name: "string"}, HasValue: true, Value: ast.StringLiteral{Lexeme: `"x"`}}}}}, nil, processor.DiagnosticError{Code: processor.CodeTypeMismatch, Fields: processor.DiagnosticFields{Expected: "string", Actual: "string"}, Message: "bad"})
+		_ = collectSemanticSymbols(ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.DocDeclaration{}, nil}}}, nil, nil, documentPath)
+		_ = declarationDocumentation(ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.DocDeclaration{Target: "Other"}}}}, "Name")
 		_ = file
 	})
 })
