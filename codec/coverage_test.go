@@ -482,6 +482,18 @@ type errReader struct{}
 func (errReader) Read([]byte) (int, error) { return 0, fmt.Errorf("read boom") }
 func (errReader) Close() error             { return nil }
 
+func TestCodecCoverageFormattingHelpers(t *testing.T) {
+	report := CheckReport{Syntax: []CheckIssue{{Path: "$", Reason: "boom", Format: "json"}}}
+	formatted, err := FormatCheckReport(report)
+	require.NoError(t, err)
+	require.Contains(t, formatted, "boom")
+
+	fileReports := []FileCheckReport{{Path: "input.json", Format: "json", Errors: report}}
+	formatted, err = FormatFileCheckReports(fileReports)
+	require.NoError(t, err)
+	require.Contains(t, formatted, "input.json")
+}
+
 func urlMust(s string) *url.URL {
 	u, err := url.Parse(s)
 	if err != nil {
