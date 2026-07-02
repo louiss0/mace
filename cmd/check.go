@@ -8,6 +8,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var formatCheckReportFn = codec.FormatCheckReport
+var formatFileCheckReportsFn = codec.FormatFileCheckReports
+
 type commandError struct {
 	code    int
 	message string
@@ -68,9 +71,9 @@ func writeCheckOutput(writer io.Writer, reports []codec.FileCheckReport) error {
 		err    error
 	)
 	if len(reports) == 1 {
-		source, err = codec.FormatCheckReport(reports[0].Errors)
+		source, err = formatCheckReportFn(reports[0].Errors)
 	} else {
-		source, err = codec.FormatFileCheckReports(reports)
+		source, err = formatFileCheckReportsFn(reports)
 	}
 	if err != nil {
 		return err

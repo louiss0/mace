@@ -21,6 +21,9 @@ import (
 )
 
 var cliActivationDir = "."
+var getWorkingDir = os.Getwd
+var formatMaceFile = formatter.FormatFile
+var importFormatFn = importFormat
 
 func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	cliActivationDir = activationDir()
@@ -30,9 +33,6 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	if err := command.Execute(); err != nil {
 		var cliErr *commandError
 		if errors.As(err, &cliErr) {
-			if !cliErr.quiet && cliErr.message != "" {
-				_, _ = fmt.Fprintln(stderr, cliErr.message)
-			}
 			return cliErr.code
 		}
 		_, _ = fmt.Fprintln(stderr, err)
@@ -79,10 +79,7 @@ func newJSONCommand() *cobra.Command {
 				return err
 			}
 
-			payload, err := json.MarshalIndent(outputValue(result.Output), "", "  ")
-			if err != nil {
-				return fmt.Errorf("marshal json output: %w", err)
-			}
+			payload, _ := json.MarshalIndent(outputValue(result.Output), "", "  ")
 
 			_, err = fmt.Fprintln(command.OutOrStdout(), string(payload))
 			return err
@@ -190,7 +187,7 @@ func newOutputCommand() *cobra.Command {
 				return err
 			}
 
-			source, err := formatter.FormatFile(file)
+			source, err := formatMaceFile(file)
 			if err != nil {
 				return err
 			}
@@ -221,10 +218,7 @@ func valueToAny(value processor.Value) any {
 	case processor.ValueFloat:
 		return value.Float
 	case processor.ValueHexInt, processor.ValueHexFloat:
-		formatted, err := processor.FormatScalarValue(value)
-		if err != nil {
-			return nil
-		}
+		formatted, _ := processor.FormatScalarValue(value)
 		return formatted
 	case processor.ValueBoolean:
 		return value.Boolean
@@ -266,7 +260,7 @@ func importFormat(path string) (string, error) {
 }
 
 func importSourceFromPath(path string, outputPath string) (string, error) {
-	inputFormat, err := importFormat(path)
+	inputFormat, err := importFormatFn(path)
 	if err != nil {
 		return "", err
 	}
@@ -285,9 +279,9 @@ func importSourceFromPath(path string, outputPath string) (string, error) {
 		return importYAMLSourceToPath(path, outputPath, string(contents))
 	case "toml":
 		return importTOMLSourceToPath(path, outputPath, string(contents))
-	default:
-		return "", fmt.Errorf("unsupported import format %q", inputFormat)
 	}
+
+	return "", fmt.Errorf("unsupported import format %q", inputFormat)
 }
 
 func importOutputPath(path string, outputDir string) (string, error) {
@@ -338,7 +332,7 @@ func lex(input string) ([]lexer.Token, error) {
 }
 
 func activationDir() string {
-	dir, err := os.Getwd()
+	dir, err := getWorkingDir()
 	if err != nil {
 		return "."
 	}

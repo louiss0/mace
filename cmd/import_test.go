@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	burnttoml "github.com/BurntSushi/toml"
 	goccyyaml "github.com/goccy/go-yaml"
 	yamlast "github.com/goccy/go-yaml/ast"
+	"github.com/louiss0/mace/internal/parser/ast"
 	"github.com/louiss0/mace/internal/processor"
 	. "github.com/onsi/ginkgo/v2"
 )
@@ -36,6 +38,12 @@ func canonicalJSON(value any) string {
 type importFixture struct {
 	name string
 	mace string
+}
+
+type quotedStringer string
+
+func (value quotedStringer) String() string {
+	return string(value)
 }
 
 func dataFixtures() []importFixture {
@@ -959,5 +967,358 @@ name = "orbital-array"
 		)
 		tAssert.NoError(err)
 		tAssert.Contains(source, `[output = data, schema_file = "../workspace/schemas/vehicle_telemetry.schema.mace"]`)
+	})
+
+	It("covers import conversion edge cases", func() {
+		tAssert.NoError(validateImportFieldName("valid_name"))
+		tAssert.ErrorContains(validateImportFieldName("invalid-name"), "unsupported field name")
+
+		tAssert.Equal("$self.name", selfFieldPath("", "name"))
+		tAssert.Equal("$self.items[2]", selfIndexPath("$self.items", 2))
+		tAssert.Equal("", selfIndexPath("", 2))
+		tAssert.Equal([]string{"[3]", "[4]"}, appendIndex([]string{"[3]"}, 4))
+		tAssert.Equal("group.member", pathKey([]string{"group", "member"}))
+		tAssert.Equal(`"""quoted"""`, tripleQuotedString("quoted"))
+		tAssert.True(isOmittedImportExpression(omittedExpression{}))
+		tAssert.False(isOmittedImportExpression(rawExpression{text: "value"}))
+
+		emptyDocs := yamlast.File{}
+		_, err := yamlRootExpression(&emptyDocs)
+		tAssert.ErrorContains(err, "expected at least one document")
+
+		scalarSource, err := importYAMLSource("workspace/scalar.yaml", "hello")
+		tAssert.NoError(err)
+		tAssert.Contains(scalarSource, "document_1")
+
+		tagSource, err := importYAMLSource("workspace/tag.yaml", "!foo hello")
+		tAssert.NoError(err)
+		tAssert.Contains(tagSource, "hello")
+
+		multiDocSource, err := importYAMLSource("workspace/multi.yaml", "---\nhello\n---\nworld\n")
+		tAssert.NoError(err)
+		tAssert.Contains(multiDocSource, "document_1")
+		tAssert.Contains(multiDocSource, "document_2")
+
+		infinitySource, err := importYAMLSource("workspace/infinity.yaml", "value: .inf")
+		tAssert.NoError(err)
+		tAssert.Contains(infinitySource, `".inf"`)
+
+		nanSource, err := importYAMLSource("workspace/nan.yaml", "value: .nan")
+		tAssert.NoError(err)
+		tAssert.Contains(nanSource, `".nan"`)
+
+		literalSource, err := importYAMLSource("workspace/literal.yaml", "value: |\n  line one\n  line two\n")
+		tAssert.NoError(err)
+		tAssert.Contains(literalSource, `"""`)
+
+		_, err = importYAMLSourceToPath("workspace/invalid.yaml", "workspace/out.mace", "foo-bar: 1")
+		tAssert.ErrorContains(err, "unsupported field name")
+
+		_, err = yamlFieldName(&yamlast.IntegerNode{Value: 1})
+		tAssert.ErrorContains(err, "unsupported map key")
+
+		_, err = importYAMLSourceToPath("workspace/parse.yaml", "workspace/out.mace", "[")
+		tAssert.Error(err)
+
+		_, err = importYAMLSourceToPath("workspace/merge.yaml", "workspace/out.mace", "<<: *missing")
+		tAssert.Error(err)
+
+		_, err = importYAMLSourceToPath("workspace/merge-invalid.yaml", "workspace/out.mace", "<<: value")
+		tAssert.ErrorContains(err, "merge source")
+
+		_, err = importYAMLSourceToPath("workspace/multi-merge.yaml", "workspace/out.mace", "---\n<<: value\n---\nname: Ada\n")
+		tAssert.Error(err)
+
+		_, err = importYAMLSourceToPath("workspace/anchor.yaml", "workspace/out.mace", "&defaults 1")
+		tAssert.Error(err)
+
+		_, err = importYAMLSourceToPath("workspace/alias.yaml", "workspace/out.mace", "value: *missing")
+		tAssert.ErrorContains(err, "unknown alias")
+
+		_, err = importTOMLSourceToPath("workspace/invalid.toml", "workspace/out.mace", "name =")
+		tAssert.Error(err)
+
+		_, err = importTOMLSourceToPath("workspace/invalid-field.toml", "workspace/out.mace", "bad-name = 1")
+		tAssert.Error(err)
+
+		stringerExpression, err := tomlExpression(quotedStringer("hello"), nil, tomlImportConfig{})
+		tAssert.NoError(err)
+		tAssert.Equal(`"hello"`, stringerExpression.render(0))
+
+		_, err = tomlExpression(nil, nil, tomlImportConfig{})
+		tAssert.NoError(err)
+
+		_, err = tomlExpression(uint(7), nil, tomlImportConfig{})
+		tAssert.NoError(err)
+
+		_, err = tomlExpression(float32(1.5), nil, tomlImportConfig{})
+		tAssert.NoError(err)
+
+		_, err = tomlExpression(map[string]any{"bad-name": 1}, nil, tomlImportConfig{})
+		tAssert.ErrorContains(err, "unsupported field name")
+
+		_, err = tomlExpression([]any{struct{}{}}, nil, tomlImportConfig{})
+		tAssert.ErrorContains(err, "unsupported value")
+
+		_, err = tomlExpression([]map[string]any{{"bad-name": 1}}, nil, tomlImportConfig{})
+		tAssert.ErrorContains(err, "unsupported field name")
+
+		_, err = tomlRecordExpression(map[string]any{"nested": []any{struct{}{}}}, nil, tomlImportConfig{})
+		tAssert.ErrorContains(err, "unsupported value")
+
+		_, err = reflectTOMLExpression(reflect.Value{}, nil, tomlImportConfig{})
+		tAssert.NoError(err)
+
+		value := 7
+		_, err = reflectTOMLExpression(reflect.ValueOf(&value), nil, tomlImportConfig{})
+		tAssert.ErrorContains(err, "unsupported value int")
+
+		_, err = reflectTOMLExpression(reflect.ValueOf([]any{struct{}{}}), nil, tomlImportConfig{})
+		tAssert.ErrorContains(err, "unsupported value")
+
+		basePath, err := filepath.Abs("schema.mace")
+		tAssert.NoError(err)
+		tAssert.Equal(basePath, explicitRelativeSchemaPath(basePath))
+
+		related := adjustedSchemaReferenceToMace("schemas/config.json", filepath.Join("workspace", "input.yaml"), filepath.Join("workspace", "output.mace"))
+		tAssert.Equal("./schemas/config.mace", related)
+
+		absolutePath, err := filepath.Abs("schemas/config.json")
+		tAssert.NoError(err)
+		tAssert.Contains(adjustedSchemaReferenceToMace(absolutePath, filepath.Join("workspace", "input.yaml"), ""), "config.mace")
+		tAssert.Contains(adjustedSchemaReferenceToMace("https://example.com/schema.json", filepath.Join("workspace", "input.yaml"), ""), "https://example.com")
+		tAssert.Equal(".mace#fragment", adjustedSchemaReferenceToMace("#fragment", filepath.Join("workspace", "input.yaml"), ""))
+
+		record := recordExpression{fields: []recordField{
+			{name: "left", value: rawExpression{text: "$self.right"}},
+			{name: "right", value: rawExpression{text: "1"}},
+		}}
+		ordered, err := yamlOrderedFieldNames([]string{"left", "right"}, map[string]recordField{
+			"left":  record.fields[0],
+			"right": record.fields[1],
+		})
+		tAssert.NoError(err)
+		tAssert.Equal([]string{"right", "left"}, ordered)
+
+		_, err = yamlOrderedFieldNames([]string{"left", "right"}, map[string]recordField{
+			"left":  {name: "left", value: rawExpression{text: "$self.right"}},
+			"right": {name: "right", value: rawExpression{text: "$self.left"}},
+		})
+		tAssert.ErrorContains(err, "cyclic")
+
+		_, ok := yamlTopLevelReferenceName("$self.name")
+		tAssert.True(ok)
+		_, ok = yamlTopLevelReferenceName("$self.name[0]")
+		tAssert.False(ok)
+
+		yamlState := &yamlImportState{
+			anchors: map[string]yamlAnchor{
+				"defaults": {
+					path:  "$self.defaults",
+					value: recordExpression{fields: []recordField{{name: "name", value: rawExpression{text: `"Ada"`}}}},
+				},
+			},
+			hoists: map[string]importExpression{},
+		}
+
+		nilNode, err := yamlNodeExpression(nil, "", yamlState)
+		tAssert.NoError(err)
+		tAssert.True(isOmittedImportExpression(nilNode))
+
+		documentNode, err := yamlNodeExpression(&yamlast.DocumentNode{Body: &yamlast.StringNode{Value: "doc"}}, "", yamlState)
+		tAssert.NoError(err)
+		tAssert.Equal(`"doc"`, documentNode.render(0))
+
+		tagNode, err := yamlNodeExpression(&yamlast.TagNode{Value: &yamlast.StringNode{Value: "tag"}}, "", yamlState)
+		tAssert.NoError(err)
+		tAssert.Equal(`"tag"`, tagNode.render(0))
+
+		sequenceNode, err := yamlNodeExpression(&yamlast.SequenceNode{Values: []yamlast.Node{&yamlast.StringNode{Value: "item"}}}, "", yamlState)
+		tAssert.NoError(err)
+		tAssert.Equal("[\n  \"item\"\n]", sequenceNode.render(0))
+
+		_, err = yamlNodeExpression(&yamlast.SequenceNode{Values: []yamlast.Node{&yamlast.AnchorNode{Name: &yamlast.IntegerNode{Value: 1}, Value: &yamlast.StringNode{Value: "item"}}}}, "", yamlState)
+		tAssert.Error(err)
+
+		nullNode, err := yamlNodeExpression(&yamlast.NullNode{}, "", yamlState)
+		tAssert.NoError(err)
+		tAssert.True(isOmittedImportExpression(nullNode))
+
+		_, err = yamlNodeExpression(&yamlast.AnchorNode{Name: &yamlast.IntegerNode{Value: 1}, Value: &yamlast.StringNode{Value: "value"}}, "", yamlState)
+		tAssert.ErrorContains(err, "unsupported anchor name")
+
+		_, err = yamlNodeExpression(&yamlast.AnchorNode{Name: &yamlast.StringNode{Value: "defaults"}, Value: &yamlast.AliasNode{Value: &yamlast.StringNode{Value: "missing"}}}, "$self.service", yamlState)
+		tAssert.ErrorContains(err, "unknown alias")
+
+		_, err = yamlNodeExpression(&yamlast.AliasNode{Value: &yamlast.IntegerNode{Value: 1}}, "", yamlState)
+		tAssert.ErrorContains(err, "unsupported alias")
+
+		aliasState := &yamlImportState{anchors: map[string]yamlAnchor{"defaults": {path: "$self.defaults", value: omittedExpression{}}}, hoists: map[string]importExpression{}}
+		aliasNode, err := yamlNodeExpression(&yamlast.AliasNode{Value: &yamlast.StringNode{Value: "defaults"}}, "", aliasState)
+		tAssert.NoError(err)
+		tAssert.True(isOmittedImportExpression(aliasNode))
+
+		mappingValueNode, err := yamlNodeExpression(&yamlast.MappingValueNode{Key: &yamlast.StringNode{Value: "name"}, Value: &yamlast.StringNode{Value: "Ada"}}, "", yamlState)
+		tAssert.NoError(err)
+		tAssert.Contains(mappingValueNode.render(0), "name")
+
+		_, err = yamlNodeExpression(&yamlast.MappingValueNode{Key: &yamlast.StringNode{Value: "bad name"}, Value: &yamlast.StringNode{Value: "Ada"}}, "", yamlState)
+		tAssert.ErrorContains(err, "unsupported field name")
+
+		_, err = yamlNodeExpression(&yamlast.MappingValueNode{Key: &yamlast.IntegerNode{Value: 1}, Value: &yamlast.StringNode{Value: "Ada"}}, "", yamlState)
+		tAssert.ErrorContains(err, "unsupported map key")
+
+		_, err = yamlNodeExpression(&yamlast.DirectiveNode{}, "", yamlState)
+		tAssert.Error(err)
+
+		_, err = yamlNodeExpression(&yamlast.AnchorNode{Name: &yamlast.StringNode{Value: "defaults"}, Value: &yamlast.StringNode{Value: "value"}}, "", yamlState)
+		tAssert.ErrorContains(err, "must be attached")
+
+		_, err = yamlNodeExpression(&yamlast.AliasNode{Value: &yamlast.StringNode{Value: "missing"}}, "", yamlState)
+		tAssert.ErrorContains(err, "unknown alias")
+
+		yamlState = &yamlImportState{
+			anchors: map[string]yamlAnchor{
+				"defaults": {
+					path:  "$self.defaults",
+					value: recordExpression{fields: []recordField{{name: "name", value: rawExpression{text: `"Ada"`}}}},
+				},
+			},
+			hoists: map[string]importExpression{},
+		}
+
+		resolved, err := yamlResolvedRecord(rawExpression{text: "$self.defaults"}, yamlState)
+		tAssert.NoError(err)
+		tAssert.Len(resolved.fields, 1)
+
+		mergeResolved, err := yamlResolvedRecord(mergeExpression{parts: []importExpression{rawExpression{text: "$self.defaults"}}}, yamlState)
+		tAssert.NoError(err)
+		tAssert.Len(mergeResolved.fields, 1)
+
+		_, err = yamlResolvedRecord(mergeExpression{parts: []importExpression{rawExpression{text: "value"}}}, yamlState)
+		tAssert.ErrorContains(err, "not a record")
+
+		duplicated, err := yamlResolvedRecord(mergeExpression{parts: []importExpression{
+			recordExpression{fields: []recordField{{name: "name", value: rawExpression{text: "1"}}}},
+			recordExpression{fields: []recordField{{name: "name", value: rawExpression{text: "2"}}}},
+		}}, yamlState)
+		tAssert.NoError(err)
+		tAssert.Equal("2", duplicated.fields[0].value.render(0))
+
+		_, err = yamlResolvedRecord(rawExpression{text: "value"}, yamlState)
+		tAssert.ErrorContains(err, "not a record")
+
+		_, err = yamlResolvedRecord(rawExpression{text: "$self.missing"}, yamlState)
+		tAssert.ErrorContains(err, "unknown merge source")
+
+		_, err = yamlResolvedRecord(omittedExpression{}, yamlState)
+		tAssert.Error(err)
+
+		merged, err := yamlResolvedRecord(mergeExpression{parts: []importExpression{recordExpression{fields: []recordField{{name: "name", value: rawExpression{text: `"Ada"`}}}}}}, yamlState)
+		tAssert.NoError(err)
+		tAssert.Len(merged.fields, 1)
+
+		dependencies := yamlExpressionDependencies(recordExpression{fields: []recordField{{name: "name", value: rawExpression{text: "$self.defaults"}}}}, map[string]recordField{"defaults": {name: "defaults", value: rawExpression{text: `"Ada"`}}})
+		tAssert.Contains(dependencies, "defaults")
+
+		nestedDependencies := yamlExpressionDependencies(arrayExpression{items: []importExpression{
+			recordExpression{fields: []recordField{{name: "inner", value: rawExpression{text: "$self.defaults"}}}},
+			mergeExpression{parts: []importExpression{rawExpression{text: "$self.defaults"}}},
+		}}, map[string]recordField{"defaults": {name: "defaults", value: rawExpression{text: `"Ada"`}}})
+		tAssert.Contains(nestedDependencies, "defaults")
+
+		hoistState := &yamlImportState{
+			hoists: map[string]importExpression{
+				"existing": rawExpression{text: "1"},
+				"hoisted":  rawExpression{text: `"Ada"`},
+				"skipped":  omittedExpression{},
+			},
+			hoistOrder: []string{"existing", "hoisted", "skipped"},
+		}
+		hoistedRecord, err := yamlRecordWithHoists(recordExpression{fields: []recordField{{name: "existing", value: rawExpression{text: "2"}}}}, hoistState)
+		tAssert.NoError(err)
+		tAssert.Len(hoistedRecord.fields, 2)
+
+		emptyHoistsRecord, err := yamlRecordWithHoists(recordExpression{}, &yamlImportState{hoists: map[string]importExpression{}})
+		tAssert.NoError(err)
+		tAssert.NoError(err)
+		tAssert.Empty(emptyHoistsRecord.fields)
+
+		missingHoistRecord, err := yamlRecordWithHoists(recordExpression{}, &yamlImportState{
+			hoists:     map[string]importExpression{"present": rawExpression{text: "1"}},
+			hoistOrder: []string{"missing", "present"},
+		})
+		tAssert.NoError(err)
+		tAssert.Len(missingHoistRecord.fields, 1)
+
+		rootRecord, err := yamlRootExpression(&yamlast.File{Docs: []*yamlast.DocumentNode{{Body: &yamlast.AnchorNode{Name: &yamlast.StringNode{Value: "defaults"}, Value: &yamlast.StringNode{Value: "value"}}}}})
+		tAssert.Error(err)
+		tAssert.Empty(rootRecord.fields)
+
+		multiErrorRoot, err := yamlRootExpression(&yamlast.File{Docs: []*yamlast.DocumentNode{{Body: &yamlast.AnchorNode{Name: &yamlast.StringNode{Value: "defaults"}, Value: &yamlast.AliasNode{Value: &yamlast.StringNode{Value: "missing"}}}}, {Body: &yamlast.StringNode{Value: "hello"}}}})
+		tAssert.Error(err)
+		tAssert.Empty(multiErrorRoot.fields)
+
+		multiRoot, err := yamlRootExpression(&yamlast.File{Docs: []*yamlast.DocumentNode{{Body: &yamlast.StringNode{Value: "hello"}}, {Body: &yamlast.StringNode{Value: "world"}}}})
+		tAssert.NoError(err)
+		tAssert.Len(multiRoot.fields, 2)
+
+		_, ok, err = yamlDocumentRecord(recordExpression{}, yamlState)
+		tAssert.NoError(err)
+		tAssert.True(ok)
+
+		_, ok, err = yamlDocumentRecord(rawExpression{text: "value"}, yamlState)
+		tAssert.NoError(err)
+		tAssert.False(ok)
+
+		_, ok, err = yamlDocumentRecord(mergeExpression{parts: []importExpression{recordExpression{fields: []recordField{{name: "name", value: rawExpression{text: `"Ada"`}}}}}}, yamlState)
+		tAssert.NoError(err)
+		tAssert.True(ok)
+
+		documentOrder := orderedRecordNames(map[string]any{"b": 1, "a": 2}, nil, map[string][]string{"": {"missing", "b"}})
+		tAssert.Equal([]string{"b", "a"}, documentOrder)
+
+		tAssert.Equal("[]", arrayExpression{}.render(0))
+		tAssert.Equal("{}", recordExpression{}.render(0))
+
+		parts, err := yamlMergeExpressions(&yamlast.TagNode{Value: &yamlast.SequenceNode{Values: []yamlast.Node{&yamlast.StringNode{Value: "item"}}}}, "", yamlState)
+		tAssert.NoError(err)
+		tAssert.Len(parts, 1)
+
+		_, err = yamlMergeExpressions(&yamlast.SequenceNode{Values: []yamlast.Node{&yamlast.AnchorNode{Name: &yamlast.IntegerNode{Value: 1}, Value: &yamlast.StringNode{Value: "item"}}}}, "", yamlState)
+		tAssert.Error(err)
+
+		singlePart, err := yamlMergeExpressions(&yamlast.StringNode{Value: "item"}, "", yamlState)
+		tAssert.NoError(err)
+		tAssert.Len(singlePart, 1)
+
+		_, err = formatImportedSource("$x")
+		tAssert.Error(err)
+
+		_, err = formatImportedSource("[output = data]\n{")
+		tAssert.Error(err)
+
+		_, err = formatImportedSource("[output = data]\n$")
+		tAssert.Error(err)
+
+		previous := formatMaceFile
+		defer func() { formatMaceFile = previous }()
+		formatMaceFile = func(ast.File) (string, error) {
+			return "", errors.New("format failed")
+		}
+
+		_, err = formatImportedSource("[output = data]\n{ name: \"Ada\"; }")
+		tAssert.ErrorContains(err, "format generated source")
+		tAssert.Error(err)
+
+		_, err = importSourceFromPath(filepath.Join("workspace", "missing.yaml"), "")
+		tAssert.Error(err)
+
+		badOutputDir := writeTempFile("output-dir", "")
+		_, err = importOutputPath("config.json", badOutputDir)
+		tAssert.Error(err)
+
+		tAssert.Equal("", adjustedSchemaPath("workspace/input.yaml", "workspace/output.mace", "name = 1", tomlSchemaPattern))
+		tAssert.Equal("", adjustedSchemaReferenceToMace("   ", "workspace/input.yaml", "workspace/output.mace"))
 	})
 })
