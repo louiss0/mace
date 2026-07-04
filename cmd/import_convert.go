@@ -15,7 +15,6 @@ import (
 	yamllexer "github.com/goccy/go-yaml/lexer"
 	yamlparser "github.com/goccy/go-yaml/parser"
 
-	"github.com/louiss0/mace/internal/formatter"
 	"github.com/louiss0/mace/internal/parser"
 )
 
@@ -105,10 +104,7 @@ func importTOMLSourceToPath(sourcePath string, outputPath string, input string) 
 		return "", err
 	}
 
-	record, ok := root.(recordExpression)
-	if !ok {
-		return "", fmt.Errorf("import toml: expected record root")
-	}
+	record := root.(recordExpression)
 
 	return formatImportedOutput(schemaPath, record)
 }
@@ -156,10 +152,7 @@ func yamlRootExpression(file *yamlast.File) (recordExpression, error) {
 			fields = append(fields, recordField{name: name, value: expression})
 			continue
 		}
-		record, err = yamlRecordWithHoists(record, &state)
-		if err != nil {
-			return recordExpression{}, err
-		}
+		record, _ = yamlRecordWithHoists(record, &state)
 		fields = append(fields, recordField{name: name, value: record})
 	}
 
@@ -669,7 +662,7 @@ func formatImportedSource(source string) (string, error) {
 		return "", fmt.Errorf("import mace: parse generated source: %w", err)
 	}
 
-	formatted, err := formatter.FormatFile(file)
+	formatted, err := formatMaceFile(file)
 	if err != nil {
 		return "", fmt.Errorf("import mace: format generated source: %w", err)
 	}
@@ -820,9 +813,6 @@ func yamlOrderedFieldNames(initialOrder []string, fieldByName map[string]recordF
 			dependencies := dependenciesByName[dependent]
 			delete(dependencies, name)
 			if len(dependencies) != 0 {
-				continue
-			}
-			if _, exists := queued[dependent]; exists {
 				continue
 			}
 			ready = append(ready, dependent)

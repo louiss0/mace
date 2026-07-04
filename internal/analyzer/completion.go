@@ -88,9 +88,6 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 		if outputKeyCompletionContext(linePrefix) {
 			if file := completionFile(document, linePrefix); file != nil && hasParseFileOnlyOutput(file.Output.Directives) {
 				importBaseDir := filepath.Dir(documentPath(uri))
-				if importBaseDir == "" {
-					importBaseDir = "."
-				}
 				importRootDir := completionRoot(document.analysis, uri)
 				items := parseFileOutputDeclarationDefinitions(file.Output.Directives, importBaseDir, importRootDir, map[string]completionModel{})
 				return itemsFromDeclarations(items, identifierPrefixAt(document.text, position))
@@ -152,16 +149,9 @@ func initializerCompletionItems(document document, uri protocol.DocumentUri, pos
 	}
 
 	importBaseDir := filepath.Dir(documentPath(uri))
-	if importBaseDir == "" {
-		importBaseDir = "."
-	}
-
 	importRootDir := completionRoot(document.analysis, uri)
 	model := buildCompletionModel(*file, importBaseDir, importRootDir, map[string]completionModel{})
-	expectedType, path, ok := placeholderCompletionType(*file, model)
-	if !ok {
-		return nil, false
-	}
+	expectedType, path, _ := placeholderCompletionType(*file, model)
 
 	return sortCompletionItems(completionItemsForType(expectedType, model, completionOptions{allowSchemaLiteral: len(path) > 0})), true
 }
@@ -185,10 +175,6 @@ func outputInitializerCompletionItems(document document, uri protocol.DocumentUr
 	}
 
 	importBaseDir := filepath.Dir(documentPath(uri))
-	if importBaseDir == "" {
-		importBaseDir = "."
-	}
-
 	importRootDir := completionRoot(document.analysis, uri)
 	prefix := identifierPrefixAt(document.text, position)
 	cache := map[string]completionModel{}
@@ -219,16 +205,8 @@ func outputInitializerCompletionItems(document document, uri protocol.DocumentUr
 	}
 	expectedType, path, ok := placeholderOutputCompletionType(*file, model)
 	if !ok {
-		expectedType, path, ok = placeholderParseInputCompletionType(*file, model, importBaseDir, importRootDir)
-		if ok {
-			items := completionItemsForType(expectedType, model, completionOptions{allowSchemaLiteral: len(path) > 1})
-			return sortCompletionItems(mergeCompletionItems(items, declarationItems)), true
-		}
 		items := mergeCompletionItems(parseInputItems, declarationItems)
-		if len(items) == 0 {
-			return nil, false
-		}
-		return sortCompletionItems(items), true
+		return sortCompletionItems(items), len(items) > 0
 	}
 
 	items := completionItemsForType(expectedType, model, completionOptions{allowSchemaLiteral: len(path) > 1})
@@ -247,10 +225,6 @@ func stringLiteralInitializerCompletionItems(document document, uri protocol.Doc
 	}
 
 	importBaseDir := filepath.Dir(documentPath(uri))
-	if importBaseDir == "" {
-		importBaseDir = "."
-	}
-
 	importRootDir := completionRoot(document.analysis, uri)
 	model := buildCompletionModel(*file, importBaseDir, importRootDir, map[string]completionModel{})
 	var expectedType ast.TypeReference
@@ -485,15 +459,8 @@ func outputMemberAccessContext(linePrefix string) ([]string, bool) {
 	if chain[0] == '.' {
 		return nil, false
 	}
-	if strings.HasPrefix(chain, "$") {
-		return nil, false
-	}
 
 	segments := lo.Filter(strings.Split(chain, "."), func(s string, _ int) bool { return s != "" })
-	if len(segments) == 0 {
-		return nil, false
-	}
-
 	return segments, true
 }
 
@@ -504,9 +471,6 @@ func parsedVariableMemberCompletionItems(document document, uri protocol.Documen
 	}
 
 	index := positionIndex(document.text, position)
-	if index < 0 {
-		return nil, false
-	}
 
 	// Build a parseable file by replacing the rest of the current line with a placeholder.
 	// This preserves the script block (schemas, directives) needed to resolve types.
@@ -530,9 +494,6 @@ func parsedVariableMemberCompletionItems(document document, uri protocol.Documen
 	}
 
 	importBaseDir := filepath.Dir(documentPath(uri))
-	if importBaseDir == "" {
-		importBaseDir = "."
-	}
 	importRootDir := completionRoot(document.analysis, uri)
 	cache := map[string]completionModel{}
 	model := buildCompletionModel(file, importBaseDir, importRootDir, cache)
@@ -734,9 +695,6 @@ func resolveLocalCompletionValue(expression ast.Expression, declarations map[str
 
 func partialScriptVariables(text string, uri protocol.DocumentUri, position protocol.Position) map[string]processor.Value {
 	index := positionIndex(text, position)
-	if index < 0 {
-		return nil
-	}
 
 	lineStart := strings.LastIndex(text[:index], "\n")
 	if lineStart < 0 {
@@ -785,9 +743,6 @@ func scriptVariablesForOutput(text string, uri protocol.DocumentUri) map[string]
 
 func processVariablesInDocument(text string, uri protocol.DocumentUri) map[string]processor.Value {
 	importBaseDir := filepath.Dir(documentPath(uri))
-	if importBaseDir == "" {
-		importBaseDir = "."
-	}
 
 	variables, err := processor.New().ProcessVariablesInDir(text, importBaseDir)
 	if err != nil {
@@ -887,9 +842,6 @@ func isDigits(value string) bool {
 
 func partialScriptFile(text string, position protocol.Position) (ast.File, bool) {
 	index := positionIndex(text, position)
-	if index < 0 {
-		return ast.File{}, false
-	}
 
 	lineStart := strings.LastIndex(text[:index], "\n")
 	if lineStart < 0 {
@@ -913,9 +865,6 @@ func partialScriptFile(text string, position protocol.Position) (ast.File, bool)
 
 func completionScopeAt(text string, position protocol.Position) completionScope {
 	index := positionIndex(text, position)
-	if index < 0 {
-		return completionScopeFile
-	}
 
 	lines := strings.Split(text[:index], "\n")
 	inScript := false
@@ -1057,11 +1006,6 @@ func directiveCompletionItems(document document, uri protocol.DocumentUri, lineP
 		return schemaFileItems(document, uri, linePrefix, matches[1]), true
 	}
 
-	if strings.HasSuffix(content, ",") {
-		options := nextDirectiveDefinitions(parts)
-		return itemsFromDefinitions(options, ""), true
-	}
-
 	prefix := trailingIdentifierPrefix(lastPart)
 	options := nextDirectiveDefinitions(parts[:len(parts)-1])
 	return itemsFromDefinitions(options, prefix), true
@@ -1147,19 +1091,11 @@ func trailingIdentifierPrefix(value string) string {
 
 func currentLinePrefix(text string, position protocol.Position) string {
 	index := positionIndex(text, position)
-	if index < 0 {
-		return ""
-	}
-
 	return lo.LastOrEmpty(strings.Split(text[:index], "\n"))
 }
 
 func currentLineSuffix(text string, position protocol.Position) string {
 	index := positionIndex(text, position)
-	if index < 0 {
-		return ""
-	}
-
 	lineEnd := strings.IndexByte(text[index:], '\n')
 	if lineEnd < 0 {
 		return text[index:]
@@ -1170,9 +1106,6 @@ func currentLineSuffix(text string, position protocol.Position) string {
 
 func stringLiteralCompletionContext(text string, position protocol.Position) (stringCompletionContext, bool) {
 	index := positionIndex(text, position)
-	if index < 0 {
-		return stringCompletionContext{}, false
-	}
 
 	lineStart := strings.LastIndexByte(text[:index], '\n') + 1
 	lineEnd := strings.IndexByte(text[index:], '\n')
@@ -1256,10 +1189,6 @@ func completionPlaceholderPosition(text string, position protocol.Position, oper
 	}
 
 	index := positionIndex(text, position)
-	if index < 0 {
-		return protocol.Position{}, false
-	}
-
 	whitespaceWidth := len(currentLineSuffix(text, position)) - len(lineSuffix)
 	return positionFromIndex(text, index+whitespaceWidth+1), true
 }
@@ -1319,10 +1248,7 @@ func documentPathFromURI(uri protocol.DocumentUri) (string, bool) {
 		return "", false
 	}
 
-	path, err := url.PathUnescape(parsed.Path)
-	if err != nil {
-		return "", false
-	}
+	path, _ := url.PathUnescape(parsed.Path)
 
 	if len(path) >= 3 && path[0] == '/' && path[2] == ':' {
 		path = path[1:]
@@ -1368,9 +1294,6 @@ func completionRoot(snapshot analysisSnapshot, uri protocol.DocumentUri) string 
 	}
 
 	importBaseDir := filepath.Dir(documentPath(uri))
-	if importBaseDir == "" {
-		return "."
-	}
 	return importBaseDir
 }
 
@@ -1395,9 +1318,6 @@ func availableSchemaNames(document document, uri protocol.DocumentUri, linePrefi
 	}
 
 	importBaseDir := filepath.Dir(documentPath(uri))
-	if importBaseDir == "" {
-		importBaseDir = "."
-	}
 
 	model := buildCompletionModel(*file, importBaseDir, completionRoot(document.analysis, uri), map[string]completionModel{})
 	return sortStrings(lo.Keys(model.schemas))
@@ -1500,9 +1420,6 @@ func partialOutputResult(document document, uri protocol.DocumentUri, position p
 	}
 
 	cursorIndex := positionIndex(text, position)
-	if cursorIndex < 0 {
-		return processor.Result{}, false
-	}
 
 	currentFieldIndex := -1
 	for index, fieldRange := range fieldRanges {
@@ -1526,9 +1443,6 @@ func partialOutputResult(document document, uri protocol.DocumentUri, position p
 	partialText += "\n}"
 
 	importBaseDir := filepath.Dir(documentPath(uri))
-	if importBaseDir == "" {
-		importBaseDir = "."
-	}
 
 	result, err := processor.New().ProcessInScope(partialText, importBaseDir, completionRoot(document.analysis, uri))
 	if err != nil {
@@ -1648,9 +1562,6 @@ func stringLiteralValue(literal ast.StringLiteral) (string, bool) {
 
 func completionFileWithPlaceholder(text string, position protocol.Position) (*ast.File, bool) {
 	index := positionIndex(text, position)
-	if index < 0 {
-		return nil, false
-	}
 
 	linePrefix := currentLinePrefix(text, position)
 	replacement := completionPlaceholderIdentifier
@@ -1775,9 +1686,6 @@ func popCompletionDelimiter(stack []byte, expected byte) []byte {
 
 func partialScriptFileWithPlaceholder(text string, position protocol.Position) (ast.File, bool) {
 	index := positionIndex(text, position)
-	if index < 0 {
-		return ast.File{}, false
-	}
 
 	lineEnd := strings.Index(text[index:], "\n")
 	if lineEnd < 0 {

@@ -3,6 +3,7 @@ package lexer
 import (
 	"fmt"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -158,7 +159,7 @@ func (l *Lexer) NextToken() (Token, error) {
 	}
 
 	if isLetter(current) {
-		for isLetter(l.peek()) || isDigit(l.peek()) || l.peek() == '_' {
+		for isIdentifierPart(l.peek()) {
 			l.advance()
 		}
 		lexeme := l.input[startPosition:l.position]
@@ -217,7 +218,7 @@ func (l *Lexer) NextToken() (Token, error) {
 	return Token{}, fmt.Errorf("lexer: unexpected character %q at %d:%d", current, startLine, startColumn)
 }
 
-func (l *Lexer) lexString(quote byte, startPosition, startLine, startColumn int) (Token, error) {
+func (l *Lexer) lexString(quote rune, startPosition, startLine, startColumn int) (Token, error) {
 	if quote == '"' && strings.HasPrefix(l.input[l.position:], `""`) {
 		l.advance()
 		l.advance()
@@ -346,7 +347,7 @@ func (l *Lexer) isAtEnd() bool {
 	return l.position >= len(l.input)
 }
 
-func (l *Lexer) advance() byte {
+func (l *Lexer) advance() rune {
 	if l.isAtEnd() {
 		return 0
 	}
@@ -355,7 +356,7 @@ func (l *Lexer) advance() byte {
 	if current == utf8.RuneError && size == 1 {
 		l.position++
 		l.column++
-		return 0
+		return utf8.RuneError
 	}
 
 	if current == '\r' {
@@ -379,13 +380,10 @@ func (l *Lexer) advance() byte {
 
 	l.position += size
 	l.column++
-	if current <= utf8.RuneSelf {
-		return byte(current)
-	}
-	return 0
+	return current
 }
 
-func (l *Lexer) match(expected byte) bool {
+func (l *Lexer) match(expected rune) bool {
 	if l.isAtEnd() || l.peek() != expected {
 		return false
 	}
@@ -393,29 +391,20 @@ func (l *Lexer) match(expected byte) bool {
 	return true
 }
 
-func (l *Lexer) peek() byte {
+func (l *Lexer) peek() rune {
 	if l.isAtEnd() {
 		return 0
 	}
 	current, _ := utf8.DecodeRuneInString(l.input[l.position:])
-	if current == utf8.RuneError {
-		return 0
-	}
-	if current <= utf8.RuneSelf {
-		return byte(current)
-	}
-	return 0
+	return current
 }
 
-func (l *Lexer) peekNext() byte {
+func (l *Lexer) peekNext() rune {
 	if l.isAtEnd() {
 		return 0
 	}
 	nextRune, _ := l.peekNextRune()
-	if nextRune <= utf8.RuneSelf {
-		return byte(nextRune)
-	}
-	return 0
+	return nextRune
 }
 
 func (l *Lexer) peekNextRune() (rune, int) {
@@ -485,14 +474,18 @@ func keywordToken(lexeme string) (TokenType, bool) {
 	}
 }
 
-func isLetter(value byte) bool {
-	return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z')
+func isLetter(value rune) bool {
+	return unicode.IsLetter(value)
 }
 
-func isDigit(value byte) bool {
+func isDigit(value rune) bool {
 	return value >= '0' && value <= '9'
 }
 
-func isHexDigit(value byte) bool {
+func isIdentifierPart(value rune) bool {
+	return unicode.IsLetter(value) || unicode.IsDigit(value) || value == '_'
+}
+
+func isHexDigit(value rune) bool {
 	return isDigit(value) || (value >= 'a' && value <= 'f') || (value >= 'A' && value <= 'F')
 }

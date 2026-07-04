@@ -1,10 +1,16 @@
-# Handoff
+# Mace Language Implementation TODO
 
-## Tests that are failing
+## Completed
+- Make `record<T>` parse correctly in Tree-sitter wherever type references are accepted.
+- Add source ranges to AST nodes so diagnostics, hover, rename, and definition can avoid token-scanning fallbacks.
 
-## What bugs are present
+## Next
+- Replace analyzer string matching with structured diagnostic errors.
+- Split `internal/processor/pkg.go` by responsibility.
+- Extract semantic analysis from runtime processing.
+- Add conformance fixtures shared by the Go parser, processor/analyzer, and Tree-sitter parser.
+- Decide whether enum syntax is implemented, planned, or removed.
 
-## What to do next
-
-- Add support for Float Enums in the LSP
-- Add support for import aliases `from "./config.mace" import User:ConfigUser`
+## Spec sync
+- Resolve `schema_doc` naming drift between `fields` in the EBNF and `props` in the parser and Tree-sitter grammar.
+- Document intentional optional semicolon behavior or tighten parser behavior to match the spec.

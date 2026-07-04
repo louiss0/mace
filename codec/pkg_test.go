@@ -1,19 +1,24 @@
 package codec
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/louiss0/mace/internal/processor"
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/yaml.v3"
 )
 
 var tAssert *assert.Assertions
@@ -99,6 +104,58 @@ int age = 27;
 })
 
 var _ = Describe("Parse", func() {
+	It("parses with injected input values through compatibility helpers", func() {
+		result, err := ParseWithInjections(`|===|
+schema Runtime: { name: string; enabled: boolean; };
+|===|
+[output = data, parse = Runtime]
+{
+  name: name;
+  enabled: enabled;
+}`, map[string]any{
+			"name":    "Ada",
+			"enabled": true,
+		})
+		tAssert.NoError(err)
+		tAssert.Equal("Ada", result.Data["name"])
+		tAssert.Equal(true, result.Data["enabled"])
+	})
+
+	It("parses files with injected input values through compatibility helpers", func() {
+		workspace, err := os.MkdirTemp("", "mace-codec-injections-*")
+		tAssert.NoError(err)
+		path := writeCodecTempFile(workspace, "input.mace", `|===|
+schema Runtime: { name: string; };
+|===|
+[output = data, parse = Runtime]
+{
+  name: name;
+}`)
+
+		result, err := ParseFileWithInjections(path, map[string]any{
+			"name": "Ada",
+		})
+		tAssert.NoError(err)
+		tAssert.Equal("Ada", result.Data["name"])
+	})
+
+	It("unmarshals with injected input values through compatibility helpers", func() {
+		target := struct {
+			Name string `json:"name"`
+		}{}
+
+		err := UnmarshalWithInjections(`|===|
+schema Runtime: { name: string; };
+|===|
+[output = data, parse = Runtime]
+{
+  name: name;
+}`, map[string]any{
+			"name": "Ada",
+		}, &target)
+		tAssert.NoError(err)
+		tAssert.Equal("Ada", target.Name)
+	})
 	It("returns schema outputs through the public binding result", func() {
 		result, err := Parse(`[output = schema]
 {
@@ -261,6 +318,39 @@ var _ = Describe("Marshal", func() {
 		_, err := Marshal(map[string]any{"value": nil})
 		tAssert.Error(err)
 	})
+
+	It("marshals pointers, arrays, empty records, and default field names", func() {
+		type defaultFieldConfig struct {
+			DisplayName string
+			hidden      string
+		}
+
+		name := "Ada"
+		source, err := Marshal(map[string]any{
+			"name":    &name,
+			"pair":    [2]int{1, 2},
+			"empty":   map[string]any{},
+			"profile": defaultFieldConfig{DisplayName: "Ada", hidden: "ignored"},
+		})
+
+		tAssert.NoError(err)
+		tAssert.Equal(`{
+  empty: {},
+  name: "Ada",
+  pair: [1, 2],
+  profile: {
+    displayName: "Ada"
+  }
+}`, source)
+	})
+
+	It("rejects unsupported marshal values", func() {
+		_, err := Marshal(map[int]string{1: "one"})
+		tAssert.ErrorContains(err, "maps must use string keys")
+
+		_, err = Marshal(func() {})
+		tAssert.ErrorContains(err, "unsupported kind")
+	})
 })
 
 var _ = Describe("MarshalOutput", func() {
@@ -283,6 +373,41 @@ var _ = Describe("MarshalOutput", func() {
 })
 
 var _ = Describe("Check", func() {
+	It("reports whether compatibility issues are present", func() {
+		tAssert.False(newCheckReport().HasIssues())
+		tAssert.True(CheckReport{
+			Syntax: []CheckIssue{{
+				Path:   "$",
+				Reason: "invalid",
+				Format: "json",
+			}},
+		}.HasIssues())
+		tAssert.True(CheckReport{
+			KeyIncompatibility: []CheckIssue{{
+				Path:   "$[\"foo-bar\"]",
+				Reason: "key is not a valid Mace identifier",
+				Format: "json",
+				Key:    "foo-bar",
+			}},
+		}.HasIssues())
+		tAssert.True(CheckReport{
+			TypeIncompatibility: []CheckIssue{{
+				Path:   "$.name",
+				Reason: "null values are omitted during Mace conversion",
+				Format: "json",
+				Actual: "null",
+			}},
+		}.HasIssues())
+		tAssert.True(CheckReport{
+			StructureIncompatibility: []CheckIssue{{
+				Path:   "$.name",
+				Reason: "duplicate object key",
+				Format: "json",
+				Key:    "name",
+			}},
+		}.HasIssues())
+	})
+
 	It("reports JSON key incompatibilities in Mace syntax", func() {
 		report := CheckJSON(`{
   "name": "Ada",
@@ -312,6 +437,23 @@ var _ = Describe("Check", func() {
 }`, source)
 	})
 
+	It("reports JSON syntax locations and root type mismatches", func() {
+		syntaxReport := CheckJSON("{\n  \"name\": \n}")
+		tAssert.Len(syntaxReport.Syntax, 1)
+		tAssert.Equal("json", syntaxReport.Syntax[0].Format)
+		tAssert.NotZero(syntaxReport.Syntax[0].Line)
+		tAssert.NotZero(syntaxReport.Syntax[0].Column)
+
+		arrayReport := CheckJSON(`[1, 2, 3]`)
+		tAssert.Empty(arrayReport.Syntax)
+		if tAssert.Len(arrayReport.StructureIncompatibility, 1) {
+			issue := arrayReport.StructureIncompatibility[0]
+			tAssert.Equal("$", issue.Path)
+			tAssert.Equal("array", issue.Actual)
+			tAssert.Equal("record", issue.Expected)
+		}
+	})
+
 	It("detects extensionless JSON files by parsing their contents", func() {
 		root := GinkgoT().TempDir()
 		path := writeCodecTempFile(root, "config", "{\n  \"foo-bar\": true\n}\n")
@@ -321,6 +463,59 @@ var _ = Describe("Check", func() {
 		tAssert.Equal("json", report.Format)
 		tAssert.Len(report.Errors.KeyIncompatibility, 1)
 		tAssert.Equal("foo-bar", report.Errors.KeyIncompatibility[0].Key)
+	})
+
+	It("rejects unsupported check file formats", func() {
+		root := GinkgoT().TempDir()
+		path := writeCodecTempFile(root, "config.txt", "name = \"Ada\"\n")
+
+		_, err := CheckFile(path)
+
+		tAssert.ErrorContains(err, "could not detect check format")
+	})
+
+	It("covers low-level check helpers", func() {
+		report := newCheckReport()
+		checkValue(nil, "yaml", "$", &report)
+		tAssert.Len(report.TypeIncompatibility, 1)
+		tAssert.Equal("$", report.TypeIncompatibility[0].Path)
+
+		report = newCheckReport()
+		checkValue(map[any]any{"bad-key": nil}, "json", "$", &report)
+		tAssert.Len(report.KeyIncompatibility, 1)
+		tAssert.Equal("bad-key", report.KeyIncompatibility[0].Key)
+
+		syntax := jsonSyntaxIssue("{}", io.EOF)
+		tAssert.Equal("json", syntax.Format)
+		tAssert.Equal("EOF", syntax.Reason)
+
+		yamlIssue := yamlSyntaxIssue(io.EOF)
+		tAssert.Equal("yaml", yamlIssue.Format)
+		tAssert.Equal("EOF", yamlIssue.Reason)
+	})
+
+	It("formats multiple file check reports", func() {
+		source, err := FormatFileCheckReports([]FileCheckReport{
+			{
+				Path:   "config.json",
+				Format: "json",
+				Errors: newCheckReport(),
+			},
+		})
+
+		tAssert.NoError(err)
+		tAssert.Equal(`{
+  files: [{
+      path: "config.json",
+      format: "json",
+      errors: {
+        syntax: [],
+        key_incompatibility: [],
+        type_incompatibility: [],
+        structure_incompatibility: []
+      }
+    }]
+}`, source)
 	})
 
 	It("reports JSON duplicate keys and null values", func() {
@@ -435,6 +630,34 @@ var _ = Describe("Check", func() {
 }`, source)
 	})
 
+	It("reports YAML folded scalars and invalid merge sequences", func() {
+		report := CheckYAML("base: &base\n  name: Ada\nprofile:\n  <<: [*base, 1]\nnote: >\n  hello\n")
+
+		source, err := FormatCheckReport(report)
+		tAssert.NoError(err)
+		tAssert.Equal(`{
+  syntax: [],
+  key_incompatibility: [],
+  type_incompatibility: [],
+  structure_incompatibility: [{
+      path: "$.profile[\"<<\"]",
+      reason: "merge values must resolve to records or sequences of records",
+      format: "yaml",
+      line: 4,
+      column: 7,
+      actual: "sequence",
+      expected: "record or sequence of records"
+    }, {
+      path: "$.note",
+      reason: "block scalar presentation is not preserved during Mace conversion",
+      format: "yaml",
+      line: 5,
+      column: 7,
+      actual: ">"
+    }]
+}`, source)
+	})
+
 	It("reports YAML merge values that do not resolve to records", func() {
 		report := CheckYAML("base: &base 1\nprofile:\n  <<: *base\n")
 
@@ -456,6 +679,11 @@ var _ = Describe("Check", func() {
 }`, source)
 	})
 
+	It("names YAML node kinds used in merge diagnostics", func() {
+		tAssert.Equal("unknown", yamlNodeKindName(nil))
+		tAssert.Equal("unknown", yamlNodeKindName(&yaml.Node{}))
+	})
+
 	It("accepts YAML aliases and merge keys that can map to Mace merge semantics", func() {
 		report := CheckYAML("base: &base\n  name: Ada\nprofile:\n  <<: *base\n")
 
@@ -467,6 +695,39 @@ var _ = Describe("Check", func() {
   type_incompatibility: [],
   structure_incompatibility: []
 }`, source)
+	})
+
+	It("detects JSON-looking check input conservatively", func() {
+		tAssert.False(isJSONCheckInput(nil))
+		tAssert.False(isJSONCheckInput([]byte("")))
+		tAssert.False(isJSONCheckInput([]byte("name = \"Ada\"")))
+		tAssert.False(isJSONCheckInput([]byte("{")))
+		tAssert.True(isJSONCheckInput([]byte(`{"name":"Ada"}`)))
+	})
+
+	It("computes line and column positions from byte offsets", func() {
+		line, column := lineColumnAtOffset("one\ntwo\n", 6)
+		tAssert.Equal(2, line)
+		tAssert.Equal(2, column)
+
+		line, column = lineColumnAtOffset("one\n", 0)
+		tAssert.Equal(0, line)
+		tAssert.Equal(0, column)
+
+		line, column = lineColumnAtOffset("one\n", 99)
+		tAssert.Equal(2, line)
+		tAssert.Equal(1, column)
+	})
+
+	It("names imported value types for diagnostics", func() {
+		tAssert.Equal("null", importedValueTypeName(nil))
+		tAssert.Equal("record", importedValueTypeName(map[string]any{}))
+		tAssert.Equal("array", importedValueTypeName([]any{}))
+		tAssert.Equal("string", importedValueTypeName("Ada"))
+		tAssert.Equal("boolean", importedValueTypeName(true))
+		tAssert.Equal("number", importedValueTypeName(json.Number("1")))
+		tAssert.Equal("number", importedValueTypeName(uint(1)))
+		tAssert.Equal("struct", importedValueTypeName(struct{}{}))
 	})
 
 	It("reports multi-document YAML as a structural migration concern", func() {
@@ -532,6 +793,235 @@ var _ = Describe("Check", func() {
 	})
 })
 
+var _ = Describe("Codec helpers", func() {
+	It("converts reflected Go values into processor values", func() {
+		convert := processorValueFromReflect
+		name := "Ada"
+
+		tAssert.Equal(processor.Value{Kind: processor.ValueUnknown}, convert(reflect.Value{}))
+		tAssert.Equal(processor.Value{Kind: processor.ValueString, String: "Ada"}, convert(reflect.ValueOf(&name)))
+		tAssert.Equal(processor.Value{Kind: processor.ValueUnknown}, convert(reflect.ValueOf((*string)(nil))))
+		tAssert.Equal(processor.Value{Kind: processor.ValueBoolean, Boolean: true}, convert(reflect.ValueOf(true)))
+		tAssert.Equal(processor.Value{Kind: processor.ValueInt, Int: 7}, convert(reflect.ValueOf(uint(7))))
+		tAssert.Equal(processor.Value{Kind: processor.ValueFloat, Float: 1.5}, convert(reflect.ValueOf(float32(1.5))))
+		tAssert.Equal(processor.Value{Kind: processor.ValueArray, Array: []processor.Value{
+			{Kind: processor.ValueInt, Int: 1},
+			{Kind: processor.ValueInt, Int: 2},
+		}}, convert(reflect.ValueOf([2]int{1, 2})))
+		tAssert.Equal(processor.Value{Kind: processor.ValueRecord, Record: map[string]processor.Value{
+			"name": {Kind: processor.ValueString, String: "Ada"},
+		}}, convert(reflect.ValueOf(map[string]string{"name": "Ada"})))
+		tAssert.Equal(processor.Value{Kind: processor.ValueUnknown}, convert(reflect.ValueOf(struct{}{})))
+	})
+
+	It("covers scalar display helpers and field metadata", func() {
+		tAssert.Equal("", lowerLeading(""))
+		tAssert.Equal("hello", lowerLeading("Hello"))
+
+		field, _ := reflect.TypeOf(struct {
+			Name string `json:"name,omitempty"`
+			Skip string `json:"-"`
+		}{}).FieldByName("Name")
+		name, omit := fieldName(field)
+		tAssert.Equal("name", name)
+		tAssert.True(omit)
+
+		skipField, _ := reflect.TypeOf(struct {
+			Skip string `json:"-"`
+		}{}).FieldByName("Skip")
+		skipName, skipOmit := fieldName(skipField)
+		tAssert.Equal("-", skipName)
+		tAssert.False(skipOmit)
+
+		tAssert.False(isEmptyValue(reflect.ValueOf(struct{}{})))
+		tAssert.True(isEmptyValue(reflect.ValueOf("")))
+		tAssert.True(isEmptyValue(reflect.ValueOf([]string{})))
+		tAssert.True(isEmptyValue(reflect.ValueOf(map[string]string{})))
+	})
+
+	It("handles imported map keys and JSON number edge cases", func() {
+		mapKey := importedMapKey
+		jsonNumber := importedJSONNumber
+
+		name, err := mapKey(reflect.ValueOf("name"))
+		tAssert.NoError(err)
+		tAssert.Equal("name", name)
+
+		_, err = mapKey(reflect.Value{})
+		tAssert.ErrorContains(err, "invalid map key")
+
+		var value any = (*string)(nil)
+		_, err = mapKey(reflect.ValueOf(&value))
+		tAssert.ErrorContains(err, "invalid map key")
+
+		_, err = mapKey(reflect.ValueOf(1))
+		tAssert.ErrorContains(err, "string keys")
+
+		integer, err := jsonNumber(json.Number("7"))
+		tAssert.NoError(err)
+		tAssert.Equal(int64(7), integer)
+
+		floatValue, err := jsonNumber(json.Number("1.5"))
+		tAssert.NoError(err)
+		tAssert.Equal(1.5, floatValue)
+
+		_, err = jsonNumber(json.Number("nope"))
+		tAssert.ErrorContains(err, "invalid json number")
+	})
+
+	It("decodes helper values into requested Go types", func() {
+		floatDecode := decodeFloat
+		boolDecode := decodeBool
+		recordDecode := decodeRecordValue
+		valueDecode := decodeValue
+		interfaceType := reflect.TypeOf((*any)(nil)).Elem()
+
+		value, err := floatDecode(1.5, interfaceType)
+		tAssert.NoError(err)
+		tAssert.Equal(1.5, value.Interface())
+
+		_, err = floatDecode(1.5, reflect.TypeOf(""))
+		tAssert.ErrorContains(err, "cannot assign float")
+
+		value, err = boolDecode(true, interfaceType)
+		tAssert.NoError(err)
+		tAssert.Equal(true, value.Interface())
+
+		_, err = boolDecode(true, reflect.TypeOf(""))
+		tAssert.ErrorContains(err, "cannot assign boolean")
+
+		value, err = recordDecode(map[string]processor.Value{
+			"name": {Kind: processor.ValueString, String: "Ada"},
+		}, interfaceType)
+		tAssert.NoError(err)
+		tAssert.Equal(map[string]any{"name": "Ada"}, value.Interface())
+
+		_, err = recordDecode(map[string]processor.Value{}, reflect.TypeOf(""))
+		tAssert.ErrorContains(err, "cannot assign record")
+
+		_, err = valueDecode(processor.Value{Kind: processor.ValueUnknown}, reflect.TypeOf(""))
+		tAssert.ErrorContains(err, "unsupported value kind")
+	})
+
+	It("decodes arrays, integers, and record targets", func() {
+		intDecode := decodeInt
+		arrayDecode := decodeArray
+		ensure := ensureTargetValue
+
+		value, err := intDecode(7, reflect.TypeOf(int8(0)))
+		tAssert.NoError(err)
+		tAssert.Equal(int8(7), value.Interface())
+
+		_, err = intDecode(-1, reflect.TypeOf(uint(0)))
+		tAssert.ErrorContains(err, "negative int")
+
+		value, err = arrayDecode([]processor.Value{{Kind: processor.ValueInt, Int: 1}}, reflect.TypeOf([]int{}))
+		tAssert.NoError(err)
+		tAssert.Equal([]int{1}, value.Interface())
+
+		_, err = arrayDecode([]processor.Value{{Kind: processor.ValueInt, Int: 1}}, reflect.TypeOf([2]int{}))
+		tAssert.ErrorContains(err, "array length mismatch")
+
+		ptr := new(struct{ Name string `json:"name"` })
+		ensured := ensure(reflect.ValueOf(ptr))
+		tAssert.Equal("", ensured.Field(0).String())
+	})
+
+	It("covers schema import helpers and marshaling", func() {
+		tAssert.NotEmpty(schemaTypeFromProcessor(processor.SchemaType{Kind: processor.SchemaTypePrimitive, Name: "string"}))
+		tAssert.NotEmpty(valueToAny(processor.Value{Kind: processor.ValueString, String: "Ada"}))
+		tAssert.NotEmpty(normalizeImportedValue(reflect.ValueOf("Ada")))
+		tAssert.NotEmpty(normalizeImportedValue(reflect.ValueOf(time.Now())))
+		tAssert.NotEmpty(fieldName(reflect.StructField{Name: "Name"}))
+		tAssert.NotEmpty(isEmptyValue(reflect.ValueOf("")))
+		_, _ = importedMapKey(reflect.ValueOf("name"))
+		_, _ = importedJSONNumber(json.Number("7"))
+	})
+
+	It("covers JSON schema document loading helpers", func() {
+		record := map[string]any{"$schema": "file:///workspace/schema.json", "type": "object"}
+		value, ok, err := resolveJSONSchemaDocument(record, "workspace/schema.json")
+		tAssert.True(ok)
+		tAssert.NoError(err)
+		tAssert.Equal(record, value)
+
+		parsed, err := url.Parse("file:///workspace/schema.json")
+		tAssert.NoError(err)
+		_, err = loadJSONSchemaDocument(parsed, "file:///workspace/schema.json", "workspace/input.mace")
+		tAssert.Error(err)
+	})
+
+	It("covers JSON schema naming and lookup helpers", func() {
+		tAssert.True(looksLikeJSONSchemaDocument(map[string]any{"properties": map[string]any{}}))
+		tAssert.True(looksLikeJSONSchemaDocument(map[string]any{"type": "string"}))
+		tAssert.False(looksLikeJSONSchemaDocument(map[string]any{"type": 1}))
+		tAssert.Equal("Profile", jsonSchemaDefinitionName("#/$defs/Profile"))
+		tAssert.Equal("Value123Name", jsonSchemaIdentifier("123 name"))
+		tAssert.Equal("Generated", jsonSchemaIdentifier("---"))
+		tAssert.Equal(filepath.Join("workspace", "schema.json"), resolveJSONSchemaPath("schema.json", filepath.Join("workspace", "file.mace")))
+		tAssert.Equal("schema.json", resolveJSONSchemaPath("schema.json", ""))
+
+		root := map[string]any{"$defs": map[string]any{"Profile": map[string]any{"type": "object"}}}
+		ref, err := jsonSchemaReference("#/$defs/Profile", root)
+		tAssert.NoError(err)
+		tAssert.Contains(ref, "type")
+		_, err = jsonSchemaReference("schema.json", root)
+		tAssert.ErrorContains(err, "unsupported $ref")
+	})
+
+	It("covers JSON schema enum helpers", func() {
+		name, inferred, err := jsonSchemaEnumDeclaration("Mode", []any{"auto", "manual"})
+		tAssert.NoError(err)
+		tAssert.Contains(name, "enum Mode")
+		tAssert.Equal("Mode", inferred.name)
+
+		backingType, members, err := jsonSchemaEnumMembers([]any{"alpha", "beta", "gamma"})
+		tAssert.NoError(err)
+		tAssert.Equal("string", backingType)
+		tAssert.Len(members, 3)
+		tAssert.Equal("Alpha", members[0].name)
+
+		_, _, err = jsonSchemaEnumMembers([]any{"alpha", 1})
+		tAssert.ErrorContains(err, "mixed enum value types")
+
+		_, _, err = jsonSchemaEnumMemberValue(true, 0)
+		tAssert.ErrorContains(err, "unsupported enum value")
+
+		member, memberType, err := jsonSchemaEnumMemberValue("alpha", 0)
+		tAssert.NoError(err)
+		tAssert.Equal("string", memberType)
+		tAssert.NotEmpty(member.name)
+
+		_, _, err = jsonSchemaEnumMemberValue(map[string]any{}, 0)
+		tAssert.ErrorContains(err, "unsupported enum value")
+	})
+
+	It("validates union and variant member helpers", func() {
+		_, err := validateUnionMembers([]inferredType{{kind: inferredTypePrimitive}})
+		tAssert.ErrorContains(err, "union members must be schemas")
+
+		union, err := validateUnionMembers([]inferredType{{kind: inferredTypeRecord}})
+		tAssert.NoError(err)
+		tAssert.Equal(inferredTypeUnion, union.kind)
+
+		_, err = validateVariantMembers([]inferredType{{kind: inferredTypePrimitive}, {kind: inferredTypePrimitive}})
+		tAssert.NoError(err)
+	})
+
+	It("reports empty values used by struct omitempty handling", func() {
+		empty := isEmptyValue
+
+		tAssert.True(empty(reflect.ValueOf("")))
+		tAssert.True(empty(reflect.ValueOf(false)))
+		tAssert.True(empty(reflect.ValueOf(0)))
+		tAssert.True(empty(reflect.ValueOf(uint(0))))
+		tAssert.True(empty(reflect.ValueOf(0.0)))
+		tAssert.True(empty(reflect.ValueOf((*string)(nil))))
+		tAssert.False(empty(reflect.ValueOf(struct{}{})))
+		tAssert.False(empty(reflect.ValueOf(1)))
+	})
+})
+
 var _ = Describe("Import", func() {
 	It("imports JSON objects into a Mace output block", func() {
 		source, err := ImportJSON(`{
@@ -552,6 +1042,28 @@ var _ = Describe("Import", func() {
   },
   scores: [1, 2, 3]
 }`, source)
+	})
+
+	It("rejects malformed imported document formats", func() {
+		_, err := ImportJSON(`{"name": "Ada"} true`)
+		tAssert.ErrorContains(err, "unexpected content")
+
+		_, err = ImportYAML("name: [")
+		tAssert.ErrorContains(err, "import yaml")
+
+		_, err = ImportTOML("name = ")
+		tAssert.ErrorContains(err, "import toml")
+
+		_, err = ImportJSONSchema(`[]`)
+		tAssert.ErrorContains(err, "expected record root")
+	})
+
+	It("rejects imported roots that cannot become output records", func() {
+		_, err := ImportJSON(`null`)
+		tAssert.ErrorContains(err, "expected record root")
+
+		_, err = ImportJSON(`{"nickname": null}`)
+		tAssert.ErrorContains(err, "output block is empty")
 	})
 
 	It("imports YAML mappings into a Mace output block", func() {
@@ -589,6 +1101,11 @@ level = 2
   },
   scores: [1, 2, 3]
 }`, source)
+	})
+
+	It("rejects trailing JSON content", func() {
+		_, err := ImportJSON(`{"a":1} {"b":2}`)
+		tAssert.ErrorContains(err, "unexpected content after JSON document")
 	})
 
 	It("omits null fields from imported JSON data", func() {
@@ -1480,6 +1997,42 @@ enum Status: int {
 })
 
 var _ = Describe("Unmarshal", func() {
+	It("unmarshals scalar, pointer, array, and interface targets", func() {
+		var target struct {
+			Name    *string        `json:"name"`
+			Count   uint           `json:"count"`
+			Ratio   float64        `json:"ratio"`
+			Flags   [2]bool        `json:"flags"`
+			Items   []int          `json:"items"`
+			Profile map[string]any `json:"profile"`
+			Any     any            `json:"any"`
+		}
+
+		err := Unmarshal(`[output = data]
+{
+  name: "Ada";
+  count: 3;
+  ratio: 1.5;
+  flags: [true, false];
+  items: [1, 2];
+  profile: {
+    level: 7;
+  };
+  any: [1, "two"];
+}`, &target)
+
+		tAssert.NoError(err)
+		if tAssert.NotNil(target.Name) {
+			tAssert.Equal("Ada", *target.Name)
+		}
+		tAssert.Equal(uint(3), target.Count)
+		tAssert.Equal(1.5, target.Ratio)
+		tAssert.Equal([2]bool{true, false}, target.Flags)
+		tAssert.Equal([]int{1, 2}, target.Items)
+		tAssert.Equal(map[string]any{"level": int64(7)}, target.Profile)
+		tAssert.Equal([]any{int64(1), "two"}, target.Any)
+	})
+
 	It("unmarshals output records into structs", func() {
 		input := `[output = data]
 {
@@ -1524,6 +2077,44 @@ var _ = Describe("Unmarshal", func() {
 	It("rejects non-pointer targets", func() {
 		err := Unmarshal(`[output = data] { value: 1; }`, map[string]any{})
 		tAssert.Error(err)
+	})
+
+	It("rejects incompatible unmarshal targets", func() {
+		var nilMap *map[string]any
+		err := Unmarshal(`[output = data] { value: 1; }`, nilMap)
+		tAssert.ErrorContains(err, "non-nil pointer")
+
+		var scalar string
+		err = Unmarshal(`[output = data] { value: 1; }`, &scalar)
+		tAssert.ErrorContains(err, "target must point")
+
+		var unsigned struct {
+			Value uint `json:"value"`
+		}
+		err = Unmarshal(`[output = data] { value: -1; }`, &unsigned)
+		tAssert.ErrorContains(err, "negative int")
+
+		var fixed struct {
+			Values [1]int `json:"values"`
+		}
+		err = Unmarshal(`[output = data] { values: [1, 2]; }`, &fixed)
+		tAssert.ErrorContains(err, "array length mismatch")
+
+		var typed struct {
+			Value int `json:"value"`
+		}
+		err = Unmarshal(`[output = data] { value: "Ada"; }`, &typed)
+		tAssert.ErrorContains(err, "cannot assign string")
+	})
+
+	It("unmarshals into nil nested pointers", func() {
+		var target **map[string]int
+
+		err := Unmarshal(`[output = data] { value: 1; }`, &target)
+
+		tAssert.NoError(err)
+		tAssert.NotNil(target)
+		tAssert.Equal(map[string]int{"value": 1}, **target)
 	})
 
 	It("uses parse input values during unmarshal", func() {

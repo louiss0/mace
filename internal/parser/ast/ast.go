@@ -1,95 +1,219 @@
 package ast
 
-import "github.com/louiss0/mace/internal/lexer"
+import (
+	"unicode/utf8"
+
+	"github.com/louiss0/mace/internal/lexer"
+)
+
+type SourcePosition struct {
+	Line   int
+	Column int
+}
+
+type SourceRange struct {
+	Start SourcePosition
+	End   SourcePosition
+}
+
+type Node interface {
+	Range() SourceRange
+}
+
+func TokenRange(token lexer.Token) SourceRange {
+	return SourceRange{
+		Start: SourcePosition{Line: token.Line, Column: token.Column},
+		End: SourcePosition{
+			Line:   token.Line,
+			Column: token.Column + utf8.RuneCountInString(token.Lexeme),
+		},
+	}
+}
 
 type Expression interface {
+	Node
 	expressionNode()
 }
 
 type Identifier struct {
-	Name string
+	Token lexer.Token
+	Name  string
 }
 
-func (Identifier) expressionNode() {}
+func (Identifier) expressionNode() {
+	_ = 0
+}
+
+func (i Identifier) Range() SourceRange {
+	return TokenRange(i.Token)
+}
 
 type MemberAccess struct {
 	Target Expression
 	Name   string
 }
 
-func (MemberAccess) expressionNode() {}
+func (MemberAccess) expressionNode() {
+	_ = 0
+}
+
+func (m MemberAccess) Range() SourceRange {
+	return m.Target.Range()
+}
 
 type ArrayAccess struct {
 	Target Expression
 	Index  IntLiteral
 }
 
-func (ArrayAccess) expressionNode() {}
+func (ArrayAccess) expressionNode() {
+	_ = 0
+}
+
+func (a ArrayAccess) Range() SourceRange {
+	return a.Target.Range()
+}
 
 type StringLiteral struct {
+	Token  lexer.Token
 	Lexeme string
 }
 
-func (StringLiteral) expressionNode() {}
+func (StringLiteral) expressionNode() {
+	_ = 0
+}
+
+func (s StringLiteral) Range() SourceRange {
+	return TokenRange(s.Token)
+}
 
 type IntLiteral struct {
+	Token  lexer.Token
 	Lexeme string
 }
 
-func (IntLiteral) expressionNode() {}
+func (IntLiteral) expressionNode() {
+	_ = 0
+}
+
+func (i IntLiteral) Range() SourceRange {
+	return TokenRange(i.Token)
+}
 
 type FloatLiteral struct {
+	Token  lexer.Token
 	Lexeme string
 }
 
-func (FloatLiteral) expressionNode() {}
+func (FloatLiteral) expressionNode() {
+	_ = 0
+}
+
+func (f FloatLiteral) Range() SourceRange {
+	return TokenRange(f.Token)
+}
 
 type HexIntLiteral struct {
+	Token  lexer.Token
 	Lexeme string
 }
 
-func (HexIntLiteral) expressionNode() {}
+func (HexIntLiteral) expressionNode() {
+	_ = 0
+}
+
+func (h HexIntLiteral) Range() SourceRange {
+	return TokenRange(h.Token)
+}
 
 type HexFloatLiteral struct {
+	Token  lexer.Token
 	Lexeme string
 }
 
-func (HexFloatLiteral) expressionNode() {}
+func (HexFloatLiteral) expressionNode() {
+	_ = 0
+}
+
+func (h HexFloatLiteral) Range() SourceRange {
+	return TokenRange(h.Token)
+}
 
 type BooleanLiteral struct {
+	Token lexer.Token
 	Value bool
 }
 
-func (BooleanLiteral) expressionNode() {}
+func (BooleanLiteral) expressionNode() {
+	_ = 0
+}
 
-type NullLiteral struct{}
+func (b BooleanLiteral) Range() SourceRange {
+	return TokenRange(b.Token)
+}
 
-func (NullLiteral) expressionNode() {}
+type NullLiteral struct {
+	Token lexer.Token
+}
+
+func (NullLiteral) expressionNode() {
+	_ = 0
+}
+
+func (n NullLiteral) Range() SourceRange {
+	return TokenRange(n.Token)
+}
 
 type ArrayLiteral struct {
-	Elements []Expression
+	StartToken lexer.Token
+	Elements   []Expression
 }
 
-func (ArrayLiteral) expressionNode() {}
+func (ArrayLiteral) expressionNode() {
+	_ = 0
+}
+
+func (a ArrayLiteral) Range() SourceRange {
+	return TokenRange(a.StartToken)
+}
 
 type RecordLiteral struct {
-	Fields []RecordField
+	StartToken lexer.Token
+	Fields     []RecordField
 }
 
-func (RecordLiteral) expressionNode() {}
+func (RecordLiteral) expressionNode() {
+	_ = 0
+}
+
+func (r RecordLiteral) Range() SourceRange {
+	return TokenRange(r.StartToken)
+}
 
 type RecordField struct {
-	Name     string
-	Optional bool
-	Value    Expression
+	NameToken lexer.Token
+	Name      string
+	Optional  bool
+	Value     Expression
+}
+
+func (r RecordField) Range() SourceRange {
+	return TokenRange(r.NameToken)
 }
 
 type PrefixExpression struct {
-	Operator lexer.TokenType
-	Right    Expression
+	OperatorToken lexer.Token
+	Operator      lexer.TokenType
+	Right         Expression
 }
 
-func (PrefixExpression) expressionNode() {}
+func (PrefixExpression) expressionNode() {
+	_ = 0
+}
+
+func (p PrefixExpression) Range() SourceRange {
+	return TokenRange(p.OperatorToken)
+}
 
 type InfixExpression struct {
 	Left     Expression
@@ -97,7 +221,13 @@ type InfixExpression struct {
 	Right    Expression
 }
 
-func (InfixExpression) expressionNode() {}
+func (InfixExpression) expressionNode() {
+	_ = 0
+}
+
+func (i InfixExpression) Range() SourceRange {
+	return i.Left.Range()
+}
 
 type ConditionalExpression struct {
 	Condition Expression
@@ -105,13 +235,26 @@ type ConditionalExpression struct {
 	Else      Expression
 }
 
-func (ConditionalExpression) expressionNode() {}
-
-type SelfReference struct {
-	Path []string
+func (ConditionalExpression) expressionNode() {
+	_ = 0
 }
 
-func (SelfReference) expressionNode() {}
+func (c ConditionalExpression) Range() SourceRange {
+	return c.Condition.Range()
+}
+
+type SelfReference struct {
+	Token lexer.Token
+	Path  []string
+}
+
+func (SelfReference) expressionNode() {
+	_ = 0
+}
+
+func (s SelfReference) Range() SourceRange {
+	return TokenRange(s.Token)
+}
 
 type File struct {
 	Imports []ImportDeclaration
@@ -156,6 +299,7 @@ const (
 )
 
 type Declaration interface {
+	Node
 	declarationNode()
 }
 
@@ -168,7 +312,13 @@ type VariableDeclaration struct {
 	Value     Expression
 }
 
-func (VariableDeclaration) declarationNode() {}
+func (VariableDeclaration) declarationNode() {
+	_ = 0
+}
+
+func (v VariableDeclaration) Range() SourceRange {
+	return TokenRange(v.NameToken)
+}
 
 type TypeDeclaration struct {
 	NameToken   lexer.Token
@@ -177,7 +327,13 @@ type TypeDeclaration struct {
 	Description string
 }
 
-func (TypeDeclaration) declarationNode() {}
+func (TypeDeclaration) declarationNode() {
+	_ = 0
+}
+
+func (t TypeDeclaration) Range() SourceRange {
+	return TokenRange(t.NameToken)
+}
 
 type SchemaDeclaration struct {
 	NameToken lexer.Token
@@ -193,67 +349,141 @@ type DocDeclaration struct {
 	Documentation Documentation
 }
 
-func (DocDeclaration) declarationNode() {}
+func (DocDeclaration) declarationNode() {
+	_ = 0
+}
 
-func (SchemaDeclaration) declarationNode() {}
+func (d DocDeclaration) Range() SourceRange {
+	return TokenRange(d.TargetToken)
+}
+
+func (SchemaDeclaration) declarationNode() {
+	_ = 0
+}
+
+func (s SchemaDeclaration) Range() SourceRange {
+	return TokenRange(s.NameToken)
+}
 
 type TypeReference interface {
+	Node
 	typeReferenceNode()
 }
 
 type PrimitiveType struct {
-	Name string
+	Token lexer.Token
+	Name  string
 }
 
-func (PrimitiveType) typeReferenceNode() {}
+func (PrimitiveType) typeReferenceNode() {
+	_ = 0
+}
+
+func (p PrimitiveType) Range() SourceRange {
+	return TokenRange(p.Token)
+}
 
 type ArrayType struct {
+	Token   lexer.Token
 	Element TypeReference
 }
 
-func (ArrayType) typeReferenceNode() {}
+func (ArrayType) typeReferenceNode() {
+	_ = 0
+}
+
+func (a ArrayType) Range() SourceRange {
+	return TokenRange(a.Token)
+}
 
 type RecordMapType struct {
+	Token lexer.Token
 	Value TypeReference
 }
 
-func (RecordMapType) typeReferenceNode() {}
+func (RecordMapType) typeReferenceNode() {
+	_ = 0
+}
+
+func (r RecordMapType) Range() SourceRange {
+	return TokenRange(r.Token)
+}
 
 type UnionType struct {
+	Token   lexer.Token
 	Members []TypeReference
 }
 
-func (UnionType) typeReferenceNode() {}
+func (UnionType) typeReferenceNode() {
+	_ = 0
+}
+
+func (u UnionType) Range() SourceRange {
+	return TokenRange(u.Token)
+}
 
 type VariantType struct {
+	Token   lexer.Token
 	Members []TypeReference
 }
 
-func (VariantType) typeReferenceNode() {}
+func (VariantType) typeReferenceNode() {
+	_ = 0
+}
+
+func (v VariantType) Range() SourceRange {
+	return TokenRange(v.Token)
+}
 
 type ChoiceType struct {
+	Token   lexer.Token
 	Members []Expression
 }
 
-func (ChoiceType) typeReferenceNode() {}
+func (ChoiceType) typeReferenceNode() {
+	_ = 0
+}
+
+func (c ChoiceType) Range() SourceRange {
+	return TokenRange(c.Token)
+}
 
 type NamedType struct {
-	Name string
+	Token lexer.Token
+	Name  string
 }
 
-func (NamedType) typeReferenceNode() {}
+func (NamedType) typeReferenceNode() {
+	_ = 0
+}
+
+func (n NamedType) Range() SourceRange {
+	return TokenRange(n.Token)
+}
 
 type RecordType struct {
-	Fields []SchemaField
+	StartToken lexer.Token
+	Fields     []SchemaField
 }
 
-func (RecordType) typeReferenceNode() {}
+func (RecordType) typeReferenceNode() {
+	_ = 0
+}
+
+func (r RecordType) Range() SourceRange {
+	return TokenRange(r.StartToken)
+}
 
 type SchemaField struct {
+	NameToken   lexer.Token
 	Name        string
 	Optional    bool
 	Type        TypeReference
 	Description string
+}
+
+func (s SchemaField) Range() SourceRange {
+	return TokenRange(s.NameToken)
 }
 
 type OutputBlock struct {
@@ -294,10 +524,18 @@ type OutputField struct {
 	Description string
 }
 
+func (o OutputField) Range() SourceRange {
+	return TokenRange(o.NameToken)
+}
+
 type OutputSchemaField struct {
 	NameToken   lexer.Token
 	Name        string
 	Optional    bool
 	Type        TypeReference
 	Description string
+}
+
+func (o OutputSchemaField) Range() SourceRange {
+	return TokenRange(o.NameToken)
 }

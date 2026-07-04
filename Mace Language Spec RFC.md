@@ -310,8 +310,11 @@ Mace File
 
 >[!info] Characters 
 > ```ebnf 
-> letter
->   = "A"�"Z" | "a"�"z" ;
+> unicode_letter
+>   = ? any Unicode character in category Letter ? ;
+> 
+> unicode_digit
+>   = ? any Unicode character in category Number, decimal digit ? ;
 > 
 > digit
 >   = "0"�"9" ;
@@ -320,7 +323,7 @@ Mace File
 >   = digit | "a"�"f" | "A"�"F" ;
 > 
 > identifier
->   = letter , { letter | digit | "_" } ;
+>   = unicode_letter , { unicode_letter | unicode_digit | "_" } ;
 > 
 > character
 >   = ? any Unicode scalar value ? ;
@@ -677,7 +680,11 @@ Mace File
 >   = ? any character sequence not containing '"""' or start of "$ (" ? | escape_sequence | interpolation ;
 > 
 > escape_sequence
->   = "\\" , ( "\\" | "'" | '"' | "n" | "r" | "t" ) ;
+>   = "\\" , ( "\\" | "'" | '"' | "n" | "r" | "t" | unicode_escape ) ;
+>
+> unicode_escape
+>   = "u" , hex_digit , hex_digit , hex_digit , hex_digit
+>   | "U" , hex_digit , hex_digit , hex_digit , hex_digit , hex_digit , hex_digit , hex_digit , hex_digit ;
 > 
 > interpolation
 >   = "$" , "(" , expression , ")" ;

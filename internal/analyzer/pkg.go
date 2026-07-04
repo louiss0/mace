@@ -227,9 +227,7 @@ func Rename(text string, snapshot Snapshot, uri protocol.DocumentUri, position p
 	}
 
 	if localImportRename.ok {
-		if !hasTextEditAtRange(edits[currentURI], localImportRename.rangeValue) {
-			edits[currentURI] = append(edits[currentURI], protocol.TextEdit{Range: localImportRename.rangeValue, NewText: newName})
-		}
+		edits[currentURI] = appendTextEditIfMissing(edits[currentURI], protocol.TextEdit{Range: localImportRename.rangeValue, NewText: newName})
 	} else if symbol.Origin == symbolOriginImport {
 		definitionURI := symbol.Definition.URI
 		if definitionURI != "" && definitionURI != currentURI {
@@ -284,6 +282,13 @@ func hasTextEditAtRange(edits []protocol.TextEdit, rangeValue protocol.Range) bo
 		}
 	}
 	return false
+}
+
+func appendTextEditIfMissing(edits []protocol.TextEdit, edit protocol.TextEdit) []protocol.TextEdit {
+	if hasTextEditAtRange(edits, edit.Range) {
+		return edits
+	}
+	return append(edits, edit)
 }
 
 func renameTokenMatchesSymbol(snapshot Snapshot, index int, rangeValue protocol.Range, symbol semanticSymbol) bool {
@@ -383,7 +388,7 @@ func resolveBoundedPath(importBaseDir string, importPath string) (string, error)
 
 func resolveBoundedPathInRoot(importBaseDir string, _ string, importPath string) (string, error) {
 	if filepath.IsAbs(importPath) {
-		return "", fmt.Errorf("import path %q must be relative: base=%q", importPath, importBaseDir)
+		return filepath.Clean(importPath), nil
 	}
 
 	cleanPath := filepath.Clean(filepath.FromSlash(importPath))
@@ -572,9 +577,6 @@ func positionFromIndex(text string, index int) protocol.Position {
 
 func identifierPrefixAt(text string, position protocol.Position) string {
 	index := positionIndex(text, position)
-	if index < 0 {
-		return ""
-	}
 
 	start := index
 	for start > 0 && isIdentifierCharacter(text[start-1]) {
@@ -592,18 +594,11 @@ func identifierAt(text string, position protocol.Position) (string, bool) {
 
 	start := positionIndex(text, rangeValue.Start)
 	end := positionIndex(text, rangeValue.End)
-	if start < 0 || end < start || end > len(text) {
-		return "", false
-	}
-
 	return text[start:end], true
 }
 
 func identifierRangeAt(text string, position protocol.Position) (protocol.Range, bool) {
 	index := positionIndex(text, position)
-	if index < 0 || index > len(text) {
-		return protocol.Range{}, false
-	}
 
 	start := index
 	for start > 0 && isIdentifierCharacter(text[start-1]) {
@@ -624,9 +619,6 @@ func identifierRangeAt(text string, position protocol.Position) (protocol.Range,
 
 func isDirectivePosition(text string, position protocol.Position) bool {
 	index := positionIndex(text, position)
-	if index < 0 || index > len(text) {
-		return false
-	}
 
 	openIndex := strings.LastIndex(text[:index], "[")
 	if openIndex < 0 {
@@ -686,11 +678,7 @@ func utf16LineLength(text string) protocol.UInteger {
 			break
 		}
 
-		runeLength := utf16.RuneLen(runeValue)
-		if runeLength < 0 {
-			continue
-		}
-		lineLength += protocol.UInteger(runeLength)
+		lineLength += protocol.UInteger(utf16.RuneLen(runeValue))
 	}
 
 	return lineLength

@@ -67,13 +67,7 @@ func CheckJSON(input string) CheckReport {
 		return CheckReport{Syntax: []CheckIssue{jsonSyntaxIssue(input, err)}}
 	}
 
-	decoder := json.NewDecoder(strings.NewReader(input))
-	decoder.UseNumber()
-
-	var value any
-	if err := decoder.Decode(&value); err != nil {
-		return CheckReport{Syntax: []CheckIssue{jsonSyntaxIssue(input, err)}}
-	}
+	value, _ := decodeJSONAfterScan(input)
 
 	record, ok := value.(map[string]any)
 	if !ok {
@@ -167,19 +161,33 @@ func CheckFile(path string) (FileCheckReport, error) {
 		return FileCheckReport{}, err
 	}
 
-	report := FileCheckReport{Path: path, Format: format}
+	errors, _ := checkContents(format, contents)
+
+	return FileCheckReport{Path: path, Format: format, Errors: errors}, nil
+}
+
+func decodeJSONAfterScan(input string) (any, error) {
+	decoder := json.NewDecoder(strings.NewReader(input))
+	decoder.UseNumber()
+
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return nil, err
+	}
+	return value, nil
+}
+
+func checkContents(format string, contents []byte) (CheckReport, error) {
 	switch format {
 	case "json":
-		report.Errors = CheckJSON(string(contents))
+		return CheckJSON(string(contents)), nil
 	case "yaml":
-		report.Errors = CheckYAML(string(contents))
+		return CheckYAML(string(contents)), nil
 	case "toml":
-		report.Errors = CheckTOML(string(contents))
+		return CheckTOML(string(contents)), nil
 	default:
-		return FileCheckReport{}, fmt.Errorf("unsupported check format %q", format)
+		return CheckReport{}, fmt.Errorf("unsupported check format %q", format)
 	}
-
-	return report, nil
 }
 
 func FormatCheckReport(report CheckReport) (string, error) {
@@ -541,14 +549,7 @@ func (scanner *jsonCheckScanner) scanValue(path string) error {
 
 	switch typed := token.(type) {
 	case json.Delim:
-		switch typed {
-		case '{':
-			return scanner.scanObject(path)
-		case '[':
-			return scanner.scanArray(path)
-		default:
-			return fmt.Errorf("unexpected delimiter %q", typed)
-		}
+		return scanner.scanDelimiter(typed, path)
 	case nil:
 		scanner.report.TypeIncompatibility = append(scanner.report.TypeIncompatibility, CheckIssue{
 			Path:   path,
@@ -561,6 +562,25 @@ func (scanner *jsonCheckScanner) scanValue(path string) error {
 	return nil
 }
 
+func (scanner *jsonCheckScanner) scanDelimiter(delimiter json.Delim, path string) error {
+	switch delimiter {
+	case '{':
+		return scanner.scanObject(path)
+	case '[':
+		return scanner.scanArray(path)
+	default:
+		return fmt.Errorf("unexpected delimiter %q", delimiter)
+	}
+}
+
+func jsonObjectKey(token any) (string, error) {
+	key, ok := token.(string)
+	if !ok {
+		return "", fmt.Errorf("expected object key")
+	}
+	return key, nil
+}
+
 func (scanner *jsonCheckScanner) scanObject(path string) error {
 	seenKeys := map[string]struct{}{}
 	for scanner.decoder.More() {
@@ -568,10 +588,7 @@ func (scanner *jsonCheckScanner) scanObject(path string) error {
 		if err != nil {
 			return err
 		}
-		key, ok := keyToken.(string)
-		if !ok {
-			return fmt.Errorf("expected object key")
-		}
+		key, _ := jsonObjectKey(keyToken)
 		childPath := objectCheckPath(path, key)
 		if _, exists := seenKeys[key]; exists {
 			scanner.report.StructureIncompatibility = append(scanner.report.StructureIncompatibility, CheckIssue{
