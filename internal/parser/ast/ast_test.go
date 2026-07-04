@@ -95,4 +95,9 @@ var _ = Describe("AST nodes", func() {
 		withAlias := ImportedIdentifier{Name: "Remote", Alias: "Local"}
 		tAssert.Equal("Local", withAlias.LocalName())
 	})
+
+	It("counts token ranges by characters", func() {
+		rangeValue := TokenRange(lexer.Token{Lexeme: "café", Line: 2, Column: 4})
+		tAssert.Equal(SourceRange{Start: SourcePosition{Line: 2, Column: 4}, End: SourcePosition{Line: 2, Column: 8}}, rangeValue)
+	})
 })

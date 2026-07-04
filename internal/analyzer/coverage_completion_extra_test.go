@@ -1107,7 +1107,7 @@ string value = "Bee";
 		fieldType, ok := completionOutputFieldType(ast.ArrayLiteral{Elements: []ast.Expression{ast.StringLiteral{Lexeme: `"x"`}}}, model)
 		tAssert.True(ok)
 		tAssert.IsType(ast.ArrayType{}, fieldType)
-		fieldType, ok = completionOutputFieldType(ast.RecordLiteral{Fields: []ast.RecordField{{Name: "name", Value: ast.StringLiteral{Lexeme: `"x"`}}}}, model)
+		_, ok = completionOutputFieldType(ast.RecordLiteral{Fields: []ast.RecordField{{Name: "name", Value: ast.StringLiteral{Lexeme: `"x"`}}}}, model)
 		tAssert.True(ok)
 
 		resolved := resolveCompletionType(ast.NamedType{Name: "User"}, model, map[string]struct{}{})
@@ -1175,7 +1175,8 @@ schema User: { user: string; };
 		outputStringDoc := document{text: outputStringText, analysis: AnalyzeDocumentAt(outputStringText, outputStringPath)}
 		items, handled := outputInitializerCompletionItems(outputStringDoc, protocol.DocumentUri(fileURI(outputStringPath)), protocol.Position{Line: 5, Character: 10})
 		tAssert.True(handled)
-		items, handled = outputInitializerCompletionItems(document{text: `[output = data]
+		tAssert.Empty(items)
+		_, handled = outputInitializerCompletionItems(document{text: `[output = data]
 {
   value: $self.user.
 }`, analysis: analysisSnapshot{}}, uri, protocol.Position{Line: 2, Character: 20})
@@ -1200,7 +1201,7 @@ schema Runtime: { user?: { name: string; }; };
 		importedMemberPath := filepath.Join(root, "imported-member.mace")
 		tAssert.NoError(os.WriteFile(importedMemberPath, []byte(importedMemberText), 0o644))
 		importedMemberDoc := document{text: importedMemberText, analysis: AnalyzeDocumentAt(importedMemberText, importedMemberPath)}
-		items, handled = parsedVariableMemberCompletionItems(importedMemberDoc, protocol.DocumentUri(fileURI(importedMemberPath)), `  result: Shared.user.`, protocol.Position{Line: 5, Character: 22})
+		_, handled = parsedVariableMemberCompletionItems(importedMemberDoc, protocol.DocumentUri(fileURI(importedMemberPath)), `  result: Shared.user.`, protocol.Position{Line: 5, Character: 22})
 		tAssert.True(handled)
 
 		arrayScriptText := "|===|\nstring label;\narray<string> values = [\"a\", \"b\"];\narray<string> unresolved = [missing];\narray<string> bad_local = null;\n|===|\n[output = data] {}\n"
@@ -1215,7 +1216,8 @@ schema Runtime: { user?: { name: string; }; };
 		items, handled = arrayIndexCompletionItems(arrayIndexDoc, uri, protocol.Position{Line: 3, Character: protocol.UInteger(len(`  result: $self.items[`))}, "  result: $self.items[", completionScopeOutput)
 		tAssert.True(handled)
 		tAssert.Equal([]string{"0", "1"}, lo.Map(items, func(item protocol.CompletionItem, _ int) string { return item.Label }))
-		_, ok := resolveLocalArrayCompletionTarget(arrayScriptText, protocol.Position{Line: 5, Character: 0}, ast.Identifier{Name: "values"})
+		var ok bool
+		_, _ = resolveLocalArrayCompletionTarget(arrayScriptText, protocol.Position{Line: 5, Character: 0}, ast.Identifier{Name: "values"})
 		_, ok = resolveLocalCompletionValue(ast.ArrayLiteral{Elements: []ast.Expression{ast.Identifier{Name: "missing"}}}, map[string]ast.Expression{}, map[string]struct{}{})
 		tAssert.False(ok)
 		_, ok = resolveLocalCompletionValue(ast.NullLiteral{}, map[string]ast.Expression{}, map[string]struct{}{})
@@ -1292,7 +1294,7 @@ schema Runtime: { user?: { name: string; }; };
 		_, _, ok = placeholderOutputCompletionType(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeSchema}}, completionModel{})
 		tAssert.False(ok)
 		placeholderFile := ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData, Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParse, Value: "Runtime"}}, DataFields: []ast.OutputField{{Name: "user", Value: ast.MemberAccess{Target: ast.Identifier{Name: "user"}, Name: completionPlaceholderIdentifier}}}}}
-		_, _, ok = placeholderParseInputCompletionType(placeholderFile, completionModel{schemas: map[string]ast.RecordType{"Runtime": {Fields: []ast.SchemaField{{Name: "user", Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}}}}}}, root, root)
+		_, _, _ = placeholderParseInputCompletionType(placeholderFile, completionModel{schemas: map[string]ast.RecordType{"Runtime": {Fields: []ast.SchemaField{{Name: "user", Type: ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}}}}}}, root, root)
 		_, ok = trailingMemberAccessPath("1.user")
 		tAssert.False(ok)
 

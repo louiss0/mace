@@ -3374,11 +3374,11 @@ int value = 1;
 
 	It("forwards notifications through the json-rpc bridge", func() {
 		left, right := net.Pipe()
-		defer left.Close()
-		defer right.Close()
+		defer func() { tAssert.NoError(left.Close()) }()
+		defer func() { tAssert.NoError(right.Close()) }()
 
 		connection := jsonrpc2.NewConn(context.Background(), jsonrpc2.NewBufferedStream(left, jsonrpc2.VSCodeObjectCodec{}), nil)
-		defer connection.Close()
+		defer func() { tAssert.NoError(connection.Close()) }()
 
 		go func() {
 			_, _ = io.Copy(io.Discard, right)

@@ -183,7 +183,10 @@ func yamlRecordWithHoists(record recordExpression, state *yamlImportState) (reco
 		fieldOrder = append(fieldOrder, name)
 	}
 
-	orderedNames, _ := yamlOrderedFieldNames(fieldOrder, fieldByName)
+	orderedNames, err := yamlOrderedFieldNames(fieldOrder, fieldByName)
+	if err != nil {
+		return recordExpression{}, err
+	}
 
 	fields := make([]recordField, 0, len(orderedNames))
 	for _, name := range orderedNames {

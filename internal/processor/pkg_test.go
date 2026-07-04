@@ -48,24 +48,6 @@ type expectedSchemaField struct {
 	optional bool
 }
 
-type unsupportedExpression struct{}
-
-func (unsupportedExpression) expressionNode() {
-	_ = 0
-}
-
-type unsupportedTypeReference struct{}
-
-func (unsupportedTypeReference) typeReferenceNode() {
-	_ = 0
-}
-
-type unsupportedDeclaration struct{}
-
-func (unsupportedDeclaration) declarationNode() {
-	_ = 0
-}
-
 func schemaPrimitive(name string) SchemaType {
 	return SchemaType{Kind: SchemaTypePrimitive, Name: name}
 }
@@ -5799,7 +5781,7 @@ User result = {
 	It("covers remaining import and output helper branches", func() {
 		root, err := os.MkdirTemp("", "processor-cover-*")
 		tAssert.NoError(err)
-		defer os.RemoveAll(root)
+		defer func() { tAssert.NoError(os.RemoveAll(root)) }()
 
 		baseDir := filepath.Join(root, "imports")
 		tAssert.NoError(os.MkdirAll(baseDir, 0o755))
@@ -5903,11 +5885,13 @@ User result = {
 		tAssert.Equal("https://example.com/root", formatImportRoot("https://example.com/root"))
 		_, ok := parseRemoteURL("not-a-url")
 		tAssert.False(ok)
-		_, err := resolveImportPath(".", "C:/abs/path.mace")
+		absPath, err := filepath.Abs("path.mace")
+		tAssert.NoError(err)
+		_, err = resolveImportPath(".", absPath)
 		tAssert.Error(err)
 		root, err := os.MkdirTemp("", "processor-remote-*")
 		tAssert.NoError(err)
-		defer os.RemoveAll(root)
+		defer func() { tAssert.NoError(os.RemoveAll(root)) }()
 		_, err = resolveBoundedPath(root, root, "../outside.mace")
 		tAssert.Error(err)
 		_, err = resolveBoundedRemotePath("https://example.com/base", "https://example.com/root", "https://evil.com/x.mace", "https://evil.com/x.mace")

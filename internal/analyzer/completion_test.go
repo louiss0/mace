@@ -1960,7 +1960,7 @@ var _ = Describe("completion coverage helpers", func() {
 	It("covers import completion and filesystem helper branches directly", func() {
 		workspace, err := os.MkdirTemp("", "mace-completion-coverage-*")
 		tAssert.NoError(err)
-		defer os.RemoveAll(workspace)
+		defer func() { tAssert.NoError(os.RemoveAll(workspace)) }()
 		shared := filepath.Join(workspace, "shared.mace")
 		tAssert.NoError(os.WriteFile(shared, []byte("|===|\nschema User: { name: string; };\n|===|\n[output = schema] { User: User; }\n"), 0o600))
 		tAssert.NoError(os.Mkdir(filepath.Join(workspace, "nested"), 0o700))
@@ -2128,12 +2128,13 @@ var _ = Describe("completion placeholder path coverage helpers", func() {
 var _ = Describe("completion parse-file helper coverage", func() {
 	It("covers parse input and member type helper branches directly", func() {
 		model := completionModel{schemas: map[string]ast.RecordType{"Input": {Fields: []ast.SchemaField{{Name: "name", Optional: true, Type: ast.PrimitiveType{Name: "string"}}}}}}
+		var typeRef ast.TypeReference
 		record, ok := parseInputCompletionRecord(ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParse, Value: "Input"}}}}, model, ".", ".", nil)
 		tAssert.True(ok)
 		tAssert.Len(record.Fields, 1)
 		_, ok = parseInputCompletionRecord(ast.File{}, model, ".", ".", nil)
 		tAssert.False(ok)
-		typeRef, ok, guarded := parseMemberCompletionType(ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Optional: true, Type: ast.PrimitiveType{Name: "string"}}}}, []string{"name"}, completionModel{}, map[string]struct{}{})
+		_, ok, guarded := parseMemberCompletionType(ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Optional: true, Type: ast.PrimitiveType{Name: "string"}}}}, []string{"name"}, completionModel{}, map[string]struct{}{})
 		tAssert.False(ok)
 		tAssert.True(guarded)
 		_, ok, guarded = parseMemberCompletionType(ast.PrimitiveType{Name: "string"}, []string{"name"}, completionModel{}, nil)
@@ -2148,7 +2149,7 @@ var _ = Describe("completion parse-file helper coverage", func() {
 	It("covers parse_file imported record helpers with temporary files", func() {
 		workspace, err := os.MkdirTemp("", "mace-parse-file-completion-*")
 		tAssert.NoError(err)
-		defer os.RemoveAll(workspace)
+		defer func() { tAssert.NoError(os.RemoveAll(workspace)) }()
 		writeCompletionFile := func(name string, contents string) string {
 			path := filepath.Join(workspace, name)
 			tAssert.NoError(os.WriteFile(path, []byte(contents), 0o600))

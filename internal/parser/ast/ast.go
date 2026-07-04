@@ -1,6 +1,10 @@
 package ast
 
-import "github.com/louiss0/mace/internal/lexer"
+import (
+	"unicode/utf8"
+
+	"github.com/louiss0/mace/internal/lexer"
+)
 
 type SourcePosition struct {
 	Line   int
@@ -21,7 +25,7 @@ func TokenRange(token lexer.Token) SourceRange {
 		Start: SourcePosition{Line: token.Line, Column: token.Column},
 		End: SourcePosition{
 			Line:   token.Line,
-			Column: token.Column + len(token.Lexeme),
+			Column: token.Column + utf8.RuneCountInString(token.Lexeme),
 		},
 	}
 }
