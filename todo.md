@@ -1,6 +1,6 @@
 # Mace Language Implementation TODO
 
-## In progress
+## Completed
 - Make `record<T>` parse correctly in Tree-sitter wherever type references are accepted.
 - Add source ranges to AST nodes so diagnostics, hover, rename, and definition can avoid token-scanning fallbacks.
 

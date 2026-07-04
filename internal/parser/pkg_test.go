@@ -997,9 +997,17 @@ string user = "Ada";
 					tAssert.Equal("User", schemaDecl.Name)
 					tAssert.Equal(4, schemaDecl.NameToken.Line)
 					tAssert.Equal(8, schemaDecl.NameToken.Column)
+					tAssert.Equal(ast.SourceRange{
+						Start: ast.SourcePosition{Line: 4, Column: 8},
+						End:   ast.SourcePosition{Line: 4, Column: 12},
+					}, schemaDecl.Range())
 					if tAssert.Len(schemaDecl.Type.Fields, 2) {
 						tAssert.Equal("name", schemaDecl.Type.Fields[0].Name)
 						tAssert.False(schemaDecl.Type.Fields[0].Optional)
+						tAssert.Equal(ast.SourceRange{
+							Start: ast.SourcePosition{Line: 4, Column: 16},
+							End:   ast.SourcePosition{Line: 4, Column: 20},
+						}, schemaDecl.Type.Fields[0].Range())
 						tAssert.Equal("age", schemaDecl.Type.Fields[1].Name)
 						tAssert.True(schemaDecl.Type.Fields[1].Optional)
 					}
@@ -1011,6 +1019,10 @@ string user = "Ada";
 					tAssert.Equal("user", varDecl.Name)
 					tAssert.Equal(5, varDecl.NameToken.Line)
 					tAssert.Equal(8, varDecl.NameToken.Column)
+					tAssert.Equal(ast.SourceRange{
+						Start: ast.SourcePosition{Line: 5, Column: 8},
+						End:   ast.SourcePosition{Line: 5, Column: 12},
+					}, varDecl.Range())
 					requireStringLiteral(varDecl.Value, "\"Ada\"")
 				}
 			}
@@ -1027,6 +1039,10 @@ string user = "Ada";
 				tAssert.Equal("name", file.Output.DataFields[0].Name)
 				tAssert.Equal(8, file.Output.DataFields[0].NameToken.Line)
 				tAssert.Equal(3, file.Output.DataFields[0].NameToken.Column)
+				tAssert.Equal(ast.SourceRange{
+					Start: ast.SourcePosition{Line: 8, Column: 3},
+					End:   ast.SourcePosition{Line: 8, Column: 7},
+				}, file.Output.DataFields[0].Range())
 				requireIdentifier(file.Output.DataFields[0].Value, "user")
 			}
 			tAssert.Empty(file.Output.SchemaFields)
