@@ -174,10 +174,9 @@ func (server *Server) didChange(context *glsp.Context, params *protocol.DidChang
 		case protocol.TextDocumentContentChangeEventWhole:
 			aggregate.text = change.Text
 			return aggregate
-		default:
-			aggregate.err = fmt.Errorf("lsp: unsupported text change payload")
-			return aggregate
 		}
+
+		return aggregate
 	}, textChangeResult{text: current.text})
 	if changeResult.err != nil {
 		server.lock.Unlock()
@@ -455,9 +454,6 @@ func (server *Server) handle(
 		Notify: func(method string, params any) {
 			_ = connection.Notify(context, method, params)
 		},
-		Call: func(method string, params any, result any) {
-			_ = connection.Call(context, method, params, result)
-		},
 	}
 
 	if request.Params != nil {
@@ -477,14 +473,12 @@ func (server *Server) handle(
 			}
 		}
 		if !validParams {
+			message := ""
 			if err != nil {
-				return nil, &jsonrpc2.Error{
-					Code:    jsonrpc2.CodeInvalidParams,
-					Message: err.Error(),
-				}
+				message = err.Error()
 			}
 
-			return nil, &jsonrpc2.Error{Code: jsonrpc2.CodeInvalidParams}
+			return nil, &jsonrpc2.Error{Code: jsonrpc2.CodeInvalidParams, Message: message}
 		}
 		if err != nil {
 			return nil, &jsonrpc2.Error{

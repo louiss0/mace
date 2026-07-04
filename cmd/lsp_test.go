@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/samber/lo"
@@ -3071,10 +3073,10 @@ string display_name = "Ada";
 		tAssert.Equal(".", server.importRootDir(""))
 	})
 
-	It("rejects unsupported document change payloads", func() {
+	It("ignores unsupported document change payloads", func() {
 		server.documents[protocol.DocumentUri(uri)] = document{text: `[output = data] {}`}
 
-		err := server.didChange(nil, &protocol.DidChangeTextDocumentParams{
+		err := server.didChange(&glsp.Context{}, &protocol.DidChangeTextDocumentParams{
 			TextDocument: protocol.VersionedTextDocumentIdentifier{
 				Version: 2,
 				TextDocumentIdentifier: protocol.TextDocumentIdentifier{
@@ -3084,7 +3086,7 @@ string display_name = "Ada";
 			ContentChanges: []any{"unsupported"},
 		})
 
-		tAssert.ErrorContains(err, "unsupported text change payload")
+		tAssert.NoError(err)
 	})
 
 	It("accepts save notifications with and without explicit text", func() {
@@ -3128,14 +3130,9 @@ int value = 1;
 	})
 
 	It("returns invalid params errors for malformed requests", func() {
-		params := json.RawMessage(`{"textDocument":{}}`)
-		left, right := net.Pipe()
-		defer left.Close()
-		defer right.Close()
-		connection := jsonrpc2.NewConn(context.Background(), jsonrpc2.NewBufferedStream(left, jsonrpc2.VSCodeObjectCodec{}), nil)
-		defer connection.Close()
+		params := json.RawMessage(`[]`)
 
-		_, err := server.handle(context.Background(), connection, &jsonrpc2.Request{
+		_, err := server.handle(context.Background(), nil, &jsonrpc2.Request{
 			Method: protocol.MethodTextDocumentDidOpen,
 			Params: &params,
 		})
@@ -3145,6 +3142,275 @@ int value = 1;
 		if rpcError != nil {
 			tAssert.Equal(int64(jsonrpc2.CodeInvalidParams), rpcError.Code)
 		}
+	})
+
+	It("runs the language server command until exit", func() {
+		previousStdin := os.Stdin
+		previousStdout := os.Stdout
+		defer func() {
+			os.Stdin = previousStdin
+			os.Stdout = previousStdout
+		}()
+
+		stdinRead, stdinWrite, err := os.Pipe()
+		tAssert.NoError(err)
+		stdoutRead, stdoutWrite, err := os.Pipe()
+		tAssert.NoError(err)
+
+		os.Stdin = stdinRead
+		os.Stdout = stdoutWrite
+
+		drained := make(chan struct{})
+		go func() {
+			_, _ = io.Copy(io.Discard, stdoutRead)
+			close(drained)
+		}()
+
+		done := make(chan error, 1)
+		go func() {
+			command := newLSPCommand()
+			command.SetArgs([]string{})
+			done <- command.Execute()
+		}()
+
+		payload := `{"jsonrpc":"2.0","method":"exit"}`
+		_, err = fmt.Fprintf(stdinWrite, "Content-Length: %d\r\n\r\n%s", len(payload), payload)
+		tAssert.NoError(err)
+		tAssert.NoError(stdinWrite.Close())
+
+		select {
+		case err := <-done:
+			tAssert.NoError(err)
+		case <-time.After(5 * time.Second):
+			tAssert.Fail("lsp command did not exit")
+		}
+
+		select {
+		case <-drained:
+		case <-time.After(5 * time.Second):
+			tAssert.Fail("stdout was not drained")
+		}
+	})
+
+	It("covers remaining LSP server branches", func() {
+		uriValue := protocol.DocumentUri(uri)
+		server.documents[uriValue] = document{
+			text:    `[output = data] { value: 1; }`,
+			version: 1,
+		}
+
+		textEdit := protocol.TextDocumentContentChangeEventWhole{Text: `[output = data] { value: 2; }`}
+		err := server.didChange(&glsp.Context{}, &protocol.DidChangeTextDocumentParams{
+			TextDocument: protocol.VersionedTextDocumentIdentifier{
+				Version: 2,
+				TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uriValue},
+			},
+			ContentChanges: []any{textEdit},
+		})
+		tAssert.NoError(err)
+
+		err = server.didChange(&glsp.Context{}, &protocol.DidChangeTextDocumentParams{
+			TextDocument: protocol.VersionedTextDocumentIdentifier{
+				Version: 3,
+				TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uriValue},
+			},
+			ContentChanges: []any{protocol.TextDocumentContentChangeEvent{
+				Range: &protocol.Range{
+					Start: protocol.Position{Line: 0, Character: 20},
+					End:   protocol.Position{Line: 0, Character: 1},
+				},
+				Text: "x",
+			}},
+		})
+		tAssert.ErrorContains(err, "invalid text change range")
+
+		err = server.didChange(&glsp.Context{}, &protocol.DidChangeTextDocumentParams{
+			TextDocument: protocol.VersionedTextDocumentIdentifier{
+				Version: 4,
+				TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uriValue},
+			},
+			ContentChanges: []any{protocol.TextDocumentContentChangeEvent{Text: `[output = data] { value: 3; }`}},
+		})
+		tAssert.NoError(err)
+
+		err = server.didChange(&glsp.Context{}, &protocol.DidChangeTextDocumentParams{
+			TextDocument: protocol.VersionedTextDocumentIdentifier{
+				Version: 5,
+				TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uriValue},
+			},
+			ContentChanges: []any{protocol.TextDocumentContentChangeEvent{Text: `[output = data] { value: 4; }`}},
+		})
+		tAssert.NoError(err)
+
+		err = server.didChange(&glsp.Context{}, &protocol.DidChangeTextDocumentParams{
+			TextDocument: protocol.VersionedTextDocumentIdentifier{
+				Version: 6,
+				TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uriValue},
+			},
+			ContentChanges: []any{protocol.TextDocumentContentChangeEvent{
+				Range: &protocol.Range{
+					Start: protocol.Position{Line: 0, Character: 0},
+					End:   protocol.Position{Line: 0, Character: 0},
+				},
+				Text: "(",
+			}},
+		})
+		tAssert.NoError(err)
+
+		updatedDocument, ok := server.document(uriValue)
+		tAssert.True(ok)
+		tAssert.True(strings.HasPrefix(updatedDocument.text, "("))
+
+		err = server.didChange(&glsp.Context{}, &protocol.DidChangeTextDocumentParams{
+			TextDocument: protocol.VersionedTextDocumentIdentifier{
+				Version: 7,
+				TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uriValue},
+			},
+			ContentChanges: []any{
+				protocol.TextDocumentContentChangeEvent{
+					Range: &protocol.Range{
+						Start: protocol.Position{Line: 0, Character: 20},
+						End:   protocol.Position{Line: 0, Character: 1},
+					},
+					Text: "x",
+				},
+				protocol.TextDocumentContentChangeEventWhole{Text: "ignored"},
+			},
+		})
+		tAssert.ErrorContains(err, "invalid text change range")
+
+		rawParams := json.RawMessage(fmt.Sprintf(`{"textDocument":{"uri":%q,"version":8},"contentChanges":[{"range":{"start":{"line":0,"character":20},"end":{"line":0,"character":1}},"text":"x"}]}`, string(uriValue)))
+		_, err = server.handle(context.Background(), nil, &jsonrpc2.Request{Method: protocol.MethodTextDocumentDidChange, Params: &rawParams})
+		tAssert.Error(err)
+		var rpcError *jsonrpc2.Error
+		tAssert.ErrorAs(err, &rpcError)
+		if rpcError != nil {
+			tAssert.Equal(int64(jsonrpc2.CodeInvalidRequest), rpcError.Code)
+		}
+
+		missingURI := protocol.DocumentUri("file:///workspace/missing.mace")
+		tAssert.NoError(server.didSave(&glsp.Context{}, &protocol.DidSaveTextDocumentParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: missingURI},
+		}))
+
+		missingFileURI := protocol.DocumentUri(fileURI(filepath.Join("missing", "document.mace")))
+		server.documents[missingFileURI] = document{text: `[output = data] {}`, version: 1}
+		err = server.didSave(&glsp.Context{}, &protocol.DidSaveTextDocumentParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: missingFileURI},
+		})
+		tAssert.Error(err)
+
+		result, err := server.documentSymbols(nil, &protocol.DocumentSymbolParams{TextDocument: protocol.TextDocumentIdentifier{URI: missingURI}})
+		tAssert.NoError(err)
+		tAssert.Empty(result)
+
+		formatResult, err := server.formatDocument(nil, &protocol.DocumentFormattingParams{TextDocument: protocol.TextDocumentIdentifier{URI: missingURI}})
+		tAssert.NoError(err)
+		tAssert.Empty(formatResult)
+
+		codeActions, err := server.codeActions(nil, &protocol.CodeActionParams{TextDocument: protocol.TextDocumentIdentifier{URI: missingURI}})
+		tAssert.NoError(err)
+		tAssert.Empty(codeActions)
+
+		definition, err := server.definition(nil, &protocol.DefinitionParams{TextDocumentPositionParams: protocol.TextDocumentPositionParams{TextDocument: protocol.TextDocumentIdentifier{URI: missingURI}}})
+		tAssert.NoError(err)
+		tAssert.Nil(definition)
+
+		renameURI := protocol.DocumentUri(fileURI(filepath.Join("workspace", "rename.mace")))
+		server.documents[renameURI] = document{text: `[output = data] { value: 1; }`, version: 1}
+		definition, err = server.definition(nil, &protocol.DefinitionParams{TextDocumentPositionParams: protocol.TextDocumentPositionParams{TextDocument: protocol.TextDocumentIdentifier{URI: renameURI}, Position: protocol.Position{Line: 0, Character: 0}}})
+		tAssert.NoError(err)
+		tAssert.Nil(definition)
+
+		prepareRename, err := server.prepareRename(nil, &protocol.PrepareRenameParams{TextDocumentPositionParams: protocol.TextDocumentPositionParams{TextDocument: protocol.TextDocumentIdentifier{URI: missingURI}}})
+		tAssert.NoError(err)
+		tAssert.Nil(prepareRename)
+
+		prepareRename, err = server.prepareRename(nil, &protocol.PrepareRenameParams{TextDocumentPositionParams: protocol.TextDocumentPositionParams{TextDocument: protocol.TextDocumentIdentifier{URI: renameURI}, Position: protocol.Position{Line: 0, Character: 0}}})
+		tAssert.NoError(err)
+		tAssert.Nil(prepareRename)
+
+		rename, err := server.rename(nil, &protocol.RenameParams{TextDocumentPositionParams: protocol.TextDocumentPositionParams{TextDocument: protocol.TextDocumentIdentifier{URI: missingURI}}, NewName: "value"})
+		tAssert.NoError(err)
+		tAssert.Nil(rename)
+
+		rename, err = server.rename(nil, &protocol.RenameParams{TextDocumentPositionParams: protocol.TextDocumentPositionParams{TextDocument: protocol.TextDocumentIdentifier{URI: renameURI}, Position: protocol.Position{Line: 0, Character: 0}}, NewName: "value"})
+		tAssert.NoError(err)
+		tAssert.Nil(rename)
+
+		context := &glsp.Context{}
+		server.publishDiagnostics(context, missingURI)
+		server.notifyDiagnostics(context, protocol.PublishDiagnosticsParams{URI: missingURI})
+		server.publishDiagnostics(context, renameURI)
+
+		position := positionFromIndex("a\nb", 2)
+		tAssert.Equal(protocol.Position{Line: 1, Character: 0}, position)
+		position = positionFromIndex("a\nb", 1)
+		tAssert.Equal(protocol.Position{Line: 0, Character: 1}, position)
+	})
+
+	It("returns initialized results through the json-rpc bridge", func() {
+		params := json.RawMessage(`{}`)
+
+		result, err := server.handle(context.Background(), nil, &jsonrpc2.Request{
+			Method: protocol.MethodInitialize,
+			Params: &params,
+		})
+		tAssert.NoError(err)
+		tAssert.NotNil(result)
+	})
+
+	It("returns invalid params without a parse error when request params are missing", func() {
+		_, err := server.handle(context.Background(), nil, &jsonrpc2.Request{
+			Method: protocol.MethodTextDocumentDidOpen,
+		})
+		tAssert.Error(err)
+		var rpcError *jsonrpc2.Error
+		tAssert.ErrorAs(err, &rpcError)
+		if rpcError != nil {
+			tAssert.Equal(int64(jsonrpc2.CodeInvalidParams), rpcError.Code)
+		}
+	})
+
+	It("forwards notifications through the json-rpc bridge", func() {
+		left, right := net.Pipe()
+		defer left.Close()
+		defer right.Close()
+
+		connection := jsonrpc2.NewConn(context.Background(), jsonrpc2.NewBufferedStream(left, jsonrpc2.VSCodeObjectCodec{}), nil)
+		defer connection.Close()
+
+		go func() {
+			_, _ = io.Copy(io.Discard, right)
+		}()
+
+		params := json.RawMessage(fmt.Sprintf(`{"textDocument":{"uri":%q,"languageId":"mace","version":1,"text":"[output = data] { value: 1; }"}}`, uri))
+		_, err := server.handle(context.Background(), connection, &jsonrpc2.Request{
+			Method: protocol.MethodTextDocumentDidOpen,
+			Params: &params,
+		})
+		tAssert.NoError(err)
+	})
+
+	It("returns stdin close errors from stdrwc", func() {
+		previousStdin := os.Stdin
+		previousStdout := os.Stdout
+		defer func() {
+			os.Stdin = previousStdin
+			os.Stdout = previousStdout
+		}()
+
+		stdinFile, err := os.CreateTemp("", "mace-stdin-close-*")
+		tAssert.NoError(err)
+		stdoutFile, err := os.CreateTemp("", "mace-stdout-close-*")
+		tAssert.NoError(err)
+
+		os.Stdin = stdinFile
+		os.Stdout = stdoutFile
+
+		tAssert.NoError(stdinFile.Close())
+		tAssert.Error(stdrwc{}.Close())
+		tAssert.NoError(stdoutFile.Close())
 	})
 
 	It("loads saved document text fallbacks and file errors", func() {
