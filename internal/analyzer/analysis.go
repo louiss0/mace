@@ -2746,16 +2746,13 @@ func shouldIgnoreParseValidationError(file ast.File, err error) bool {
 		return false
 	}
 
-	if diagnosticError.Code == processor.CodeMissingRequiredField {
+	if diagnosticError.Code == processor.CodeMissingRequiredField ||
+		diagnosticError.Code == processor.CodeTypeRecordDoesNotMatchSchema ||
+		diagnosticError.Code == processor.CodeInvalidOutputSchemaField {
 		return true
 	}
 
-	message := diagnosticError.Message
-	if strings.Contains(message, "unknown field") || strings.Contains(message, "is not optional in schema") {
-		return true
-	}
-
-	return false
+	return strings.Contains(diagnosticError.Message, "unknown field") || strings.Contains(diagnosticError.Message, "is not optional in schema")
 }
 
 func hasParseValidationDirective(directives []ast.OutputDirective) bool {

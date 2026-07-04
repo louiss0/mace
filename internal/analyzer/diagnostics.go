@@ -191,21 +191,8 @@ func classifyDiagnosticCode(message string) diagnosticCode {
 }
 
 func diagnosticCodeFromProcessorError(err processor.DiagnosticError) diagnosticCode {
-	switch err.Code {
-	case processor.CodeArrayIndexOutOfRange, processor.CodeArrayValueRequired:
-		return diagnosticTypeInvalidArrayAccess
-	case processor.CodeInvalidNullUsage:
-		return diagnosticTypeInvalidNullUsage
-	case processor.CodeInvalidOutputSchemaField:
-		return diagnosticTypeInvalidOutputSchemaField
-	case processor.CodeMissingRequiredField:
-		return diagnosticTypeRecordDoesNotMatchSchema
-	case processor.CodeOutputValueDeclaration:
-		return diagnosticTypeUnknownIdentifier
-	case processor.CodeSelfReferenceUnknown:
-		return diagnosticTypeUnknownSelfField
-	case processor.CodeTypeMismatch:
-		return diagnosticTypeInitializerMismatch
+	if mapped, ok := diagnosticCodeFromProcessorErrorCode(err.Code); ok {
+		return mapped
 	}
 
 	switch err.Kind {
@@ -225,6 +212,36 @@ func diagnosticCodeFromProcessorError(err processor.DiagnosticError) diagnosticC
 		return diagnosticTypeRecordDoesNotMatchSchema
 	default:
 		return classifyProcessorDiagnostic(err.Message)
+	}
+}
+
+func diagnosticCodeFromProcessorErrorCode(code processor.ErrorCode) (diagnosticCode, bool) {
+	switch code {
+	case processor.CodeArrayIndexOutOfRange:
+		return diagnosticTypeInvalidArrayAccess, true
+	case processor.CodeArrayValueRequired:
+		return diagnosticTypeInvalidArrayAccess, true
+	case processor.CodeInvalidNullUsage:
+		return diagnosticTypeInvalidNullUsage, true
+	case processor.CodeInvalidOutputSchemaField:
+		return diagnosticTypeInvalidOutputSchemaField, true
+	case processor.CodeMissingRequiredField:
+		return diagnosticTypeRecordDoesNotMatchSchema, true
+	case processor.CodeOutputValueDeclaration:
+		return diagnosticTypeUnknownIdentifier, true
+	case processor.CodeSelfReferenceUnknown:
+		return diagnosticTypeUnknownSelfField, true
+	case processor.CodeTypeMismatch:
+		return diagnosticTypeInitializerMismatch, true
+	case processor.CodeTypeRecordDoesNotMatchSchema:
+		return diagnosticTypeRecordDoesNotMatchSchema, true
+	case processor.CodeInternal, "":
+		return "", false
+	default:
+		if strings.HasPrefix(string(code), "mace.") {
+			return diagnosticCode(code), true
+		}
+		return "", false
 	}
 }
 

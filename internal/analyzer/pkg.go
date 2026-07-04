@@ -328,6 +328,21 @@ func FormatDocumentText(text string) string {
 
 func DiagnosticFromError(err error) protocol.Diagnostic {
 	position := protocol.Position{}
+	end := position
+	code := classifyDiagnosticCode(err.Error())
+	message := err.Error()
+	if diagnosticError, ok := processorDiagnosticError(err); ok {
+		code = diagnosticCodeFromProcessorError(diagnosticError)
+		message = diagnosticError.Message
+		if diagnosticError.Range.Start.Line != 0 || diagnosticError.Range.Start.Column != 0 || diagnosticError.Range.End.Line != 0 || diagnosticError.Range.End.Column != 0 {
+			position.Line = protocol.UInteger(diagnosticError.Range.Start.Line)
+			position.Character = protocol.UInteger(diagnosticError.Range.Start.Column)
+			end.Line = protocol.UInteger(diagnosticError.Range.End.Line)
+			end.Character = protocol.UInteger(diagnosticError.Range.End.Column)
+			return diagnosticWithCode(protocol.Range{Start: position, End: end}, protocol.DiagnosticSeverityError, code, message)
+		}
+	}
+
 	matches := diagnosticPositionPattern.FindStringSubmatch(err.Error())
 	if len(matches) == 3 {
 		line := parseUint(matches[1])
@@ -340,20 +355,10 @@ func DiagnosticFromError(err error) protocol.Diagnostic {
 		}
 	}
 
-	end := position
+	end = position
 	end.Character++
 
-	code := classifyDiagnosticCode(err.Error())
-	message := err.Error()
-	if diagnosticError, ok := processorDiagnosticError(err); ok {
-		code = diagnosticCodeFromProcessorError(diagnosticError)
-		message = diagnosticError.Message
-	}
-
-	return diagnosticWithCode(protocol.Range{
-		Start: position,
-		End:   end,
-	}, protocol.DiagnosticSeverityError, code, message)
+	return diagnosticWithCode(protocol.Range{Start: position, End: end}, protocol.DiagnosticSeverityError, code, message)
 }
 
 func DocumentPath(uri protocol.DocumentUri) string {
