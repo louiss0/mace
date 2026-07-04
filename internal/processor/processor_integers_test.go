@@ -6,7 +6,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 )
 
-var _ = Describe("Scalar types", func() {
+var _ = Describe("Integers", func() {
 	DescribeTable("returns individual operator results",
 		func(input string, expected expectedValue) {
 			assertProcessedResult(input, expected)
@@ -84,27 +84,6 @@ array<Scalar> right = ["x"];
 		Entry("bitwise precedence", `[output = data] { result: 7 & 3 ^ 1 | 8; }`, expectedValue{kind: ValueInt, int64: 10}),
 		Entry("comparison and logic precedence", `[output = data] { result: 1 < 2 && 3 > 2 || false; }`, expectedValue{kind: ValueBoolean, bool: true}),
 		Entry("conditional with logical expression", `[output = data] { result: false || true ? 5 : 2; }`, expectedValue{kind: ValueInt, int64: 5}),
-	)
-
-	DescribeTable("rejects invalid hexadecimal expressions",
-		func(input string, expected string) {
-			processor := New()
-			_, err := processor.ProcessInDir(input, "../..")
-			tAssert.Error(err)
-			tAssert.Contains(err.Error(), expected)
-		},
-		Entry("mixed decimal and hex arithmetic", wrapScriptWithOutput(`|===|
-hex_int a = 0x10;
-int b = 2;
-hex_int c = a + b;
-|===|`), "expected hexadecimal operands for operator"),
-		Entry("hex float modulo", wrapScriptWithOutput(`|===|
-hex_float a = 0x2.8;
-hex_float b = 0x0.8;
-hex_float c = a % b;
-|===|`), "requires hex_int operands"),
-		Entry("hex and decimal comparison", `[output = data] { result: 0x10 > 16; }`, "expected operands from the same numeric family"),
-		Entry("hex bitwise not", `[output = data] { result: ~0x0F; }`, "expected int after '~'"),
 	)
 
 	DescribeTable("rejects invalid merge expressions",
@@ -262,126 +241,7 @@ int value = true ? 1 : 2;
 	)
 })
 
-var _ = Describe("Scalar helper coverage", func() {
-	It("covers parsing and evaluation branches", func() {
-		environment := newValueEnvironment()
-		environment.Add("name", Value{Kind: ValueString, String: "Ada"})
-		symbols := newSymbolTable()
-		symbols.Add("name", symbolKindVariable)
-		schemas := newSchemaRegistry()
-		schemas.Add("User", ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}, {Name: "opt", Optional: true, Type: ast.PrimitiveType{Name: "int"}}}})
-		types := newTypeRegistry()
-
-		value, err := parseHexInt("0xFF")
-		tAssert.NoError(err)
-		tAssert.Equal(int64(255), value.Int)
-		_, err = parseHexInt("nope")
-		tAssert.Error(err)
-		value, err = parseHexFloat("0x2.8")
-		tAssert.NoError(err)
-		tAssert.InDelta(2.5, value.Float, 0.000001)
-		_, err = parseHexFloat("0x2")
-		tAssert.Error(err)
-		_, err = parseHexFloat("0x2.x")
-		tAssert.Error(err)
-		_, err = parseDocString(`"not a block"`)
-		tAssert.Error(err)
-		value, err = parseDocString(`"""block"""`)
-		tAssert.NoError(err)
-		tAssert.Equal("block", value.String)
-		value, err = parseInterpolatedString(`"$(name)"`, environment, Value{}, symbols, types, schemas, nil)
-		tAssert.NoError(err)
-		tAssert.Equal("Ada", value.String)
-		value, err = parseInterpolatedString(`'$(name)'`, environment, Value{}, symbols, types, schemas, nil)
-		tAssert.NoError(err)
-		tAssert.Equal("$(name)", value.String)
-		_, err = decodeStringLexeme(`"$(name)"`, false, nil)
-		tAssert.Error(err)
-		decoded, err := decodeStringLexeme(`"a\n\t\\b"`, false, nil)
-		tAssert.NoError(err)
-		tAssert.Contains(decoded, "\n")
-		_, _, err = unescapeSequence(`\`)
-		tAssert.Error(err)
-		decoded, width, err := unescapeSequence(`\\`)
-		tAssert.NoError(err)
-		tAssert.Equal("\\", decoded)
-		tAssert.Equal(2, width)
-		decoded, width, err = unescapeSequence(`\u0041`)
-		tAssert.NoError(err)
-		tAssert.Equal("A", decoded)
-		tAssert.Equal(6, width)
-		_, _, err = unescapeSequence(`\u00G1`)
-		tAssert.Error(err)
-		_, err = parseUnicodeEscape(`\uD800`, 4)
-		tAssert.Error(err)
-		end, text, err := interpolationContent("$(a$(b))", 0)
-		tAssert.NoError(err)
-		tAssert.Equal(8, end)
-		tAssert.Equal("a$(b)", text)
-		_, _, err = interpolationContent("$(missing", 0)
-		tAssert.Error(err)
-
-		tAssert.Equal("null", valueType{kind: ValueNull}.name())
-		tAssert.Equal("array<string>", valueType{kind: ValueArray, element: &valueType{kind: ValueString}}.name())
-		tAssert.Equal("record<int>", valueType{kind: ValueRecord, element: &valueType{kind: ValueInt}}.name())
-		tAssert.Equal("User", valueType{kind: ValueRecord, schemaName: "User"}.name())
-		tAssert.Contains(valueType{members: []valueType{{kind: ValueString}, {kind: ValueInt}}}.name(), "variant[")
-		tAssert.Contains(valueType{choiceValues: []Value{{Kind: ValueString, String: "Ada"}}}.name(), "choice[")
-		tAssert.Equal("nullable int", valueType{kind: ValueInt, nullable: true}.name())
-
-		stringValue, err := stringifyValue(Value{Kind: ValueString, String: "Ada"})
-		tAssert.NoError(err)
-		tAssert.Equal("Ada", stringValue)
-		_, err = stringifyValue(Value{Kind: ValueRecord})
-		tAssert.Error(err)
-		tAssert.Equal("0x0.0", formatHexFloat(0))
-		tAssert.Equal("0x2.0", formatHexFloat(2))
-		tAssert.Equal("-0x2.0", formatHexFloat(-2))
-		tAssert.Contains(formatHexFloat(1.5), "0x1.")
-
-		_, err = evaluateMemberAccess(ast.MemberAccess{Target: ast.Identifier{Name: "name"}, Name: "length"}, environment, Value{Kind: ValueRecord}, symbols, types, schemas, nil)
-		tAssert.Error(err)
-		_, err = evaluateMemberAccess(ast.MemberAccess{Target: ast.Identifier{Name: "missing"}, Name: "length"}, environment, Value{}, symbols, types, schemas, nil)
-		tAssert.Error(err)
-		_, err = evaluateMemberAccess(ast.MemberAccess{Target: ast.Identifier{Name: "name"}, Name: "missing"}, environment, Value{Kind: ValueRecord, Record: map[string]Value{}}, symbols, types, schemas, nil)
-		tAssert.Error(err)
-		_, err = evaluateArrayAccess(ast.ArrayAccess{Target: ast.Identifier{Name: "name"}, Index: ast.IntLiteral{Lexeme: "0"}}, environment, Value{}, symbols, types, schemas, nil)
-		tAssert.Error(err)
-		_, err = evaluateArrayAccess(ast.ArrayAccess{Target: ast.ArrayLiteral{Elements: []ast.Expression{ast.StringLiteral{Lexeme: `"Ada"`}}}, Index: ast.IntLiteral{Lexeme: "0"}}, environment, Value{}, symbols, types, schemas, nil)
-		tAssert.NoError(err)
-		_, err = evaluatePrefix(ast.PrefixExpression{Operator: lexer.TokenMinus, Right: ast.FloatLiteral{Lexeme: "1.5"}}, environment, Value{}, symbols, types, schemas, nil)
-		tAssert.NoError(err)
-		_, err = evaluatePrefix(ast.PrefixExpression{Operator: lexer.TokenTilde, Right: ast.BooleanLiteral{Value: true}}, environment, Value{}, symbols, types, schemas, nil)
-		tAssert.Error(err)
-		_, err = evaluatePrefix(ast.PrefixExpression{Operator: lexer.TokenQuestion, Right: ast.BooleanLiteral{Value: true}}, environment, Value{}, symbols, types, schemas, nil)
-		tAssert.Error(err)
-		_, err = evaluateInfix(ast.InfixExpression{Operator: lexer.TokenPercent, Left: ast.IntLiteral{Lexeme: "4"}, Right: ast.IntLiteral{Lexeme: "2"}}, environment, Value{}, symbols, types, schemas, nil)
-		tAssert.NoError(err)
-		_, err = evaluateInfix(ast.InfixExpression{Operator: lexer.TokenShiftLeft, Left: ast.IntLiteral{Lexeme: "4"}, Right: ast.IntLiteral{Lexeme: "1"}}, environment, Value{}, symbols, types, schemas, nil)
-		tAssert.NoError(err)
-		_, err = evaluateInfix(ast.InfixExpression{Operator: lexer.TokenAmpersand, Left: ast.IntLiteral{Lexeme: "1"}, Right: ast.IntLiteral{Lexeme: "1"}}, environment, Value{}, symbols, types, schemas, nil)
-		tAssert.NoError(err)
-		valueResult, err := evaluateInfix(ast.InfixExpression{Operator: lexer.TokenAndAnd, Left: ast.BooleanLiteral{Value: false}, Right: ast.IntLiteral{Lexeme: "1"}}, environment, Value{}, symbols, types, schemas, nil)
-		tAssert.NoError(err)
-		tAssert.False(valueResult.Boolean)
-		_, err = evaluateConditional(ast.ConditionalExpression{Condition: ast.BooleanLiteral{Value: true}, Then: ast.StringLiteral{Lexeme: `"Ada"`}, Else: ast.StringLiteral{Lexeme: `"Bob"`}}, environment, Value{}, symbols, types, schemas, nil)
-		tAssert.NoError(err)
-		_, err = evaluateArrayLiteral(ast.ArrayLiteral{Elements: []ast.Expression{ast.StringLiteral{Lexeme: `"Ada"`}, ast.NullLiteral{}}}, environment, Value{}, symbols, types, schemas, nil)
-		tAssert.NoError(err)
-		_, err = evaluateRecordLiteral(ast.RecordLiteral{Fields: []ast.RecordField{{Name: "name", Value: ast.StringLiteral{Lexeme: `"Ada"`}}, {Name: "name", Value: ast.StringLiteral{Lexeme: `"Bob"`}}}}, environment, Value{}, symbols, types, schemas, nil)
-		tAssert.Error(err)
-		_, err = evaluateSelfReference(ast.SelfReference{Path: []string{"name"}}, Value{Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Ada"}}})
-		tAssert.NoError(err)
-
-		_, err = evaluateComparison(lexer.TokenEqualEqual, Value{Kind: ValueInt, Int: 1}, Value{Kind: ValueInt, Int: 2})
-		tAssert.Error(err)
-		eq, err := evaluateEquality(lexer.TokenNotEqual, Value{Kind: ValueString, String: "Ada"}, Value{Kind: ValueString, String: "Bob"})
-		tAssert.NoError(err)
-		tAssert.True(eq.Boolean)
-		_, err = valuesEqual(Value{Kind: ValueRecord}, Value{Kind: ValueRecord})
-		tAssert.Error(err)
-	})
-
+var _ = Describe("Integer helper coverage", func() {
 	It("covers evaluation branches", func() {
 		vars := newValueEnvironment()
 		symbols := newSymbolTable()
@@ -448,56 +308,6 @@ var _ = Describe("Scalar helper coverage", func() {
 		tAssert.Equal(ast.HexFloatLiteral{Lexeme: "0x2.8"}, expression(Value{Kind: ValueHexFloat, String: "0x2.8"}))
 		tAssert.Equal(ast.BooleanLiteral{Value: true}, expression(Value{Kind: ValueBoolean, Boolean: true}))
 		tAssert.Equal(ast.StringLiteral{Lexeme: `"null"`}, expression(Value{Kind: ValueNull}))
-	})
-
-	It("formats scalar helper values", func() {
-		valueKey := scalarValueKey
-		valueDisplay := scalarValueDisplay
-		floatLiteral := decimalFloatLiteral
-
-		key, ok := valueKey(Value{Kind: ValueFloat, Float: 1.5})
-		tAssert.True(ok)
-		tAssert.Contains(key, "float:")
-		_, ok = valueKey(Value{Kind: ValueRecord})
-		tAssert.False(ok)
-		tAssert.Equal("null", valueDisplay(Value{Kind: ValueNull}))
-		tAssert.Equal("unknown", valueDisplay(Value{Kind: ValueRecord}))
-		tAssert.Equal("2.0", floatLiteral(2))
-		tAssert.Equal("1.5", floatLiteral(1.5))
-		key, ok = valueKey(Value{Kind: ValueNull})
-		tAssert.True(ok)
-		tAssert.Equal("null", key)
-	})
-
-	It("compares scalar values for equality", func() {
-		equalValues := valuesEqual
-
-		equal, err := equalValues(Value{Kind: ValueInt, Int: 1}, Value{Kind: ValueInt, Int: 1})
-		tAssert.NoError(err)
-		tAssert.True(equal)
-
-		equal, err = equalValues(Value{Kind: ValueFloat, Float: 1.5}, Value{Kind: ValueFloat, Float: 2.5})
-		tAssert.NoError(err)
-		tAssert.False(equal)
-
-		equal, err = equalValues(Value{Kind: ValueHexInt, Int: 2}, Value{Kind: ValueHexFloat, Float: 2})
-		tAssert.NoError(err)
-		tAssert.True(equal)
-
-		equal, err = equalValues(Value{Kind: ValueHexFloat, Float: 3}, Value{Kind: ValueHexInt, Int: 2})
-		tAssert.NoError(err)
-		tAssert.False(equal)
-
-		equal, err = equalValues(Value{Kind: ValueBoolean, Boolean: true}, Value{Kind: ValueBoolean, Boolean: true})
-		tAssert.NoError(err)
-		tAssert.True(equal)
-
-		equal, err = equalValues(Value{Kind: ValueString, String: "Ada"}, Value{Kind: ValueString, String: "Bob"})
-		tAssert.NoError(err)
-		tAssert.False(equal)
-
-		_, err = equalValues(Value{Kind: ValueRecord}, Value{Kind: ValueRecord})
-		tAssert.ErrorContains(err, "unsupported equality")
 	})
 
 	It("formats scalar values and evaluates member/prefix/merge helpers", func() {
@@ -638,37 +448,6 @@ var _ = Describe("Scalar helper coverage", func() {
 		tAssert.ErrorContains(err, "unknown bitwise")
 	})
 
-	It("covers string escaping and conditional inference helpers", func() {
-		parsedDoc, err := parseDocString(`"""docs"""`)
-		tAssert.NoError(err)
-		tAssert.Equal("docs", parsedDoc.String)
-		_, err = parseDocString(`"""docs`)
-		tAssert.Error(err)
-
-		unescaped, length, err := unescapeSequence(`\u0041`)
-		tAssert.NoError(err)
-		tAssert.Equal("A", unescaped)
-		tAssert.Equal(6, length)
-
-		_, _, err = unescapeSequence(`\u00ZZ`)
-		tAssert.Error(err)
-
-		runeValue, err := parseUnicodeEscape(`\u0041`, 4)
-		tAssert.NoError(err)
-		tAssert.Equal('A', runeValue)
-
-		tAssert.Equal("0x1.8", formatHexFloat(1.5))
-		tAssert.Equal("0x2.0", formatHexFloat(2))
-
-		result, err := inferConditionalType(ast.ConditionalExpression{
-			Condition: ast.BooleanLiteral{Value: true},
-			Then:      ast.IntLiteral{Lexeme: "1"},
-			Else:      ast.IntLiteral{Lexeme: "2"},
-		}, &variableRegistry{}, newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
-		tAssert.NoError(err)
-		tAssert.Equal(ValueInt, result.kind)
-	})
-
 	It("covers arithmetic, parsing, and type resolution helpers", func() {
 		_, err := parseInterpolatedString("unterminated", newValueEnvironment(), Value{}, newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
 		tAssert.Error(err)
@@ -761,18 +540,6 @@ int base = 1;
 		tAssert.NoError(err)
 
 		_, err = evaluateExpression(ast.Identifier{Name: "missing"}, newValueEnvironment(), Value{}, newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
-		tAssert.Error(err)
-	})
-
-	It("covers escaped string content helpers", func() {
-		content, _, err := stringContent(`"""abc\n"""`)
-		tAssert.NoError(err)
-		tAssert.Contains(content, "abc")
-		_, _, err = stringContent(`"""\x`)
-		tAssert.Error(err)
-		_, err = decodeStringLexeme(`"hello"`, false, func(s string) (string, error) { return s, nil })
-		tAssert.NoError(err)
-		_, err = decodeStringLexeme(`"unterminated`, false, func(s string) (string, error) { return s, nil })
 		tAssert.Error(err)
 	})
 

@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 )
 
-var _ = Describe("Script mechanics", func() {
+var _ = Describe("Variables", func() {
 	DescribeTable("processes valid script blocks",
 		func(input string) {
 			processor := New()

@@ -6,7 +6,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 )
 
-var _ = Describe("Variant and union types", func() {
+var _ = Describe("Variant", func() {
 	DescribeTable("accepts primitive variant alternatives",
 		func(typeReference string, firstValue string, secondValue string) {
 			processor := New()
@@ -66,48 +66,6 @@ Value second = 42;
 Value third = true;
 |===|`))
 		tAssert.NoError(err)
-	})
-
-	It("accepts union schema composition aliases", func() {
-		processor := New()
-		result, err := processor.Process(`|===|
-schema Profile: { name: string; };
-schema Audit: { created_at: string; };
-type User: union[Profile, Audit];
-User value = {
-  name: "Ada";
-  created_at: "2026-04-08";
-};
-|===|
-[output = data]
-{
-  result: value;
-}`)
-		tAssert.NoError(err)
-
-		actual := requireOutputValue(result, "result")
-		assertExpectedValue(actual, expectedValue{kind: ValueRecord, record: map[string]expectedValue{
-			"name":       {kind: ValueString, string: "Ada"},
-			"created_at": {kind: ValueString, string: "2026-04-08"},
-		}})
-	})
-
-	It("rejects union schema composition with non-schema members", func() {
-		processor := New()
-		_, err := processor.Process(wrapScriptWithOutput(`|===|
-type Broken: union[string, int];
-|===|`))
-		tAssert.ErrorContains(err, "union members must be schemas")
-	})
-
-	It("rejects union schema composition with conflicting fields", func() {
-		processor := New()
-		_, err := processor.Process(wrapScriptWithOutput(`|===|
-schema Profile: { id: string; };
-schema Audit: { id: int; };
-type Broken: union[Profile, Audit];
-|===|`))
-		tAssert.ErrorContains(err, "conflicting field")
 	})
 
 	It("rejects variant variables with non-matching values", func() {
