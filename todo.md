@@ -1,13 +1,16 @@
-# Handoff
+# Mace Language Implementation TODO
 
-## Tests that are failing
-- `go test ./internal/processor -count=1 -coverprofile=processorcov.out` passes, but processor coverage is still below 100%.
+## In progress
+- Make `record<T>` parse correctly in Tree-sitter wherever type references are accepted.
+- Add source ranges to AST nodes so diagnostics, hover, rename, and definition can avoid token-scanning fallbacks.
 
-## What bugs are present
-- No functional regression is known from the last verified test run.
-- The remaining issue is incomplete coverage in `internal/processor/pkg.go`.
+## Next
+- Replace analyzer string matching with structured diagnostic errors.
+- Split `internal/processor/pkg.go` by responsibility.
+- Extract semantic analysis from runtime processing.
+- Add conformance fixtures shared by the Go parser, processor/analyzer, and Tree-sitter parser.
+- Decide whether enum syntax is implemented, planned, or removed.
 
-## What to do next
-- Add targeted tests in `internal/processor/pkg_test.go` (inside `Describe("Processor helpers")`) for the remaining uncovered branches in `pkg.go`.
-- Re-run `go test ./internal/processor -count=1 -coverprofile=processorcov.out` and `go tool cover -func=processorcov.out` until every `pkg.go` function reports `100.0%`.
-- If needed, add more focused tests for entrypoints, import handling, and expression/type inference branches.
+## Spec sync
+- Resolve `schema_doc` naming drift between `fields` in the EBNF and `props` in the parser and Tree-sitter grammar.
+- Document intentional optional semicolon behavior or tighten parser behavior to match the spec.
