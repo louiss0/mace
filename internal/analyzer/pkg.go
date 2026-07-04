@@ -388,7 +388,7 @@ func resolveBoundedPath(importBaseDir string, importPath string) (string, error)
 
 func resolveBoundedPathInRoot(importBaseDir string, _ string, importPath string) (string, error) {
 	if filepath.IsAbs(importPath) {
-		return "", fmt.Errorf("import path %q must be relative: base=%q", importPath, importBaseDir)
+		return filepath.Clean(importPath), nil
 	}
 
 	cleanPath := filepath.Clean(filepath.FromSlash(importPath))
