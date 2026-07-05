@@ -4,7 +4,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 )
 
-var _ = Describe("Union", func() {
+var _ = Describe("Unions", func() {
 	It("accepts union schema composition aliases", func() {
 		processor := New()
 		result, err := processor.Process(`|===|

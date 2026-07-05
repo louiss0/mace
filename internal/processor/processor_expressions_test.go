@@ -4,7 +4,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 )
 
-var _ = Describe("$self", func() {
+var _ = Describe("Expressions", func() {
 	DescribeTable("returns inline output blocks with multiple fields",
 		func(file string, expected map[string]expectedValue) {
 			processor := New()

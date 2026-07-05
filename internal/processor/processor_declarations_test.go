@@ -4,7 +4,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 )
 
-var _ = Describe("Null", func() {
+var _ = Describe("Declarations", func() {
 	It("omits output fields that evaluate to null through nullable variables", func() {
 		processor := New()
 

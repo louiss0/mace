@@ -4,7 +4,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 )
 
-var _ = Describe("Array", func() {
+var _ = Describe("Arrays", func() {
 	DescribeTable("returns array and record results",
 		func(file string, expected expectedValue) {
 			processor := New()

@@ -1,0 +1,72 @@
+package processor
+
+import (
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+
+	. "github.com/onsi/ginkgo/v2"
+)
+
+var _ = Describe("Imports", func() {
+	DescribeTable("merges imported declarations",
+		func(file string, expected expectedValue) {
+			processor := New()
+			result, err := processor.ProcessInDir(file, "../..")
+			tAssert.NoError(err)
+			assertExpectedValue(requireOutputValue(result, "result"), expected)
+		},
+		Entry("imports types and schemas", `|===|
+from "fixtures/processor/imports/base.mace" import Name, User;
+Name name = "Ada";
+User result = { name: name; age: 30; };
+|===|
+[output = data]
+{ result: result; }`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{"name": {kind: ValueString, string: "Ada"}, "age": {kind: ValueInt, int64: 30}}}),
+		Entry("imports values surfaced through output", `|===|
+from "fixtures/processor/imports/values.mace" import count;
+|===|
+[output = data]
+{ result: count + 2; }`, expectedValue{kind: ValueInt, int64: 5}),
+	)
+
+	It("keeps hidden declarations internal", func() {
+		processor := New()
+		_, err := processor.ProcessInDir(`|===|
+from "fixtures/processor/imports/base.mace" import Internal;
+|===|
+[output = data] {}`, "../..")
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, "imported identifier")
+	})
+
+	It("covers remote import helper branches", func() {
+		workspace, err := os.MkdirTemp("", "processor-imports-*")
+		tAssert.NoError(err)
+		defer func() { _ = os.RemoveAll(workspace) }()
+
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			switch request.URL.Path {
+			case "/schema.mace":
+				_, _ = io.WriteString(writer, `[output = schema]
+{ Remote: string; }`)
+			case "/nested/schema.mace":
+				_, _ = io.WriteString(writer, `[output = schema]
+{ Nested: string; }`)
+			default:
+				writer.WriteHeader(http.StatusNotFound)
+			}
+		}))
+		defer server.Close()
+
+		_, _ = resolveImportPath(workspace, filepath.Join(workspace, "abs.mace"))
+		_, _ = resolveImportPath(server.URL+"/", "./schema.mace")
+		_, _ = resolveBoundedRemotePath(server.URL+"/", server.URL+"/", "./schema.mace", server.URL+"/schema.mace")
+		_, _ = parseRemoteURL(server.URL + "/schema.mace")
+		_, _ = readMaceSource(filepath.Join(workspace, "missing.mace"))
+		_, _ = readMaceSource(server.URL + "/missing.mace")
+		_, _ = loadImportExports(filepath.Join(workspace, "missing.mace"), workspace, true, map[string]map[string]importedDeclaration{}, map[string]struct{}{})
+	})
+})

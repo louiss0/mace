@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 )
 
-var _ = Describe("Variant", func() {
+var _ = Describe("Variants", func() {
 	DescribeTable("accepts primitive variant alternatives",
 		func(typeReference string, firstValue string, secondValue string) {
 			processor := New()

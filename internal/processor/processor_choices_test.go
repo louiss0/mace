@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 )
 
-var _ = Describe("Choice", func() {
+var _ = Describe("Choices", func() {
 	DescribeTable("accepts choice variants with primitive literal fallbacks",
 		func(choiceType string, primitiveType string, presetValue string, fallbackValue string) {
 			processor := New()

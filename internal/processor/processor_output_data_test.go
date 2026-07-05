@@ -8,7 +8,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 )
 
-var _ = Describe("Output block", func() {
+var _ = Describe("Output data", func() {
 	DescribeTable("rejects invalid directives",
 		func(input, message string) {
 			processor := New()
