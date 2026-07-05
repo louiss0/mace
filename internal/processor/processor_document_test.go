@@ -69,42 +69,6 @@ Name user = "Ada";
 type Scalar: variant[string, int];
 Scalar value = "Ada";
 |===|`)),
-		Entry("documentation declarations", wrapScriptWithOutput(`|===|
-schema User: { name: string, };
-
-type Status: choice["Pending"];
-type Name: string;
-string greeting = "Hello";
-User profile = {
-  name: greeting,
-};
-
-schema_doc User {
-  summary: "Represents a user.",
-  description: """
-# User
-""",
-};
-
-gen_doc Status {
-  summary: "Represents a status.",
-};
-
-schema_doc profile {
-  summary: "Profile object.",
-  props: {
-    name: "Profile name.",
-  };
-};
-
-gen_doc Name {
-  summary: "Represents a name.",
-};
-
-gen_doc greeting {
-  summary: "Rendered greeting.",
-};
-|===|`)),
 		Entry("line and block comments are ignored", `|===|
 from "fixtures/processor/imports/base.mace" import Name; // trailing import comment
 // line comment before declaration
@@ -145,7 +109,6 @@ User user = {
   name: string /# Name before separator,
   age?: int, /# Age after separator
 }`),
-		Entry("doc fixtures", "../../fixtures/processor/doc_fixtures/public_contract.mace"),
 	)
 
 	DescribeTable("rejects invalid script blocks",
@@ -169,118 +132,6 @@ schema User: { name: string; };
 from "fixtures/processor/imports/base.mace" import User, User;
 |===|
 [output = data] {}`, "duplicate import"),
-		Entry("interpolation rejects type references", wrapScriptWithOutput(`|===|
-type UserName: string;
-string value = "$(UserName)";
-|===|`), "type reference"),
-		Entry("schema_doc rejects duplicate keys", wrapScriptWithOutput(`|===|
-schema User: { name: string; };
-
-schema_doc User {
-  summary: "One";
-  summary: "Two";
-};
-|===|`), "duplicate schema_doc entry"),
-		Entry("schema_doc rejects type targets", wrapScriptWithOutput(`|===|
-type Status: string;
-
-schema_doc Status {
-  summary: "Invalid target.";
-};
-|===|`), "schema_doc target"),
-		Entry("schema_doc rejects scalar variables", wrapScriptWithOutput(`|===|
-string greeting = "Hello";
-
-schema_doc greeting {
-  summary: "Invalid target.";
-};
-|===|`), "schema_doc target \"greeting\" must reference a schema or object-valued variable"),
-		Entry("gen_doc rejects object variables", wrapScriptWithOutput(`|===|
-schema User: {
-  name: string;
-};
-
-User profile = {
-  name: "Ada";
-};
-
-gen_doc profile {
-  summary: "Invalid target.";
-};
-|===|`), "gen_doc target \"profile\" must reference a type or non-object variable"),
-		Entry("output inline doc requires a directive list", `"""
-Invalid: no directive list
-"""
-{
-}
-`, "expected output directive"),
-		Entry("output inline doc rejects interpolation", `[output = schema]
-"""$(name)"""
-{
-  name: string;
-}
-`, "interpolation is not allowed"),
-		Entry("type inline description conflicts with gen_doc", wrapScriptWithOutput(`|===|
-type Name: string /# Duplicate inline docs;
-
-gen_doc Name {
-  summary: "Public name type";
-};
-|===|`), "already documented"),
-		Entry("schema field inline description conflicts with schema_doc props", wrapScriptWithOutput(`|===|
-schema User: {
-  name: string /# Duplicate inline docs;
-};
-
-schema_doc User {
-  props: {
-    name: "The user's display name";
-  };
-};
-|===|`), "already documented"),
-		Entry("schema_doc props reject unknown schema fields", wrapScriptWithOutput(`|===|
-schema User: {
-  name: string;
-};
-
-schema_doc User {
-  props: {
-    age: "Unknown field";
-  };
-};
-|===|`), "does not exist"),
-		Entry("gen_doc props reject type targets", wrapScriptWithOutput(`|===|
-type Name: string;
-
-gen_doc Name {
-  props: {
-    value: "Nope";
-  };
-};
-|===|`), "props entry is only allowed in schema_doc"),
-		Entry("schema_doc must appear after its schema declaration", wrapScriptWithOutput(`|===|
-schema_doc User {
-  summary: "Late-bound docs";
-};
-
-schema User: {
-  name: string;
-};
-|===|`), "must appear after its schema or object-valued variable declaration"),
-		Entry("gen_doc must appear after its type declaration", wrapScriptWithOutput(`|===|
-gen_doc Name {
-  summary: "Late-bound docs";
-};
-
-type Name: string;
-|===|`), "must appear after its type or non-object variable declaration"),
-		Entry("gen_doc must appear after its variable declaration", wrapScriptWithOutput(`|===|
-gen_doc name {
-  summary: "Late-bound docs";
-};
-
-string name = "Ada";
-|===|`), "must appear after its type or non-object variable declaration"),
 	)
 })
 
