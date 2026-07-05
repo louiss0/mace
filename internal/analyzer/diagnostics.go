@@ -219,8 +219,6 @@ func diagnosticCodeFromProcessorErrorCode(code processor.ErrorCode) (diagnosticC
 	switch code {
 	case processor.CodeArrayIndexOutOfRange:
 		return diagnosticTypeInvalidArrayAccess, true
-	case processor.CodeArrayValueRequired:
-		return diagnosticTypeInvalidArrayAccess, true
 	case processor.CodeInvalidNullUsage:
 		return diagnosticTypeInvalidNullUsage, true
 	case processor.CodeInvalidOutputSchemaField:
@@ -233,8 +231,6 @@ func diagnosticCodeFromProcessorErrorCode(code processor.ErrorCode) (diagnosticC
 		return diagnosticTypeUnknownSelfField, true
 	case processor.CodeTypeMismatch:
 		return diagnosticTypeInitializerMismatch, true
-	case processor.CodeTypeRecordDoesNotMatchSchema:
-		return diagnosticTypeRecordDoesNotMatchSchema, true
 	case processor.CodeInternal, "":
 		return "", false
 	default:

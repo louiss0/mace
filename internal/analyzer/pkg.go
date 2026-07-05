@@ -12,6 +12,7 @@ import (
 	"github.com/samber/lo"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
+	"github.com/louiss0/mace/internal/diagnostic"
 	"github.com/louiss0/mace/internal/lexer"
 	"github.com/louiss0/mace/internal/parser"
 	"github.com/louiss0/mace/internal/parser/ast"
@@ -331,6 +332,18 @@ func DiagnosticFromError(err error) protocol.Diagnostic {
 	end := position
 	code := classifyDiagnosticCode(err.Error())
 	message := err.Error()
+	if diagnosticError, ok := sharedDiagnosticError(err); ok {
+		code = diagnosticCode(diagnosticError.Code)
+		message = diagnosticError.Message
+		if diagnosticError.Range.Start.Line != 0 || diagnosticError.Range.Start.Column != 0 || diagnosticError.Range.End.Line != 0 || diagnosticError.Range.End.Column != 0 {
+			position.Line = protocol.UInteger(diagnosticError.Range.Start.Line)
+			position.Character = protocol.UInteger(diagnosticError.Range.Start.Column)
+			end.Line = protocol.UInteger(diagnosticError.Range.End.Line)
+			end.Character = protocol.UInteger(diagnosticError.Range.End.Column)
+			return diagnosticWithCode(protocol.Range{Start: position, End: end}, protocol.DiagnosticSeverityError, code, message)
+		}
+	}
+
 	if diagnosticError, ok := processorDiagnosticError(err); ok {
 		code = diagnosticCodeFromProcessorError(diagnosticError)
 		message = diagnosticError.Message
@@ -372,6 +385,15 @@ func DocumentPath(uri protocol.DocumentUri) string {
 
 func diagnosticFromError(err error) protocol.Diagnostic {
 	return DiagnosticFromError(err)
+}
+
+func sharedDiagnosticError(err error) (diagnostic.Error, bool) {
+	var diagnosticError diagnostic.Error
+	if !errors.As(err, &diagnosticError) {
+		return diagnostic.Error{}, false
+	}
+
+	return diagnosticError, true
 }
 
 func processorDiagnosticError(err error) (processor.DiagnosticError, bool) {
