@@ -328,7 +328,7 @@ int base = 2 + 2;
 	})
 })
 
-var _ = Describe("Processor entrypoint coverage", func() {
+var _ = Describe("Processor entrypoints", func() {
 	It("covers processor entrypoints and path helpers", func() {
 		workspace, err := os.MkdirTemp("", "processor-entrypoints-*")
 		tAssert.NoError(err)

@@ -149,7 +149,7 @@ schema Plot: { points: array<Point>; };
 	)
 })
 
-var _ = Describe("Output helper coverage", func() {
+var _ = Describe("Data output helpers", func() {
 	It("covers output directive and type validation branches", func() {
 		workspace, err := os.MkdirTemp("", "processor-output-*")
 		tAssert.NoError(err)

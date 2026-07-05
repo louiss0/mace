@@ -108,8 +108,8 @@ Identity value = { id: "u1"; };
 	})
 })
 
-var _ = Describe("Type system coverage", func() {
-	It("covers remaining validation and type resolution branches", func() {
+var _ = Describe("Variant type system helpers", func() {
+	It("validates type resolution branches", func() {
 		workspace, err := os.MkdirTemp("", "processor-helpers-*")
 		tAssert.NoError(err)
 		defer func() { _ = os.RemoveAll(workspace) }()
@@ -525,7 +525,7 @@ var _ = Describe("Type system coverage", func() {
 		tAssert.NoError(err)
 	})
 
-	It("covers remaining type resolution and inference branches", func() {
+	It("validates type resolution and inference branches", func() {
 		symbols := newSymbolTable()
 		symbols.Add("User", symbolKindSchema)
 		symbols.Add("Alias", symbolKindType)

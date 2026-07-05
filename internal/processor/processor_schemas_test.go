@@ -388,7 +388,7 @@ schema PackageJSON: {
 	})
 })
 
-var _ = Describe("Helpers coverage", func() {
+var _ = Describe("Schema and processor helpers", func() {
 	It("reports diagnostic helper details", func() {
 		kindName := directiveKindName
 		cause := errors.New("root cause")
@@ -414,7 +414,7 @@ var _ = Describe("Helpers coverage", func() {
 		tAssert.Equal(ErrorInternal, inferErrorKind("something else"))
 	})
 
-	It("covers remaining utility and branch helpers", func() {
+	It("validates utility helpers and branch behavior", func() {
 		workspace, err := os.MkdirTemp("", "processor-branch-*")
 		tAssert.NoError(err)
 		defer func() { _ = os.RemoveAll(workspace) }()
@@ -799,7 +799,7 @@ from "./scriptonly.mace" import User;
 		tAssert.Contains(formatHexFloat(1.5), "0x1.")
 	})
 
-	It("covers coverage gap branches from prior standalone tests", func() {
+	It("validates schema loading and import edge cases", func() {
 		workspace, err := os.MkdirTemp("", "processor-gap-*")
 		tAssert.NoError(err)
 		defer func() { _ = os.RemoveAll(workspace) }()

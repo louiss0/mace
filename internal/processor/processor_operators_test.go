@@ -241,7 +241,7 @@ int value = true ? 1 : 2;
 	)
 })
 
-var _ = Describe("Operator helper coverage", func() {
+var _ = Describe("Operator helpers", func() {
 	It("covers evaluation branches", func() {
 		vars := newValueEnvironment()
 		symbols := newSymbolTable()
@@ -543,7 +543,7 @@ int base = 1;
 		tAssert.Error(err)
 	})
 
-	It("covers remaining core evaluation and inference branches", func() {
+	It("evaluates core operators and inference branches", func() {
 		variables := newVariableRegistry()
 		symbols := newSymbolTable()
 		types := newTypeRegistry()

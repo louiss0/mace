@@ -103,7 +103,7 @@ Value fallback = %s;
 
 })
 
-var _ = Describe("Choice helper coverage", func() {
+var _ = Describe("Choice type helpers", func() {
 	It("compares and displays choice values by scalar keys", func() {
 		valuesEqual := choiceValuesEqual
 		valueKeys := choiceValueKeys
