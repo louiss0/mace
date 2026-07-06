@@ -34,7 +34,6 @@ const (
 	CodeInternal                     ErrorCode = "mace.internal"
 	CodeInvalidNullUsage             ErrorCode = "mace.type.invalid-null-usage"
 	CodeInvalidOutputSchemaField     ErrorCode = "mace.type.invalid-output-schema-field"
-	CodeMissingInjectable            ErrorCode = "mace.runtime.missing-injectable"
 	CodeMissingRequiredField         ErrorCode = "mace.type.record-does-not-match-schema"
 	CodeOptionalFieldAccess          ErrorCode = "mace.type.optional-field-access"
 	CodeOutputValueDeclaration       ErrorCode = "mace.type.unknown-identifier"
@@ -193,7 +192,7 @@ func inferErrorKind(message string) ErrorKind {
 		return ErrorType
 	case strings.Contains(message, "schema") || strings.Contains(message, "field"):
 		return ErrorSchema
-	case strings.Contains(message, "runtime") || strings.Contains(message, "injection") || strings.Contains(message, "injectable"):
+	case strings.Contains(message, "runtime"):
 		return ErrorRuntime
 	case strings.Contains(message, "value") || strings.Contains(message, "literal") || strings.Contains(message, "expression") || strings.Contains(message, "self reference") || strings.Contains(message, "member access") || strings.Contains(message, "array access"):
 		return ErrorValue

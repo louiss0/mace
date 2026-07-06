@@ -734,7 +734,7 @@ nullable string env = null;
 		tAssert.Empty(snapshot.diagnostics)
 	})
 
-	It("warns when parse directives inject unknown runtime values", func() {
+	It("warns when parse directives require runtime input", func() {
 		snapshot := analyzeDocument(`|===|
 schema Package: { name: string; project: string; };
 |===|
@@ -745,13 +745,13 @@ schema Package: { name: string; project: string; };
 
 		if tAssert.Len(snapshot.diagnostics, 1) {
 			diagnostic := snapshot.diagnostics[0]
-			tAssert.Contains(diagnostic.Message, "The analyzer cannot know which runtime values will be injected")
+			tAssert.Contains(diagnostic.Message, "host-provided input that satisfies the selected schema")
 			tAssert.Equal(protocol.DiagnosticSeverityWarning, *diagnostic.Severity)
 			tAssert.Equal(string(diagnosticDirectiveParseValuesUnknown), requireDiagnosticCode(diagnostic))
 		}
 	})
 
-	It("warns when parse_file directives inject unknown runtime values", func() {
+	It("warns when parse_file directives require runtime input", func() {
 		workspace, err := os.MkdirTemp("", "mace-analysis-parse-file-*")
 		tAssert.NoError(err)
 		defer func() { _ = os.RemoveAll(workspace) }()
@@ -768,7 +768,7 @@ schema Package: { name: string; project: string; };
 
 		if tAssert.Len(snapshot.diagnostics, 1) {
 			diagnostic := snapshot.diagnostics[0]
-			tAssert.Contains(diagnostic.Message, "The analyzer cannot know which runtime values will be injected")
+			tAssert.Contains(diagnostic.Message, "host-provided input that satisfies the selected schema")
 			tAssert.Equal(protocol.DiagnosticSeverityWarning, *diagnostic.Severity)
 			tAssert.Equal(string(diagnosticDirectiveParseValuesUnknown), requireDiagnosticCode(diagnostic))
 		}
@@ -2504,9 +2504,9 @@ Profile record = { age: 1; };
 		text := string(textBytes)
 		tokens := lexAnalysisTokens(text)
 		result := processor.Result{Output: map[string]processor.Value{
-			"name": {Kind: processor.ValueString, String: "Ada"},
+			"name":   {Kind: processor.ValueString, String: "Ada"},
 			"nested": {Kind: processor.ValueRecord, Record: map[string]processor.Value{"child": {Kind: processor.ValueInt, Int: 1}}},
-			"later": {Kind: processor.ValueString, String: "Ada"},
+			"later":  {Kind: processor.ValueString, String: "Ada"},
 		}}
 		definition := protocol.Location{URI: pathURI(documentPath), Range: protocol.Range{Start: protocol.Position{Line: 1, Character: 7}, End: protocol.Position{Line: 1, Character: 11}}}
 		nameRange, _ := tokenRange(tokens, "name")
@@ -2517,7 +2517,7 @@ Profile record = { age: 1; };
 			file:        &ast.File{},
 			result:      &result,
 			tokens:      tokens,
-			symbols: []semanticSymbol{{Name: "name", Range: nameRange, Definition: definition}, {Name: "name", Definition: definition}},
+			symbols:     []semanticSymbol{{Name: "name", Range: nameRange, Definition: definition}, {Name: "name", Definition: definition}},
 			symbolIndex: map[string]semanticSymbol{"name": {Name: "name", Definition: definition}},
 		}
 		_, ok := snapshot.definitionAt(nameRange.Start)
@@ -2673,7 +2673,7 @@ Profile record = { age: 1; };
 			text:        "alpha beta",
 			documentURI: "file:///doc.mace",
 			file:        &ast.File{},
-			symbols: []semanticSymbol{{Name: "alpha", Range: protocol.Range{Start: protocol.Position{}, End: protocol.Position{Character: 5}}, Definition: location}, {Name: "beta", Definition: location}},
+			symbols:     []semanticSymbol{{Name: "alpha", Range: protocol.Range{Start: protocol.Position{}, End: protocol.Position{Character: 5}}, Definition: location}, {Name: "beta", Definition: location}},
 			symbolIndex: map[string]semanticSymbol{"beta": {Name: "beta", Definition: location}, "gamma": {Name: "gamma"}},
 		}
 		resolved, ok := snapshot.definitionAt(protocol.Position{Character: 2})

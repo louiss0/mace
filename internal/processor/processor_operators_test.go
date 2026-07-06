@@ -556,7 +556,7 @@ int base = 1;
 		symbols.Add("User", symbolKindSchema)
 		tAssert.NoError(validateExpressionAgainstType(ast.StringLiteral{Lexeme: `"Ada"`}, valueType{choiceValues: []Value{{Kind: ValueString, String: "Ada"}, {Kind: ValueString, String: "Bea"}}}, variables, symbols, types, schemas, nil))
 		tAssert.NoError(validateEvaluatedValueAgainstType(Value{Kind: ValueString, String: "Ada"}, valueType{choiceValues: []Value{{Kind: ValueString, String: "Ada"}}}, symbols, types, schemas, nil))
-		tAssert.NoError(validateDataOutputExpression(ast.ConditionalExpression{Condition: ast.InfixExpression{Operator: lexer.TokenIn, Left: ast.StringLiteral{Lexeme: `"age"`}, Right: ast.Identifier{Name: "record"}}, Then: ast.MemberAccess{Target: ast.Identifier{Name: "age"}, Name: "missing"}, Else: ast.Identifier{Name: "record"}}, symbols, map[string]struct{}{"age": {}}, map[string]struct{}{}))
+		tAssert.NoError(validateDataOutputExpression(ast.ConditionalExpression{Condition: ast.InfixExpression{Operator: lexer.TokenIn, Left: ast.StringLiteral{Lexeme: `"age"`}, Right: ast.Identifier{Name: "record"}}, Then: ast.MemberAccess{Target: ast.Identifier{Name: "age"}, Name: "missing"}, Else: ast.Identifier{Name: "record"}}, symbols))
 		tAssert.NoError(validateOutputSchema("User", []ast.OutputField{{Name: "name", Value: ast.StringLiteral{Lexeme: `"Ada"`}}}, variables, symbols, types, schemas, nil))
 		var numericErr error
 		_, numericErr = inferMergeType(valueType{kind: ValueRecord}, valueType{kind: ValueRecord})

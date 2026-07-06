@@ -7,7 +7,7 @@ import (
 )
 
 var _ = Describe("Runtime input", func() {
-	It("parses injection records through the compatibility helper", func() {
+	It("parses input records through the compatibility helper", func() {
 		record, err := ParseInjectionRecord(`{ name: "Ada"; enabled: true; }`)
 		tAssert.NoError(err)
 		assertExpectedValue(record["name"], expectedValue{kind: ValueString, string: "Ada"})
@@ -19,18 +19,17 @@ var _ = Describe("Runtime input", func() {
 		tAssert.ErrorContains(err, "unexpected token after expression")
 	})
 
-	It("uses parse input to expose schema fields in the output block", func() {
+	It("validates parse input without exposing schema fields in the output block", func() {
 		processor := NewWithInput(map[string]Value{"env": {Kind: ValueString, String: "prod"}})
 
-		result, err := processor.Process(`|===|
+		_, err := processor.Process(`|===|
 schema Runtime: { env: string; };
 |===|
 [output = data, parse = Runtime]
 {
   env: env;
 }`)
-		tAssert.NoError(err)
-		assertExpectedValue(requireOutputValue(result, "env"), expectedValue{kind: ValueString, string: "prod"})
+		tAssert.ErrorContains(err, "unknown identifier")
 	})
 
 	It("uses parse_file without a schema directive when one schema is available", func() {
@@ -48,12 +47,11 @@ schema Meta: { source: string; };
 }`)
 
 		processor := NewWithInput(map[string]Value{"env": {Kind: ValueString, String: "prod"}})
-		result, err := processor.ProcessInDir(`[output = data, parse_file = "./runtime.mace"]
+		_, err = processor.ProcessInDir(`[output = data, parse_file = "./runtime.mace"]
 {
   env: env;
 }`, workspace)
-		tAssert.NoError(err)
-		assertExpectedValue(requireOutputValue(result, "env"), expectedValue{kind: ValueString, string: "prod"})
+		tAssert.ErrorContains(err, "unknown identifier")
 	})
 
 	It("rejects parse directives without required input fields", func() {

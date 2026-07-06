@@ -67,7 +67,6 @@ script_item = declaration ;
 
 declaration = variable_declaration
   | type_declaration
-  | enum_declaration
   | schema_declaration
   | gen_doc_declaration
   | schema_doc_declaration ;
@@ -97,16 +96,7 @@ schema_doc_entry = "summary" , ws0 , ":" , ws0 , string_literal , ws0 , pair_sep
 field_entry = identifier , ws0 , ":" , ws0 , string_literal , ws0 , pair_separator ;
 
 (* ===================================================== *)
-(* 7. ENUM DECLARATIONS                                  *)
-(* ===================================================== *)
-
-enum_declaration = "enum" , ws1 , identifier , ws0 , ":" , ws0 , enum_backing_type , ws0 , "{" , ws0 , [ enum_member , { ws0 , "," , ws0 , enum_member } , [ ws0 , "," ] ] , ws0 , "}" , ws0 , ";" ;
-enum_backing_type = primitive_type ;
-enum_member = identifier , [ ws0 , "=" , ws0 , enum_member_value ] , [ ws0 , inline_description ] ;
-enum_member_value = string_literal | int_literal | float_literal | hex_int_literal | hex_float_literal | boolean_literal ;
-
-(* ===================================================== *)
-(* 8. SCHEMA DECLARATIONS                                *)
+(* 7. SCHEMA DECLARATIONS                                *)
 (* ===================================================== *)
 
 schema_declaration = "schema" , ws1 , identifier , ws0 , ":" , ws0 , record_type , ws0 , ";" ;

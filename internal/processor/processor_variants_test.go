@@ -476,8 +476,8 @@ var _ = Describe("Variant type system helpers", func() {
 		symbols.Add("Missing", symbolKindType)
 		types.AddAlias("Missing", ast.PrimitiveType{Name: "string"})
 
-		tAssert.NoError(validateDataOutputExpression(ast.Identifier{Name: "name"}, symbols, map[string]struct{}{}, map[string]struct{}{}))
-		tAssert.NoError(validateDataOutputExpression(ast.Identifier{Name: "missing"}, symbols, map[string]struct{}{}, map[string]struct{}{}))
+		tAssert.NoError(validateDataOutputExpression(ast.Identifier{Name: "name"}, symbols))
+		tAssert.NoError(validateDataOutputExpression(ast.Identifier{Name: "missing"}, symbols))
 		tAssert.NoError(validateOutputSchema("User", []ast.OutputField{{Name: "name", Value: ast.StringLiteral{Lexeme: `"Ada"`}}}, variables, symbols, types, schemas, nil))
 		_, err := resolveValueType(ast.NamedType{Name: "Missing"}, symbols, types, schemas, nil)
 		tAssert.NoError(err)

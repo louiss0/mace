@@ -649,7 +649,7 @@ array<string> names = ['Kyle', 'Tyrone', 'Luke'];
 		}
 	})
 
-	It("warns when parse directives inject unknown runtime values", func() {
+	It("warns when parse directives require runtime input", func() {
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `|===|
@@ -663,14 +663,14 @@ schema Package: { name: string; project: string; };
 		if tAssert.Len(notifications, 1) {
 			params := requireDiagnostics(notifications[0])
 			if tAssert.Len(params.Diagnostics, 1) {
-				tAssert.Contains(params.Diagnostics[0].Message, "The analyzer cannot know which runtime values will be injected")
+				tAssert.Contains(params.Diagnostics[0].Message, "host-provided input that satisfies the selected schema")
 				tAssert.Equal(protocol.DiagnosticSeverityWarning, *params.Diagnostics[0].Severity)
 				tAssert.NotNil(params.Diagnostics[0].Code)
 			}
 		}
 	})
 
-	It("warns when parse_file directives inject unknown runtime values", func() {
+	It("warns when parse_file directives require runtime input", func() {
 		notifications := []capturedNotification{}
 		workspace, err := os.MkdirTemp("", "mace-lsp-parse-ignore-*")
 		tAssert.NoError(err)
@@ -690,7 +690,7 @@ schema Package: { name: string; project: string; };
 		if tAssert.Len(notifications, 1) {
 			params := requireDiagnostics(notifications[0])
 			if tAssert.Len(params.Diagnostics, 1) {
-				tAssert.Contains(params.Diagnostics[0].Message, "The analyzer cannot know which runtime values will be injected")
+				tAssert.Contains(params.Diagnostics[0].Message, "host-provided input that satisfies the selected schema")
 				tAssert.Equal(protocol.DiagnosticSeverityWarning, *params.Diagnostics[0].Severity)
 				tAssert.NotNil(params.Diagnostics[0].Code)
 			}
@@ -3202,7 +3202,7 @@ int value = 1;
 		textEdit := protocol.TextDocumentContentChangeEventWhole{Text: `[output = data] { value: 2; }`}
 		err := server.didChange(&glsp.Context{}, &protocol.DidChangeTextDocumentParams{
 			TextDocument: protocol.VersionedTextDocumentIdentifier{
-				Version: 2,
+				Version:                2,
 				TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uriValue},
 			},
 			ContentChanges: []any{textEdit},
@@ -3211,7 +3211,7 @@ int value = 1;
 
 		err = server.didChange(&glsp.Context{}, &protocol.DidChangeTextDocumentParams{
 			TextDocument: protocol.VersionedTextDocumentIdentifier{
-				Version: 3,
+				Version:                3,
 				TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uriValue},
 			},
 			ContentChanges: []any{protocol.TextDocumentContentChangeEvent{
@@ -3226,7 +3226,7 @@ int value = 1;
 
 		err = server.didChange(&glsp.Context{}, &protocol.DidChangeTextDocumentParams{
 			TextDocument: protocol.VersionedTextDocumentIdentifier{
-				Version: 4,
+				Version:                4,
 				TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uriValue},
 			},
 			ContentChanges: []any{protocol.TextDocumentContentChangeEvent{Text: `[output = data] { value: 3; }`}},
@@ -3235,7 +3235,7 @@ int value = 1;
 
 		err = server.didChange(&glsp.Context{}, &protocol.DidChangeTextDocumentParams{
 			TextDocument: protocol.VersionedTextDocumentIdentifier{
-				Version: 5,
+				Version:                5,
 				TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uriValue},
 			},
 			ContentChanges: []any{protocol.TextDocumentContentChangeEvent{Text: `[output = data] { value: 4; }`}},
@@ -3244,7 +3244,7 @@ int value = 1;
 
 		err = server.didChange(&glsp.Context{}, &protocol.DidChangeTextDocumentParams{
 			TextDocument: protocol.VersionedTextDocumentIdentifier{
-				Version: 6,
+				Version:                6,
 				TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uriValue},
 			},
 			ContentChanges: []any{protocol.TextDocumentContentChangeEvent{
@@ -3263,7 +3263,7 @@ int value = 1;
 
 		err = server.didChange(&glsp.Context{}, &protocol.DidChangeTextDocumentParams{
 			TextDocument: protocol.VersionedTextDocumentIdentifier{
-				Version: 7,
+				Version:                7,
 				TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uriValue},
 			},
 			ContentChanges: []any{

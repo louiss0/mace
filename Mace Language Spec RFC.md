@@ -12,7 +12,7 @@ This language is intended to ensure:
 - No subversion of normative language behavior
 - No arbitrary code execution
 - Immutability
-- Defined variable injection 
+- Explicit runtime input validation
 - Well documented config files 
 - No implicit scalar reinterpretation
 
@@ -1130,10 +1130,9 @@ against the declared type before being added to the value environment.
 Runtime input is introduced through `parse = <Schema>` or `parse_file = "<path>"` in data output directive lists.
 `parse = <Schema>` selects an already-available schema from the current file, imports, or declarations loaded by other directives. It does not load files on its own.
 `parse_file = "<path>"` loads schema declarations from another Mace file. When `parse_file` is used without `parse` or `schema`, the referenced file MUST expose exactly one schema in its output block, and that schema becomes the active parse schema.
-The host-provided record is validated against the selected schema before its
-fields are injected into output evaluation as global variables. Tooling MUST
-warn that these injected values are not knowable statically and depend on the
-host-provided runtime input.
+The host-provided record is validated against the selected schema before output
+evaluation. Runtime input is validation data only and does not introduce
+variables into the output block.
 
 ### Documentation Evaluation
 
@@ -1422,8 +1421,8 @@ Schema output returns a schema result. The result contains structured schema
 field metadata and an empty data record.
 
 The document result depends only on the source text, imports, and explicit
-injected values. With the same inputs, evaluation produces the same result or
-the same error.
+runtime input. With the same inputs, evaluation produces the same result or the
+same error.
 
 [## Validation Semantics](#mace-language-specification)
 
@@ -1433,8 +1432,8 @@ types, expressions, documentation metadata, and output block all satisfy the
 language rules.
 
 Validation is deterministic. Given the same source text, imported files, and
-injected values, validation must produce the same success result, diagnostics,
-and output model.
+runtime input, validation must produce the same success result, diagnostics, and
+output model.
 
 The processor validates the following categories:
 
@@ -2584,7 +2583,7 @@ This section focuses on only processor diagnostics! The examples below are suppo
 The parser and analyzer currently classify parser failures into categories such as malformed imports, malformed directive lists, malformed choice types, malformed schemas, malformed variable declarations, malformed output fields, invalid array access indexes, and unexpected tokens. Lexer failures currently fall back to `mace.syntax.unexpected-token`.
 ## Security Considerations
 
-Mace is a deterministic configuration language, not a general-purpose execution environment. A Mace implementation parses source text, resolves imports, validates declarations and output, evaluates pure expressions, and emits structured record data. It must not treat Mace files, imported files, injected values, strings, documentation, or emitted output as executable host-language code. The current language model supports deterministic record production, import resolution, validation, pure expression evaluation, and JSON-oriented CLI emission.
+Mace is a deterministic configuration language, not a general-purpose execution environment. A Mace implementation parses source text, resolves imports, validates declarations and output, evaluates pure expressions, and emits structured record data. It must not treat Mace files, imported files, runtime input, strings, documentation, or emitted output as executable host-language code. The current language model supports deterministic record production, import resolution, validation, pure expression evaluation, and JSON-oriented CLI emission.
 
 ### Import Path Safety
 
@@ -2837,8 +2836,8 @@ A conforming Mace implementation should enforce the following security rules:
     
 - documentation is metadata only;
     
-- injected values are data only;
+- runtime input values are data only;
     
-- injected values must be type checked before use;
+- runtime input values must be type checked before use;
     
 - output serialization must not execute or reinterpret values.

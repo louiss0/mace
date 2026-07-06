@@ -274,7 +274,7 @@ schema Runtime: { env: string; };
 |===|
 [output = data, parse = Runtime]
 {
-  env: env;
+  ok: true;
 }`)
 
 			var stdout bytes.Buffer
@@ -287,7 +287,7 @@ schema Runtime: { env: string; };
 			tAssert.NoError(err)
 			tAssert.Equal("", stderr.String())
 			tAssert.JSONEq(`{
-  "env": "prod"
+  "ok": true
 }`, stdout.String())
 		})
 
@@ -297,7 +297,7 @@ schema Runtime: { env: string; };
 |===|
 [output = data, parse = Runtime]
 {
-  env: env;
+  ok: true;
 }`)
 
 			var stdout bytes.Buffer
@@ -318,7 +318,7 @@ schema Runtime: { env: string; };
 |===|
 [output = data, parse = Runtime]
 {
-  env: env;
+  ok: true;
 }`)
 
 			var stdout bytes.Buffer

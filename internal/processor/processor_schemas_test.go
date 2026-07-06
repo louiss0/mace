@@ -88,22 +88,19 @@ User user = {
 		tAssert.NoError(err)
 	})
 
-	It("uses parse input to expose schema fields in the output block", func() {
+	It("validates parse input without exposing schema fields in the output block", func() {
 		processor := NewWithInput(map[string]Value{
 			"env": {Kind: ValueString, String: "prod"},
 		})
 
-		result, err := processor.Process(`|===|
+		_, err := processor.Process(`|===|
 schema Runtime: { env: string; };
 |===|
 [output = data, parse = Runtime]
 {
   env: env;
 }`)
-		tAssert.NoError(err)
-
-		actual := requireOutputValue(result, "env")
-		assertExpectedValue(actual, expectedValue{kind: ValueString, string: "prod"})
+		tAssert.ErrorContains(err, "unknown identifier")
 	})
 
 	It("rejects parse directives without required input fields", func() {
@@ -138,7 +135,7 @@ schema Runtime: { env: string; };
 		tAssert.ErrorContains(err, "unable to read import file")
 	})
 
-	It("uses parse_file without a schema directive when one schema is available", func() {
+	It("validates parse_file input without exposing schema fields", func() {
 		workspace, err := os.MkdirTemp("", "mace-parse-file-fixture-*")
 		tAssert.NoError(err)
 		defer func() {
@@ -158,15 +155,14 @@ schema Meta: { source: string; };
 			"env": {Kind: ValueString, String: "prod"},
 		})
 
-		result, err := processor.ProcessInDir(`[output = data, parse_file = "./runtime.mace"]
+		_, err = processor.ProcessInDir(`[output = data, parse_file = "./runtime.mace"]
 {
   env: env;
 }`, workspace)
-		tAssert.NoError(err)
-		assertExpectedValue(requireOutputValue(result, "env"), expectedValue{kind: ValueString, string: "prod"})
+		tAssert.ErrorContains(err, "unknown identifier")
 	})
 
-	It("surfaces only top-level parsed schema fields as variables", func() {
+	It("does not surface parsed schema fields as variables", func() {
 		processor := NewWithInput(map[string]Value{
 			"project": {Kind: ValueRecord, Record: map[string]Value{
 				"name": {Kind: ValueString, String: "pi-prompt-form"},
@@ -177,11 +173,8 @@ schema Meta: { source: string; };
 				"root": {Kind: ValueString, String: "."},
 			}},
 		})
-		result, err := processor.ProcessFile("../../fixtures/processor/import_as/nx_consumer.mace")
-		tAssert.NoError(err)
-		assertExpectedValue(result.Output["name"], expectedValue{kind: ValueString, string: "pi-prompt-form"})
-		assertExpectedValue(result.Output["root"], expectedValue{kind: ValueString, string: "libs/pi-prompt-form"})
-		assertExpectedValue(result.Output["cwd"], expectedValue{kind: ValueString, string: "."})
+		_, err := processor.ProcessFile("../../fixtures/processor/import_as/nx_consumer.mace")
+		tAssert.ErrorContains(err, "unknown identifier")
 	})
 
 	It("validates arbitrary record keys against a record value type", func() {
@@ -208,19 +201,18 @@ schema PackageJSON: {
 		}})
 	})
 
-	It("allows record keyword schema fields to be referenced as values", func() {
+	It("does not expose record keyword schema fields as values", func() {
 		processor := NewWithInput(map[string]Value{
 			"record": {Kind: ValueString, String: "value"},
 		})
-		result, err := processor.Process(`|===|
+		_, err := processor.Process(`|===|
 schema Input: { record: string; };
 |===|
 [output = data, parse = Input]
 {
   record: record;
 }`)
-		tAssert.NoError(err)
-		assertExpectedValue(result.Output["record"], expectedValue{kind: ValueString, string: "value"})
+		tAssert.ErrorContains(err, "unknown identifier")
 	})
 
 	It("infers member access types for record map values", func() {
@@ -258,15 +250,14 @@ from "./shared.mace" import User;
 				"name": {Kind: ValueString, String: "Ada"},
 			}},
 		})
-		result, err := processor.ProcessInDir(`[output = data, parse_file = "./schema.mace"]
+		_, err = processor.ProcessInDir(`[output = data, parse_file = "./schema.mace"]
 {
   name: user.name;
 }`, dir)
-		tAssert.NoError(err)
-		assertExpectedValue(result.Output["name"], expectedValue{kind: ValueString, string: "Ada"})
+		tAssert.ErrorContains(err, "unknown identifier")
 	})
 
-	Describe("optional field presence guards", func() {
+	Describe("parse input output scope", func() {
 		const guardSchema = `|===|
 schema User: {
   name: string;
@@ -275,32 +266,30 @@ schema User: {
 |===|
 `
 
-		It("evaluates 'in' expression to true when optional field exists in input", func() {
+		It("does not expose input for presence checks", func() {
 			processor := NewWithInput(map[string]Value{
 				"name":    {Kind: ValueString, String: "Ada"},
 				"manager": {Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Bob"}}},
 			})
-			result, err := processor.Process(guardSchema + `[output = data, parse = User]
+			_, err := processor.Process(guardSchema + `[output = data, parse = User]
 {
   has_manager: "manager" in input,
 }`)
-			tAssert.NoError(err)
-			assertExpectedValue(result.Output["has_manager"], expectedValue{kind: ValueBoolean, bool: true})
+			tAssert.ErrorContains(err, "unknown identifier")
 		})
 
-		It("evaluates 'in' expression to false when optional field is absent from input", func() {
+		It("does not expose input when optional fields are absent", func() {
 			processor := NewWithInput(map[string]Value{
 				"name": {Kind: ValueString, String: "Ada"},
 			})
-			result, err := processor.Process(guardSchema + `[output = data, parse = User]
+			_, err := processor.Process(guardSchema + `[output = data, parse = User]
 {
   has_manager: "manager" in input,
 }`)
-			tAssert.NoError(err)
-			assertExpectedValue(result.Output["has_manager"], expectedValue{kind: ValueBoolean, bool: false})
+			tAssert.ErrorContains(err, "unknown identifier")
 		})
 
-		It("rejects unguarded member access on optional parse variable", func() {
+		It("rejects direct access to parsed optional fields", func() {
 			processor := NewWithInput(map[string]Value{
 				"name":    {Kind: ValueString, String: "Ada"},
 				"manager": {Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Bob"}}},
@@ -310,49 +299,46 @@ schema User: {
   result: manager.name,
 }`)
 			tAssert.Error(err)
-			tAssert.ErrorContains(err, "optional field")
+			tAssert.ErrorContains(err, "unknown identifier")
 			tAssert.ErrorContains(err, "manager")
 		})
 
-		It("allows member access on optional parse variable inside 'in' guard", func() {
+		It("rejects parsed optional fields inside guards", func() {
 			processor := NewWithInput(map[string]Value{
 				"name":    {Kind: ValueString, String: "Ada"},
 				"manager": {Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Bob"}}},
 			})
-			result, err := processor.Process(guardSchema + `[output = data, parse = User]
+			_, err := processor.Process(guardSchema + `[output = data, parse = User]
 {
   result: "manager" in input ? manager.name : "none",
 }`)
-			tAssert.NoError(err)
-			assertExpectedValue(result.Output["result"], expectedValue{kind: ValueString, string: "Bob"})
+			tAssert.ErrorContains(err, "unknown identifier")
 		})
 
-		It("uses the else branch when the guarded optional field is absent", func() {
+		It("rejects guards when parsed optional fields are absent", func() {
 			processor := NewWithInput(map[string]Value{
 				"name": {Kind: ValueString, String: "Ada"},
 			})
-			result, err := processor.Process(guardSchema + `[output = data, parse = User]
+			_, err := processor.Process(guardSchema + `[output = data, parse = User]
 {
   result: "manager" in input ? manager.name : "none",
 }`)
-			tAssert.NoError(err)
-			assertExpectedValue(result.Output["result"], expectedValue{kind: ValueString, string: "none"})
+			tAssert.ErrorContains(err, "unknown identifier")
 		})
 
-		It("supports 'in' guards with the lowercase schema-name variable", func() {
+		It("does not expose the lowercase schema-name variable", func() {
 			processor := NewWithInput(map[string]Value{
 				"name":    {Kind: ValueString, String: "Ada"},
 				"manager": {Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Bob"}}},
 			})
-			result, err := processor.Process(guardSchema + `[output = data, parse = User]
+			_, err := processor.Process(guardSchema + `[output = data, parse = User]
 {
   result: "manager" in user ? manager.name : "none",
 }`)
-			tAssert.NoError(err)
-			assertExpectedValue(result.Output["result"], expectedValue{kind: ValueString, string: "Bob"})
+			tAssert.ErrorContains(err, "unknown identifier")
 		})
 
-		It("validates nested optional access with nested 'in' guards via &&", func() {
+		It("does not expose nested parsed optional fields", func() {
 			processor := NewWithInput(map[string]Value{
 				"name": {Kind: ValueString, String: "Ada"},
 				"manager": {Kind: ValueRecord, Record: map[string]Value{
@@ -360,12 +346,11 @@ schema User: {
 					"manager": {Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Carol"}}},
 				}},
 			})
-			result, err := processor.Process(guardSchema + `[output = data, parse = User]
+			_, err := processor.Process(guardSchema + `[output = data, parse = User]
 {
   result: "manager" in input && "manager" in manager ? manager.manager.name : "none",
 }`)
-			tAssert.NoError(err)
-			assertExpectedValue(result.Output["result"], expectedValue{kind: ValueString, string: "Carol"})
+			tAssert.ErrorContains(err, "unknown identifier")
 		})
 	})
 

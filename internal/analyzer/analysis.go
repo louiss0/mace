@@ -2779,7 +2779,7 @@ func parseDirectiveWarningDiagnostic(text string, file ast.File) (protocol.Diagn
 		rangeValue,
 		protocol.DiagnosticSeverityWarning,
 		diagnosticDirectiveParseValuesUnknown,
-		"You used a parse directive. The analyzer cannot know which runtime values will be injected. Make sure this file is parsed with input that satisfies the selected schema.",
+		"You used a parse directive. Make sure this file is parsed with host-provided input that satisfies the selected schema.",
 	), true
 }
 

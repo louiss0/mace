@@ -65,26 +65,24 @@ type SchemaType struct {
 }
 
 type processContext struct {
-	importBaseDir     string
-	importRootDir     string
-	symbols           *symbolTable
-	types             *typeRegistry
-	schemas           *schemaRegistry
-	variables         *variableRegistry
-	environment       *valueEnvironment
-	optionalParseVars map[string]struct{} // field names from optional parse schema fields
+	importBaseDir string
+	importRootDir string
+	symbols       *symbolTable
+	types         *typeRegistry
+	schemas       *schemaRegistry
+	variables     *variableRegistry
+	environment   *valueEnvironment
 }
 
 func newProcessContext(importBaseDir string, importRootDir string) processContext {
 	return processContext{
-		importBaseDir:     importBaseDir,
-		importRootDir:     importRootDir,
-		symbols:           newSymbolTable(),
-		types:             newTypeRegistry(),
-		schemas:           newSchemaRegistry(),
-		variables:         newVariableRegistry(),
-		environment:       newValueEnvironment(),
-		optionalParseVars: map[string]struct{}{},
+		importBaseDir: importBaseDir,
+		importRootDir: importRootDir,
+		symbols:       newSymbolTable(),
+		types:         newTypeRegistry(),
+		schemas:       newSchemaRegistry(),
+		variables:     newVariableRegistry(),
+		environment:   newValueEnvironment(),
 	}
 }
 
@@ -93,20 +91,14 @@ func (context processContext) clone() processContext {
 		return processContext{}
 	}
 
-	clonedOptional := make(map[string]struct{}, len(context.optionalParseVars))
-	for k := range context.optionalParseVars {
-		clonedOptional[k] = struct{}{}
-	}
-
 	return processContext{
-		importBaseDir:     context.importBaseDir,
-		importRootDir:     context.importRootDir,
-		symbols:           context.symbols.Clone(),
-		types:             context.types.Clone(),
-		schemas:           context.schemas.Clone(),
-		variables:         context.variables.Clone(),
-		environment:       context.environment.Clone(),
-		optionalParseVars: clonedOptional,
+		importBaseDir: context.importBaseDir,
+		importRootDir: context.importRootDir,
+		symbols:       context.symbols.Clone(),
+		types:         context.types.Clone(),
+		schemas:       context.schemas.Clone(),
+		variables:     context.variables.Clone(),
+		environment:   context.environment.Clone(),
 	}
 }
 
@@ -355,7 +347,7 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 		return Result{}, err
 	}
 
-	if err := validateDataOutputFields(outputBlock.DataFields, outputContext.symbols, outputContext.optionalParseVars); err != nil {
+	if err := validateDataOutputFields(outputBlock.DataFields, outputContext.symbols); err != nil {
 		return Result{}, err
 	}
 
@@ -527,41 +519,6 @@ func (p *Processor) applyParsedOutputInput(output ast.OutputBlock, context *proc
 	expectedType := valueType{kind: ValueRecord, schemaName: schemaName, record: &schema}
 	if err := validateEvaluatedValueAgainstType(inputValue, expectedType, context.symbols, context.types, context.schemas, nil); err != nil {
 		return err
-	}
-
-	if context.symbols.Has("input") {
-		return validationErrorf("duplicate declaration %q", "input")
-	}
-	context.symbols.Add("input", symbolKindVariable)
-	context.variables.Add("input", expectedType)
-	context.environment.Add("input", inputValue)
-
-	// Also expose the schema-named variable (lowercase) for guards like "field" in user.
-	schemaVarName := strings.ToLower(schemaName)
-	if schemaVarName != "input" && !context.symbols.Has(schemaVarName) {
-		context.symbols.Add(schemaVarName, symbolKindVariable)
-		context.variables.Add(schemaVarName, expectedType)
-		context.environment.Add(schemaVarName, inputValue)
-	}
-
-	for _, field := range schema.Fields {
-		fieldValue, exists := inputValue.Record[field.Name]
-		if !exists {
-			continue
-		}
-		if context.symbols.Has(field.Name) {
-			return validationErrorf("duplicate declaration %q", field.Name)
-		}
-		fieldType, err := resolveValueType(field.Type, context.symbols, context.types, context.schemas, nil)
-		if err != nil {
-			return err
-		}
-		if field.Optional {
-			context.optionalParseVars[field.Name] = struct{}{}
-		}
-		context.symbols.Add(field.Name, symbolKindVariable)
-		context.variables.Add(field.Name, fieldType)
-		context.environment.Add(field.Name, fieldValue)
 	}
 
 	return nil
@@ -1929,9 +1886,9 @@ func hasSchemaFile(directives []ast.OutputDirective) bool {
 	return false
 }
 
-func validateDataOutputFields(fields []ast.OutputField, symbols *symbolTable, optionalParseVars map[string]struct{}) error {
+func validateDataOutputFields(fields []ast.OutputField, symbols *symbolTable) error {
 	for _, field := range fields {
-		if err := validateDataOutputExpression(field.Value, symbols, optionalParseVars, map[string]struct{}{}); err != nil {
+		if err := validateDataOutputExpression(field.Value, symbols); err != nil {
 			return err
 		}
 	}
@@ -1939,7 +1896,7 @@ func validateDataOutputFields(fields []ast.OutputField, symbols *symbolTable, op
 	return nil
 }
 
-func validateDataOutputExpression(expression ast.Expression, symbols *symbolTable, optionalParseVars map[string]struct{}, guardedNames map[string]struct{}) error {
+func validateDataOutputExpression(expression ast.Expression, symbols *symbolTable) error {
 	switch expr := expression.(type) {
 	case ast.NullLiteral:
 		return invalidNullUsageError()
@@ -1948,46 +1905,34 @@ func validateDataOutputExpression(expression ast.Expression, symbols *symbolTabl
 			return diagnosticErrorf(ErrorValue, CodeOutputValueDeclaration, DiagnosticFields{Name: expr.Name}, "output value %q cannot reference type or schema declaration", expr.Name)
 		}
 	case ast.MemberAccess:
-		// When the immediate target is an identifier that is an optional parse variable
-		// and it has not been guarded by an 'in' check, produce an error.
-		if id, ok := expr.Target.(ast.Identifier); ok {
-			if _, isOptional := optionalParseVars[id.Name]; isOptional {
-				if _, guarded := guardedNames[id.Name]; !guarded {
-					return diagnosticErrorf(ErrorValue, CodeOptionalFieldAccess, DiagnosticFields{Name: id.Name},
-						"optional field %q requires a presence check before access (use \"field\" in record ? ... : ...)", id.Name)
-				}
-			}
-		}
-		return validateDataOutputExpression(expr.Target, symbols, optionalParseVars, guardedNames)
+		return validateDataOutputExpression(expr.Target, symbols)
 	case ast.ArrayLiteral:
 		for _, element := range expr.Elements {
-			if err := validateDataOutputExpression(element, symbols, optionalParseVars, guardedNames); err != nil {
+			if err := validateDataOutputExpression(element, symbols); err != nil {
 				return err
 			}
 		}
 	case ast.RecordLiteral:
 		for _, field := range expr.Fields {
-			if err := validateDataOutputExpression(field.Value, symbols, optionalParseVars, guardedNames); err != nil {
+			if err := validateDataOutputExpression(field.Value, symbols); err != nil {
 				return err
 			}
 		}
 	case ast.PrefixExpression:
-		return validateDataOutputExpression(expr.Right, symbols, optionalParseVars, guardedNames)
+		return validateDataOutputExpression(expr.Right, symbols)
 	case ast.InfixExpression:
-		if err := validateDataOutputExpression(expr.Left, symbols, optionalParseVars, guardedNames); err != nil {
+		if err := validateDataOutputExpression(expr.Left, symbols); err != nil {
 			return err
 		}
-		return validateDataOutputExpression(expr.Right, symbols, optionalParseVars, guardedNames)
+		return validateDataOutputExpression(expr.Right, symbols)
 	case ast.ConditionalExpression:
-		if err := validateDataOutputExpression(expr.Condition, symbols, optionalParseVars, guardedNames); err != nil {
+		if err := validateDataOutputExpression(expr.Condition, symbols); err != nil {
 			return err
 		}
-		// In the then-branch, fields mentioned in 'in' guards are narrowed to non-optional.
-		thenGuarded := extractGuardedNames(expr.Condition, guardedNames)
-		if err := validateDataOutputExpression(expr.Then, symbols, optionalParseVars, thenGuarded); err != nil {
+		if err := validateDataOutputExpression(expr.Then, symbols); err != nil {
 			return err
 		}
-		return validateDataOutputExpression(expr.Else, symbols, optionalParseVars, guardedNames)
+		return validateDataOutputExpression(expr.Else, symbols)
 	}
 
 	return nil

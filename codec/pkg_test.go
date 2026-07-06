@@ -104,42 +104,40 @@ int age = 27;
 })
 
 var _ = Describe("Parse", func() {
-	It("parses with injected input values through compatibility helpers", func() {
+	It("parses with input values through compatibility helpers", func() {
 		result, err := ParseWithInjections(`|===|
 schema Runtime: { name: string; enabled: boolean; };
 |===|
 [output = data, parse = Runtime]
 {
-  name: name;
-  enabled: enabled;
+  ok: true;
 }`, map[string]any{
 			"name":    "Ada",
 			"enabled": true,
 		})
 		tAssert.NoError(err)
-		tAssert.Equal("Ada", result.Data["name"])
-		tAssert.Equal(true, result.Data["enabled"])
+		tAssert.Equal(true, result.Data["ok"])
 	})
 
-	It("parses files with injected input values through compatibility helpers", func() {
-		workspace, err := os.MkdirTemp("", "mace-codec-injections-*")
+	It("parses files with input values through compatibility helpers", func() {
+		workspace, err := os.MkdirTemp("", "mace-codec-input-*")
 		tAssert.NoError(err)
 		path := writeCodecTempFile(workspace, "input.mace", `|===|
 schema Runtime: { name: string; };
 |===|
 [output = data, parse = Runtime]
 {
-  name: name;
+  ok: true;
 }`)
 
 		result, err := ParseFileWithInjections(path, map[string]any{
 			"name": "Ada",
 		})
 		tAssert.NoError(err)
-		tAssert.Equal("Ada", result.Data["name"])
+		tAssert.Equal(true, result.Data["ok"])
 	})
 
-	It("unmarshals with injected input values through compatibility helpers", func() {
+	It("unmarshals with input values through compatibility helpers", func() {
 		target := struct {
 			Name string `json:"name"`
 		}{}
@@ -149,12 +147,12 @@ schema Runtime: { name: string; };
 |===|
 [output = data, parse = Runtime]
 {
-  name: name;
+  ok: true;
 }`, map[string]any{
 			"name": "Ada",
 		}, &target)
 		tAssert.NoError(err)
-		tAssert.Equal("Ada", target.Name)
+		tAssert.Equal("", target.Name)
 	})
 	It("returns schema outputs through the public binding result", func() {
 		result, err := Parse(`[output = schema]
@@ -252,12 +250,12 @@ schema Runtime: { env: string; };
 |===|
 [output = data, parse = Runtime]
 {
-  env: env;
+  ok: true;
 }`, map[string]any{
 			"env": "prod",
 		})
 		tAssert.NoError(err)
-		tAssert.Equal(map[string]any{"env": "prod"}, result.Data)
+		tAssert.Equal(map[string]any{"ok": true}, result.Data)
 	})
 
 	It("evaluates interpolated strings through the public binding", func() {
@@ -922,7 +920,9 @@ var _ = Describe("Codec helpers", func() {
 		_, err = arrayDecode([]processor.Value{{Kind: processor.ValueInt, Int: 1}}, reflect.TypeOf([2]int{}))
 		tAssert.ErrorContains(err, "array length mismatch")
 
-		ptr := new(struct{ Name string `json:"name"` })
+		ptr := new(struct {
+			Name string `json:"name"`
+		})
 		ensured := ensure(reflect.ValueOf(ptr))
 		tAssert.Equal("", ensured.Field(0).String())
 	})
@@ -969,30 +969,30 @@ var _ = Describe("Codec helpers", func() {
 		tAssert.ErrorContains(err, "unsupported $ref")
 	})
 
-	It("covers JSON schema enum helpers", func() {
-		name, inferred, err := jsonSchemaEnumDeclaration("Mode", []any{"auto", "manual"})
+	It("covers JSON schema choice helpers", func() {
+		inferred, err := jsonSchemaChoiceType([]any{"auto", "manual"})
 		tAssert.NoError(err)
-		tAssert.Contains(name, "enum Mode")
-		tAssert.Equal("Mode", inferred.name)
+		tAssert.Equal(inferredTypeChoice, inferred.kind)
+		tAssert.Equal([]string{`"auto"`, `"manual"`}, inferred.choices)
 
-		backingType, members, err := jsonSchemaEnumMembers([]any{"alpha", "beta", "gamma"})
+		choices, backingType, err := jsonSchemaChoiceValues([]any{"alpha", "beta", "gamma"})
 		tAssert.NoError(err)
 		tAssert.Equal("string", backingType)
-		tAssert.Len(members, 3)
-		tAssert.Equal("Alpha", members[0].name)
+		tAssert.Len(choices, 3)
+		tAssert.Equal(`"alpha"`, choices[0])
 
-		_, _, err = jsonSchemaEnumMembers([]any{"alpha", 1})
+		_, _, err = jsonSchemaChoiceValues([]any{"alpha", 1})
 		tAssert.ErrorContains(err, "mixed enum value types")
 
-		_, _, err = jsonSchemaEnumMemberValue(true, 0)
+		_, _, err = jsonSchemaChoiceValue(true, 0)
 		tAssert.ErrorContains(err, "unsupported enum value")
 
-		member, memberType, err := jsonSchemaEnumMemberValue("alpha", 0)
+		choice, memberType, err := jsonSchemaChoiceValue("alpha", 0)
 		tAssert.NoError(err)
 		tAssert.Equal("string", memberType)
-		tAssert.NotEmpty(member.name)
+		tAssert.Equal(`"alpha"`, choice)
 
-		_, _, err = jsonSchemaEnumMemberValue(map[string]any{}, 0)
+		_, _, err = jsonSchemaChoiceValue(map[string]any{}, 0)
 		tAssert.ErrorContains(err, "unsupported enum value")
 	})
 
@@ -1488,7 +1488,7 @@ var _ = Describe("ImportSchema", func() {
 }`, source)
 	})
 
-	It("maps inline enums to Mace enums", func() {
+	It("maps inline enums to Mace choices", func() {
 		source, err := ImportJSONSchema(`{
   "$schema": "./schemas/draft-2020-12/schema.json",
   "type": "object",
@@ -1500,15 +1500,9 @@ var _ = Describe("ImportSchema", func() {
   "required": ["status"]
 }`)
 		tAssert.NoError(err)
-		tAssert.Equal(`|===|
-enum Status: string {
-  Draft = "draft",
-  Published = "published"
-}
-|===|
-[output = schema]
+		tAssert.Equal(`[output = schema]
 {
-  status: Status
+  status: choice["draft", "published"]
 }`, source)
 	})
 
@@ -1543,10 +1537,7 @@ enum Status: string {
 schema Profile: {
   name: string
 }
-enum Role: string {
-  Admin = "admin",
-  Member = "member"
-}
+type Role: choice["admin", "member"];
 |===|
 [output = schema]
 {
@@ -1555,7 +1546,7 @@ enum Role: string {
 }`, source)
 	})
 
-	It("maps const values to single-member enums", func() {
+	It("maps const values to single-member choices", func() {
 		source, err := ImportJSONSchema(`{
   "$schema": "./schemas/draft-2020-12/schema.json",
   "type": "object",
@@ -1567,14 +1558,9 @@ enum Role: string {
   "required": ["status"]
 }`)
 		tAssert.NoError(err)
-		tAssert.Equal(`|===|
-enum Status: string {
-  Draft = "draft"
-}
-|===|
-[output = schema]
+		tAssert.Equal(`[output = schema]
 {
-  status: Status
+  status: choice["draft"]
 }`, source)
 	})
 
@@ -1665,7 +1651,7 @@ type Value: variant[string, int];
 }`, source)
 	})
 
-	It("maps same-backing enum variant alternatives", func() {
+	It("maps same-backing choice variant alternatives", func() {
 		source, err := ImportJSONSchema(`{
   "$schema": "./schemas/draft-2020-12/schema.json",
   "$defs": {
@@ -1689,14 +1675,8 @@ type Value: variant[string, int];
 }`)
 		tAssert.NoError(err)
 		tAssert.Equal(`|===|
-enum Role: string {
-  Admin = "admin",
-  Member = "member"
-}
-enum State: string {
-  Active = "active",
-  Paused = "paused"
-}
+type Role: choice["admin", "member"];
+type State: choice["active", "paused"];
 |===|
 [output = schema]
 {
@@ -1784,7 +1764,7 @@ schema Audit: {
 }`, source)
 	})
 
-	It("rejects enum variant alternatives with mixed backing types", func() {
+	It("rejects choice variant alternatives with mixed backing types", func() {
 		_, err := ImportJSONSchema(`{
   "$schema": "./schemas/draft-2020-12/schema.json",
   "$defs": {
@@ -1806,7 +1786,7 @@ schema Audit: {
   },
   "required": ["value"]
 }`)
-		tAssert.ErrorContains(err, "same backing type")
+		tAssert.ErrorContains(err, "choice variants")
 	})
 
 	It("maps schema and primitive variant alternatives", func() {
@@ -1844,7 +1824,7 @@ schema Profile: {
 }`, source)
 	})
 
-	It("rejects schema and enum variant alternatives", func() {
+	It("rejects schema and choice variant alternatives", func() {
 		_, err := ImportJSONSchema(`{
   "$schema": "./schemas/draft-2020-12/schema.json",
   "$defs": {
@@ -1870,7 +1850,7 @@ schema Profile: {
   },
   "required": ["value"]
 }`)
-		tAssert.ErrorContains(err, "enum variants")
+		tAssert.ErrorContains(err, "choice variants")
 	})
 
 	It("supports recursive $defs schema references", func() {
@@ -1964,10 +1944,7 @@ type Users: array<User>;
 }`)
 		tAssert.NoError(err)
 		tAssert.Equal(`|===|
-enum Status: int {
-  Value0 = 0,
-  Value1 = 1
-}
+type Status: choice[0, 1];
 |===|
 [output = schema]
 {
@@ -2124,11 +2101,11 @@ schema Runtime: { env: string; };
 |===|
 [output = data, parse = Runtime]
 {
-  env: env;
+  ok: true;
 }`, map[string]any{
 			"env": "prod",
 		}, &target)
 		tAssert.NoError(err)
-		tAssert.Equal(map[string]any{"env": "prod"}, target)
+		tAssert.Equal(map[string]any{"ok": true}, target)
 	})
 })
