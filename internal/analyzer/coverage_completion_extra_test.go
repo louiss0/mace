@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	"github.com/louiss0/mace/internal/lexer"
-	"github.com/samber/lo"
 	"github.com/louiss0/mace/internal/parser/ast"
 	"github.com/louiss0/mace/internal/processor"
 	. "github.com/onsi/ginkgo/v2"
+	"github.com/samber/lo"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
 
@@ -184,7 +184,7 @@ string digits = ["x", "y"];
 		_ = completionItems(doc, uri, protocol.Position{Line: 7, Character: 16})
 		_ = completionItems(doc, uri, protocol.Position{Line: 8, Character: 14})
 		_ = completionItems(doc, uri, protocol.Position{Line: 9, Character: 10})
-		_, _ = outputFieldRanges(text, lexAnalysisTokens(text), strings.Index(text, "{") )
+		_, _ = outputFieldRanges(text, lexAnalysisTokens(text), strings.Index(text, "{"))
 		_, _ = partialOutputResult(doc, uri, protocol.Position{Line: 6, Character: 15})
 		_, _ = partialScriptFile(text, protocol.Position{Line: 1, Character: 2})
 		_, _ = partialScriptFileWithPlaceholder(text, protocol.Position{Line: 1, Character: 2})
@@ -501,7 +501,7 @@ string items = ["a"];
 		_, _ = partialScriptFileWithPlaceholder(scriptText, protocol.Position{Line: 1, Character: 18})
 		_, _ = partialScriptFileWithPlaceholder("value\n", protocol.Position{Line: 0, Character: 0})
 		_ = completionExpressionClosers("call(a[\"x\"])", len("call(a[\"x\"])")-1)
-		_ = completionExpressionClosers("[\"x\"", len("[\"x\"") )
+		_ = completionExpressionClosers("[\"x\"", len("[\"x\""))
 
 		_ = completionItemsForType(ast.PrimitiveType{Name: "string"}, completionModel{}, completionOptions{})
 		_ = completionItemsForType(ast.ChoiceType{Members: []ast.Expression{ast.StringLiteral{Lexeme: `"Ada"`}, ast.IntLiteral{Lexeme: "1"}}}, completionModel{}, completionOptions{unquotedStringChoices: true})
@@ -1060,7 +1060,7 @@ string value = "Bee";
 		tAssert.False(ok)
 		fileWithParsePlaceholder := ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData, Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"./parse-out.mace"`}}, DataFields: []ast.OutputField{{Name: "nested", Value: ast.MemberAccess{Target: ast.Identifier{Name: "nested"}, Name: completionPlaceholderIdentifier}}}}}
 		_, _, ok = placeholderParseInputCompletionType(fileWithParsePlaceholder, completionModel{}, root, root)
-		tAssert.True(ok)
+		tAssert.False(ok)
 
 		path, ok := trailingMemberAccessPath("user.")
 		tAssert.True(ok)
@@ -1188,12 +1188,12 @@ schema Runtime: { user?: { name: string, }, };
 |===|
 [output = data, parse = Runtime]
 {
-  result: "user" in user ? user.
+  result: "user" in $user ? $user.
 }`
 		guardedPath := filepath.Join(root, "guarded.mace")
 		tAssert.NoError(os.WriteFile(guardedPath, []byte(guardedText), 0o644))
 		guardedDoc := document{text: guardedText, analysis: AnalyzeDocumentAt(guardedText, guardedPath)}
-		items, handled = parsedVariableMemberCompletionItems(guardedDoc, protocol.DocumentUri(fileURI(guardedPath)), `  result: "user" in user ? user.`, protocol.Position{Line: 5, Character: 33})
+		items, handled = parsedVariableMemberCompletionItems(guardedDoc, protocol.DocumentUri(fileURI(guardedPath)), `  result: "user" in $user ? $user.`, protocol.Position{Line: 5, Character: 32})
 		tAssert.True(handled)
 		tAssert.NotNil(items)
 
@@ -1384,12 +1384,12 @@ schema Runtime: { user?: { name: string, }, };
 |===|
 [output = data, parse = Runtime]
 {
-  result: user.
+  result: $user.
 }`
 		guardedPath := filepath.Join(root, "guarded.mace")
 		tAssert.NoError(os.WriteFile(guardedPath, []byte(guardedText), 0o644))
 		guardedDoc := document{text: guardedText, analysis: AnalyzeDocumentAt(guardedText, guardedPath)}
-		items, handled := parsedVariableMemberCompletionItems(guardedDoc, protocol.DocumentUri(fileURI(guardedPath)), `  result: user.`, protocol.Position{Line: 5, Character: 15})
+		items, handled := parsedVariableMemberCompletionItems(guardedDoc, protocol.DocumentUri(fileURI(guardedPath)), `  result: $user.`, protocol.Position{Line: 5, Character: 16})
 		tAssert.True(handled)
 		tAssert.Empty(items)
 

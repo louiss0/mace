@@ -111,7 +111,7 @@ schema Runtime: { env: string, };
 |===|
 [output = data, parse = Runtime]
 {
-  env: env,
+  env: $env,
 }`)
 		tAssert.Error(err)
 		tAssert.ErrorContains(err, "missing required field")

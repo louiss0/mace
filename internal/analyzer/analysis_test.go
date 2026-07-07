@@ -499,14 +499,12 @@ string greeting = "hello";
 		|===|
 		[output = data, parse = Runtime]
 		{
-		  result: profile.name,
+		  result: $profile.name,
 		}`, documentPath)
 
 		names := declarationNames(snapshot)
-		tAssert.Contains(names, "env")
-		tAssert.Contains(names, "profile")
-		tAssert.Contains(names, "input")
-		tAssert.Contains(names, "runtime")
+		tAssert.Contains(names, "$env")
+		tAssert.Contains(names, "$profile")
 	})
 
 	It("returns hover details for parsed variables", func() {
@@ -522,7 +520,7 @@ string greeting = "hello";
 	|===|
 	[output = data, parse = Runtime]
 	{
-	  result: profile.name,
+	  result: $profile.name,
 	}`
 		snapshot := analyzeDocumentAt(text, documentPath)
 		hover := Hover(text, snapshot, protocol.Position{Line: 8, Character: 12})
@@ -537,7 +535,7 @@ string greeting = "hello";
 			return
 		}
 
-		tAssert.Contains(content.Value, "parse profile: { name: string }")
+		tAssert.Contains(content.Value, "{ name: string }")
 	})
 
 	It("surfaces only LSP-visible declarations from imports, script, and output", func() {

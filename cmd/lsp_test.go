@@ -1187,8 +1187,8 @@ schema Runtime: { env: string, region: string, };
 }`, nil)
 
 		labels := completeLabels(server, uri, 5, uint32(len(`  result: `)))
-		tAssert.Contains(labels, "env")
-		tAssert.Contains(labels, "region")
+		tAssert.Contains(labels, "$env")
+		tAssert.Contains(labels, "$region")
 	})
 
 	It("suggests parse_file output schema fields as output variables", func() {
@@ -1208,9 +1208,9 @@ schema Runtime: { env: string, region: string, };
 }`, nil)
 
 		labels := completeLabels(server, uri, 2, uint32(len(`  result: `)))
-		tAssert.NotContains(labels, "env")
-		tAssert.NotContains(labels, "region")
-		tAssert.Contains(labels, "Runtime")
+		tAssert.Contains(labels, "$env")
+		tAssert.Contains(labels, "$region")
+		tAssert.NotContains(labels, "Runtime")
 	})
 
 	It("only suggests top-level parse schema fields as output variables", func() {
@@ -1253,12 +1253,12 @@ schema Runtime: {
 			}
 		}
 
-		tAssert.Contains(labels, "env")
-		tAssert.Contains(labels, "profile")
+		tAssert.Contains(labels, "$env")
+		tAssert.Contains(labels, "$profile")
 		tAssert.NotContains(labels, "name")
 		tAssert.NotContains(labels, "email")
-		tAssert.Equal("string", details["env"])
-		tAssert.Equal("{ name: string, email: string }", details["profile"])
+		tAssert.Equal("string", details["$env"])
+		tAssert.Equal("{ name: string, email: string }", details["$profile"])
 	})
 
 	It("only suggests top-level parse_file schema fields as output variables", func() {
@@ -1281,11 +1281,11 @@ schema Runtime: {
 }`, nil)
 
 		labels := completeLabels(server, uri, 2, uint32(len(`  result: `)))
-		tAssert.NotContains(labels, "env")
-		tAssert.NotContains(labels, "profile")
+		tAssert.Contains(labels, "$env")
+		tAssert.Contains(labels, "$profile")
 		tAssert.NotContains(labels, "name")
 		tAssert.NotContains(labels, "email")
-		tAssert.Contains(labels, "Runtime")
+		tAssert.NotContains(labels, "Runtime")
 	})
 
 	It("suggests parse_file output schema field members as output variables", func() {
@@ -1301,10 +1301,10 @@ schema Runtime: {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = data, parse_file = "./runtime.mace"]
 {
-  result: user.
+  result: $user.
 }`, nil)
 
-		labels := completeLabels(server, uri, 2, uint32(len(`  result: user.`)))
+		labels := completeLabels(server, uri, 2, uint32(len(`  result: $user.`)))
 		tAssert.Contains(labels, "name")
 		tAssert.Contains(labels, "home")
 	})
@@ -1328,10 +1328,10 @@ schema User: {
 |===|
 [output = data, parse = User]
 {
-  result: manager.manager.profile.contact.
+  result: $manager.manager.profile.contact.
 }`, nil)
 
-		labels := completeLabels(server, uri, 17, uint32(len(`  result: manager.manager.profile.contact.`)))
+		labels := completeLabels(server, uri, 17, uint32(len(`  result: $manager.manager.profile.contact.`)))
 		tAssert.Contains(labels, "email")
 		tAssert.Contains(labels, "phone")
 	})
@@ -1364,8 +1364,8 @@ schema Workspace: {
 }`, nil)
 
 		labels := completeLabels(server, uri, 2, 2)
-		tAssert.Contains(labels, "project")
-		tAssert.Contains(labels, "workspace")
+		tAssert.Contains(labels, "$project")
+		tAssert.Contains(labels, "$workspace")
 		tAssert.NotContains(labels, "name")
 		tAssert.NotContains(labels, "root")
 		tAssert.NotContains(labels, "cwd")
@@ -1395,14 +1395,14 @@ schema Workspace: {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = data, parse_file = "./nx_inputs.mace"]
 {
-  result: project.
+  result: $project.
 }`, nil)
 
-		labels := completeLabels(server, uri, 2, uint32(len(`  result: project.`)))
+		labels := completeLabels(server, uri, 2, uint32(len(`  result: $project.`)))
 		tAssert.Contains(labels, "name")
 		tAssert.Contains(labels, "root")
-		tAssert.NotContains(labels, "project")
-		tAssert.NotContains(labels, "workspace")
+		tAssert.NotContains(labels, "$project")
+		tAssert.NotContains(labels, "$workspace")
 	})
 
 	It("does not suggest schema names as output expressions", func() {
@@ -1454,8 +1454,8 @@ schema Runtime: { env: string, region: string, };
 }`, nil)
 
 		labels := completeLabels(server, uri, 6, uint32(len(`  result: `)))
-		tAssert.Contains(labels, "env")
-		tAssert.Contains(labels, "region")
+		tAssert.Contains(labels, "$env")
+		tAssert.Contains(labels, "$region")
 	})
 
 	It("suggests parse_file variables when previous output fields use commas", func() {
@@ -1476,9 +1476,9 @@ schema Runtime: { env: string, region: string, };
 }`, nil)
 
 		labels := completeLabels(server, uri, 3, uint32(len(`  result: `)))
-		tAssert.NotContains(labels, "env")
-		tAssert.NotContains(labels, "region")
-		tAssert.Contains(labels, "Runtime")
+		tAssert.Contains(labels, "$env")
+		tAssert.Contains(labels, "$region")
+		tAssert.NotContains(labels, "Runtime")
 	})
 
 	It("suggests choice values for output schema fields", func() {
@@ -1654,7 +1654,7 @@ from "./shared.mace" import ImportedUser;
 
 		labels := completeLabels(server, uri, 3, uint32(len(`  result: `)))
 		tAssert.NotContains(labels, "base")
-		tAssert.NotContains(labels, "profile")
+		tAssert.NotContains(labels, "$profile")
 		tAssert.Contains(labels, "$self")
 	})
 

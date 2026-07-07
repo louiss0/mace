@@ -521,6 +521,22 @@ func (p *Processor) applyParsedOutputInput(output ast.OutputBlock, context *proc
 		return err
 	}
 
+	for _, field := range schema.Fields {
+		fieldValue, ok := inputValue.Record[field.Name]
+		if !ok {
+			continue
+		}
+
+		fieldType, err := resolveValueType(field.Type, context.symbols, context.types, context.schemas, nil)
+		if err != nil {
+			return err
+		}
+
+		name := "$" + field.Name
+		context.environment.Add(name, fieldValue)
+		context.variables.Add(name, fieldType)
+	}
+
 	return nil
 }
 

@@ -606,8 +606,13 @@ func identifierPrefixAt(text string, position protocol.Position) string {
 	index := positionIndex(text, position)
 
 	start := index
-	for start > 0 && isIdentifierCharacter(text[start-1]) {
-		start--
+	for start > 0 {
+		character := text[start-1]
+		if isIdentifierCharacter(character) || character == '$' {
+			start--
+			continue
+		}
+		break
 	}
 
 	return text[start:index]
@@ -628,8 +633,13 @@ func identifierRangeAt(text string, position protocol.Position) (protocol.Range,
 	index := positionIndex(text, position)
 
 	start := index
-	for start > 0 && isIdentifierCharacter(text[start-1]) {
-		start--
+	for start > 0 {
+		character := text[start-1]
+		if isIdentifierCharacter(character) || character == '$' {
+			start--
+			continue
+		}
+		break
 	}
 
 	end := index

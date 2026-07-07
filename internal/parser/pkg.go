@@ -1058,6 +1058,8 @@ func (p *Parser) parsePrefix(token lexer.Token) (ast.Expression, error) {
 		return ast.NullLiteral{Token: token}, nil
 	case lexer.TokenSelf:
 		return p.parseSelfReference()
+	case lexer.TokenDollar:
+		return p.parseDollarReference()
 	case lexer.TokenLBracket:
 		return p.parseArrayLiteral()
 	case lexer.TokenLBrace:
@@ -1114,6 +1116,26 @@ func (p *Parser) parseSelfReference() (ast.Expression, error) {
 	}
 
 	return ast.SelfReference{Token: selfToken, Path: segments}, nil
+}
+
+func (p *Parser) parseDollarReference() (ast.Expression, error) {
+	dollarToken, err := p.consume(lexer.TokenDollar, "parser: expected '$' to start parsed variable reference")
+	if err != nil {
+		return nil, err
+	}
+
+	nameToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier after '$'")
+	if err != nil {
+		return nil, err
+	}
+
+	identifierToken := lexer.Token{
+		Type:   lexer.TokenIdentifier,
+		Lexeme: "$" + nameToken.Lexeme,
+		Line:   dollarToken.Line,
+		Column: dollarToken.Column,
+	}
+	return ast.Identifier{Token: identifierToken, Name: identifierToken.Lexeme}, nil
 }
 
 func (p *Parser) parseArrayLiteral() (ast.Expression, error) {

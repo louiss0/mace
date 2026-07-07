@@ -45,8 +45,11 @@ func (l *Lexer) NextToken() (Token, error) {
 	case '\'', '"':
 		return l.lexString(current, startPosition, startLine, startColumn)
 	case '$':
-		if l.match('s') && l.match('e') && l.match('l') && l.match('f') {
+		if l.match('s') && l.match('e') && l.match('l') && l.match('f') && !isIdentifierPart(l.peek()) {
 			return l.makeToken(TokenSelf, startPosition, startLine, startColumn), nil
+		}
+		if isLetter(l.peek()) {
+			return l.makeToken(TokenDollar, startPosition, startLine, startColumn), nil
 		}
 		return Token{}, fmt.Errorf("lexer: unexpected character %q at %d:%d", current, startLine, startColumn)
 	case '=':

@@ -325,6 +325,15 @@ var _ = Describe("Parser", func() {
 		Entry("self reference chain", "$self.user.name", []string{"user", "name"}),
 	)
 
+	DescribeTable("parses parsed variable references",
+		func(input string, targetName string, memberName string) {
+			expression, err := parseExpressionInput(input)
+			tAssert.NoError(err)
+			requireMemberAccess(expression, targetName, memberName)
+		},
+		Entry("parsed variable reference chain", "$user.profile", "$user", "profile"),
+	)
+
 	DescribeTable("parses prefix expressions",
 		func(input string, operator lexer.TokenType, rightName string) {
 			expression, err := parseExpressionInput(input)

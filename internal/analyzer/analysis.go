@@ -3359,42 +3359,19 @@ func parsedSemanticSymbols(file ast.File, documentPath string) []semanticSymbol 
 	}
 
 	importBaseDir := filepath.Dir(documentPath)
-	model := buildCompletionModel(file, importBaseDir, importBaseDir, map[string]completionModel{})
-	record, ok := parseInputCompletionRecord(file, model, importBaseDir, importBaseDir, map[string]completionModel{})
-	if !ok {
+	definitions := parseInputDeclarationDefinitions(file, importBaseDir, importBaseDir)
+	if len(definitions) == 0 {
 		return nil
 	}
 
-	symbols := lo.Map(record.Fields, func(field ast.SchemaField, _ int) semanticSymbol {
+	return lo.Map(definitions, func(definition declarationDefinition, _ int) semanticSymbol {
 		return semanticSymbol{
-			Name:   field.Name,
-			Kind:   protocol.CompletionItemKindVariable,
-			Detail: fmt.Sprintf("parse %s: %s", field.Name, fieldTypeDetail(field.Type)),
+			Name:   definition.Name,
+			Kind:   definition.Kind,
+			Detail: definition.Detail,
 			Origin: symbolOriginParsed,
 		}
 	})
-
-	rootDetail := fmt.Sprintf("parse input: %s", recordTypeDetail(record))
-	symbols = append(symbols, semanticSymbol{
-		Name:   "input",
-		Kind:   protocol.CompletionItemKindVariable,
-		Detail: rootDetail,
-		Origin: symbolOriginParsed,
-	})
-
-	if schemaName, ok := parseInputSemanticSchemaName(file, importBaseDir); ok {
-		aliasName := strings.ToLower(schemaName)
-		if aliasName != "input" {
-			symbols = append(symbols, semanticSymbol{
-				Name:   aliasName,
-				Kind:   protocol.CompletionItemKindVariable,
-				Detail: fmt.Sprintf("parse %s: %s", aliasName, recordTypeDetail(record)),
-				Origin: symbolOriginParsed,
-			})
-		}
-	}
-
-	return dedupeSymbols(symbols)
 }
 
 func parseInputSemanticSchemaName(file ast.File, importBaseDir string) (string, bool) {

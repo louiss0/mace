@@ -19,39 +19,65 @@ var _ = Describe("Runtime input", func() {
 		tAssert.ErrorContains(err, "unexpected token after expression")
 	})
 
-	It("validates parse input without exposing schema fields in the output block", func() {
-		processor := NewWithInput(map[string]Value{"env": {Kind: ValueString, String: "prod"}})
+	It("exposes parsed input fields with $ prefixes", func() {
+		processor := NewWithInput(map[string]Value{
+			"env": {Kind: ValueString, String: "prod"},
+			"profile": {Kind: ValueRecord, Record: map[string]Value{
+				"name": {Kind: ValueString, String: "Ada"},
+			}},
+		})
 
-		_, err := processor.Process(`|===|
-schema Runtime: { env: string, };
+		result, err := processor.Process(`|===|
+schema Runtime: {
+  env: string,
+  profile: { name: string, },
+};
 |===|
 [output = data, parse = Runtime]
 {
-  env: env,
+  env: $env,
+  profile_name: $profile.name,
 }`)
-		tAssert.ErrorContains(err, "unknown identifier")
+		tAssert.NoError(err)
+		assertExpectedOutput(result, map[string]expectedValue{
+			"env":          {kind: ValueString, string: "prod"},
+			"profile_name": {kind: ValueString, string: "Ada"},
+		})
 	})
 
-	It("uses parse_file without a schema directive when one schema is available", func() {
+	It("uses parse_file fields with $ prefixes", func() {
 		workspace, err := os.MkdirTemp("", "mace-parse-file-fixture-*")
 		tAssert.NoError(err)
 		defer func() { _ = os.RemoveAll(workspace) }()
 
 		writeFixtureFile(workspace, "runtime.mace", `|===|
-schema Runtime: { env: string, };
-schema Meta: { source: string, };
+schema Runtime: {
+  env: string,
+  profile: { name: string, },
+};
 |===|
 [output = schema]
 {
   Runtime: Runtime,
 }`)
 
-		processor := NewWithInput(map[string]Value{"env": {Kind: ValueString, String: "prod"}})
-		_, err = processor.ProcessInDir(`[output = data, parse_file = "./runtime.mace"]
+		processor := NewWithInput(map[string]Value{
+			"env": {Kind: ValueString, String: "prod"},
+			"profile": {Kind: ValueRecord, Record: map[string]Value{
+				"name": {Kind: ValueString, String: "Ada"},
+			}},
+		})
+
+		result, err := processor.ProcessInDir(`[output = data, parse_file = "./runtime.mace"]
 {
-  env: env,
+  env: $env,
+  profile_name: $profile.name,
 }`, workspace)
-		tAssert.ErrorContains(err, "unknown identifier")
+		tAssert.NoError(err)
+		assertExpectedOutput(result, map[string]expectedValue{
+			"env":          {kind: ValueString, string: "prod"},
+			"profile_name": {kind: ValueString, string: "Ada"},
+		})
 	})
 
 	It("rejects parse directives without required input fields", func() {
@@ -61,7 +87,7 @@ schema Runtime: { env: string, };
 |===|
 [output = data, parse = Runtime]
 {
-  env: env,
+  env: $env,
 }`)
 		tAssert.Error(err)
 		tAssert.ErrorContains(err, "missing required field")

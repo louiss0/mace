@@ -108,7 +108,7 @@ int value = 1;
 		})
 
 		It("reports lexer and parser errors", func() {
-			_, err := lex("$x")
+			_, err := lex("@")
 			tAssert.ErrorContains(err, "unexpected character")
 
 			path := writeTempFile("broken.mace", `[output = data]
@@ -116,7 +116,7 @@ int value = 1;
 			_, err = parseFile(path)
 			tAssert.Error(err)
 
-			lexPath := writeTempFile("lexer.mace", `$x`)
+			lexPath := writeTempFile("lexer.mace", `@`)
 			_, err = parseFile(lexPath)
 			tAssert.Error(err)
 		})

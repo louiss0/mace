@@ -308,7 +308,7 @@ var _ = Describe("Lexer", func() {
 		Entry("newline in regular string", "\"unterminated\nnext"),
 	)
 
-	DescribeTable("lexes $self as a dedicated token",
+	DescribeTable("lexes dollar-prefixed references",
 		func(input string, expected []expectedToken) {
 			tokens, err := collectTokens(input)
 			tAssert.NoError(err)
@@ -316,6 +316,13 @@ var _ = Describe("Lexer", func() {
 		},
 		Entry("self token", "$self.value", []expectedToken{
 			{tokenType: TokenSelf, lexeme: "$self"},
+			{tokenType: TokenDot, lexeme: "."},
+			{tokenType: TokenIdentifier, lexeme: "value"},
+			{tokenType: TokenEOF, lexeme: ""},
+		}),
+		Entry("parsed variable token", "$user.value", []expectedToken{
+			{tokenType: TokenDollar, lexeme: "$"},
+			{tokenType: TokenIdentifier, lexeme: "user"},
 			{tokenType: TokenDot, lexeme: "."},
 			{tokenType: TokenIdentifier, lexeme: "value"},
 			{tokenType: TokenEOF, lexeme: ""},
@@ -347,13 +354,12 @@ var _ = Describe("Lexer", func() {
 		}),
 	)
 
-	DescribeTable("rejects invalid self references",
+	DescribeTable("rejects invalid dollar references",
 		func(input string) {
 			_, err := collectTokens(input)
 			tAssert.ErrorContains(err, "unexpected character '$'")
 		},
 		Entry("bare dollar", "$"),
-		Entry("unknown dollar identifier", "$name"),
 	)
 
 	DescribeTable("lexes schema declarations with multiple fields",
