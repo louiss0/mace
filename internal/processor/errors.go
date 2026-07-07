@@ -37,6 +37,7 @@ const (
 	CodeMissingRequiredField         ErrorCode = "mace.type.record-does-not-match-schema"
 	CodeOptionalFieldAccess          ErrorCode = "mace.type.optional-field-access"
 	CodeOutputValueDeclaration       ErrorCode = "mace.type.unknown-identifier"
+	CodeOutputEvaluationParentheses  ErrorCode = "mace.output.evaluation-requires-parentheses"
 	CodeSelfReferenceUnknown         ErrorCode = "mace.type.unknown-self-field"
 	CodeTypeMismatch                 ErrorCode = "mace.type.initializer-type-mismatch"
 	CodeTypeRecordDoesNotMatchSchema ErrorCode = "mace.type.record-does-not-match-schema"

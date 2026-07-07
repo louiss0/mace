@@ -24,7 +24,7 @@ Name name = "Ada";
 User result = { name: name; age: 30; };
 |===|
 [output = data]
-{ result: result; }`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{"name": {kind: ValueString, string: "Ada"}, "age": {kind: ValueInt, int64: 30}}}),
+{ result: (result); }`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{"name": {kind: ValueString, string: "Ada"}, "age": {kind: ValueInt, int64: 30}}}),
 		Entry("imports values surfaced through output", `|===|
 from "fixtures/processor/imports/values.mace" import count;
 |===|

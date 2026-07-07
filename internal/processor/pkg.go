@@ -269,7 +269,7 @@ func (p *Processor) processInput(input string, importBaseDir string, importRootD
 		return Result{}, err
 	}
 
-	return p.processParsedOutput(file.Output, file, context)
+	return p.processParsedOutput(file.Output, file, context, enforceImportRoot)
 }
 
 func (p *Processor) processScriptInput(input string, importBaseDir string) (ScriptResult, error) {
@@ -322,10 +322,10 @@ func (p *Processor) processOutputInput(input string, scriptResult ScriptResult, 
 		Output: outputBlock,
 	}
 
-	return p.processParsedOutput(outputBlock, file, context)
+	return p.processParsedOutput(outputBlock, file, context, true)
 }
 
-func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.File, context processContext) (Result, error) {
+func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.File, context processContext, enforceOutputEvaluationParentheses bool) (Result, error) {
 	outputContext, err := prepareOutputContext(outputBlock, context)
 	if err != nil {
 		return Result{}, err
@@ -347,7 +347,7 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 		return Result{}, err
 	}
 
-	if err := validateDataOutputFields(outputBlock.DataFields, outputContext.symbols); err != nil {
+	if err := validateDataOutputFields(outputBlock.DataFields, outputContext.symbols, enforceOutputEvaluationParentheses); err != nil {
 		return Result{}, err
 	}
 
@@ -1886,14 +1886,26 @@ func hasSchemaFile(directives []ast.OutputDirective) bool {
 	return false
 }
 
-func validateDataOutputFields(fields []ast.OutputField, symbols *symbolTable) error {
+func validateDataOutputFields(fields []ast.OutputField, symbols *symbolTable, enforceOutputEvaluationParentheses bool) error {
 	for _, field := range fields {
+		if enforceOutputEvaluationParentheses && outputFieldRequiresEvaluationParentheses(field) && !field.Evaluated {
+			return diagnosticErrorf(ErrorValue, CodeOutputEvaluationParentheses, DiagnosticFields{Name: field.Name}, "output field %q must wrap evaluated expressions in parentheses", field.Name)
+		}
 		if err := validateDataOutputExpression(field.Value, symbols); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+func outputFieldRequiresEvaluationParentheses(field ast.OutputField) bool {
+	switch field.Value.(type) {
+	case ast.Identifier:
+		return true
+	default:
+		return false
+	}
 }
 
 func validateDataOutputExpression(expression ast.Expression, symbols *symbolTable) error {

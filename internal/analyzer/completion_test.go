@@ -1353,7 +1353,7 @@ from "../shared.mace" import base;
 |===|
 [output = data]
 {
-  base: base;
+  base: (base);
   result: $self.base.
 }`
 		position := protocol.Position{Line: 6, Character: protocol.UInteger(len(`  result: $self.base.`))}

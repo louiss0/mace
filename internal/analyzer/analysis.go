@@ -387,6 +387,9 @@ func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir str
 			snapshot.diagnostics = append(snapshot.diagnostics, lo.Ternary(hasParseDirectiveWarning, []protocol.Diagnostic{parseDirectiveWarning}, nil)...)
 			unusedDiagnostics, unusedActions := unusedDeclarationAnalysis(text, file, tokens, documentPath)
 			snapshot.diagnostics = append(snapshot.diagnostics, unusedDiagnostics...)
+			if len(snapshot.diagnostics) == 0 {
+				snapshot.diagnostics = append(snapshot.diagnostics, outputEvaluationParenthesesDiagnostics(file)...)
+			}
 			snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, unusedActions...)
 			return snapshot
 		}
@@ -397,6 +400,9 @@ func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir str
 			snapshot.diagnostics = append(snapshot.diagnostics, diagnosticFromError(processErr))
 		}
 		snapshot.diagnostics = append(snapshot.diagnostics, lo.Ternary(hasParseDirectiveWarning, []protocol.Diagnostic{parseDirectiveWarning}, nil)...)
+		if len(snapshot.diagnostics) == 0 {
+			snapshot.diagnostics = append(snapshot.diagnostics, outputEvaluationParenthesesDiagnostics(file)...)
+		}
 		return snapshot
 	}
 
@@ -409,6 +415,9 @@ func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir str
 
 	unusedDiagnostics, unusedActions := unusedDeclarationAnalysis(text, file, tokens, documentPath)
 	snapshot.diagnostics = append(snapshot.diagnostics, unusedDiagnostics...)
+	if len(snapshot.diagnostics) == 0 {
+		snapshot.diagnostics = append(snapshot.diagnostics, outputEvaluationParenthesesDiagnostics(file)...)
+	}
 	snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, unusedActions...)
 
 	return snapshot
@@ -998,7 +1007,10 @@ func inlineVariableIntoOutputText(text string) (string, bool) {
 	if len(matches) == 0 {
 		return "", false
 	}
-	updated := strings.Replace(text, ": "+matches[1], ": "+matches[2], 1)
+	updated := strings.Replace(text, ": ("+matches[1]+")", ": "+matches[2], 1)
+	if updated == text {
+		updated = strings.Replace(text, ": "+matches[1], ": "+matches[2], 1)
+	}
 	return updated, updated != text
 }
 
@@ -1010,7 +1022,7 @@ func extractOutputExpressionText(text string) (string, bool) {
 	}
 	name := matches[1]
 	value := matches[2]
-	updated := pattern.ReplaceAllString(text, name+": "+name)
+	updated := pattern.ReplaceAllString(text, name+": ("+name+")")
 	return "|===|\nstring " + name + " = " + value + ";\n|===|\n" + updated, true
 }
 
@@ -2763,6 +2775,32 @@ func hasParseValidationDirective(directives []ast.OutputDirective) bool {
 	}
 
 	return false
+}
+
+func outputEvaluationParenthesesDiagnostics(file ast.File) []protocol.Diagnostic {
+	diagnostics := []protocol.Diagnostic{}
+	for _, field := range file.Output.DataFields {
+		if field.Evaluated || !processorOutputFieldRequiresEvaluationParentheses(field) {
+			continue
+		}
+
+		rangeValue := protocol.Range{
+			Start: protocol.Position{Line: protocol.UInteger(field.NameToken.Line - 1), Character: protocol.UInteger(field.NameToken.Column - 1)},
+			End:   protocol.Position{Line: protocol.UInteger(field.NameToken.Line - 1), Character: protocol.UInteger(field.NameToken.Column - 1 + len(field.NameToken.Lexeme))},
+		}
+		diagnostics = append(diagnostics, diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityWarning, diagnosticOutputEvaluationParenthesesRequired, fmt.Sprintf("output field %q should wrap evaluated expressions in parentheses", field.Name)))
+	}
+
+	return diagnostics
+}
+
+func processorOutputFieldRequiresEvaluationParentheses(field ast.OutputField) bool {
+	switch field.Value.(type) {
+	case ast.Identifier:
+		return true
+	default:
+		return false
+	}
 }
 
 func parseDirectiveWarningDiagnostic(text string, file ast.File) (protocol.Diagnostic, bool) {

@@ -349,14 +349,14 @@ schema_doc User {
 	})
 
 	It("preserves expression semantics with parentheses", func() {
-		file, err := parseMaceFile(`[output = data] { result: (1 + 2) * (3 - 4 ? 5 : 6); }`)
+		file, err := parseMaceFile(`[output = data] { result: ((1 + 2) * (3 - 4 ? 5 : 6)); }`)
 		tAssert.NoError(err)
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
 		tAssert.Equal(`[output = data]
 {
-  result: (1 + 2) * (3 - 4 ? 5 : 6)
+  result: ((1 + 2) * (3 - 4 ? 5 : 6))
 }`, output)
 	})
 

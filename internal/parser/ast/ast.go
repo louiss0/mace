@@ -520,6 +520,7 @@ type OutputField struct {
 	NameToken   lexer.Token
 	Name        string
 	Optional    bool
+	Evaluated   bool
 	Value       Expression
 	Description string
 }

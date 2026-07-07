@@ -858,7 +858,7 @@ copy_a: *a
     value_holder: $self.z,
     alias_holder: $self.a
   },
-  copy_a: $self.a
+  copy_a: ($self.a)
 }`, source)
 
 		output := importedOutput(source)

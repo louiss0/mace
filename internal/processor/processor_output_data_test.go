@@ -91,7 +91,7 @@ schema User: { name: string; age?: int; };
 string name = "Ada";
 |===|
 [output = data, schema = User]
-{ name: name; }`),
+{ name: (name); }`),
 		Entry("nested record literal", `|===|
 schema Profile: { age: int; };
 schema User: { profile: Profile; };

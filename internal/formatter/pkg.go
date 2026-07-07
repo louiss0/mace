@@ -344,6 +344,10 @@ func formatOutputField(field ast.OutputField, trailingComma bool) (string, error
 		optional = "?"
 	}
 
+	if field.Evaluated {
+		value = "(" + value + ")"
+	}
+
 	description := formatInlineDescription(field.Description)
 	return formatTrailingComma(fmt.Sprintf("%s%s: %s%s", field.Name, optional, value, description), trailingComma), nil
 }

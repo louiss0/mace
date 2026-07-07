@@ -13,7 +13,7 @@ var _ = Describe("Expressions", func() {
 
 			assertExpectedOutput(result, expected)
 		},
-		Entry("multiple fields and self reference", `[output = data] { base: 2 + 2; result: $self.base * 3; }`, map[string]expectedValue{
+		Entry("multiple fields and self reference", `[output = data] { base: 2 + 2; result: ($self.base * 3); }`, map[string]expectedValue{
 			"base":   {kind: ValueInt, int64: 4},
 			"result": {kind: ValueInt, int64: 12},
 		}),

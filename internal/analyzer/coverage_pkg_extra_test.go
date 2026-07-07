@@ -169,7 +169,7 @@ string value = alias;
 |===|
 [output = data]
 {
-  value: alias;
+  value: (alias);
 }
 `
 		aliasURI := protocol.DocumentUri(fileURI(filepath.Join(workspace, "alias.mace")))

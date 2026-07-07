@@ -13,7 +13,7 @@ nullable string env = null;
 |===|
 [output = data]
 {
-  env: env;
+  env: (env);
 }`)
 		tAssert.NoError(err)
 		tAssert.Empty(result.Output)
@@ -28,7 +28,7 @@ User user = { nickname: null; };
 |===|
 [output = data]
 {
-  user: user;
+  user: (user);
 }`)
 		tAssert.NoError(err)
 
@@ -76,7 +76,7 @@ Runtime config = { env: false ? null : "prod"; };
 |===|
 [output = data]
 {
-  config: config;
+  config: (config);
 }`)
 		tAssert.Error(err)
 		tAssert.ErrorContains(err, "null can only be assigned to nullable variables and optional schema fields")
