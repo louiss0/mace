@@ -1,5 +1,5 @@
 [output = schema]
 """$(name)"""
 {
-  name: string;
+  name: string,
 }

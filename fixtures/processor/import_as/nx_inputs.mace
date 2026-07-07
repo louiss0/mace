@@ -1,11 +1,11 @@
 |===================|
 schema Project: {
-  name: string;
-  root: string;
+  name: string,
+  root: string,
 };
 schema Workspace: {
-  name: string;
-  root: string;
+  name: string,
+  root: string,
 };
 |===================|
 

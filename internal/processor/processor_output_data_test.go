@@ -34,27 +34,27 @@ var _ = Describe("Output data", func() {
 		},
 		Entry("primitive and optional fields", `[output = schema]
 {
-  name: string;
-  age?: int;
+  name: string,
+  age?: int,
 }`, map[expectedSchemaField]SchemaType{
 			{name: "name"}:                schemaPrimitive("string"),
 			{name: "age", optional: true}: schemaPrimitive("int"),
 		}),
 		Entry("nested array fields", `[output = schema]
 {
-  names: array<string>;
-  matrix: array<array<int>>;
+  names: array<string>,
+  matrix: array<array<int>>,
 }`, map[expectedSchemaField]SchemaType{
 			{name: "names"}:  schemaArray(schemaPrimitive("string")),
 			{name: "matrix"}: schemaArray(schemaArray(schemaPrimitive("int"))),
 		}),
 		Entry("record fields", `|===|
-schema User: { name: string; };
+schema User: { name: string, };
 |===|
 [output = schema]
 {
-  profile: { name: string; age?: int; };
-  user: User;
+  profile: { name: string, age?: int, },
+  user: User,
 }`, map[expectedSchemaField]SchemaType{
 			{name: "profile"}: schemaRecord(map[expectedSchemaField]SchemaType{
 				{name: "name"}:                schemaPrimitive("string"),
@@ -64,7 +64,7 @@ schema User: { name: string; };
 		}),
 		Entry("variant fields", `[output = schema]
 {
-  value: variant[string, int];
+  value: variant[string, int],
 }`, map[expectedSchemaField]SchemaType{
 			{name: "value"}: {Kind: SchemaTypeVariant, Members: []SchemaType{schemaPrimitive("string"), schemaPrimitive("int")}},
 		}),
@@ -74,7 +74,7 @@ schema User: { name: string; };
 |===|
 [output = schema]
 {
-  mode: choice[Environment, Numeric];
+  mode: choice[Environment, Numeric],
 }`, map[expectedSchemaField]SchemaType{
 			{name: "mode"}: schemaNamed(`choice["dev", "prod", 1, 2]`),
 		}),
@@ -87,23 +87,150 @@ schema User: { name: string; };
 			tAssert.NoError(err)
 		},
 		Entry("optional field omitted", `|===|
-schema User: { name: string; age?: int; };
+schema User: { name: string, age?: int, };
 string name = "Ada";
 |===|
 [output = data, schema = User]
-{ name: (name); }`),
+{ name: (name), }`),
 		Entry("nested record literal", `|===|
-schema Profile: { age: int; };
-schema User: { profile: Profile; };
+schema Profile: { age: int, };
+schema User: { profile: Profile, };
 |===|
 [output = data, schema = User]
-{ profile: { age: 30; }; }`),
+{ profile: { age: 30, }, }`),
 		Entry("variant array field", `|===|
-schema Team: { values: array<variant[string, int]>; };
+schema Team: { values: array<variant[string, int]>, };
 |===|
 [output = data, schema = Team]
-{ values: ["Ada", 1]; }`),
-		Entry("bare output block defaults to data", `{ result: 1 + 2; }`),
+{ values: ["Ada", 1], }`),
+		Entry("bare output block defaults to data", `{ result: 1 + 2, }`),
+		Entry("output shorthand satisfies schema", `|===|
+schema User: { name: string, };
+string name = "Ada";
+|===|
+[output = data, schema = User]
+{ name, }`),
+		Entry("record shorthand satisfies schema", `|===|
+string name = "Ada";
+schema User: { name: string, };
+schema Wrapper: { user: User, };
+User user = { name, };
+|===|
+[output = data, schema = Wrapper]
+{ user: (user), }`),
+	)
+
+	DescribeTable("evaluates shorthand record and output fields",
+		func(input string, expected map[string]expectedValue) {
+			processor := New()
+			result, err := processor.ProcessInDir(input, "../..")
+			tAssert.NoError(err)
+
+			for name, value := range expected {
+				assertExpectedValue(requireOutputValue(result, name), value)
+			}
+		},
+		Entry("string shorthand", `|===|
+string name = "Mary";
+|===|
+[output = data]
+{ name, }`, map[string]expectedValue{
+			"name": {kind: ValueString, string: "Mary"},
+		}),
+		Entry("number shorthand", `|===|
+int age = 42;
+|===|
+[output = data]
+{ age, }`, map[string]expectedValue{
+			"age": {kind: ValueInt, int64: 42},
+		}),
+		Entry("array shorthand", `|===|
+array<string> names = ["Ada", "Linus"];
+|===|
+[output = data]
+{ names, }`, map[string]expectedValue{
+			"names": {kind: ValueArray, array: []expectedValue{{kind: ValueString, string: "Ada"}, {kind: ValueString, string: "Linus"}}},
+		}),
+		Entry("array with records shorthand", `|===|
+array<{ name: string, }> users = [{ name: "Ada", }, { name: "Linus", }];
+|===|
+[output = data]
+{ users, }`, map[string]expectedValue{
+			"users": {kind: ValueArray, array: []expectedValue{{kind: ValueRecord, record: map[string]expectedValue{"name": {kind: ValueString, string: "Ada"}}}, {kind: ValueRecord, record: map[string]expectedValue{"name": {kind: ValueString, string: "Linus"}}}}},
+		}),
+		Entry("record shorthand depth 1", `|===|
+string city = "Paris";
+{ city: string, } wrapper = { city, };
+|===|
+[output = data]
+{ wrapper, }`, map[string]expectedValue{
+			"wrapper": {kind: ValueRecord, record: map[string]expectedValue{"city": {kind: ValueString, string: "Paris"}}},
+		}),
+		Entry("record shorthand depth 2", `|===|
+string city = "Paris";
+{ location: { city: string, }, } wrapper = { location: { city, }, };
+|===|
+[output = data]
+{ wrapper, }`, map[string]expectedValue{
+			"wrapper": {kind: ValueRecord, record: map[string]expectedValue{"location": {kind: ValueRecord, record: map[string]expectedValue{"city": {kind: ValueString, string: "Paris"}}}}},
+		}),
+		Entry("record shorthand depth 3", `|===|
+string city = "Paris";
+{ a: { b: { city: string, }, }, } wrapper = { a: { b: { city, }, }, };
+|===|
+[output = data]
+{ wrapper, }`, map[string]expectedValue{
+			"wrapper": {kind: ValueRecord, record: map[string]expectedValue{"a": {kind: ValueRecord, record: map[string]expectedValue{"b": {kind: ValueRecord, record: map[string]expectedValue{"city": {kind: ValueString, string: "Paris"}}}}}}},
+		}),
+		Entry("record shorthand depth 4", `|===|
+string city = "Paris";
+{ a: { b: { c: { city: string, }, }, }, } wrapper = { a: { b: { c: { city, }, }, }, };
+|===|
+[output = data]
+{ wrapper, }`, map[string]expectedValue{
+			"wrapper": {kind: ValueRecord, record: map[string]expectedValue{"a": {kind: ValueRecord, record: map[string]expectedValue{"b": {kind: ValueRecord, record: map[string]expectedValue{"c": {kind: ValueRecord, record: map[string]expectedValue{"city": {kind: ValueString, string: "Paris"}}}}}}}}},
+		}),
+		Entry("record shorthand depth 5", `|===|
+string city = "Paris";
+{ a: { b: { c: { d: { city: string, }, }, }, }, } wrapper = { a: { b: { c: { d: { city, }, }, }, }, };
+|===|
+[output = data]
+{ wrapper, }`, map[string]expectedValue{
+			"wrapper": {kind: ValueRecord, record: map[string]expectedValue{"a": {kind: ValueRecord, record: map[string]expectedValue{"b": {kind: ValueRecord, record: map[string]expectedValue{"c": {kind: ValueRecord, record: map[string]expectedValue{"d": {kind: ValueRecord, record: map[string]expectedValue{"city": {kind: ValueString, string: "Paris"}}}}}}}}}}},
+		}),
+		Entry("multiple shorthand fields", `|===|
+string first = "Ada";
+int count = 2;
+array<string> tags = ["math", "logic"];
+|===|
+[output = data]
+{ first, count, tags, }`, map[string]expectedValue{
+			"first": {kind: ValueString, string: "Ada"},
+			"count": {kind: ValueInt, int64: 2},
+			"tags": {kind: ValueArray, array: []expectedValue{{kind: ValueString, string: "math"}, {kind: ValueString, string: "logic"}}},
+		}),
+		Entry("multiple record values", `|===|
+string name = "Ada";
+int age = 30;
+{ name: string, } profile = { name, };
+{ age: int, } stats = { age, };
+|===|
+[output = data]
+{ profile, stats, }`, map[string]expectedValue{
+			"profile": {kind: ValueRecord, record: map[string]expectedValue{"name": {kind: ValueString, string: "Ada"}}},
+			"stats": {kind: ValueRecord, record: map[string]expectedValue{"age": {kind: ValueInt, int64: 30}}},
+		}),
+		Entry("record shorthand composes deeply nested records from earlier shorthand records", `|===|
+string name = "Ada";
+{ name: string, } profile = { name, };
+{ profile: { name: string, }, } layer1 = { profile, };
+{ layer1: { profile: { name: string, }, }, } layer2 = { layer1, };
+{ layer2: { layer1: { profile: { name: string, }, }, }, } layer3 = { layer2, };
+|===|
+[output = data]
+{ layer3, }`, map[string]expectedValue{
+			"layer3": {kind: ValueRecord, record: map[string]expectedValue{"layer2": {kind: ValueRecord, record: map[string]expectedValue{"layer1": {kind: ValueRecord, record: map[string]expectedValue{"profile": {kind: ValueRecord, record: map[string]expectedValue{"name": {kind: ValueString, string: "Ada"}}}}}}}}},
+		}),
 	)
 
 	DescribeTable("rejects output that violates schema",
@@ -114,38 +241,53 @@ schema Team: { values: array<variant[string, int]>; };
 			tAssert.ErrorContains(err, message)
 		},
 		Entry("missing required field", `|===|
-schema User: { name: string; age: int; };
+schema User: { name: string, age: int, };
 |===|
 [output = data, schema = User]
-{ name: "Ada"; }`, "missing required field"),
+{ name: "Ada", }`, "missing required field"),
 		Entry("unknown output field", `|===|
-schema User: { name: string; };
+schema User: { name: string, };
 |===|
 [output = data, schema = User]
-{ name: "Ada"; extra: 1; }`, "unknown output field"),
+{ name: "Ada", extra: 1, }`, "unknown output field"),
 		Entry("optional output mismatch", `|===|
-schema User: { name: string; age: int; };
+schema User: { name: string, age: int, };
 |===|
 [output = data, schema = User]
-{ name: "Ada"; age?: 30; }`, "not optional"),
+{ name: "Ada", age?: 30, }`, "not optional"),
 		Entry("nested record mismatch", `|===|
-schema Profile: { age: int; };
-schema User: { profile: Profile; };
+schema Profile: { age: int, };
+schema User: { profile: Profile, };
 |===|
 [output = data, schema = User]
-{ profile: { }; }`, "missing required field"),
+{ profile: { }, }`, "missing required field"),
 		Entry("array element mismatch", `|===|
-schema Point: { x: int; y: int; };
-schema Plot: { points: array<Point>; };
+schema Point: { x: int, y: int, };
+schema Plot: { points: array<Point>, };
 |===|
 [output = data, schema = Plot]
-{ points: [ { x: 1; y: 2; }, { x: 3; } ]; }`, "missing required field"),
+{ points: [ { x: 1, y: 2, }, { x: 3, } ], }`, "missing required field"),
 		Entry("choice field rejects values outside the domain", `|===|
  type Fruit: choice["Apple", "Strawberry"];
- schema Basket: { favorite: Fruit; };
+ schema Basket: { favorite: Fruit, };
 |===|
 [output = data, schema = Basket]
-{ favorite: "Pear"; }`, "type mismatch: expected choice[\"Apple\", \"Strawberry\"], got \"Pear\""),
+{ favorite: "Pear", }`, "type mismatch: expected choice[\"Apple\", \"Strawberry\"], got \"Pear\""),
+		Entry("output shorthand rejects unknown variables", `[output = data]
+{ missing, }`, "unknown identifier \"missing\""),
+		Entry("record shorthand rejects missing required fields", `|===|
+schema User: { name: string, };
+User user = { missing, };
+|===|
+[output = data]
+{ user: (user), }`, "missing required field \"name\""),
+		Entry("record shorthand rejects nullable values for required fields", `|===|
+nullable string name = null;
+schema User: { name: string, };
+User user = { name, };
+|===|
+[output = data]
+{ user: (user), }`, "null can only be assigned to nullable variables and optional schema fields"),
 	)
 })
 
@@ -156,15 +298,15 @@ var _ = Describe("Data output helpers", func() {
 		defer func() { _ = os.RemoveAll(workspace) }()
 
 		writeFixtureFile(workspace, "schema-names.mace", `[output = schema]
-{ User: User; Other: Other; }`)
+{ User: User, Other: Other, }`)
 		writeFixtureFile(workspace, "schema-empty.mace", `[output = schema]
-{ title: string; }`)
+{ title: string, }`)
 		writeFixtureFile(workspace, "parse-names.mace", `[output = schema]
-{ User: User; Other: Other; }`)
+{ User: User, Other: Other, }`)
 		writeFixtureFile(workspace, "parse-one.mace", `[output = schema]
-{ User: User; }`)
+{ User: User, }`)
 		writeFixtureFile(workspace, "parse-empty.mace", `[output = schema]
-{ title: string; }`)
+{ title: string, }`)
 
 		context := newProcessContext(workspace, workspace)
 		name, ok, err := outputParseSchemaName([]ast.OutputDirective{{Kind: ast.OutputDirectiveParse, Value: "User"}}, context)

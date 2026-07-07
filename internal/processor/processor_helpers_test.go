@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/stretchr/testify/assert"
@@ -18,7 +19,8 @@ func wrapScriptWithOutput(script string) string {
 var bareOutputExpressionPattern = regexp.MustCompile(`(?m)^(\s*[A-Za-z_][A-Za-z0-9_]*\??:\s*)(\$self\.[A-Za-z_][A-Za-z0-9_\.\[\]]*|[A-Za-z_][A-Za-z0-9_\.\[\]]*)(\s*[,;])$`)
 
 func wrapScriptWithOutputFields(script string, fields string) string {
-	normalizedFields := bareOutputExpressionPattern.ReplaceAllString(fields, `${1}(${2})${3}`)
+	normalizedFields := strings.ReplaceAll(fields, ";", ",")
+	normalizedFields = bareOutputExpressionPattern.ReplaceAllString(normalizedFields, `${1}(${2})${3}`)
 	return script + "\n[output = data]\n{\n" + normalizedFields + "\n}"
 }
 

@@ -26,19 +26,19 @@ var _ = Describe("analyzer completion branch coverage", func() {
 
 		schemaText := `[output = schema]
 {
-  User: { name: string; profile: { city: string; }; };
-  Shared: { value: string; };
-  Choice: choice["Ada", 1, true];
+  User: { name: string, profile: { city: string, }, },
+  Shared: { value: string, },
+  Choice: choice["Ada", 1, true],
 }`
 		dataText := `[output = data, schema = User]
 {
-  user: { name: "Ada"; profile: { city: "LA"; }; };
-  count: 1;
-  values: [1, 2];
+  user: { name: "Ada", profile: { city: "LA", }, },
+  count: 1,
+  values: [1, 2],
 }`
 		importText := `[output = schema]
 {
-  Exported: { value: string; };
+  Exported: { value: string, },
 }`
 		scriptText := `|===|
 string value = "Ada";
@@ -46,7 +46,7 @@ int number = 1;
 |===|`
 		memberText := `[output = data, schema = User]
 {
-  user: { name: "Ada"; profile: { city: "LA"; }; };
+  user: { name: "Ada", profile: { city: "LA", }, },
   ref: user.profile.
 }`
 		emptyText := `[output = data]
@@ -134,17 +134,17 @@ int number = 1;
 		_, _ = directiveCompletionItems(schemaDoc, scriptURI, "plain")
 		stringLiteralText := "|===|\nstring value = \"Ada\";\n|===|"
 		stringLiteralSnapshot := AnalyzeDocumentAt(stringLiteralText, scriptPath)
-		outputStringText := "[output = data, schema = User]\n{\n  value: \"Ada\";\n}\n"
+		outputStringText := "[output = data, schema = User]\n{\n  value: \"Ada\",\n}\n"
 		outputStringSnapshot := AnalyzeDocumentAt(outputStringText, scriptPath)
 		_, _ = stringLiteralInitializerCompletionItems(document{text: stringLiteralText, analysis: stringLiteralSnapshot}, scriptURI, protocol.Position{Line: 1, Character: protocol.UInteger(len("string value = \"Ada"))}, false)
 		_, _ = stringLiteralInitializerCompletionItems(document{text: stringLiteralText, analysis: stringLiteralSnapshot}, scriptURI, protocol.Position{Line: 1, Character: protocol.UInteger(len("string value = \"Ada"))}, true)
 		_, _ = stringLiteralInitializerCompletionItems(document{text: outputStringText, analysis: outputStringSnapshot}, scriptURI, protocol.Position{Line: 2, Character: protocol.UInteger(len("  value: \"Ada"))}, true)
 		richOutputText := `|===|
-schema User: { value: string; user: { profile: { city: string; }; }; };
+schema User: { value: string, user: { profile: { city: string, }, }, };
 |===|
 [output = data, schema = User]
 {
-  value: "Ada";
+  value: "Ada",
   ref: user.profile.
 }`
 		richOutputSnapshot := AnalyzeDocumentAt(richOutputText, scriptPath)
@@ -155,17 +155,17 @@ schema User: { value: string; user: { profile: { city: string; }; }; };
 		_, _ = outputInitializerCompletionItems(richOutputDoc, scriptURI, protocol.Position{Line: 5, Character: protocol.UInteger(len("  value: \"Ada"))})
 		_, _ = outputInitializerCompletionItems(richOutputDoc, scriptURI, protocol.Position{Line: 6, Character: protocol.UInteger(len("  ref: user.profile."))})
 		parseOutputText := `|===|
-schema User: { value: string; };
+schema User: { value: string, };
 |===|
 [output = data, parse = User]
 {
-  value: "Ada";
+  value: "Ada",
 }`
 		parseOutputSnapshot := AnalyzeDocumentAt(parseOutputText, scriptPath)
 		parseOutputDoc := document{text: parseOutputText, analysis: parseOutputSnapshot}
 		_, _ = outputInitializerCompletionItems(parseOutputDoc, scriptURI, protocol.Position{Line: 5, Character: protocol.UInteger(len("  value: \"Ada"))})
 		parseEmptyText := `|===|
-schema User: { value: string; };
+schema User: { value: string, };
 |===|
 [output = data, parse = User]
 {
@@ -184,13 +184,13 @@ schema User: { value: string; };
   value:
 }
 |===|
-schema User: { name: string; };
+schema User: { name: string, };
 |===|`, analysis: AnalyzeDocumentAt(`[output = data, parse = User]
 {
   value:
 }
 |===|
-schema User: { name: string; };
+schema User: { name: string, };
 |===|`, root)}, scriptURI, protocol.Position{Line: 2, Character: protocol.UInteger(len("  value:"))})
 		_ = bareSelfCompletionItems("", protocol.Position{Line: 0, Character: 0})
 		_, _ = selfKeywordCompletionItems("", protocol.Position{Line: 0, Character: 0})
@@ -217,8 +217,8 @@ schema User: { name: string; };
 		_, _ = partialOutputResult(memberDoc, memberURI, protocol.Position{Line: 0, Character: 0})
 		_, _ = outputFieldRanges(memberText, lexAnalysisTokens(memberText), strings.Index(memberText, "{"))
 		_, _ = outputFieldRanges("plain", lexAnalysisTokens("plain"), 0)
-		_ = isOutputFieldHeader(lexAnalysisTokens("{ value: 1; }"), 1)
-		_ = isOutputFieldHeader(lexAnalysisTokens("{ value ? : 1; }"), 1)
+		_ = isOutputFieldHeader(lexAnalysisTokens("{ value: 1, }"), 1)
+		_ = isOutputFieldHeader(lexAnalysisTokens("{ value ? : 1, }"), 1)
 		_, _ = stringLiteralValue(ast.StringLiteral{Lexeme: `"Ada"`})
 		_, _ = stringLiteralValue(ast.StringLiteral{Lexeme: `Ada`})
 		_, _ = completionFileWithPlaceholder(scriptText, protocol.Position{Line: 1, Character: 15})

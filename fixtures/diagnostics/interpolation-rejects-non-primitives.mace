@@ -1,15 +1,15 @@
 |===|
 schema User: {
-  name: string;
+  name: string,
 };
 
 User user = {
-  name: "Ada";
+  name: "Ada",
 };
 
 string message = "Hello $(user)";
 |===|
 [output = data]
 {
-  result: "unreachable";
+  result: "unreachable",
 }

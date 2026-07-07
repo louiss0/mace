@@ -27,7 +27,7 @@ var _ = Describe("Document", func() {
 		},
 		Entry("type and schema declarations", wrapScriptWithOutput(`|===|
 type Name: string;
-schema User: { name: string; };
+schema User: { name: string, };
 |===|`)),
 		Entry("variables with literals", wrapScriptWithOutput(`|===|
 string name = "Ada";
@@ -40,8 +40,8 @@ boolean active = true;
 		Entry("string interpolation expressions", wrapScriptWithOutput(`|===|
 int price = 3;
 int quantity = 4;
-schema User: { name: string; };
-User user = { name: "Ada"; };
+schema User: { name: string, };
+User user = { name: "Ada", };
 string total = "Total $(price * quantity) for $(user.name)";
 |===|`)),
 		Entry("single quoted and block strings", wrapScriptWithOutput(`|===|
@@ -57,7 +57,7 @@ from "fixtures/processor/imports/base.mace" import Name;
 Name user = "Ada";
 |===|
 [output = data]
-{ user: (user); }`),
+{ user: (user), }`),
 		Entry("unicode web server fixture", "../../fixtures/unicode/web_server.mace"),
 		Entry("unicode database fixture", "../../fixtures/unicode/database.mace"),
 		Entry("unicode docker services fixture", "../../fixtures/unicode/docker_services.mace"),
@@ -74,20 +74,20 @@ from "fixtures/processor/imports/base.mace" import Name; // trailing import comm
 // line comment before declaration
 schema Profile: {
   // line comment before field
-  name: string; // trailing field comment
+  name: string, // trailing field comment
   /* block comment before optional field */
-  age?: int; // trailing field comment
+  age?: int, // trailing field comment
 };
 
 Profile user = {
-  name: "Ada"; // trailing field comment
+  name: "Ada", // trailing field comment
   /* block comment in record */
-  age?: 30; // trailing field comment
+  age?: 30, // trailing field comment
 };
 |===|
 [output = data]
 {
-  result: user.name; // trailing output comment
+  result: user.name, // trailing output comment
 }`),
 		Entry("inline descriptions before and after separators", `|===|
 schema User: {
@@ -126,7 +126,7 @@ int total = 1.5;
 |===|`), "type mismatch"),
 		Entry("duplicate declaration name", wrapScriptWithOutput(`|===|
 type User: string;
-schema User: { name: string; };
+schema User: { name: string, };
 |===|`), "duplicate declaration"),
 		Entry("duplicate imports", `|===|
 from "fixtures/processor/imports/base.mace" import User, User;
@@ -139,6 +139,27 @@ from "fixtures/processor/imports/base.mace" import User, User;
 		_, err := processor.ProcessFile("../../fixtures/diagnostics/interpolation-rejects-non-primitives.mace")
 		tAssert.Error(err)
 		tAssert.ErrorContains(err, "interpolation requires a scalar value")
+	})
+
+	It("rejects record shorthand fixtures that reference missing fields", func() {
+		processor := New()
+		_, err := processor.ProcessFile("../../fixtures/diagnostics/shorthand-rejects-missing-variable.mace")
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, "missing required field \"name\"")
+	})
+
+	It("rejects record shorthand fixtures that use nullable values for required fields", func() {
+		processor := New()
+		_, err := processor.ProcessFile("../../fixtures/diagnostics/shorthand-rejects-nullable-required-field.mace")
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, "null can only be assigned to nullable variables and optional schema fields")
+	})
+
+	It("rejects output shorthand fixtures that reference missing variables", func() {
+		processor := New()
+		_, err := processor.ProcessFile("../../fixtures/diagnostics/output-shorthand-rejects-missing-variable.mace")
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, "unknown identifier \"missing\"")
 	})
 })
 
@@ -153,13 +174,13 @@ var _ = Describe("Processor entrypoints", func() {
 int value = 1;
 |===|
 [output = data]
-{ result: (value); }`)
+{ result: (value), }`)
 
-		_, err = processor.Process(`{ result: 1; }`)
+		_, err = processor.Process(`{ result: 1, }`)
 		tAssert.NoError(err)
-		_, err = processor.ProcessInDir(`{ result: 1; }`, "")
+		_, err = processor.ProcessInDir(`{ result: 1, }`, "")
 		tAssert.NoError(err)
-		_, err = processor.ProcessInScope(`{ result: 1; }`, "", "")
+		_, err = processor.ProcessInScope(`{ result: 1, }`, "", "")
 		tAssert.NoError(err)
 
 		scriptResult, err := processor.ProcessScriptBlock(`|===|
@@ -174,9 +195,9 @@ int value = 1;
 int value = 1;
 |===|`), "", "")
 		tAssert.NoError(err)
-		_, err = processor.ProcessOutputBlock(`[output = data] { result: 1; }`, ScriptResult{})
+		_, err = processor.ProcessOutputBlock(`[output = data] { result: 1, }`, ScriptResult{})
 		tAssert.NoError(err)
-		_, err = processor.ProcessOutputBlock(`[output = data] { result: 1; }`, ScriptResult{context: newProcessContext("", "")})
+		_, err = processor.ProcessOutputBlock(`[output = data] { result: 1, }`, ScriptResult{context: newProcessContext("", "")})
 		tAssert.NoError(err)
 		_, err = processor.ProcessFile(filepath.Join(".", "does-not-exist.mace"))
 		tAssert.Error(err)
@@ -184,30 +205,30 @@ int value = 1;
 		tAssert.Error(err)
 		_, err = processor.ProcessFileInDir(file, workspace)
 		tAssert.NoError(err)
-		_, err = processor.processInput(`{ result: 1; }`, ".", ".", false)
+		_, err = processor.processInput(`{ result: 1, }`, ".", ".", false)
 		tAssert.NoError(err)
 		_, err = processor.processScriptInput(`|===|
 int value = 1;
 |===|`, ".")
 		tAssert.NoError(err)
-		_, err = processor.processOutputInput(`[output = data] { result: 1; }`, scriptResult, ".")
+		_, err = processor.processOutputInput(`[output = data] { result: 1, }`, scriptResult, ".")
 		tAssert.NoError(err)
-		_, err = processor.processInput(`{ result: 1; } garbage`, ".", ".", false)
+		_, err = processor.processInput(`{ result: 1, } garbage`, ".", ".", false)
 		tAssert.Error(err)
 		_, err = processor.processScriptInput(`|===|
 int value = 1;
 |===| garbage`, ".")
 		tAssert.Error(err)
-		_, err = processor.processOutputInput(`[output = data] { result: 1; } garbage`, scriptResult, ".")
+		_, err = processor.processOutputInput(`[output = data] { result: 1, } garbage`, scriptResult, ".")
 		tAssert.Error(err)
 		_, err = processor.processParsedOutput(ast.OutputBlock{}, ast.File{}, newProcessContext(".", "."), true)
 		tAssert.NoError(err)
 		_, err = processor.processParsedOutput(ast.OutputBlock{Mode: ast.OutputModeSchema}, ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeSchema}}, newProcessContext(".", "."), true)
 		tAssert.NoError(err)
 
-		_, err = processor.ProcessOutputBlock(`[parse = schema] { result: 1; }`, ScriptResult{context: newProcessContext(".", ".")})
+		_, err = processor.ProcessOutputBlock(`[parse = schema] { result: 1, }`, ScriptResult{context: newProcessContext(".", ".")})
 		tAssert.Error(err)
-		_, err = processor.ProcessOutputBlock(`[parse_file = schema.mace] { result: 1; }`, ScriptResult{context: newProcessContext(".", ".")})
+		_, err = processor.ProcessOutputBlock(`[parse_file = schema.mace] { result: 1, }`, ScriptResult{context: newProcessContext(".", ".")})
 		tAssert.Error(err)
 
 		ctx := newProcessContext(".", ".")
@@ -227,7 +248,7 @@ int value = 1;
 		}()
 
 		processor := New()
-		_, err = processor.Process(`{ result: 1; }`)
+		_, err = processor.Process(`{ result: 1, }`)
 		tAssert.NoError(err)
 		_, err = processor.ProcessScriptBlock(`|===|
 int value = 1;
@@ -246,7 +267,7 @@ int base = 4;
 int doubled = base * 2;
 |===|
 [output = data]
-{ result: (doubled); }`, "../..")
+{ result: (doubled), }`, "../..")
 		tAssert.NoError(err)
 		assertExpectedValue(variables["doubled"], expectedValue{kind: ValueInt, int64: 8})
 
@@ -255,7 +276,7 @@ int base = 4;
 int tripled = base * 3;
 |===|
 [output = data]
-{ result: (tripled); }`, "../..", "../..")
+{ result: (tripled), }`, "../..", "../..")
 		tAssert.NoError(err)
 		assertExpectedValue(variables["tripled"], expectedValue{kind: ValueInt, int64: 12})
 	})
@@ -281,8 +302,8 @@ string name = "Ada";
 		processor := New()
 		result, err := processor.ProcessOutputBlock(`[output = data]
 {
-  accent: "\u00E9";
-  rocket: "\U0001F680";
+  accent: "\u00E9",
+  rocket: "\U0001F680",
 }`, ScriptResult{})
 		tAssert.NoError(err)
 
@@ -294,7 +315,7 @@ string name = "Ada";
 		processor := New()
 		_, err := processor.ProcessOutputBlock(`[output = data]
 {
-  invalid: "\U00110000";
+  invalid: "\U00110000",
 }`, ScriptResult{})
 		tAssert.ErrorContains(err, "invalid unicode")
 	})
@@ -306,8 +327,8 @@ string name = "Ada";
 # Output Schema
 """
 {
-  name: string;
-  age?: int;
+  name: string,
+  age?: int,
 }`, ScriptResult{})
 		tAssert.NoError(err)
 
@@ -326,7 +347,7 @@ int base = 2 + 2;
 
 		result, err := processor.ProcessOutputBlock(`[output = data]
 {
-  result: base * 3;
+  result: base * 3,
 }`, scriptResult)
 		tAssert.NoError(err)
 
@@ -345,7 +366,7 @@ var _ = Describe("Processor entrypoints", func() {
 			switch request.URL.Path {
 			case "/remote.mace":
 				_, _ = io.WriteString(writer, `[output = schema]
-{ remote: string; }`)
+{ remote: string, }`)
 			case "/broken.mace":
 				writer.WriteHeader(http.StatusInternalServerError)
 			default:
@@ -356,8 +377,8 @@ var _ = Describe("Processor entrypoints", func() {
 
 		proc := NewWithInput(map[string]Value{"seed": {Kind: ValueInt, Int: 1}})
 		inputPath := writeFixtureFile(workspace, "input.mace", `[output = data]
-{ result: (seed); }`)
-		_, err = proc.Process(`{ result: 1; }`)
+{ result: (seed), }`)
+		_, err = proc.Process(`{ result: 1, }`)
 		tAssert.NoError(err)
 		_, err = proc.ProcessScriptBlock(`|===|
 int value = 1;
@@ -378,14 +399,14 @@ int value = 1;
 int value = 1;
 |===|`)
 		tAssert.NoError(err)
-		_, err = proc.ProcessOutputBlock(`[output = data] { result: 1; }`, scriptResult)
+		_, err = proc.ProcessOutputBlock(`[output = data] { result: 1, }`, scriptResult)
 		tAssert.NoError(err)
-		_, err = proc.ProcessOutputBlock(`[output = data] { result: 1; }`, ScriptResult{})
+		_, err = proc.ProcessOutputBlock(`[output = data] { result: 1, }`, ScriptResult{})
 		tAssert.NoError(err)
-		_, err = proc.processOutputInput(`[output = data] { result: 1; }`, ScriptResult{}, workspace)
+		_, err = proc.processOutputInput(`[output = data] { result: 1, }`, ScriptResult{}, workspace)
 		tAssert.NoError(err)
 
-		_, err = ParseInputRecord(`{ name: "Ada"; }`)
+		_, err = ParseInputRecord(`{ name: "Ada", }`)
 		tAssert.NoError(err)
 		_, err = ParseInputRecord(`1`)
 		tAssert.Error(err)
@@ -427,15 +448,15 @@ int value = 1;
 		}()
 
 		processor := New()
-		_, err := processor.Process(`{ result: 1; }`)
+		_, err := processor.Process(`{ result: 1, }`)
 		tAssert.NoError(err)
 		_, err = processor.ProcessScriptBlock(`|===|
 int value = 1;
 |===|`)
 		tAssert.NoError(err)
-		_, err = processor.ProcessOutputBlock(`[output = data] { result: 1; }`, ScriptResult{})
+		_, err = processor.ProcessOutputBlock(`[output = data] { result: 1, }`, ScriptResult{})
 		tAssert.NoError(err)
-		_, err = processor.ProcessOutputBlock(`[output = data] { result: 1; }`, ScriptResult{context: newProcessContext("", "")})
+		_, err = processor.ProcessOutputBlock(`[output = data] { result: 1, }`, ScriptResult{context: newProcessContext("", "")})
 		tAssert.NoError(err)
 	})
 
@@ -465,7 +486,7 @@ int value = 1;
 		defer func() { _ = os.RemoveAll(workspace) }()
 
 		writeFixtureFile(workspace, "base.mace", `[output = data]
-{ User: "Ada"; }`)
+{ User: "Ada", }`)
 		writeFixtureFile(workspace, "duplicate-import.mace", `from "./base.mace" import User, User; [output = data] {}`)
 		writeFixtureFile(workspace, "script-dupe.mace", `|===|
 int value = 1;
@@ -475,7 +496,7 @@ int value = 2;
 int value = 1;
 |===|
 [output = schema]
-{ User: User; }`)
+{ User: User, }`)
 
 		processor := New()
 		_, err = processor.ProcessVariablesInScope("`", workspace, workspace)

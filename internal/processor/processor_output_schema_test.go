@@ -14,34 +14,34 @@ var _ = Describe("Output schema", func() {
 		},
 		Entry("primitive and optional fields", `[output = schema]
 {
-  name: string;
-  age?: int;
+  name: string,
+  age?: int,
 }`, map[expectedSchemaField]SchemaType{{name: "name"}: schemaPrimitive("string"), {name: "age", optional: true}: schemaPrimitive("int")}),
 		Entry("nested array fields", `[output = schema]
 {
-  names: array<string>;
-  matrix: array<array<int>>;
+  names: array<string>,
+  matrix: array<array<int>>,
 }`, map[expectedSchemaField]SchemaType{{name: "names"}: schemaArray(schemaPrimitive("string")), {name: "matrix"}: schemaArray(schemaArray(schemaPrimitive("int")))}),
 	)
 
 	It("accepts output that matches a schema", func() {
 		processor := New()
 		_, err := processor.Process(`|===|
-schema User: { name: string; age?: int; };
+schema User: { name: string, age?: int, };
 string name = "Ada";
 |===|
 [output = data, schema = User]
-{ name: (name); }`)
+{ name: (name), }`)
 		tAssert.NoError(err)
 	})
 
 	It("rejects output that violates a schema", func() {
 		processor := New()
 		_, err := processor.Process(`|===|
-schema User: { name: string; age: int; };
+schema User: { name: string, age: int, };
 |===|
 [output = data, schema = User]
-{ name: "Ada"; }`)
+{ name: "Ada", }`)
 		tAssert.Error(err)
 		tAssert.ErrorContains(err, "missing required field")
 	})

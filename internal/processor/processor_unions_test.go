@@ -8,17 +8,17 @@ var _ = Describe("Unions", func() {
 	It("accepts union schema composition aliases", func() {
 		processor := New()
 		result, err := processor.Process(`|===|
-schema Profile: { name: string; };
-schema Audit: { created_at: string; };
+schema Profile: { name: string, };
+schema Audit: { created_at: string, };
 type User: union[Profile, Audit];
 User value = {
-  name: "Ada";
-  created_at: "2026-04-08";
+  name: "Ada",
+  created_at: "2026-04-08",
 };
 |===|
 [output = data]
 {
-  result: (value);
+  result: (value),
 }`)
 		tAssert.NoError(err)
 
@@ -40,8 +40,8 @@ type Broken: union[string, int];
 	It("rejects union schema composition with conflicting fields", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
-schema Profile: { id: string; };
-schema Audit: { id: int; };
+schema Profile: { id: string, };
+schema Audit: { id: int, };
 type Broken: union[Profile, Audit];
 |===|`))
 		tAssert.ErrorContains(err, "conflicting field")

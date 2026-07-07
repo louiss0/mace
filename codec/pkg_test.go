@@ -85,9 +85,9 @@ int age = 27;
 |===|
 [output = data]
 {
-  name: "Ada";
-  profile: { age: (age); active: true; };
-  scores: [1, 2, 3];
+  name: "Ada",
+  profile: { age: (age), active: true, },
+  scores: [1, 2, 3],
 }`)
 		tAssert.NoError(err)
 
@@ -106,11 +106,11 @@ int age = 27;
 var _ = Describe("Parse", func() {
 	It("parses with input values through compatibility helpers", func() {
 		result, err := ParseWithInjections(`|===|
-schema Runtime: { name: string; enabled: boolean; };
+schema Runtime: { name: string, enabled: boolean, };
 |===|
 [output = data, parse = Runtime]
 {
-  ok: true;
+  ok: true,
 }`, map[string]any{
 			"name":    "Ada",
 			"enabled": true,
@@ -123,11 +123,11 @@ schema Runtime: { name: string; enabled: boolean; };
 		workspace, err := os.MkdirTemp("", "mace-codec-input-*")
 		tAssert.NoError(err)
 		path := writeCodecTempFile(workspace, "input.mace", `|===|
-schema Runtime: { name: string; };
+schema Runtime: { name: string, };
 |===|
 [output = data, parse = Runtime]
 {
-  ok: true;
+  ok: true,
 }`)
 
 		result, err := ParseFileWithInjections(path, map[string]any{
@@ -143,11 +143,11 @@ schema Runtime: { name: string; };
 		}{}
 
 		err := UnmarshalWithInjections(`|===|
-schema Runtime: { name: string; };
+schema Runtime: { name: string, };
 |===|
 [output = data, parse = Runtime]
 {
-  ok: true;
+  ok: true,
 }`, map[string]any{
 			"name": "Ada",
 		}, &target)
@@ -157,8 +157,8 @@ schema Runtime: { name: string; };
 	It("returns schema outputs through the public binding result", func() {
 		result, err := Parse(`[output = schema]
 {
-  name: string;
-  age?: int;
+  name: string,
+  age?: int,
 }`)
 		tAssert.NoError(err)
 		tAssert.Empty(result.Data)
@@ -171,7 +171,7 @@ schema Runtime: { name: string; };
 	It("returns structured record schema outputs", func() {
 		result, err := Parse(`[output = schema]
 {
-  profile: { name: string; age?: int; };
+  profile: { name: string, age?: int, },
 }`)
 		tAssert.NoError(err)
 		tAssert.Equal(map[SchemaField]SchemaType{
@@ -195,12 +195,12 @@ schema Runtime: { name: string; };
 
 	It("returns structured union schema outputs", func() {
 		result, err := Parse(`|===|
-schema Profile: { name: string; };
-schema Audit: { created_at: string; };
+schema Profile: { name: string, };
+schema Audit: { created_at: string, };
 |===|
 [output = schema]
 {
-  value: union[Profile, Audit];
+  value: union[Profile, Audit],
 }`)
 		tAssert.NoError(err)
 		tAssert.Equal(map[SchemaField]SchemaType{
@@ -216,7 +216,7 @@ schema Audit: { created_at: string; };
 		tAssert.NoError(err)
 
 		path := filepath.Join(tempDir, "config.mace")
-		err = os.WriteFile(path, []byte(`[output = data] { value: 2 + 2; }`), 0o600)
+		err = os.WriteFile(path, []byte(`[output = data] { value: 2 + 2, }`), 0o600)
 		tAssert.NoError(err)
 
 		result, err := ParseFile(path)
@@ -232,9 +232,9 @@ hex_float whole = 0x2.0;
 |===|
 [output = data]
 {
-  mask: (mask);
-  ratio: (ratio);
-  whole: (whole);
+  mask: (mask),
+  ratio: (ratio),
+  whole: (whole),
 }`)
 		tAssert.NoError(err)
 		tAssert.Equal(map[string]any{
@@ -246,11 +246,11 @@ hex_float whole = 0x2.0;
 
 	It("applies parse input values from a Go map", func() {
 		result, err := ParseWithInput(`|===|
-schema Runtime: { env: string; };
+schema Runtime: { env: string, };
 |===|
 [output = data, parse = Runtime]
 {
-  ok: true;
+  ok: true,
 }`, map[string]any{
 			"env": "prod",
 		})
@@ -262,13 +262,13 @@ schema Runtime: { env: string; };
 		result, err := Parse(`|===|
 int price = 3;
 int quantity = 4;
-schema User: { name: string; };
-User user = { name: "Ada"; };
+schema User: { name: string, };
+User user = { name: "Ada", };
 string summary = "$(user.name): $(price * quantity)";
 |===|
 [output = data]
 {
-  summary: (summary);
+  summary: (summary),
 }`)
 		tAssert.NoError(err)
 		tAssert.Equal(map[string]any{"summary": "Ada: 12"}, result.Data)
@@ -1987,15 +1987,15 @@ var _ = Describe("Unmarshal", func() {
 
 		err := Unmarshal(`[output = data]
 {
-  name: "Ada";
-  count: 3;
-  ratio: 1.5;
-  flags: [true, false];
-  items: [1, 2];
+  name: "Ada",
+  count: 3,
+  ratio: 1.5,
+  flags: [true, false],
+  items: [1, 2],
   profile: {
-    level: 7;
-  };
-  any: [1, "two"];
+    level: 7,
+  },
+  any: [1, "two"],
 }`, &target)
 
 		tAssert.NoError(err)
@@ -2013,15 +2013,15 @@ var _ = Describe("Unmarshal", func() {
 	It("unmarshals output records into structs", func() {
 		input := `[output = data]
 {
-  name: "Ada";
-  enabled: true;
+  name: "Ada",
+  enabled: true,
   profile: {
-    level: 3;
-  };
-  flags: [true, false];
+    level: 3,
+  },
+  flags: [true, false],
   meta: {
-    retries: 2;
-  };
+    retries: 2,
+  },
 }`
 
 		var config decodedConfig
@@ -2052,42 +2052,42 @@ var _ = Describe("Unmarshal", func() {
 	})
 
 	It("rejects non-pointer targets", func() {
-		err := Unmarshal(`[output = data] { value: 1; }`, map[string]any{})
+		err := Unmarshal(`[output = data] { value: 1, }`, map[string]any{})
 		tAssert.Error(err)
 	})
 
 	It("rejects incompatible unmarshal targets", func() {
 		var nilMap *map[string]any
-		err := Unmarshal(`[output = data] { value: 1; }`, nilMap)
+		err := Unmarshal(`[output = data] { value: 1, }`, nilMap)
 		tAssert.ErrorContains(err, "non-nil pointer")
 
 		var scalar string
-		err = Unmarshal(`[output = data] { value: 1; }`, &scalar)
+		err = Unmarshal(`[output = data] { value: 1, }`, &scalar)
 		tAssert.ErrorContains(err, "target must point")
 
 		var unsigned struct {
 			Value uint `json:"value"`
 		}
-		err = Unmarshal(`[output = data] { value: -1; }`, &unsigned)
+		err = Unmarshal(`[output = data] { value: -1, }`, &unsigned)
 		tAssert.ErrorContains(err, "negative int")
 
 		var fixed struct {
 			Values [1]int `json:"values"`
 		}
-		err = Unmarshal(`[output = data] { values: [1, 2]; }`, &fixed)
+		err = Unmarshal(`[output = data] { values: [1, 2], }`, &fixed)
 		tAssert.ErrorContains(err, "array length mismatch")
 
 		var typed struct {
 			Value int `json:"value"`
 		}
-		err = Unmarshal(`[output = data] { value: "Ada"; }`, &typed)
+		err = Unmarshal(`[output = data] { value: "Ada", }`, &typed)
 		tAssert.ErrorContains(err, "cannot assign string")
 	})
 
 	It("unmarshals into nil nested pointers", func() {
 		var target **map[string]int
 
-		err := Unmarshal(`[output = data] { value: 1; }`, &target)
+		err := Unmarshal(`[output = data] { value: 1, }`, &target)
 
 		tAssert.NoError(err)
 		tAssert.NotNil(target)
@@ -2097,11 +2097,11 @@ var _ = Describe("Unmarshal", func() {
 	It("uses parse input values during unmarshal", func() {
 		var target map[string]any
 		err := UnmarshalWithInput(`|===|
-schema Runtime: { env: string; };
+schema Runtime: { env: string, };
 |===|
 [output = data, parse = Runtime]
 {
-  ok: true;
+  ok: true,
 }`, map[string]any{
 			"env": "prod",
 		}, &target)

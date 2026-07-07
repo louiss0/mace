@@ -95,8 +95,8 @@ string value = "x";
 		tAssert.NoError(os.WriteFile(sharedPath, []byte(`
 [output = schema]
 {
-  User: { name: string; home: { city: string; }; };
-  Runtime: { env: string; };
+  User: { name: string, home: { city: string, }, },
+  Runtime: { env: string, },
 }
 `), 0o644))
 
@@ -166,8 +166,8 @@ from "./shared.mace" import User, Runtime;
 		tAssert.NoError(os.WriteFile(sharedPath, []byte(`
 [output = schema]
 {
-  User: { name: string; profile: { city: string; }; };
-  Numbers: { values: array<string>; };
+  User: { name: string, profile: { city: string, }, },
+  Numbers: { values: array<string>, },
 }
 `), 0o644))
 		documentPath := filepath.Join(workspace, "doc.mace")
@@ -238,24 +238,24 @@ string digits = ["x", "y"];
 		tAssert.NoError(os.WriteFile(sharedPath, []byte(`
 [output = schema]
 {
-  User: { name: string; profile: { city: string; }; tags: string; };
-  Runtime: { env: string; };
+  User: { name: string, profile: { city: string, }, tags: string, },
+  Runtime: { env: string, },
 }
 `), 0o644))
 		documentPath := filepath.Join(workspace, "doc.mace")
 		text := `|===|
 from "./shared.mace" import User, Runtime;
 type Alias: string;
-schema Doc: { field: string; };
-Profile record = { age: 1; active: true; };
+schema Doc: { field: string, };
+Profile record = { age: 1, active: true, };
 |===|
 [output = data, schema = User, schema_file = "./shared.mace", parse = Runtime, parse_file = "./shared.mace"]
 {
-  user: { name: "Ada"; profile: { city: "LA"; }; tags: "x"; };
-  list: ["a", "b"];
-  mixed: ["a", 1];
-  item: values[0];
-  self_ref: $self.user.profile;
+  user: { name: "Ada", profile: { city: "LA", }, tags: "x", },
+  list: ["a", "b"],
+  mixed: ["a", 1],
+  item: values[0],
+  self_ref: $self.user.profile,
 }
 `
 		tAssert.NoError(os.WriteFile(documentPath, []byte(text), 0o644))
@@ -318,7 +318,7 @@ Profile record = { age: 1; active: true; };
 		tAssert.NoError(os.WriteFile(singleSchemaPath, []byte(`
 [output = schema]
 {
-  Only: { value: string; };
+  Only: { value: string, },
 }
 `), 0o644))
 		_, _ = parseInputSemanticSchemaName(ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"./single.mace"`}}}}, workspace)
@@ -327,7 +327,7 @@ Profile record = { age: 1; active: true; };
 		_, _ = importedImportAsSemanticSymbol(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData, DataFields: []ast.OutputField{{Name: "Only", Value: ast.StringLiteral{Lexeme: `"x"`}}}}}, documentPath, "Alias")
 		_, _ = addMissingScriptSemicolonText("|===|\ntype Alias: string\n|===|")
 		_, _ = moveScriptBlockBeforeOutputText("[output = data]\n{}\n|===|\ntype Alias: string;\n|===|")
-		_, _ = extractRecordLiteralIntoSchemaText("|===|\nProfile record = { age: 1; active: true; };\n|===|")
+		_, _ = extractRecordLiteralIntoSchemaText("|===|\nProfile record = { age: 1, active: true, };\n|===|")
 		_, _ = replaceVariableDeclaration("string value = \"x\";", regexp.MustCompile(`(?m)^([ \t]*)(string)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*("[^"]*");`), func(matches []string) string { return matches[1] + matches[2] + " fresh = " + matches[4] + ";" })
 		_, _ = semanticDiagnosticFromError(ast.File{}, nil, processor.DiagnosticError{Code: processor.CodeInvalidNullUsage, Message: "null bad"})
 		_, _ = semanticDiagnosticFromError(ast.File{}, nil, processor.DiagnosticError{Code: processor.CodeTypeMismatch, Message: "processor: type mismatch: expected string, got int"})
@@ -344,8 +344,8 @@ Profile record = { age: 1; active: true; };
 		tAssert.NoError(os.WriteFile(sharedPath, []byte(`
 [output = schema]
 {
-  User: { name: string; home: { city: string; }; };
-  Runtime: { env: string; };
+  User: { name: string, home: { city: string, }, },
+  Runtime: { env: string, },
 }
 `), 0o644))
 		documentPath := filepath.Join(workspace, "doc.mace")

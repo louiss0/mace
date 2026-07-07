@@ -20,14 +20,14 @@ var _ = Describe("Schemas", func() {
 			tAssert.NoError(err)
 		},
 		Entry("optional fields omitted", wrapScriptWithOutput(`|===|
-schema User: { name: string; age?: int; };
-User user = { name: "Ada"; };
+schema User: { name: string, age?: int, };
+User user = { name: "Ada", };
 |===|`)),
 		Entry("array of schema records", wrapScriptWithOutput(`|===|
-schema Point: { x: int; y: int; };
+schema Point: { x: int, y: int, };
 array<Point> points = [
-  { x: 1; y: 2; },
-  { x: 3; y: 4; }
+  { x: 1, y: 2, },
+  { x: 3, y: 4, }
 ];
 |===|`)),
 		Entry("nullable string initializer", wrapScriptWithOutput(`|===|
@@ -43,26 +43,26 @@ nullable string env = "dev";
 			tAssert.ErrorContains(err, message)
 		},
 		Entry("missing required field", wrapScriptWithOutput(`|===|
-schema User: { name: string; age: int; };
-User user = { name: "Ada"; };
+schema User: { name: string, age: int, };
+User user = { name: "Ada", };
 |===|`), "missing required field"),
 		Entry("unknown field", wrapScriptWithOutput(`|===|
-schema User: { name: string; };
-User user = { name: "Ada"; age: 30; };
+schema User: { name: string, };
+User user = { name: "Ada", age: 30, };
 |===|`), "unknown field"),
 		Entry("optional field mismatch", wrapScriptWithOutput(`|===|
-schema User: { name: string; age: int; };
-User user = { name: "Ada"; age?: 30; };
+schema User: { name: string, age: int, };
+User user = { name: "Ada", age?: 30, };
 |===|`), "not optional"),
 		Entry("field type mismatch", wrapScriptWithOutput(`|===|
-schema User: { name: string; age: int; };
-User user = { name: 5; age: 30; };
+schema User: { name: string, age: int, };
+User user = { name: 5, age: 30, };
 |===|`), "type mismatch"),
 		Entry("array element schema mismatch", wrapScriptWithOutput(`|===|
-schema Point: { x: int; y: int; };
+schema Point: { x: int, y: int, };
 array<Point> points = [
-  { x: 1; y: 2; },
-  { x: 3; }
+  { x: 1, y: 2, },
+  { x: 3, }
 ];
 |===|`), "missing required field"),
 	)
@@ -71,19 +71,19 @@ array<Point> points = [
 		processor := New()
 		_, err := processor.Process(`|===|
 schema User: {
-  id: string;
-  name: string;
+  id: string,
+  name: string,
 };
 
 User user = {
-  id: "user_1";
-  name: "Ada";
+  id: "user_1",
+  name: "Ada",
 };
 |===|
 [output = data, schema = User]
 {
-  id: user.id;
-  name: user.name;
+  id: user.id,
+  name: user.name,
 }`)
 		tAssert.NoError(err)
 	})
@@ -94,11 +94,11 @@ User user = {
 		})
 
 		_, err := processor.Process(`|===|
-schema Runtime: { env: string; };
+schema Runtime: { env: string, };
 |===|
 [output = data, parse = Runtime]
 {
-  env: (env);
+  env: (env),
 }`)
 		tAssert.ErrorContains(err, "unknown identifier")
 	})
@@ -107,11 +107,11 @@ schema Runtime: { env: string; };
 		processor := New()
 
 		_, err := processor.Process(`|===|
-schema Runtime: { env: string; };
+schema Runtime: { env: string, };
 |===|
 [output = data, parse = Runtime]
 {
-  env: (env);
+  env: (env),
 }`)
 		tAssert.Error(err)
 		tAssert.ErrorContains(err, "missing required field")
@@ -143,12 +143,12 @@ schema Runtime: { env: string; };
 		}()
 
 		writeFixtureFile(workspace, "runtime.mace", `|===|
-schema Runtime: { env: string; };
-schema Meta: { source: string; };
+schema Runtime: { env: string, };
+schema Meta: { source: string, };
 |===|
 [output = schema]
 {
-  Runtime: Runtime;
+  Runtime: Runtime,
 }`)
 
 		processor := NewWithInput(map[string]Value{
@@ -157,7 +157,7 @@ schema Meta: { source: string; };
 
 		_, err = processor.ProcessInDir(`[output = data, parse_file = "./runtime.mace"]
 {
-  env: (env);
+  env: (env),
 }`, workspace)
 		tAssert.ErrorContains(err, "unknown identifier")
 	})
@@ -206,23 +206,23 @@ schema PackageJSON: {
 			"record": {Kind: ValueString, String: "value"},
 		})
 		_, err := processor.Process(`|===|
-schema Input: { record: string; };
+schema Input: { record: string, };
 |===|
 [output = data, parse = Input]
 {
-  record: (record);
+  record: (record),
 }`)
 		tAssert.ErrorContains(err, "unknown identifier")
 	})
 
 	It("infers member access types for record map values", func() {
 		input := `|===|
-record<string> deps = { foo: "bar"; };
+record<string> deps = { foo: "bar", };
 string foo = deps.foo;
 |===|
 [output = data]
 {
-  foo: (foo);
+  foo: (foo),
 }`
 		result, err := New().Process(input)
 		tAssert.NoError(err)
@@ -235,14 +235,14 @@ string foo = deps.foo;
 		defer func() { _ = os.RemoveAll(dir) }()
 		tAssert.NoError(os.WriteFile(filepath.Join(dir, "shared.mace"), []byte(`[output = schema]
 {
-  User: { name: string; };
+  User: { name: string, },
 }`), 0o644))
 		tAssert.NoError(os.WriteFile(filepath.Join(dir, "schema.mace"), []byte(`|===|
 from "./shared.mace" import User;
 |===|
 [output = schema]
 {
-  user: User;
+  user: User,
 }`), 0o644))
 
 		processor := NewWithInput(map[string]Value{
@@ -252,7 +252,7 @@ from "./shared.mace" import User;
 		})
 		_, err = processor.ProcessInDir(`[output = data, parse_file = "./schema.mace"]
 {
-  name: user.name;
+  name: user.name,
 }`, dir)
 		tAssert.ErrorContains(err, "unknown identifier")
 	})
@@ -260,8 +260,8 @@ from "./shared.mace" import User;
 	Describe("parse input output scope", func() {
 		const guardSchema = `|===|
 schema User: {
-  name: string;
-  manager?: User;
+  name: string,
+  manager?: User,
 };
 |===|
 `
@@ -797,7 +797,7 @@ from "./scriptonly.mace" import User;
 		tAssert.NoError(os.WriteFile(badPath, []byte("[output = data]\n{ name: \"Ada\", }\n"), 0o600))
 		tAssert.NoError(os.WriteFile(dataPath, []byte("not valid"), 0o600))
 		circularPath := filepath.Join(workspace, "circular.mace")
-		tAssert.NoError(os.WriteFile(circularPath, []byte("from \"./circular.mace\" import User;\n[output = schema]\n{ User: string; }"), 0o600))
+		tAssert.NoError(os.WriteFile(circularPath, []byte("from \"./circular.mace\" import User;\n[output = schema]\n{ User: string, }"), 0o600))
 
 		_, err = loadOutputSchemaRecord(schemaPath, workspace, "schema_file")
 		tAssert.NoError(err)

@@ -233,7 +233,7 @@ var _ = Describe("Parser", func() {
 	)
 
 	It("rejects trailing tokens after an expression", func() {
-		_, err := parseExpressionInput("{ a: 1; } garbage")
+		_, err := parseExpressionInput("{ a: 1, } garbage")
 		tAssert.ErrorContains(err, "unexpected token after expression")
 	})
 
@@ -249,7 +249,7 @@ var _ = Describe("Parser", func() {
 			requireIntLiteral(array.Elements[1], "2")
 			requireIntLiteral(array.Elements[2], "3")
 		}),
-		Entry("record literal", "{ name?: \"Ada\"; }", func(expression ast.Expression) {
+		Entry("record literal", "{ name?: \"Ada\", }", func(expression ast.Expression) {
 			record := requireRecordLiteral(expression, 1)
 			tAssert.Equal("name", record.Fields[0].Name)
 			tAssert.True(record.Fields[0].Optional)
@@ -433,7 +433,8 @@ var _ = Describe("Parser", func() {
 		Entry("conditional requires else expression", "ready ? yes :"),
 		Entry("member access requires identifier", "user."),
 		Entry("array literal requires close", "[1"),
-		Entry("record literal requires close", "{ name: \"Ada\";"),
+		Entry("record literal rejects semicolon field terminator", "{ name: \"Ada\"; }"),
+		Entry("record literal requires close", "{ name: \"Ada\","),
 		Entry("prefix expression requires operand", "!"),
 		Entry("infix expression requires right operand", "1 +"),
 		Entry("grouped expression rejects missing expression", "()"),
@@ -480,7 +481,7 @@ var _ = Describe("Parser", func() {
 		_, err = New(tokens).parseRecordType()
 		tAssert.ErrorContains(err, "expected '{'")
 
-		recordTypeTokens, err := lexInput(`{ name: string;`)
+		recordTypeTokens, err := lexInput(`{ name: string,`)
 		tAssert.NoError(err)
 		_, err = New(recordTypeTokens).parseRecordType()
 		tAssert.ErrorContains(err, "expected '}' to close record type")
@@ -508,6 +509,11 @@ var _ = Describe("Parser", func() {
 		commaTokens, err := lexInput(",")
 		tAssert.NoError(err)
 		tAssert.NoError(New(commaTokens).consumePairSeparator("entry"))
+
+		semicolonTokens, err := lexInput(";")
+		tAssert.NoError(err)
+		tAssert.ErrorContains(New(semicolonTokens).consumePairSeparator("entry"), "expected ',' after entry")
+		tAssert.ErrorContains(New(semicolonTokens).consumeRecordSeparator("field"), "expected ',' after field")
 
 		nameTokens, err := lexInput("name")
 		tAssert.NoError(err)
@@ -631,11 +637,11 @@ var _ = Describe("Parser", func() {
 				_, err := p.parseSchemaDeclaration()
 				return err
 			}},
-			{`gen_doc User { summary "User"; };`, func(p *Parser) error {
+			{`gen_doc User { summary "User", };`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindGeneral, lexer.TokenGenDoc, "gen_doc")
 				return err
 			}},
-			{`gen_doc User { summary: 1; };`, func(p *Parser) error {
+			{`gen_doc User { summary: 1, };`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindGeneral, lexer.TokenGenDoc, "gen_doc")
 				return err
 			}},
@@ -643,39 +649,39 @@ var _ = Describe("Parser", func() {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindGeneral, lexer.TokenGenDoc, "gen_doc")
 				return err
 			}},
-			{`schema_doc User { props: { name "Name"; }; };`, func(p *Parser) error {
+			{`schema_doc User { props: { name "Name", }, };`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 				return err
 			}},
-			{`schema_doc User { props: "Name"; };`, func(p *Parser) error {
+			{`schema_doc User { props: "Name", };`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 				return err
 			}},
-			{`schema_doc User { props: { name: "Name" }; };`, func(p *Parser) error {
+			{`schema_doc User { props: { name: "Name" }, };`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 				return err
 			}},
-			{`schema_doc User { props: { name: "Name"; ;`, func(p *Parser) error {
+			{`schema_doc User { props: { name: "Name", ,`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 				return err
 			}},
-			{`schema_doc User { props: { name: "Name";`, func(p *Parser) error {
+			{`schema_doc User { props: { name: "Name",`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 				return err
 			}},
-			{`schema_doc User { props: { name: "Name"; }; }`, func(p *Parser) error {
+			{`schema_doc User { props: { name: "Name", }, }`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 				return err
 			}},
-			{`gen_doc User { ; };`, func(p *Parser) error {
+			{`gen_doc User { , };`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindGeneral, lexer.TokenGenDoc, "gen_doc")
 				return err
 			}},
-			{`schema_doc User { props: { ; }; };`, func(p *Parser) error {
+			{`schema_doc User { props: { , }, };`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 				return err
 			}},
-			{`schema_doc User { props: { name: "Name"; };`, func(p *Parser) error {
+			{`schema_doc User { props: { name: "Name", },`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 				return err
 			}},
@@ -842,7 +848,7 @@ string name = "Ada";`)
 			_, err = New(outputTokens).ParseOutputBlock()
 			tAssert.ErrorContains(err, "expected '{' to start output block")
 
-			outputTokens, err = lexInput(`{ name: "Ada";`)
+			outputTokens, err = lexInput(`{ name: "Ada",`)
 			tAssert.NoError(err)
 			_, err = New(outputTokens).ParseOutputBlock()
 			tAssert.ErrorContains(err, "expected '}' to close output block")
@@ -866,7 +872,7 @@ string name = "Ada";
 			tAssert.Len(script.Items, 1)
 
 			outputTokens, err := lexInput(`[output = data]
-{ name: "Ada"; }`)
+{ name: "Ada", }`)
 			tAssert.NoError(err)
 			output, err := New(outputTokens).ParseOutputBlock()
 			tAssert.NoError(err)
@@ -973,11 +979,11 @@ string name = "Ada";
 			input := `|===|
 from "base.mace" import User, Config;
 type Name: string;
-schema User: { name: string; age?: int; };
+schema User: { name: string, age?: int, };
 string user = "Ada";
 |===|
 [output = data, schema = User]
-{ name: user; }`
+{ name: user, }`
 
 			file, err := parseFileInput(input)
 			tAssert.NoError(err)
@@ -1054,26 +1060,26 @@ from "base.mace" import User; // trailing import comment
 // line comment before declarations
 schema Profile: {
   // line comment before field
-  name: string; // trailing line comment
+  name: string, // trailing line comment
   /* block comment before optional field */
-  age?: int; // trailing line comment
+  age?: int, // trailing line comment
 };
 
 /* block comment between declarations */
 Profile current = {
-  name: "Ada"; // trailing field comment
+  name: "Ada", // trailing field comment
   /* comment before optional field */
-  age?: 30; // trailing field comment
+  age?: 30, // trailing field comment
 };
 |===|
 [output = data]
 {
   // line comment before output field
-  result: current.name; // trailing output comment
+  result: current.name, // trailing output comment
   profile: {
     // line comment inside nested record
-    age?: current.age; // trailing nested comment
-  }; // trailing record comment
+    age?: current.age, // trailing nested comment
+  }, // trailing record comment
 }`
 
 			file, err := parseFileInput(input)
@@ -1113,7 +1119,7 @@ type Hidden: string;
 |===|
 [output = data]
 {
-  hidden: "ignore me";
+  hidden: "ignore me",
 }
 */
 |===|
@@ -1121,7 +1127,7 @@ string visible = "ok";
 |===|
 [output = data]
 {
-  result: visible;
+  result: visible,
 }`
 
 			file, err := parseFileInput(input)
@@ -1150,7 +1156,7 @@ from "./also_ignored.mace" import AlsoIgnored;
 |===|
 [output = data]
 {
-  result: 1;
+  result: 1,
 }`
 
 			file, err := parseFileInput(input)
@@ -1164,7 +1170,7 @@ from "./also_ignored.mace" import AlsoIgnored;
 		It("rejects top-level imports", func() {
 			_, err := parseFileInput(`from "./base.mace" import User;
 [output = data]
-{ result: 1; }`)
+{ result: 1, }`)
 
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, "expected output directive")
@@ -1175,17 +1181,17 @@ from "./also_ignored.mace" import AlsoIgnored;
 /*
 type Hidden: string;
 schema HiddenUser: {
-  name: string;
+  name: string,
 };
 */
 type Name: string;
 schema User: {
-  name: Name;
+  name: Name,
 };
 |===|
 [output = data]
 {
-  result: "ok";
+  result: "ok",
 }`
 
 			file, err := parseFileInput(input)
@@ -1208,20 +1214,20 @@ schema User: {
 		It("ignores block comments around documentation declarations", func() {
 			input := `|===|
 schema User: {
-  name: string;
+  name: string,
 };
 /*
 schema_doc User {
-  summary: "Ignore this doc";
+  summary: "Ignore this doc",
 };
 */
 schema_doc User {
-  summary: "Visible doc";
+  summary: "Visible doc",
 };
 |===|
 [output = schema]
 {
-  user: User;
+  user: User,
 }`
 
 			file, err := parseFileInput(input)
@@ -1238,11 +1244,11 @@ schema_doc User {
 		It("ignores block comments inside output fields", func() {
 			input := `[output = data]
 {
-  subtotal: 129.99 * 3;
+  subtotal: 129.99 * 3,
 /*
-  total: $self.subtotal * 1.08875;
+  total: $self.subtotal * 1.08875,
 */
-  result: $self.subtotal;
+  result: $self.subtotal,
 }`
 
 			file, err := parseFileInput(input)
@@ -1291,8 +1297,8 @@ hex_float ratio = 0x2.8;
 |===|
 [output = schema]
 {
-  mask: hex_int;
-  ratio: hex_float;
+  mask: hex_int,
+  ratio: hex_float,
 }`
 
 			file, err := parseFileInput(input)
@@ -1483,12 +1489,12 @@ type Matrix: array<array<int>>;
 		It("parses record map and inline record type references", func() {
 			file, err := parseFileInput(`|===|
 type Lookup: record<string>;
-type Inline: { name: string; };
+type Inline: { name: string, };
 |===|
 [output = schema]
 {
-  values: record<int>;
-  inline: { enabled: boolean; };
+  values: record<int>,
+  inline: { enabled: boolean, },
 }`)
 			tAssert.NoError(err)
 
@@ -1542,11 +1548,11 @@ schema User {};
 |===|
 [output = data] {}`,
 				`|===|
-schema User: { name string; };
+schema User: { name string, };
 |===|
 [output = data] {}`,
 				`|===|
-schema User: { name: string;
+schema User: { name: string,
 |===|
 [output = data] {}`,
 				`|===|
@@ -1561,23 +1567,23 @@ schema_doc User
 [output = data] {}`,
 				`|===|
 schema_doc User {
-  summary: "One";
-  summary: "Two";
+  summary: "One",
+  summary: "Two",
 };
 |===|
 [output = data] {}`,
 				`|===|
 schema_doc User {
-  unknown: "Nope";
+  unknown: "Nope",
 };
 |===|
 [output = data] {}`,
 				`|===|
 schema_doc User {
   props: {
-    name: "One";
-    name: "Two";
-  };
+    name: "One",
+    name: "Two",
+  },
 };
 |===|
 [output = data] {}`,
@@ -1588,9 +1594,9 @@ schema_doc User {
 				`[parse_file = Runtime] {}`,
 				`[schema = "User"] {}`,
 				`[output = data] "single line doc" {}`,
-				`[output = data] { name "Ada"; }`,
-				`[output = schema] { name string; }`,
-				`[output = schema] { name: ; }`,
+				`[output = data] { name "Ada", }`,
+				`[output = schema] { name string, }`,
+				`[output = schema] { name: , }`,
 				`[output = schema] { name: string /# first, /# second }`,
 				`|===|
 type Names: array;
@@ -1622,35 +1628,35 @@ type Names: choice[null];
 [output = data] {}`,
 				`|===|
 schema_doc User {
-  summary: 1;
+  summary: 1,
 };
 |===|
 [output = data] {}`,
 				`|===|
 schema_doc User {
   props: {
-    name: 1;
-  };
+    name: 1,
+  },
 };
 |===|
 [output = data] {}`,
 				`|===|
 schema_doc User {
   props: {
-    name: "Name";
+    name: "Name",
   }
 };
 |===|
 [output = data] {}`,
 				`|===|
 schema_doc User {
-  summary: "User";
+  summary: "User",
 }
 |===|
 [output = data] {}`,
 				`|===|
 schema_doc User {
-  summary: "User";
+  summary: "User",
 };
 |===|
 [output = data]`,
@@ -1663,7 +1669,7 @@ schema_doc User {
 		})
 
 		It("parses a bare output block as default data output", func() {
-			file, err := parseFileInput(`{ result: 1 + 2; }`)
+			file, err := parseFileInput(`{ result: 1 + 2, }`)
 			tAssert.NoError(err)
 			tAssert.Empty(file.Output.Directives)
 			tAssert.Equal(ast.OutputModeData, file.Output.Mode)
@@ -1674,11 +1680,48 @@ schema_doc User {
 			}
 		})
 
+		It("parses record and output field shorthands", func() {
+			file, err := parseFileInput(`|===|
+string name = "Ada";
+{ name: string, } user = { name, };
+|===|
+[output = data]
+{ name, user, }`)
+			tAssert.NoError(err)
+
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 2) {
+				user, ok := file.Script.Items[1].(ast.VariableDeclaration)
+				tAssert.True(ok)
+				if ok {
+					record, ok := user.Value.(ast.RecordLiteral)
+					tAssert.True(ok)
+					if ok && tAssert.Len(record.Fields, 1) {
+						tAssert.True(record.Fields[0].Shorthand)
+						identifier, ok := record.Fields[0].Value.(ast.Identifier)
+						tAssert.True(ok)
+						if ok {
+							tAssert.Equal("name", identifier.Name)
+						}
+					}
+				}
+			}
+
+			if tAssert.Len(file.Output.DataFields, 2) {
+				tAssert.True(file.Output.DataFields[0].Shorthand)
+				identifier, ok := file.Output.DataFields[0].Value.(ast.Identifier)
+				tAssert.True(ok)
+				if ok {
+					tAssert.Equal("name", identifier.Name)
+				}
+				tAssert.True(file.Output.DataFields[1].Shorthand)
+			}
+		})
+
 		It("parses schema-mode output blocks as schema fields", func() {
 			file, err := parseFileInput(`[output = schema]
 {
-  name: string;
-  age?: int;
+  name: string,
+  age?: int,
 }`)
 			tAssert.NoError(err)
 
@@ -1798,7 +1841,7 @@ gen_doc Alias {
 # Public User Output
 """
 {
-  name: string;
+  name: string,
 }`
 
 			file, err := parseFileInput(input)
@@ -1876,25 +1919,25 @@ gen_doc Name {
 		It("parses documentation fixtures with props and inline descriptions", func() {
 			file, err := parseFileInput(`|===|
 schema User: {
-  name: string;
+  name: string,
 };
 
 string greeting = "Hello";
 
 gen_doc greeting {
-  summary: "Rendered greeting";
+  summary: "Rendered greeting",
 };
 
 schema_doc User {
-  summary: "Represents a user";
+  summary: "Represents a user",
   description: """
 # User
 
 Hover should surface this documentation.
-""";
+""",
   props: {
-    name: "The user's display name";
-  };
+    name: "The user's display name",
+  },
 };
 |===|
 [output = schema]
@@ -1902,7 +1945,7 @@ Hover should surface this documentation.
 # User Output
 """
 {
-  user: User /# Public user schema;
+  user: User /# Public user schema,
 }
 `)
 			tAssert.NoError(err)

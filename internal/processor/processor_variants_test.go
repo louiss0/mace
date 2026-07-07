@@ -32,9 +32,9 @@ Value second = %s;
 	It("accepts schema and primitive variant alternatives", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
-schema User: { name: string; };
+schema User: { name: string, };
 type Value: variant[User, string];
-Value first = { name: "Ada"; };
+Value first = { name: "Ada", };
 Value second = "fallback";
 |===|`))
 		tAssert.NoError(err)
@@ -84,13 +84,13 @@ Scalar value = true;
 	It("rejects record literals that mix fields across variant alternatives", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
-schema EmailLogin: { email: string; password: string; };
-schema ApiKeyLogin: { api_key: string; };
+schema EmailLogin: { email: string, password: string, };
+schema ApiKeyLogin: { api_key: string, };
 type Login: variant[EmailLogin, ApiKeyLogin];
 Login value = {
-  email: "ada@example.com";
-  password: "secret";
-  api_key: "token";
+  email: "ada@example.com",
+  password: "secret",
+  api_key: "token",
 };
 |===|`))
 		tAssert.ErrorContains(err, "type mismatch")
@@ -99,10 +99,10 @@ Login value = {
 	It("rejects record literals that match multiple variant alternatives", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
-schema Named: { id: string; };
-schema OptionallyNamed: { id: string; nickname?: string; };
+schema Named: { id: string, };
+schema OptionallyNamed: { id: string, nickname?: string, };
 type Identity: variant[Named, OptionallyNamed];
-Identity value = { id: "u1"; };
+Identity value = { id: "u1", };
 |===|`))
 		tAssert.ErrorContains(err, "exactly one variant member")
 	})

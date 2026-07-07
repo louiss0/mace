@@ -81,6 +81,8 @@ Mace supports:
 - literal `choice[...]` aliases with mixed scalar members, reusable choice aliases,
   and variant-friendly autocomplete
 - record, array, arithmetic, logical, merge, and conditional expressions
+- record and data output field shorthand: `{ name, }` expands to `{ name: name, }`, and it works for strings, numbers, arrays, nested records, and output blocks
+- commas separate record, schema, and output fields; semicolons terminate declarations and statements
 - `$self` references inside output evaluation
 - hexadecimal integer and fractional numeric types with canonical string JSON output
 

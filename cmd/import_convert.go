@@ -152,7 +152,10 @@ func yamlRootExpression(file *yamlast.File) (recordExpression, error) {
 			fields = append(fields, recordField{name: name, value: expression})
 			continue
 		}
-		record, _ = yamlRecordWithHoists(record, &state)
+		record, err = yamlRecordWithHoists(record, &state)
+		if err != nil {
+			return recordExpression{}, err
+		}
 		fields = append(fields, recordField{name: name, value: record})
 	}
 

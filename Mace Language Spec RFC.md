@@ -519,10 +519,11 @@ Mace File
 >   = output_field ;
 > 
 > output_field
->   = identifier , [ "?" ] , ws0 ,
->     ":" , ws0 ,
->     expression ,
->     field_terminator ;
+>   = ( identifier , [ "?" ] , ws0 ,
+>       ":" , ws0 ,
+>       expression ,
+>       field_terminator )
+>   | ( identifier , field_terminator ) ;
 > 
 > output_schema_field
 >   = identifier , [ "?" ] , ws0 ,
@@ -709,7 +710,7 @@ Mace File
 >   | [ ws0 , inline_description ] , [ ws0 , pair_separator ] ;
 > 
 > pair_separator
->   = "," | ";" ;
+>   = "," ;
 > ```
 
 > [!info] array_literal
@@ -730,10 +731,11 @@ Mace File
 >     "}" ;
 > 
 > record_field
->   = identifier , [ "?" ] , ws0 ,
->     ":" , ws0 ,
->     expression ,
->     field_terminator ;
+>   = ( identifier , [ "?" ] , ws0 ,
+>       ":" , ws0 ,
+>       expression ,
+>       field_terminator )
+>   | ( identifier , field_terminator ) ;
 > ```
 
 
@@ -774,8 +776,11 @@ Mace File
 Mace record structures craft smaller records toward a larger record. A record  
 literal creates a record, a nested record literal creates a nested record, an  
 array collects values in order, and `<>` merges records or arrays into a larger  
-value. Static semantics determine whether the resulting construction is legal  
-before the value is accepted as Mace data.
+value. Record literals and data output blocks also support field shorthand, so  
+`{ name, }` is equivalent to `{ name: name, }`. Commas separate record,  
+schema, and output fields, while semicolons terminate declarations and  
+statements. Static semantics determine whether the resulting construction is  
+legal before the value is accepted as Mace data.
 
 Static semantics define whether source text is well-formed. These rules reject:
 

@@ -482,11 +482,11 @@ func parsedVariableMemberCompletionItems(document document, uri protocol.Documen
 
 	// Try to build a parseable file. When the cursor is inside the then-branch of an
 	// incomplete ternary (cond ? expr.), we need to complete it with ': ""' first.
-	textWithPlaceholder := document.text[:index] + completionPlaceholderIdentifier + ";" + afterLine
+	textWithPlaceholder := document.text[:index] + completionPlaceholderIdentifier + "," + afterLine
 	file, err := parseFile(textWithPlaceholder)
 	if err != nil {
 		// Retry with a default else branch to close open ternary expressions.
-		textWithPlaceholder = document.text[:index] + completionPlaceholderIdentifier + ` : "";` + afterLine
+		textWithPlaceholder = document.text[:index] + completionPlaceholderIdentifier + ` : "",` + afterLine
 		file, err = parseFile(textWithPlaceholder)
 		if err != nil {
 			return nil, false
@@ -1564,28 +1564,33 @@ func completionFileWithPlaceholder(text string, position protocol.Position) (*as
 	index := positionIndex(text, position)
 
 	linePrefix := currentLinePrefix(text, position)
-	replacement := completionPlaceholderIdentifier
+	replacements := []string{completionPlaceholderIdentifier}
 	trimmedPrefix := strings.TrimSpace(linePrefix)
-	if strings.HasSuffix(trimmedPrefix, "=") || strings.HasSuffix(trimmedPrefix, ":") || strings.HasSuffix(trimmedPrefix, ".") {
-		replacement += ";"
+	if strings.HasSuffix(trimmedPrefix, "=") {
+		replacements = append(replacements, completionPlaceholderIdentifier+";")
+	}
+	if strings.HasSuffix(trimmedPrefix, ":") || strings.HasSuffix(trimmedPrefix, ".") {
+		replacements = append(replacements, completionPlaceholderIdentifier+",", completionPlaceholderIdentifier+";")
 	}
 
-	textWithPlaceholder := text[:index] + replacement + text[index:]
-	file, err := parseFile(textWithPlaceholder)
-	if err == nil {
-		return &file, true
+	for _, replacement := range lo.Uniq(replacements) {
+		textWithPlaceholder := text[:index] + replacement + text[index:]
+		file, err := parseFile(textWithPlaceholder)
+		if err == nil {
+			return &file, true
+		}
+
+		if completionScopeAt(text, position) != completionScopeScript {
+			continue
+		}
+
+		file, ok := partialScriptFileWithPlaceholder(textWithPlaceholder, position)
+		if ok {
+			return &file, true
+		}
 	}
 
-	if completionScopeAt(text, position) != completionScopeScript {
-		return nil, false
-	}
-
-	file, ok := partialScriptFileWithPlaceholder(textWithPlaceholder, position)
-	if !ok {
-		return nil, false
-	}
-
-	return &file, true
+	return nil, false
 }
 
 func completionFileWithExpressionPlaceholder(text string, start int, end int) (*ast.File, bool) {
@@ -1599,9 +1604,9 @@ func completionFileWithExpressionPlaceholder(text string, start int, end int) (*
 	if closers != "" {
 		replacements = append(replacements, completionPlaceholderIdentifier+closers)
 	}
-	replacements = append(replacements, completionPlaceholderIdentifier+";")
+	replacements = append(replacements, completionPlaceholderIdentifier+",", completionPlaceholderIdentifier+";")
 	if closers != "" {
-		replacements = append(replacements, completionPlaceholderIdentifier+closers+";")
+		replacements = append(replacements, completionPlaceholderIdentifier+closers+",", completionPlaceholderIdentifier+closers+";")
 	}
 
 	for _, replacement := range lo.Uniq(replacements) {

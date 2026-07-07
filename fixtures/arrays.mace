@@ -7,8 +7,8 @@ array<hex_float> hex_floats = [0x1.0, 0x2.8];
 array<boolean> booleans = [true, false];
 array<choice["small", "large"]> choices = ["small", "large"];
 array<record<string>> records = [
-  { name: "Ada"; role: "admin"; },
-  { name: "Lin"; role: "editor"; },
+  { name: "Ada", role: "admin", },
+  { name: "Lin", role: "editor", },
 ];
 array<array<string>> nested1 = [["level1"]];
 array<array<array<string>>> nested2 = [[["level2"]]];

@@ -13,7 +13,7 @@ nullable string env = null;
 |===|
 [output = data]
 {
-  env: (env);
+  env: (env),
 }`)
 		tAssert.NoError(err)
 		tAssert.Empty(result.Output)
@@ -23,12 +23,12 @@ nullable string env = null;
 		processor := New()
 
 		result, err := processor.Process(`|===|
-schema User: { nickname?: string; };
-User user = { nickname: null; };
+schema User: { nickname?: string, };
+User user = { nickname: null, };
 |===|
 [output = data]
 {
-  user: (user);
+  user: (user),
 }`)
 		tAssert.NoError(err)
 
@@ -41,7 +41,7 @@ User user = { nickname: null; };
 
 		_, err := processor.Process(`[output = data]
 {
-  env: null;
+  env: null,
 }`)
 		tAssert.Error(err)
 		tAssert.ErrorContains(err, "null can only be assigned to nullable variables and optional schema fields")
@@ -71,12 +71,28 @@ string env = false ? null : "prod";
 		processor := New()
 
 		_, err := processor.Process(`|===|
-schema Runtime: { env: string; };
-Runtime config = { env: false ? null : "prod"; };
+schema Runtime: { env: string, };
+Runtime config = { env: false ? null : "prod", };
 |===|
 [output = data]
 {
-  config: (config);
+  config: (config),
+}`)
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, "null can only be assigned to nullable variables and optional schema fields")
+	})
+
+	It("rejects nullable shorthand assignments to required schema fields", func() {
+		processor := New()
+
+		_, err := processor.Process(`|===|
+nullable string env = false ? null : "prod";
+schema Runtime: { env: string, };
+Runtime config = { env, };
+|===|
+[output = data]
+{
+  config: (config),
 }`)
 		tAssert.Error(err)
 		tAssert.ErrorContains(err, "null can only be assigned to nullable variables and optional schema fields")

@@ -1900,6 +1900,10 @@ func validateDataOutputFields(fields []ast.OutputField, symbols *symbolTable, en
 }
 
 func outputFieldRequiresEvaluationParentheses(field ast.OutputField) bool {
+	if field.Shorthand {
+		return false
+	}
+
 	switch field.Value.(type) {
 	case ast.Identifier:
 		return true
@@ -2007,6 +2011,11 @@ func validateOutputSchema(schemaName string, items []ast.OutputField, variables 
 		expectedType, err := resolveValueType(field.Type, symbols, types, schemas, enums)
 		if err != nil {
 			return err
+		}
+		if item.Shorthand {
+			if _, ok := variables.Get(item.Name); !ok {
+				return validationErrorf("unknown identifier %q", item.Name)
+			}
 		}
 		actualType, err := inferExpressionType(item.Value, variables, symbols, types, schemas, enums)
 		if err != nil {
@@ -2209,6 +2218,11 @@ func validateRecordLiteralAgainstRecordType(expr ast.RecordLiteral, recordType a
 			return err
 		}
 		expectedType.nullable = field.Optional
+		if recordField.Shorthand {
+			if _, ok := variables.Get(recordField.Name); !ok {
+				return validationErrorf("unknown identifier %q", recordField.Name)
+			}
+		}
 		actualType, err := inferExpressionType(recordField.Value, variables, symbols, types, schemas, enums)
 		if err != nil {
 			return err

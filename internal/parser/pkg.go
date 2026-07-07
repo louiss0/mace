@@ -712,6 +712,10 @@ func (p *Parser) parseDirectivePair() (ast.OutputDirective, error) {
 }
 
 func (p *Parser) parseOutputField() (ast.OutputField, error) {
+	if p.isFieldShorthandStart() {
+		return p.parseOutputFieldShorthand()
+	}
+
 	nameToken, name, optional, err := p.parseFieldHeader("output field")
 	if err != nil {
 		return ast.OutputField{}, err
@@ -751,6 +755,21 @@ func (p *Parser) parseOutputField() (ast.OutputField, error) {
 		Optional:    optional,
 		Evaluated:   evaluated,
 		Value:       value,
+		Description: description,
+	}, nil
+}
+
+func (p *Parser) parseOutputFieldShorthand() (ast.OutputField, error) {
+	nameToken, description, err := p.parseFieldShorthand("output field")
+	if err != nil {
+		return ast.OutputField{}, err
+	}
+
+	return ast.OutputField{
+		NameToken:   nameToken,
+		Name:        nameToken.Lexeme,
+		Shorthand:   true,
+		Value:       ast.Identifier{Name: nameToken.Lexeme},
 		Description: description,
 	}, nil
 }
@@ -1161,6 +1180,10 @@ func (p *Parser) parseRecordLiteral() (ast.Expression, error) {
 }
 
 func (p *Parser) parseRecordField() (ast.RecordField, error) {
+	if p.isFieldShorthandStart() {
+		return p.parseRecordFieldShorthand()
+	}
+
 	nameToken, name, optional, err := p.parseFieldHeader("record field")
 	if err != nil {
 		return ast.RecordField{}, err
@@ -1189,6 +1212,57 @@ func (p *Parser) parseRecordField() (ast.RecordField, error) {
 	}, nil
 }
 
+func (p *Parser) parseRecordFieldShorthand() (ast.RecordField, error) {
+	nameToken, _, err := p.parseFieldShorthand("record field")
+	if err != nil {
+		return ast.RecordField{}, err
+	}
+
+	return ast.RecordField{
+		NameToken: nameToken,
+		Name:      nameToken.Lexeme,
+		Shorthand: true,
+		Value:     ast.Identifier{Name: nameToken.Lexeme},
+	}, nil
+}
+
+func (p *Parser) parseFieldShorthand(context string) (lexer.Token, string, error) {
+	nameToken := p.current()
+	p.advance()
+
+	description := p.parseOptionalInlineDescription()
+	trailingDescription, trailingToken, err := p.consumeRecordSeparatorWithInlineDescription(context)
+	if err != nil {
+		return lexer.Token{}, "", err
+	}
+
+	description, err = p.mergeInlineDescriptions(context, description, trailingDescription, trailingToken)
+	if err != nil {
+		return lexer.Token{}, "", err
+	}
+
+	return nameToken, description, nil
+}
+
+func (p *Parser) isFieldShorthandStart() bool {
+	nameToken := p.current()
+	if !isFieldNameToken(nameToken.Type) {
+		return false
+	}
+
+	if p.position+1 >= len(p.tokens) {
+		return false
+	}
+
+	nextToken := p.tokens[p.position+1]
+	switch nextToken.Type {
+	case lexer.TokenComma, lexer.TokenRBrace, lexer.TokenInlineDescription:
+		return true
+	default:
+		return false
+	}
+}
+
 func (p *Parser) hasWrappedOutputEvaluation() bool {
 	if p.current().Type != lexer.TokenLParen {
 		return false
@@ -1208,7 +1282,7 @@ func (p *Parser) hasWrappedOutputEvaluation() bool {
 					return false
 				}
 				switch p.tokens[nextIndex].Type {
-				case lexer.TokenComma, lexer.TokenSemicolon, lexer.TokenRBrace:
+				case lexer.TokenComma, lexer.TokenRBrace:
 					return true
 				default:
 					return false
@@ -1231,7 +1305,7 @@ func (p *Parser) consumeOptionalToken(tokenType lexer.TokenType) bool {
 
 func (p *Parser) consumePairSeparator(context string) error {
 	switch p.current().Type {
-	case lexer.TokenComma, lexer.TokenSemicolon:
+	case lexer.TokenComma:
 		p.advance()
 		return nil
 	default:
@@ -1241,7 +1315,7 @@ func (p *Parser) consumePairSeparator(context string) error {
 
 func (p *Parser) consumeRecordSeparator(context string) error {
 	switch p.current().Type {
-	case lexer.TokenComma, lexer.TokenSemicolon:
+	case lexer.TokenComma:
 		p.advance()
 		return nil
 	case lexer.TokenRBrace:
@@ -1439,4 +1513,3 @@ func (p *Parser) precedenceFor(tokenType lexer.TokenType) int {
 		return precedenceLowest
 	}
 }
-

@@ -21,6 +21,6 @@ Greeting message = "Hello $(user.name)";
 This block emits user data and a rendered greeting.
 """
 {
-  name: user.name /# The emitted user name;
-  age?: user.age /# The emitted optional age;
+  name: user.name /# The emitted user name,
+  age?: user.age /# The emitted optional age,
 }

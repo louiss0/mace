@@ -17,12 +17,12 @@ var _ = Describe("analyzer package helper coverage", func() {
 		documentPath := filepath.Join(workspace, "document.mace")
 		text := `|===|
 type Alias: string;
-schema Doc: { field: string; };
+schema Doc: { field: string, };
 string value = "x";
 |===|
 [output = data]
 {
-  value: "x";
+  value: "x",
 }
 `
 		tAssert.NoError(os.WriteFile(documentPath, []byte(text), 0o644))
@@ -98,7 +98,7 @@ string value = "x";
 |===|
 [output = data]
 {
-  value: "x";
+  value: "x",
 }
 `
 		tAssert.NoError(os.WriteFile(documentPath, []byte(text), 0o644))
@@ -117,15 +117,15 @@ string value = "x";
 		workspace := GinkgoT().TempDir()
 		uri := protocol.DocumentUri(fileURI(filepath.Join(workspace, "document.mace")))
 		text := `|===|
-schema User: { name: string; };
+schema User: { name: string, };
 schema_doc User {
-  summary: "docs";
+  summary: "docs",
 }
 |===|
 [output = data]
 {
-  user: { name: "Ada"; };
-  value: "x";
+  user: { name: "Ada", },
+  value: "x",
 }
 `
 		file := ast.File{
@@ -169,7 +169,7 @@ string value = alias;
 |===|
 [output = data]
 {
-  value: (alias);
+  value: (alias),
 }
 `
 		aliasURI := protocol.DocumentUri(fileURI(filepath.Join(workspace, "alias.mace")))

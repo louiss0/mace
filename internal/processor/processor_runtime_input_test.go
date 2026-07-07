@@ -8,14 +8,14 @@ import (
 
 var _ = Describe("Runtime input", func() {
 	It("parses input records through the compatibility helper", func() {
-		record, err := ParseInjectionRecord(`{ name: "Ada"; enabled: true; }`)
+		record, err := ParseInjectionRecord(`{ name: "Ada", enabled: true, }`)
 		tAssert.NoError(err)
 		assertExpectedValue(record["name"], expectedValue{kind: ValueString, string: "Ada"})
 		assertExpectedValue(record["enabled"], expectedValue{kind: ValueBoolean, bool: true})
 	})
 
 	It("rejects trailing tokens after the record literal", func() {
-		_, err := ParseInputRecord(`{ a: 1; } garbage`)
+		_, err := ParseInputRecord(`{ a: 1, } garbage`)
 		tAssert.ErrorContains(err, "unexpected token after expression")
 	})
 
@@ -23,11 +23,11 @@ var _ = Describe("Runtime input", func() {
 		processor := NewWithInput(map[string]Value{"env": {Kind: ValueString, String: "prod"}})
 
 		_, err := processor.Process(`|===|
-schema Runtime: { env: string; };
+schema Runtime: { env: string, };
 |===|
 [output = data, parse = Runtime]
 {
-  env: (env);
+  env: (env),
 }`)
 		tAssert.ErrorContains(err, "unknown identifier")
 	})
@@ -38,18 +38,18 @@ schema Runtime: { env: string; };
 		defer func() { _ = os.RemoveAll(workspace) }()
 
 		writeFixtureFile(workspace, "runtime.mace", `|===|
-schema Runtime: { env: string; };
-schema Meta: { source: string; };
+schema Runtime: { env: string, };
+schema Meta: { source: string, };
 |===|
 [output = schema]
 {
-  Runtime: Runtime;
+  Runtime: Runtime,
 }`)
 
 		processor := NewWithInput(map[string]Value{"env": {Kind: ValueString, String: "prod"}})
 		_, err = processor.ProcessInDir(`[output = data, parse_file = "./runtime.mace"]
 {
-  env: (env);
+  env: (env),
 }`, workspace)
 		tAssert.ErrorContains(err, "unknown identifier")
 	})
@@ -57,11 +57,11 @@ schema Meta: { source: string; };
 	It("rejects parse directives without required input fields", func() {
 		processor := New()
 		_, err := processor.Process(`|===|
-schema Runtime: { env: string; };
+schema Runtime: { env: string, };
 |===|
 [output = data, parse = Runtime]
 {
-  env: (env);
+  env: (env),
 }`)
 		tAssert.Error(err)
 		tAssert.ErrorContains(err, "missing required field")

@@ -28,22 +28,22 @@ var _ = Describe("analyzer completion helper coverage", func() {
 		tAssert.NoError(os.WriteFile(schemaPath, []byte(`
 [output = schema]
 {
-  User: { name: string; profile: { city: string; }; };
-  Runtime: { env: string; };
-  Choice: choice["Ada", 1, true];
+  User: { name: string, profile: { city: string, }, },
+  Runtime: { env: string, },
+  Choice: choice["Ada", 1, true],
 }
 `), 0o644))
 		tAssert.NoError(os.WriteFile(dataPath, []byte(`
 [output = data, schema = User]
 {
-  user: { name: "Ada"; profile: { city: "LA"; }; };
-  list: ["a"];
+  user: { name: "Ada", profile: { city: "LA", }, },
+  list: ["a"],
 }
 `), 0o644))
 		tAssert.NoError(os.WriteFile(aliasPath, []byte(`
 [output = data]
 {
-  user: { name: "Ada"; profile: { city: "LA"; }; };
+  user: { name: "Ada", profile: { city: "LA", }, },
 }
 `), 0o644))
 		tAssert.NoError(os.WriteFile(documentPath, []byte(`
@@ -52,9 +52,9 @@ from "./schema.mace" import User, Runtime;
 |===|
 [output = data, parse = User, parse_file = "./schema.mace", schema = User, schema_file = "./schema.mace"]
 {
-  user: $self.user.profile;
-  item: list[0];
-  choice: "Ada";
+  user: $self.user.profile,
+  item: list[0],
+  choice: "Ada",
 }
 `), 0o644))
 
@@ -208,16 +208,16 @@ string digits = ["x", "y"];
 		schemaPath := filepath.Join(root, "schema.mace")
 		tAssert.NoError(os.WriteFile(schemaPath, []byte(`[output = schema]
 {
-  User: { name: string; profile: { city: string; }; };
+  User: { name: string, profile: { city: string, }, },
 }`), 0o644))
 		text := `|===|
 from "./schema.mace" import User;
 |===|
 [output = data, schema = User]
 {
-  user: $self.user.profile;
-  value: "Ada";
-  items: ["a", "b"];
+  user: $self.user.profile,
+  value: "Ada",
+  items: ["a", "b"],
 }
 `
 		docPath := filepath.Join(root, "doc.mace")
@@ -361,14 +361,14 @@ string value = "Ada";
 		schemaPath := filepath.Join(root, "schema.mace")
 		tAssert.NoError(os.WriteFile(schemaPath, []byte(`[output = schema]
 {
-  User: { name: string; profile: { city: string; }; };
-  Shared: { user: { profile: { city: string; }; }; };
+  User: { name: string, profile: { city: string, }, },
+  Shared: { user: { profile: { city: string, }, }, },
 }`), 0o644))
 
 		aliasPath := filepath.Join(root, "alias.mace")
 		tAssert.NoError(os.WriteFile(aliasPath, []byte(`[output = data]
 {
-  user: { profile: { city: "LA"; }; };
+  user: { profile: { city: "LA", }, },
 }`), 0o644))
 
 		outputKeyText := `[output = data, parse_file = "./schema.mace"]
@@ -522,8 +522,8 @@ string items = ["a"];
 		tAssert.NoError(os.MkdirAll(root, 0o755))
 		tAssert.NoError(os.WriteFile(filepath.Join(root, "schema.mace"), []byte(`[output = schema]
 {
-  User: { name: string; };
-  Project: { title: string; };
+  User: { name: string, },
+  Project: { title: string, },
 }`), 0o644))
 
 		directiveText := `[output = data, parse_file = "./schema.mace"]
@@ -558,15 +558,15 @@ string items = ["a"];
 		schemaPath := filepath.Join(root, "schema.mace")
 		tAssert.NoError(os.WriteFile(schemaPath, []byte(`[output = schema]
 {
-  User: { name: string; profile: { city: string; }; };
-  Choice: choice["Ada", 1, true];
+  User: { name: string, profile: { city: string, }, },
+  Choice: choice["Ada", 1, true],
 }`), 0o644))
 
 		dataText := `[output = data, parse = User, parse_file = "./schema.mace"]
 {
-  user: $self.user.profile;
-  item: list[0];
-  choice: "Ada";
+  user: $self.user.profile,
+  item: list[0],
+  choice: "Ada",
 }
 `
 		dataPath := filepath.Join(root, "data.mace")
@@ -708,7 +708,7 @@ string value = "Ada";
 		schemaPath := filepath.Join(root, "schema.mace")
 		tAssert.NoError(os.WriteFile(schemaPath, []byte(`[output = schema]
 {
-  User: { name: string; profile: { city: string; }; };
+  User: { name: string, profile: { city: string, }, },
 }`), 0o644))
 		scriptText := `|===|
 string value = "Ada";
@@ -825,7 +825,7 @@ string value = "Ada";
 		unknownText := "|===|\n" + completionPlaceholderIdentifier + "\n|===|\n"
 		unknownDoc := document{text: unknownText, analysis: AnalyzeDocumentAt(unknownText, scriptPath)}
 		_, _ = initializerCompletionItems(unknownDoc, scriptURI, protocol.Position{Line: 1, Character: protocol.UInteger(len(completionPlaceholderIdentifier))})
-		memberText := "[output = data, schema = User]\n{\n  user: { name: \"Ada\"; profile: { city: \"LA\"; }; };\n  ref: user.profile.\n}\n"
+		memberText := "[output = data, schema = User]\n{\n  user: { name: \"Ada\", profile: { city: \"LA\", }, },\n  ref: user.profile.\n}\n"
 		memberDoc := document{text: memberText, analysis: AnalyzeDocumentAt(memberText, scriptPath)}
 		_, _ = outputInitializerCompletionItems(memberDoc, scriptURI, protocol.Position{Line: 3, Character: 15})
 		fieldText := "|===|\nstring value = " + completionPlaceholderIdentifier + ".name;\n|===|\n"
@@ -845,13 +845,13 @@ string value = "Ada";
 		schemaPath := filepath.Join(root, "schema.mace")
 		tAssert.NoError(os.WriteFile(schemaPath, []byte(`[output = schema]
 {
-  User: { name: string; profile: { city: string; }; };
-  Shared: { user: { profile: { city: string; }; }; };
+  User: { name: string, profile: { city: string, }, },
+  Shared: { user: { profile: { city: string, }, }, },
 }`), 0o644))
 
 		outputText := `[output = data, schema = User]
 {
-  value: "Ada";
+  value: "Ada",
 }
 `
 		outputPath := filepath.Join(root, "output.mace")
@@ -877,11 +877,11 @@ string value = "Bee";
 		valueSchemaPath := filepath.Join(root, "value-schema.mace")
 		tAssert.NoError(os.WriteFile(valueSchemaPath, []byte(`[output = schema]
 {
-  User: { value: string; };
+  User: { value: string, },
 }`), 0o644))
 		simpleOutputText := `[output = data, schema = User, schema_file = "./value-schema.mace"]
 {
-  value: "A";
+  value: "A",
 }
 `
 		simpleOutputPath := filepath.Join(root, "simple-output.mace")
@@ -969,20 +969,20 @@ string value = "Bee";
 		aliasPath := filepath.Join(root, "alias-data.mace")
 		tAssert.NoError(os.WriteFile(aliasPath, []byte(`[output = data]
 {
-  user: { name: "Ada"; tags: ["x", "y"]; };
+  user: { name: "Ada", tags: ["x", "y"], },
 }`), 0o644))
 
 		schemaPath := filepath.Join(root, "schema-out.mace")
 		tAssert.NoError(os.WriteFile(schemaPath, []byte(`[output = schema]
 {
-  User: { name: string; };
-  ChoiceWrap: choice["a", "b"];
+  User: { name: string, },
+  ChoiceWrap: choice["a", "b"],
 }`), 0o644))
 
 		parsePath := filepath.Join(root, "parse-out.mace")
 		tAssert.NoError(os.WriteFile(parsePath, []byte(`[output = schema]
 {
-  Runtime: { env: string; nested: { city: string; }; };
+  Runtime: { env: string, nested: { city: string, }, },
 }`), 0o644))
 
 		badParsePath := filepath.Join(root, "bad-parse.mace")
@@ -1038,7 +1038,7 @@ string value = "Bee";
 
 		selfText := `[output = data]
 {
-  user: "Ada";
+  user: "Ada",
 }`
 		selfDoc := document{text: selfText, analysis: AnalyzeDocumentAt(selfText, filepath.Join(root, "self.mace"))}
 		_, ok = selfCompletionValue(selfDoc, protocol.DocumentUri(fileURI(filepath.Join(root, "self.mace"))), protocol.Position{Line: 2, Character: 8}, []string{"user", "name"})
@@ -1146,13 +1146,13 @@ string value = "Bee";
 		dataImportPath := filepath.Join(root, "data-import.mace")
 		tAssert.NoError(os.WriteFile(dataImportPath, []byte(`[output = data]
 {
-  user: { name: "Ada"; };
-  items: ["a", "b"];
+  user: { name: "Ada", },
+  items: ["a", "b"],
 }`), 0o644))
 		schemaImportPath := filepath.Join(root, "schema-import.mace")
 		tAssert.NoError(os.WriteFile(schemaImportPath, []byte(`[output = schema]
 {
-  User: { name: string; };
+  User: { name: string, },
 }`), 0o644))
 		emptySchemaPath := filepath.Join(root, "empty-schema.mace")
 		tAssert.NoError(os.WriteFile(emptySchemaPath, []byte(`[output = schema]
@@ -1164,11 +1164,11 @@ string value = "Bee";
 		uri := protocol.DocumentUri(fileURI(filepath.Join(root, "doc.mace")))
 
 		outputStringText := `|===|
-schema User: { user: string; };
+schema User: { user: string, };
 |===|
 [output = data, schema = User]
 {
-  user: "A";
+  user: "A",
 }`
 		outputStringPath := filepath.Join(root, "output-string.mace")
 		tAssert.NoError(os.WriteFile(outputStringPath, []byte(outputStringText), 0o644))
@@ -1184,7 +1184,7 @@ schema User: { user: string; };
 		tAssert.Nil(items)
 
 		guardedText := `|===|
-schema Runtime: { user?: { name: string; }; };
+schema Runtime: { user?: { name: string, }, };
 |===|
 [output = data, parse = Runtime]
 {
@@ -1209,7 +1209,7 @@ schema Runtime: { user?: { name: string; }; };
 		tAssert.NoError(os.WriteFile(arrayScriptPath, []byte(arrayScriptText), 0o644))
 		arrayIndexText := `[output = data]
 {
-  items: [1, 2];
+  items: [1, 2],
   result: $self.items[
 }`
 		arrayIndexDoc := document{text: arrayIndexText}
@@ -1275,10 +1275,10 @@ schema Runtime: { user?: { name: string; }; };
 
 		stringSelfDoc := document{text: `[output = data]
 {
-  user: "Ada";
+  user: "Ada",
 }`, analysis: AnalyzeDocumentAt(`[output = data]
 {
-  user: "Ada";
+  user: "Ada",
 }`, filepath.Join(root, "self-string.mace"))}
 		_, ok = selfCompletionValue(stringSelfDoc, uri, protocol.Position{Line: 2, Character: 8}, []string{"user", "name"})
 		tAssert.False(ok)
@@ -1341,11 +1341,11 @@ schema Runtime: { user?: { name: string; }; };
 		absoluteImportLexeme := strconv.Quote(absoluteImportPath)
 
 		text := `|===|
-schema User: { user: string; };
+schema User: { user: string, };
 |===|
 [output = data, schema = User]
 {
-  user: "A";
+  user: "A",
 }`
 		path := filepath.Join(root, "doc.mace")
 		tAssert.NoError(os.WriteFile(path, []byte(text), 0o644))
@@ -1353,13 +1353,13 @@ schema User: { user: string; };
 		_, _ = outputInitializerCompletionItems(doc, protocol.DocumentUri(fileURI(path)), protocol.Position{Line: 5, Character: 10})
 
 		parseOnlyText := `|===|
-schema Runtime: { result: { name: string; }; user: string; };
+schema Runtime: { result: { name: string, }, user: string, };
 |===|
 [output = data, parse = Runtime]
 {
   result: {
     name:
-  };
+  },
 }`
 		parseOnlyPath := filepath.Join(root, "parse-only.mace")
 		tAssert.NoError(os.WriteFile(parseOnlyPath, []byte(parseOnlyText), 0o644))
@@ -1372,7 +1372,7 @@ schema Runtime: { result: { name: string; }; user: string; };
 {
   result: {
     name:
-  };
+  },
 }`
 		noCompletionsPath := filepath.Join(root, "none.mace")
 		tAssert.NoError(os.WriteFile(noCompletionsPath, []byte(noCompletionsText), 0o644))
@@ -1380,7 +1380,7 @@ schema Runtime: { result: { name: string; }; user: string; };
 		_, _ = outputInitializerCompletionItems(document{text: "[output = data]\n{\n  value: $self.user.\n}", analysis: analysisSnapshot{}}, uri, protocol.Position{Line: 2, Character: 20})
 
 		guardedText := `|===|
-schema Runtime: { user?: { name: string; }; };
+schema Runtime: { user?: { name: string, }, };
 |===|
 [output = data, parse = Runtime]
 {
@@ -1393,11 +1393,11 @@ schema Runtime: { user?: { name: string; }; };
 		tAssert.True(handled)
 		tAssert.Empty(items)
 
-		localArrayText := "|===|\nschema User: { name: string; };\narray<string> values = [\"a\"];\n|===|\n[output = data] {}\n"
+		localArrayText := "|===|\nschema User: { name: string, };\narray<string> values = [\"a\"];\n|===|\n[output = data] {}\n"
 		_, _ = resolveLocalArrayCompletionTarget(localArrayText, protocol.Position{Line: 3, Character: 0}, ast.Identifier{Name: "values"})
 		arrayPrefixText := `[output = data]
 {
-  items: [1, 2];
+  items: [1, 2],
   result: $self.items[1
 }`
 		_, _ = arrayIndexCompletionItems(document{text: arrayPrefixText}, uri, protocol.Position{Line: 3, Character: protocol.UInteger(len(`  result: $self.items[1`))}, "  result: $self.items[1", completionScopeOutput)
@@ -1420,8 +1420,8 @@ schema Runtime: { user?: { name: string; }; };
 
 		selfDocText := `[output = data]
 {
-  user: "Ada";
-  result: user.name;
+  user: "Ada",
+  result: user.name,
 }`
 		selfPath := filepath.Join(root, "self.mace")
 		tAssert.NoError(os.WriteFile(selfPath, []byte(selfDocText), 0o644))
@@ -1498,11 +1498,11 @@ schema Runtime: { user?: { name: string; }; };
 		tAssert.NoError(os.MkdirAll(root, 0o755))
 		tAssert.NoError(os.WriteFile(filepath.Join(root, "schema-out.mace"), []byte(`[output = schema]
 {
-  User: { name: string; profile: { city: string; }; };
+  User: { name: string, profile: { city: string, }, },
 }`), 0o644))
 		tAssert.NoError(os.WriteFile(filepath.Join(root, "alias-data.mace"), []byte(`[output = data]
 {
-  user: { name: "Ada"; profile: { city: "LA"; }; };
+  user: { name: "Ada", profile: { city: "LA", }, },
 }`), 0o644))
 
 		stringDocText := `[output = data, schema = User, schema_file = "./schema-out.mace"]
@@ -1560,7 +1560,7 @@ from "./alias-data.mace" import-as Shared;
 
 		selfText := `[output = data]
 {
-  user: { name: "Ada"; };
+  user: { name: "Ada", },
 }`
 		selfDoc := document{text: selfText, analysis: AnalyzeDocumentAt(selfText, filepath.Join(root, "self-ok.mace"))}
 		_, _ = selfCompletionValue(selfDoc, protocol.DocumentUri(fileURI(filepath.Join(root, "self-ok.mace"))), protocol.Position{Line: 2, Character: 10}, []string{"user"})

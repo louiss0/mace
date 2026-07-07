@@ -27,38 +27,38 @@ var _ = Describe("analyzer analysis helper coverage", func() {
 		tAssert.NoError(os.WriteFile(schemaPath, []byte(`
 [output = schema]
 {
-  User: { name: string; profile: { city: string; }; };
-  Runtime: { env: string; };
+  User: { name: string, profile: { city: string, }, },
+  Runtime: { env: string, },
 }
 `), 0o644))
 		tAssert.NoError(os.WriteFile(dataPath, []byte(`
 [output = data, schema = User]
 {
-  user: { name: "Ada"; profile: { city: "LA"; }; };
-  count: 1;
-  mixed: ["a", 1];
-  items: ["x"];
+  user: { name: "Ada", profile: { city: "LA", }, },
+  count: 1,
+  mixed: ["a", 1],
+  items: ["x"],
 }
 `), 0o644))
 		tAssert.NoError(os.WriteFile(recordPath, []byte(`
 [output = data]
 {
-  user: { name: "Ada"; profile: { city: "LA"; }; };
+  user: { name: "Ada", profile: { city: "LA", }, },
 }
 `), 0o644))
 		tAssert.NoError(os.WriteFile(documentPath, []byte(`
 |===|
 from "./schema.mace" import User, Runtime;
 string value = "x"
-Profile record = { age: 1; active: true; };
+Profile record = { age: 1, active: true, };
 |===|
 [output = data, schema = User, schema_file = "./schema.mace", parse = User, parse_file = "./schema.mace"]
 {
-  user: { name: "Ada"; profile: { city: "LA"; }; };
-  value: "x";
-  mixed: ["a", 1];
-  index: items[12];
-  self_ref: $self.user.profile;
+  user: { name: "Ada", profile: { city: "LA", }, },
+  value: "x",
+  mixed: ["a", 1],
+  index: items[12],
+  self_ref: $self.user.profile,
 }
 `), 0o644))
 
@@ -85,7 +85,7 @@ Profile record = { age: 1; active: true; };
 		_, _ = addMissingScriptSemicolonText("|===|\nstring value = \"x\"\n|===|")
 		_, _ = moveScriptBlockBeforeOutputText("[output = data]\n{}\n|===|\nstring value = \"x\";\n|===|")
 		_, _ = removeLeadingEmptyScriptBlockText("|===|\n|===|\n[output = data]{}")
-		_, _ = extractRecordLiteralIntoSchemaText("|===|\nProfile record = { age: 1; active: true; };\n|===|")
+		_, _ = extractRecordLiteralIntoSchemaText("|===|\nProfile record = { age: 1, active: true, };\n|===|")
 		_ = inferOutputSchemaFields("name: \"Ada\"; count: 1; items: [\"x\"];")
 		_ = inferRecordSchemaFields("name: \"Ada\"; count: 1; items: [\"x\"];")
 		_ = defaultLiteralForTypeName("string")
@@ -151,18 +151,18 @@ Profile record = { age: 1; active: true; };
 		tAssert.NoError(os.WriteFile(schemaPath, []byte(`
 [output = schema]
 {
-  User: { name: string; profile: { city: string; }; };
-  Runtime: { env: string; };
-  Choice: choice["Ada", 1, true];
+  User: { name: string, profile: { city: string, }, },
+  Runtime: { env: string, },
+  Choice: choice["Ada", 1, true],
 }
 `), 0o644))
 		dataText := `
 [output = data, schema = User]
 {
-  user: { name: "Ada"; profile: { city: "LA"; }; };
-  count: 1;
-  mixed: ["a", 1];
-  items: ["x"];
+  user: { name: "Ada", profile: { city: "LA", }, },
+  count: 1,
+  mixed: ["a", 1],
+  items: ["x"],
 }
 `
 		dataPath := filepath.Join(root, "data.mace")
@@ -176,7 +176,7 @@ Profile record = { age: 1; active: true; };
 		_, _ = addMissingScriptSemicolonText("|===|\nstring value = \"x\";\n|===|")
 		_, _ = moveScriptBlockBeforeOutputText("[output = data]\n{}\n|===|\nstring value = \"x\";\n|===|")
 		_, _ = moveScriptBlockBeforeOutputText("|===|\nstring value = \"x\";\n|===|\n[output = data]{}")
-		_, _ = extractRecordLiteralIntoSchemaText("|===|\nProfile record = { age: 1; active: true; };\n|===|")
+		_, _ = extractRecordLiteralIntoSchemaText("|===|\nProfile record = { age: 1, active: true, };\n|===|")
 		_, _ = extractRecordLiteralIntoSchemaText("|===|\nstring value = \"x\";\n|===|")
 		_ = inferRecordSchemaFields("name: \"Ada\"; count: 1; items: [\"x\"];")
 		_ = inferRecordSchemaFields("")
@@ -224,10 +224,10 @@ Profile record = { age: 1; active: true; };
 		documentPath := filepath.Join(workspace, "document.mace")
 		text := `[output = data, schema = User]
 {
-  user: { name: "Ada"; profile: { city: "LA"; }; };
-  count: 1;
-  mixed: ["a", 1];
-  items: ["x"];
+  user: { name: "Ada", profile: { city: "LA", }, },
+  count: 1,
+  mixed: ["a", 1],
+  items: ["x"],
 }
 `
 		tAssert.NoError(os.WriteFile(documentPath, []byte(text), 0o644))
@@ -239,12 +239,12 @@ Profile record = { age: 1; active: true; };
 		_, _ = addMissingScriptSemicolonText("|===|\nstring value = \"x\"\n")
 		_, _ = moveScriptBlockBeforeOutputText("|===|\nstring value = \"x\";\n")
 		_, _ = moveScriptBlockBeforeOutputText("[output = data]\n{}\n|===|\nstring value = \"x\";\n|===|")
-		_, _ = extractRecordLiteralIntoSchemaText("|===|\nschema Profile: { age: int; };\nProfile record = { age: 1; };\n|===|")
+		_, _ = extractRecordLiteralIntoSchemaText("|===|\nschema Profile: { age: int, };\nProfile record = { age: 1, };\n|===|")
 		_, _ = extractRecordLiteralIntoSchemaText("|===|\nProfile record = { };\n|===|")
-		_, _ = createSchemaFromValidationErrorText("|===|\nschema User: { name: string; };\n|===|")
-		_, _ = createSchemaFromValidationErrorText("|===|\n[output = data, schema = User]\n{ user: \"x\"; }\n|===|")
-		_, _ = generateSampleDataFromSchemaText("|===|\nschema User: { invalid; };\n|===|")
-		_, _ = generateSampleDataFromSchemaText("|===|\nschema User: { age: int; };\n|===|")
+		_, _ = createSchemaFromValidationErrorText("|===|\nschema User: { name: string, };\n|===|")
+		_, _ = createSchemaFromValidationErrorText("|===|\n[output = data, schema = User]\n{ user: \"x\", }\n|===|")
+		_, _ = generateSampleDataFromSchemaText("|===|\nschema User: { invalid, };\n|===|")
+		_, _ = generateSampleDataFromSchemaText("|===|\nschema User: { age: int, };\n|===|")
 		_, _ = renameDuplicateVariableText("|===|\nstring value = \"x\";\nstring value = \"y\";\n|===|")
 		_, _ = analyzeFileStructure("from \"bad\" import User;\nfrom \"C:/abs.mace\" import User, Runtime as Run;", ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: "bad"}}, {Path: ast.StringLiteral{Lexeme: `"C:/abs.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "User"}, {Name: "Runtime", Alias: "Run"}}}}}, lexAnalysisTokens("from \"bad\" import User;\nfrom \"C:/abs.mace\" import User, Runtime as Run;"), documentPath)
 		_, _ = directivePathDiagnostics(ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchemaFile, Value: `"./schema.mace"`}}}}, nil, documentPath)
@@ -305,7 +305,7 @@ Profile record = { age: 1; active: true; };
 		tAssert.NoError(os.WriteFile(schemaImportPath, []byte(`
 [output = schema]
 {
-  Runtime: { env: string; };
+  Runtime: { env: string, },
 }
 `), 0o644))
 		_, _ = parseInputSemanticSchemaName(ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"./schema.mace"`}}}}, schemaImportDir)
@@ -360,7 +360,7 @@ Profile record = { age: 1; active: true; };
 		_, _ = semanticDiagnosticFromError(ast.File{}, nil, fmt.Errorf("plain"))
 		_, _ = semanticDiagnosticFromError(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeSchema}}, lexAnalysisTokens("value"), processor.DiagnosticError{Code: processor.CodeInvalidOutputSchemaField, Fields: processor.DiagnosticFields{Name: "value"}, Message: `schema output field "value" is ignored`})
 		_, _ = semanticDiagnosticFromError(ast.File{}, lexAnalysisTokens(`[output = data]
-{ value: [1, "x"]; }`), fmt.Errorf("array literal has mixed element types"))
+{ value: [1, "x"], }`), fmt.Errorf("array literal has mixed element types"))
 		_, _, _ = missingImportEdit("plain", ast.File{}, nil, `unknown identifier "Missing"`)
 		_, _ = fieldEditRangeAt("value: 1", lexAnalysisTokens("value: 1"), 0)
 		_, _ = fieldEditRangeAt(" value: 1;\r\n", lexAnalysisTokens(" value: 1;"), 0)
@@ -415,21 +415,21 @@ Profile record = { age: 1; active: true; };
 		_ = expressionSummary(ast.FloatLiteral{Lexeme: "1.0"})
 		_ = quotedName("two words")
 		_ = quotedName(`unknown schema \"Name`)
-		_ = analyzeDocumentAtInRoot(`[output = data, parse = Runtime]\n{\n  value: 1;\n}`, "", workspace)
+		_ = analyzeDocumentAtInRoot(`[output = data, parse = Runtime]\n{\n  value: 1,\n}`, "", workspace)
 		_ = AnalyzeDocumentAtInRoot(`[output = data, parse = Runtime]
 {
-  value: 1;
+  value: 1,
 }`, documentPath, workspace)
 		_ = AnalyzeDocumentAtInRoot(`|===|
-schema Runtime: { value: int; };
+schema Runtime: { value: int, };
 |===|
 [output = data, parse = Runtime]
 {
-  value: 1;
+  value: 1,
 }`, documentPath, workspace)
 		_ = AnalyzeDocumentAtInRoot(`[output = data, parse = Runtime]
 {
-  value: 1;
+  value: 1,
 }`, documentPath, documentPath)
 		_, _ = analyzeFileStructure(`from bad import x;`, ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: "bad"}}}}, lexAnalysisTokens(`from bad import x;`), documentPath)
 		_, _ = directivePathDiagnostics(ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchemaFile, Value: "bad"}}}}, lexAnalysisTokens(`[schema_file = bad]`), documentPath)

@@ -194,6 +194,7 @@ type RecordField struct {
 	NameToken lexer.Token
 	Name      string
 	Optional  bool
+	Shorthand bool
 	Value     Expression
 }
 
@@ -520,6 +521,7 @@ type OutputField struct {
 	NameToken   lexer.Token
 	Name        string
 	Optional    bool
+	Shorthand   bool
 	Evaluated   bool
 	Value       Expression
 	Description string

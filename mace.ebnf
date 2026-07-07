@@ -103,7 +103,7 @@ schema_declaration = "schema" , ws1 , identifier , ws0 , ":" , ws0 , record_type
 record_type = "{" , ws0 , { schema_field , ws0 } , "}" ;
 schema_field = identifier , [ "?" ] , ws0 , ":" , ws0 , type_reference , field_terminator ;
 field_terminator = ws0 , pair_separator , [ ws0 , inline_description ] | [ ws0 , inline_description ] , [ ws0 , pair_separator ] ;
-pair_separator = "," | ";" ;
+pair_separator = "," ;
 
 (* ===================================================== *)
 (* 9. TYPE REFERENCES                                    *)
@@ -133,7 +133,7 @@ directive_pair = "output" , ws0 , "=" , ws0 , ( "data" | "schema" )
   | "parse_file" , ws0 , "=" , ws0 , string_literal ;
 
 output_item = output_field ;
-output_field = identifier , [ "?" ] , ws0 , ":" , ws0 , expression , field_terminator ;
+output_field = ( identifier , [ "?" ] , ws0 , ":" , ws0 , expression , field_terminator ) | ( identifier , field_terminator ) ;
 output_schema_field = identifier , [ "?" ] , ws0 , ":" , ws0 , type_reference , field_terminator ;
 
 (* ===================================================== *)
@@ -169,4 +169,4 @@ merge_expression = ( array_literal | record_literal ) , { ws0 , "<>" , ws0 , ( a
 
 array_literal = "[" , ws0 , [ expression , { ws0 , "," , ws0 , expression } ] , ws0 , "]" ;
 record_literal = "{" , ws0 , { record_field , ws0 } , "}" ;
-record_field = identifier , [ "?" ] , ws0 , ":" , ws0 , expression , field_terminator ;
+record_field = ( identifier , [ "?" ] , ws0 , ":" , ws0 , expression , field_terminator ) | ( identifier , field_terminator ) ;

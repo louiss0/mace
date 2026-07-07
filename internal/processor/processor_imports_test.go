@@ -21,15 +21,15 @@ var _ = Describe("Imports", func() {
 		Entry("imports types and schemas", `|===|
 from "fixtures/processor/imports/base.mace" import Name, User;
 Name name = "Ada";
-User result = { name: name; age: 30; };
+User result = { name: name, age: 30, };
 |===|
 [output = data]
-{ result: (result); }`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{"name": {kind: ValueString, string: "Ada"}, "age": {kind: ValueInt, int64: 30}}}),
+{ result: (result), }`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{"name": {kind: ValueString, string: "Ada"}, "age": {kind: ValueInt, int64: 30}}}),
 		Entry("imports values surfaced through output", `|===|
 from "fixtures/processor/imports/values.mace" import count;
 |===|
 [output = data]
-{ result: count + 2; }`, expectedValue{kind: ValueInt, int64: 5}),
+{ result: count + 2, }`, expectedValue{kind: ValueInt, int64: 5}),
 	)
 
 	It("keeps hidden declarations internal", func() {
@@ -51,10 +51,10 @@ from "fixtures/processor/imports/base.mace" import Internal;
 			switch request.URL.Path {
 			case "/schema.mace":
 				_, _ = io.WriteString(writer, `[output = schema]
-{ Remote: string; }`)
+{ Remote: string, }`)
 			case "/nested/schema.mace":
 				_, _ = io.WriteString(writer, `[output = schema]
-{ Nested: string; }`)
+{ Nested: string, }`)
 			default:
 				writer.WriteHeader(http.StatusNotFound)
 			}

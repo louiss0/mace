@@ -362,26 +362,26 @@ var _ = Describe("Lexer", func() {
 			tAssert.NoError(err)
 			assertTokenTypes(tokens, expected)
 		},
-		Entry("single schema with required and optional fields", "schema User: { name: string; age?: int; };", []TokenType{
+		Entry("single schema with required and optional fields", "schema User: { name: string, age?: int, };", []TokenType{
 			TokenSchema, TokenIdentifier, TokenColon, TokenLBrace,
-			TokenIdentifier, TokenColon, TokenStringType, TokenSemicolon,
-			TokenIdentifier, TokenQuestion, TokenColon, TokenIntType, TokenSemicolon,
+			TokenIdentifier, TokenColon, TokenStringType, TokenComma,
+			TokenIdentifier, TokenQuestion, TokenColon, TokenIntType, TokenComma,
 			TokenRBrace, TokenSemicolon, TokenEOF,
 		}),
-		Entry("multiple schemas with nested references", "schema Address: { street: string; }; schema User: { address: Address; tags: array<string>; };", []TokenType{
+		Entry("multiple schemas with nested references", "schema Address: { street: string, }; schema User: { address: Address, tags: array<string>, };", []TokenType{
 			TokenSchema, TokenIdentifier, TokenColon, TokenLBrace,
-			TokenIdentifier, TokenColon, TokenStringType, TokenSemicolon,
+			TokenIdentifier, TokenColon, TokenStringType, TokenComma,
 			TokenRBrace, TokenSemicolon,
 			TokenSchema, TokenIdentifier, TokenColon, TokenLBrace,
-			TokenIdentifier, TokenColon, TokenIdentifier, TokenSemicolon,
-			TokenIdentifier, TokenColon, TokenArray, TokenLess, TokenStringType, TokenGreater, TokenSemicolon,
+			TokenIdentifier, TokenColon, TokenIdentifier, TokenComma,
+			TokenIdentifier, TokenColon, TokenArray, TokenLess, TokenStringType, TokenGreater, TokenComma,
 			TokenRBrace, TokenSemicolon, TokenEOF,
 		}),
-		Entry("schema inside a script block", "|===| schema Config: { nested: array<Profile>; flags: array<boolean>; }; |===|", []TokenType{
+		Entry("schema inside a script block", "|===| schema Config: { nested: array<Profile>, flags: array<boolean>, }; |===|", []TokenType{
 			TokenScriptDelimiter,
 			TokenSchema, TokenIdentifier, TokenColon, TokenLBrace,
-			TokenIdentifier, TokenColon, TokenArray, TokenLess, TokenIdentifier, TokenGreater, TokenSemicolon,
-			TokenIdentifier, TokenColon, TokenArray, TokenLess, TokenBooleanType, TokenGreater, TokenSemicolon,
+			TokenIdentifier, TokenColon, TokenArray, TokenLess, TokenIdentifier, TokenGreater, TokenComma,
+			TokenIdentifier, TokenColon, TokenArray, TokenLess, TokenBooleanType, TokenGreater, TokenComma,
 			TokenRBrace, TokenSemicolon,
 			TokenScriptDelimiter, TokenEOF,
 		}),
@@ -413,21 +413,21 @@ var _ = Describe("Lexer", func() {
 			tAssert.NoError(err)
 			assertTokenTypes(tokens, expected)
 		},
-		Entry("array of schema identifiers", "schema User: { tags: array<Tag>; };", []TokenType{
+		Entry("array of schema identifiers", "schema User: { tags: array<Tag>, };", []TokenType{
 			TokenSchema, TokenIdentifier, TokenColon, TokenLBrace,
-			TokenIdentifier, TokenColon, TokenArray, TokenLess, TokenIdentifier, TokenGreater, TokenSemicolon,
+			TokenIdentifier, TokenColon, TokenArray, TokenLess, TokenIdentifier, TokenGreater, TokenComma,
 			TokenRBrace, TokenSemicolon, TokenEOF,
 		}),
-		Entry("nested array of schema identifiers", "schema User: { tags: array<array<Tag>>; };", []TokenType{
+		Entry("nested array of schema identifiers", "schema User: { tags: array<array<Tag>>, };", []TokenType{
 			TokenSchema, TokenIdentifier, TokenColon, TokenLBrace,
 			TokenIdentifier, TokenColon, TokenArray, TokenLess, TokenArray, TokenLess, TokenIdentifier,
-			TokenShiftRight, TokenSemicolon,
+			TokenShiftRight, TokenComma,
 			TokenRBrace, TokenSemicolon, TokenEOF,
 		}),
-		Entry("array of primitive and schema references", "schema User: { flags: array<boolean>; roles: array<Role>; };", []TokenType{
+		Entry("array of primitive and schema references", "schema User: { flags: array<boolean>, roles: array<Role>, };", []TokenType{
 			TokenSchema, TokenIdentifier, TokenColon, TokenLBrace,
-			TokenIdentifier, TokenColon, TokenArray, TokenLess, TokenBooleanType, TokenGreater, TokenSemicolon,
-			TokenIdentifier, TokenColon, TokenArray, TokenLess, TokenIdentifier, TokenGreater, TokenSemicolon,
+			TokenIdentifier, TokenColon, TokenArray, TokenLess, TokenBooleanType, TokenGreater, TokenComma,
+			TokenIdentifier, TokenColon, TokenArray, TokenLess, TokenIdentifier, TokenGreater, TokenComma,
 			TokenRBrace, TokenSemicolon, TokenEOF,
 		}),
 	)

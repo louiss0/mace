@@ -23,10 +23,10 @@ var _ = Describe("Security", func() {
 			switch r.URL.Path {
 			case "/schema.mace":
 				_, _ = io.WriteString(w, `[output = schema]
-{ Foo: Foo; }`)
+{ Foo: Foo, }`)
 			case "/nested/schema.mace":
 				_, _ = io.WriteString(w, `[output = schema]
-{ Nested: Nested; }`)
+{ Nested: Nested, }`)
 			default:
 				w.WriteHeader(http.StatusNotFound)
 			}
@@ -48,7 +48,7 @@ nullable string path = "./schema.mace";
 |===|
 [output = data]
 {
-  path: (path);
+  path: (path),
 }`)
 		tAssert.NoError(err)
 		assertExpectedValue(result.Output["path"], expectedValue{kind: ValueString, string: "./schema.mace"})
