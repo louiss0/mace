@@ -98,7 +98,7 @@ schema Runtime: { env: string, };
 |===|
 [output = data, parse = Runtime]
 {
-  env: (env),
+  env: env,
 }`)
 		tAssert.ErrorContains(err, "unknown identifier")
 	})
@@ -111,7 +111,7 @@ schema Runtime: { env: string, };
 |===|
 [output = data, parse = Runtime]
 {
-  env: (env),
+  env: env,
 }`)
 		tAssert.Error(err)
 		tAssert.ErrorContains(err, "missing required field")
@@ -157,7 +157,7 @@ schema Meta: { source: string, };
 
 		_, err = processor.ProcessInDir(`[output = data, parse_file = "./runtime.mace"]
 {
-  env: (env),
+  env: env,
 }`, workspace)
 		tAssert.ErrorContains(err, "unknown identifier")
 	})
@@ -210,7 +210,7 @@ schema Input: { record: string, };
 |===|
 [output = data, parse = Input]
 {
-  record: (record),
+  record: record,
 }`)
 		tAssert.ErrorContains(err, "unknown identifier")
 	})
@@ -222,7 +222,7 @@ string foo = deps.foo;
 |===|
 [output = data]
 {
-  foo: (foo),
+  foo: foo,
 }`
 		result, err := New().Process(input)
 		tAssert.NoError(err)

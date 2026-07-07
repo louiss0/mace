@@ -31,7 +31,7 @@ schema User: { name: string, age?: int, };
 string name = "Ada";
 |===|
 [output = data, schema = User]
-{ name: (name), }`)
+{ name: name, }`)
 		tAssert.NoError(err)
 	})
 

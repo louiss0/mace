@@ -392,9 +392,9 @@ var _ = Describe("LSP analysis", func() {
 int count = 1;
 |===|
 [output = data]
-{ result: (count), }`
+{ result: count, }`
 		definitionSnapshot := analyzeDocument(definitionText)
-		symbol, ok = definitionSnapshot.symbolAt(positionFromIndex(definitionText, strings.Index(definitionText, "count),")))
+		symbol, ok = definitionSnapshot.symbolAt(positionFromIndex(definitionText, strings.Index(definitionText, "count,")))
 		tAssert.True(ok)
 		tAssert.Equal("count", symbol.Name)
 	})
@@ -442,7 +442,7 @@ schema User: {
 		tAssert.True(ok)
 		tAssert.Equal(protocol.Position{Line: 0, Character: 10}, rangeValue.Start)
 
-		importText := `[output = data] { result: (value), }`
+		importText := `[output = data] { result: value, }`
 		importFile, err := parseFile(importText)
 		tAssert.NoError(err)
 		rangeValue, newText, ok = missingImport(importText, importFile, lexAnalysisTokens(importText), `processor: unknown identifier "SharedValue"`)
@@ -465,7 +465,7 @@ string greeting = "hello";
 |===|
 [output = data]
 {
-  name: (greeting),
+  name: greeting,
 }`
 
 		snapshot := AnalyzeDocumentAt(text, documentPath)
@@ -499,7 +499,7 @@ string greeting = "hello";
 		|===|
 		[output = data, parse = Runtime]
 		{
-		  result: (profile.name),
+		  result: profile.name,
 		}`, documentPath)
 
 		names := declarationNames(snapshot)
@@ -522,7 +522,7 @@ string greeting = "hello";
 	|===|
 	[output = data, parse = Runtime]
 	{
-	  result: (profile.name),
+	  result: profile.name,
 	}`
 		snapshot := analyzeDocumentAt(text, documentPath)
 		hover := Hover(text, snapshot, protocol.Position{Line: 8, Character: 12})
@@ -562,7 +562,7 @@ User current = { name: "Ada", };
 |===|
 [output = data]
 {
-  result: (current),
+  result: current,
 }`, filepath.Join(workspace, "consumer.mace"))
 
 		names := declarationNames(snapshot)
@@ -590,7 +590,7 @@ User current = { name: "Ada", };
 |===|
 [output = data]
 {
-  result: (current),
+  result: current,
 }`, documentPath)
 
 		importedDefinition := requireDefinition(snapshot, protocol.Position{Line: 2, Character: 1})
@@ -662,7 +662,7 @@ from "./shared" import name;
 |===|
 [output = data]
 {
-  result: (name),
+  result: name,
 }`, documentPath)
 
 		if tAssert.Len(snapshot.diagnostics, 1) {
@@ -714,7 +714,7 @@ int count = "Ada";
 |===|
 [output = data]
 {
-  result: (count),
+  result: count,
 }`)
 
 		if tAssert.Len(snapshot.diagnostics, 1) {
@@ -729,7 +729,7 @@ int count = "Ada";
 		snapshot := analyzeDocument(`|===|
 nullable string env = null;
 |===|
-[output = data] { value: (env), }`)
+[output = data] { value: env, }`)
 
 		tAssert.Empty(snapshot.diagnostics)
 	})
@@ -828,7 +828,7 @@ User profile = { name: "Ada", };
 |===|
 [output = data]
 {
-  profile: (profile),
+  profile: profile,
 }`, documentPath)
 
 		rangeValue := protocol.Range{
@@ -1123,7 +1123,7 @@ from "shared.mace" import *;
 User user = { name: "Ada", };
 |===|
 [output = data]
-{ value: (user), }`, documentPath)
+{ value: user, }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Extract record literal into schema")
 			text := action.Edit.Changes[uri][0].NewText
 			tAssert.Contains(text, "schema User:")
@@ -1182,7 +1182,7 @@ type Name: string;
 array<string> values = ["Ada", 1];
 |===|
 [output = data]
-{ value: (values), }`, documentPath)
+{ value: values, }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Fix mixed array literal")
 			text := action.Edit.Changes[uri][0].NewText
 			tAssert.Contains(text, "type ValuesItem: variant[string, int];")
@@ -1194,7 +1194,7 @@ array<string> values = ["Ada", 1];
 array<string> values = [1, 2];
 |===|
 [output = data]
-{ value: (values), }`, documentPath)
+{ value: values, }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Change array element type")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "array<int> values")
 		})
@@ -1218,7 +1218,7 @@ name = "Ada";
 title = "Engineer";
 |===|
 [output = data]
-{ value: (name), }`, documentPath)
+{ value: name, }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Add missing type annotation")
 			text := action.Edit.Changes[uri][0].NewText
 
@@ -1231,7 +1231,7 @@ title = "Engineer";
 string name;
 |===|
 [output = data]
-{ value: (name), }`, documentPath)
+{ value: name, }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Add missing initializer")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `string name = "";`)
 		})
@@ -1241,7 +1241,7 @@ string name;
 int count;
 |===|
 [output = data]
-{ value: (count), }`, documentPath)
+{ value: count, }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Add placeholder initializer")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `int count = 0;`)
 		})
@@ -1251,7 +1251,7 @@ int count;
 int name = "Ada";
 |===|
 [output = data]
-{ value: (name), }`, documentPath)
+{ value: name, }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Change variable type to inferred expression type")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `string name = "Ada";`)
 		})
@@ -1261,7 +1261,7 @@ int name = "Ada";
 int count = "Ada";
 |===|
 [output = data]
-{ value: (count), }`, documentPath)
+{ value: count, }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Change initializer to match declared type")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `int count = 0;`)
 		})
@@ -1272,7 +1272,7 @@ string name = "Ada";
 string name = "Grace";
 |===|
 [output = data]
-{ value: (name), }`, documentPath)
+{ value: name, }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Rename duplicate variable")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `string name_2 = "Grace";`)
 		})
@@ -1282,7 +1282,7 @@ string name = "Grace";
 string name = "Ada";
 |===|
 [output = data]
-{ value: (name), }`, documentPath)
+{ value: name, }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Inline variable into output field")
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `value: "Ada"`)
 		})
@@ -1293,7 +1293,7 @@ string name = "Ada";
 			action := requireCodeAction(snapshot, uri, rangeValue, "Extract output expression into script variable")
 			text := action.Edit.Changes[uri][0].NewText
 			tAssert.Contains(text, `string value = "Ada";`)
-			tAssert.Contains(text, `value: (value)`)
+			tAssert.Contains(text, `value: value`)
 		})
 	})
 
@@ -1331,7 +1331,7 @@ schema User: { name: string, email: string, };
 string name = "Ada";
 |===|
 [output = data]
-{ value: (name), }`, documentPath)
+{ value: name, }`, documentPath)
 			targetRange := protocol.Range{Start: protocol.Position{Line: 1, Character: 1}, End: protocol.Position{Line: 1, Character: 1}}
 			action := requireCodeAction(snapshot, uri, targetRange, "Extract variable type into alias")
 
@@ -1389,7 +1389,7 @@ schema User: { profile: { name: string, }, };
 { name: string, } user = { name: "Ada", };
 |===|
 [output = data]
-{ value: (user), }`, documentPath)
+{ value: user, }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Convert record variable into schema-backed variable")
 
 			text := action.Edit.Changes[uri][0].NewText
@@ -1491,7 +1491,7 @@ string name = "Ada";
 |====|
 [output = data]
 {
-  name: (name),
+  name: name,
 }`, documentPath)
 
 		uri := protocol.DocumentUri(fileURI(documentPath))
@@ -1502,7 +1502,7 @@ string name = "Ada";
 		tAssert.Contains(interpolatedAction.Edit.Changes[uri][0].NewText, `"Ada $()"`)
 		globalRange := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
 		separatorAction := requireCodeAction(snapshot, uri, globalRange, "Normalize separators")
-		tAssert.Contains(separatorAction.Edit.Changes[uri][0].NewText, `name: (name),`)
+		tAssert.Contains(separatorAction.Edit.Changes[uri][0].NewText, `name: name,`)
 		fenceAction := requireCodeAction(snapshot, uri, globalRange, "Normalize script fence width")
 		tAssert.Contains(fenceAction.Edit.Changes[uri][0].NewText, `|===|`)
 	})
@@ -1635,7 +1635,7 @@ User user = { name: "Ada", };
 |===|
 [output = data]
 {
-  user: (user),
+  user: user,
 }`, documentPath)
 
 		if tAssert.Len(snapshot.diagnostics, 1) {
@@ -1663,7 +1663,7 @@ string name = "Grace";
 |===|
 [output = data]
 {
-  result: (name),
+  result: name,
 }`, documentPath)
 
 		if tAssert.Len(snapshot.diagnostics, 1) {
@@ -1973,7 +1973,7 @@ var _ = Describe("analyzer coverage helpers", func() {
 
 var _ = Describe("analyzer diagnostic coverage helpers", func() {
 	It("covers semantic diagnostic helper branches directly", func() {
-		tokens := lexAnalysisTokens("|===|\nint count = \"bad\";\narray<int> values = [1, 2];\nnullable string maybe = null;\n|===|\n[output = data]\n{\n  result: values[4],\n  field: (missing),\n}\n")
+		tokens := lexAnalysisTokens("|===|\nint count = \"bad\";\narray<int> values = [1, 2];\nnullable string maybe = null;\n|===|\n[output = data]\n{\n  result: values[4],\n  field: missing,\n}\n")
 		file := ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{
 			ast.VariableDeclaration{HasValue: true, Type: ast.PrimitiveType{Name: "int"}, Name: "count", Value: ast.StringLiteral{Lexeme: `"bad"`}},
 			ast.VariableDeclaration{HasValue: true, Type: ast.ArrayType{Element: ast.PrimitiveType{Name: "int"}}, Name: "values", Value: ast.ArrayLiteral{Elements: []ast.Expression{ast.IntLiteral{Lexeme: "1"}, ast.StringLiteral{Lexeme: `"two"`}}}},
@@ -2102,7 +2102,7 @@ string remote = "value";
 |===|
 [output = data]
 {
-  remote: (remote),
+  remote: remote,
 }`)
 		documentPath := filepath.Join(workspace, "consumer.mace")
 		text := `|===|
@@ -2110,7 +2110,7 @@ from "./shared.mace" import remote: local;
 |===|
 [output = data]
 {
-  value: (local),
+  value: local,
 }`
 		snapshot := AnalyzeDocumentAtInRoot(text, documentPath, workspace)
 		tAssert.Empty(Diagnostics(snapshot))
@@ -2128,7 +2128,7 @@ from "./shared.mace" import remote;
 |===|
 [output = data]
 {
-  value: (remote),
+  value: remote,
 }`
 		snapshot = AnalyzeDocumentAtInRoot(text, documentPath, workspace)
 		tAssert.Empty(Diagnostics(snapshot))
@@ -2155,7 +2155,7 @@ var _ = Describe("analyzer remaining low-coverage helpers", func() {
 string a = "x";
 |===|
 [output = data]
-{ result: (a), }`
+{ result: a, }`
 		tokens := lexAnalysisTokens(text)
 		_, formatted, ok := moveImportsToTopEdit(text, ast.File{}, tokens, "import declarations must appear at top of script block")
 		tAssert.True(ok)

@@ -357,7 +357,7 @@ Name user = "Ada";
 |===|
 [output = data]
 {
-  user: (user),
+  user: user,
 }`))
 
 		didOpen(server, uri, `|===|
@@ -366,7 +366,7 @@ Name user = "Ada";
 |===|
 [output = data]
 {
-  user: (user),
+  user: user,
 }`, &notifications)
 
 		if tAssert.Len(notifications, 1) {
@@ -397,7 +397,7 @@ int count = "Ada";
 |===|
 [output = data]
 {
-  result: (count),
+  result: count,
 }`, &notifications)
 
 		if tAssert.Len(notifications, 1) {
@@ -424,7 +424,7 @@ Login login = {
 |===|
 [output = data]
 {
-  result: (login),
+  result: login,
 }`, &notifications)
 
 		if tAssert.Len(notifications, 1) {
@@ -460,7 +460,7 @@ int count = "seven";
 |===|
 [output = data]
 {
-  result: (name),
+  result: name,
 }`, &notifications)
 
 		if tAssert.Len(notifications, 1) {
@@ -492,14 +492,14 @@ int count = "Ada";
 |===|
 [output = data]
 {
-  result: (count),
+  result: count,
 }`, &notifications)
 		didChange(server, uri, 2, `|===|
 int count = 7;
 |===|
 [output = data]
 {
-  result: (count),
+  result: count,
 }`, &notifications)
 
 		if tAssert.Len(notifications, 2) {
@@ -534,7 +534,7 @@ array<int> values = [1, 2, 3];
 |===|
 [output = data]
 {
-  result: (values[9])
+  result: values[9]
 }`, &notifications)
 
 		if tAssert.Len(notifications, 1) {
@@ -555,15 +555,15 @@ array<int> values = [1, 2, 3];
 |===|
 [output = data]
 {
-  result: (values[9])
+  result: values[9]
 }`, &notifications)
 
 		if tAssert.Len(notifications, 1) {
 			params := requireDiagnostics(notifications[0])
 			if tAssert.Len(params.Diagnostics, 1) {
 				tAssert.Equal(protocol.UInteger(6), params.Diagnostics[0].Range.Start.Line)
-				tAssert.Equal(protocol.UInteger(18), params.Diagnostics[0].Range.Start.Character)
-				tAssert.Equal(protocol.UInteger(19), params.Diagnostics[0].Range.End.Character)
+				tAssert.Equal(protocol.UInteger(17), params.Diagnostics[0].Range.Start.Character)
+				tAssert.Equal(protocol.UInteger(18), params.Diagnostics[0].Range.End.Character)
 			}
 		}
 	})
@@ -576,16 +576,16 @@ array<int> values = [1, 2, 3];
 |===|
 [output = data]
 {
-  first: (values[9]),
-  second: (values[9])
+  first: values[9],
+  second: values[9]
 }`, &notifications)
 
 		if tAssert.Len(notifications, 1) {
 			params := requireDiagnostics(notifications[0])
 			if tAssert.Len(params.Diagnostics, 1) {
 				tAssert.Equal(protocol.UInteger(5), params.Diagnostics[0].Range.Start.Line)
-				tAssert.Equal(protocol.UInteger(17), params.Diagnostics[0].Range.Start.Character)
-				tAssert.Equal(protocol.UInteger(18), params.Diagnostics[0].Range.End.Character)
+				tAssert.Equal(protocol.UInteger(16), params.Diagnostics[0].Range.Start.Character)
+				tAssert.Equal(protocol.UInteger(17), params.Diagnostics[0].Range.End.Character)
 			}
 		}
 	})
@@ -617,7 +617,7 @@ array<string> names = ['Kyle', 'Tyrone', 'Luke'];
 |===|
 [output = data]
 {
-  names: (names)
+  names: names
 }`, &notifications)
 
 		if tAssert.Len(notifications, 1) {
@@ -1914,7 +1914,7 @@ type User: union[Profile, Audit];
 Identity id = "Ada";
 User user = { name: "Ada", created_at: "2026-04-09", };
 |===|
-[output = data] { result: (env), chosen: (id), record: (user), }`, nil)
+[output = data] { result: env, chosen: id, record: user, }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
@@ -1992,7 +1992,7 @@ User user = { name: "Ada", created_at: "2026-04-09", };
  };
  Flavor current = "Vanilla";
 |===|
-[output = data] { result: (current), }`, nil)
+[output = data] { result: current, }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
@@ -2024,7 +2024,7 @@ User user = { name: "Ada", created_at: "2026-04-09", };
 type UserID: string /# A stable user identifier;
 UserID current = "user_1";
 |===|
-[output = data] { result: (current), }`, nil)
+[output = data] { result: current, }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
@@ -2062,13 +2062,13 @@ UserID current = "user_1";
 from "./shared.mace" import User;
 User current = { name: "Ada", };
 |===|
-[output = data] { result: (current), }`))
+[output = data] { result: current, }`))
 
 		didOpen(server, uri, `|===|
 from "./shared.mace" import User;
 User current = { name: "Ada", };
 |===|
-[output = data] { result: (current), }`, nil)
+[output = data] { result: current, }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
@@ -2287,7 +2287,7 @@ int default_age = 30;
   },
   foo: $self.User.profile.age,
   bar: $self.foo,
-  baz: ($self.User.name),
+  baz: $self.User.name,
 }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
@@ -2395,13 +2395,13 @@ int default_age = 30;
 from "./shared.mace" import Flavor;
 Flavor current = "Vanilla";
 |===|
-[output = data] { result: (current), }`))
+[output = data] { result: current, }`))
 
 		didOpen(server, uri, `|===|
 from "./shared.mace" import Flavor;
 Flavor current = "Vanilla";
 |===|
-[output = data] { result: (current), }`, nil)
+[output = data] { result: current, }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
@@ -2439,13 +2439,13 @@ Flavor current = "Vanilla";
 from "./shared.mace" import User;
 User current = { name: "Ada", };
 |===|
-[output = data] { result: (current), }`))
+[output = data] { result: current, }`))
 
 		didOpen(server, uri, `|===|
 from "./shared.mace" import User;
 User current = { name: "Ada", };
 |===|
-[output = data] { result: (current), }`, nil)
+[output = data] { result: current, }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
@@ -2483,13 +2483,13 @@ User current = { name: "Ada", };
 from "./shared.mace" import User;
 User current = { name: "Ada", };
 |===|
-[output = data] { result: (current), }`))
+[output = data] { result: current, }`))
 
 		didOpen(server, uri, `|===|
 from "./shared.mace" import User;
 User current = { name: "Ada", };
 |===|
-[output = data] { result: (current), }`, nil)
+[output = data] { result: current, }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentDefinition, protocol.DefinitionParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
@@ -2604,7 +2604,7 @@ from "./shared" import name;
 |===|
 [output = data]
 {
-  result: (name),
+  result: name,
 }`))
 
 		didOpen(server, uri, `|===|
@@ -2612,7 +2612,7 @@ from "./shared" import name;
 |===|
 [output = data]
 {
-  result: (name),
+  result: name,
 }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentCodeAction, protocol.CodeActionParams{
@@ -2688,7 +2688,7 @@ string name = "Ada";
 |===|
 [output = data]
 {
-  name: { name: (name), },
+  name: { name: name, },
 }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentRename, protocol.RenameParams{
@@ -2761,7 +2761,7 @@ string greeting = name;
 |===|
 [output = data]
 {
-  result: (name),
+  result: name,
 }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentRename, protocol.RenameParams{
@@ -2897,7 +2897,7 @@ string env = "dev";
 |===|
 [output = data]
 {
-  result: (env),
+  result: env,
 }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentDocumentSymbol, protocol.DocumentSymbolParams{
@@ -3102,7 +3102,7 @@ string display_name = "Ada";
 int value = 1;
 |===|
 [output = data]
-{ value: (value), }`
+{ value: value, }`
 		didSave(server, uriValue, &saved, nil)
 	})
 

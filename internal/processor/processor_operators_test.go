@@ -146,6 +146,31 @@ float result = 5 % 2.5;
 |===|`, "result: result;"), expectedValue{kind: ValueFloat, float: 0.0}),
 	)
 
+	It("evaluates typed numeric variables without output wrappers", func() {
+		processor := New()
+		result, err := processor.ProcessInDir(`|===|
+int int_value = 1 + 2 * 3;
+float float_value = 1.5 + 2.5;
+hex_int hex_int_value = 0x10 + 0x1;
+hex_float hex_float_value = 0x1.8 + 0x0.8;
+|===|
+[output = data]
+{
+  int_value,
+  float_value,
+  hex_int_value,
+  hex_float_value,
+}`, "../..")
+		tAssert.NoError(err)
+
+		assertExpectedOutput(result, map[string]expectedValue{
+			"int_value":       {kind: ValueInt, int64: 7},
+			"float_value":     {kind: ValueFloat, float: 4},
+			"hex_int_value":   {kind: ValueHexInt, string: "0x11"},
+			"hex_float_value": {kind: ValueHexFloat, string: "0x2.0"},
+		})
+	})
+
 	DescribeTable("returns operator precedence results",
 		func(file string, expected expectedValue) {
 			processor := New()

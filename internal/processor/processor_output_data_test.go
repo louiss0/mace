@@ -91,7 +91,7 @@ schema User: { name: string, age?: int, };
 string name = "Ada";
 |===|
 [output = data, schema = User]
-{ name: (name), }`),
+{ name: name, }`),
 		Entry("nested record literal", `|===|
 schema Profile: { age: int, };
 schema User: { profile: Profile, };
@@ -117,7 +117,7 @@ schema Wrapper: { user: User, };
 User user = { name, };
 |===|
 [output = data, schema = Wrapper]
-{ user: (user), }`),
+{ user: user, }`),
 	)
 
 	DescribeTable("evaluates shorthand record and output fields",
@@ -207,7 +207,7 @@ array<string> tags = ["math", "logic"];
 { first, count, tags, }`, map[string]expectedValue{
 			"first": {kind: ValueString, string: "Ada"},
 			"count": {kind: ValueInt, int64: 2},
-			"tags": {kind: ValueArray, array: []expectedValue{{kind: ValueString, string: "math"}, {kind: ValueString, string: "logic"}}},
+			"tags":  {kind: ValueArray, array: []expectedValue{{kind: ValueString, string: "math"}, {kind: ValueString, string: "logic"}}},
 		}),
 		Entry("multiple record values", `|===|
 string name = "Ada";
@@ -218,7 +218,7 @@ int age = 30;
 [output = data]
 { profile, stats, }`, map[string]expectedValue{
 			"profile": {kind: ValueRecord, record: map[string]expectedValue{"name": {kind: ValueString, string: "Ada"}}},
-			"stats": {kind: ValueRecord, record: map[string]expectedValue{"age": {kind: ValueInt, int64: 30}}},
+			"stats":   {kind: ValueRecord, record: map[string]expectedValue{"age": {kind: ValueInt, int64: 30}}},
 		}),
 		Entry("record shorthand composes deeply nested records from earlier shorthand records", `|===|
 string name = "Ada";
@@ -280,14 +280,14 @@ schema User: { name: string, };
 User user = { missing, };
 |===|
 [output = data]
-{ user: (user), }`, "missing required field \"name\""),
+{ user: user, }`, "missing required field \"name\""),
 		Entry("record shorthand rejects nullable values for required fields", `|===|
 nullable string name = null;
 schema User: { name: string, };
 User user = { name, };
 |===|
 [output = data]
-{ user: (user), }`, "null can only be assigned to nullable variables and optional schema fields"),
+{ user: user, }`, "null can only be assigned to nullable variables and optional schema fields"),
 	)
 })
 

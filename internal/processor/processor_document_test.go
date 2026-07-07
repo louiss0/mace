@@ -57,7 +57,7 @@ from "fixtures/processor/imports/base.mace" import Name;
 Name user = "Ada";
 |===|
 [output = data]
-{ user: (user), }`),
+{ user: user, }`),
 		Entry("unicode web server fixture", "../../fixtures/unicode/web_server.mace"),
 		Entry("unicode database fixture", "../../fixtures/unicode/database.mace"),
 		Entry("unicode docker services fixture", "../../fixtures/unicode/docker_services.mace"),
@@ -174,7 +174,7 @@ var _ = Describe("Processor entrypoints", func() {
 int value = 1;
 |===|
 [output = data]
-{ result: (value), }`)
+{ result: value, }`)
 
 		_, err = processor.Process(`{ result: 1, }`)
 		tAssert.NoError(err)
@@ -221,9 +221,9 @@ int value = 1;
 		tAssert.Error(err)
 		_, err = processor.processOutputInput(`[output = data] { result: 1, } garbage`, scriptResult, ".")
 		tAssert.Error(err)
-		_, err = processor.processParsedOutput(ast.OutputBlock{}, ast.File{}, newProcessContext(".", "."), true)
+		_, err = processor.processParsedOutput(ast.OutputBlock{}, ast.File{}, newProcessContext(".", "."))
 		tAssert.NoError(err)
-		_, err = processor.processParsedOutput(ast.OutputBlock{Mode: ast.OutputModeSchema}, ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeSchema}}, newProcessContext(".", "."), true)
+		_, err = processor.processParsedOutput(ast.OutputBlock{Mode: ast.OutputModeSchema}, ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeSchema}}, newProcessContext(".", "."))
 		tAssert.NoError(err)
 
 		_, err = processor.ProcessOutputBlock(`[parse = schema] { result: 1, }`, ScriptResult{context: newProcessContext(".", ".")})
@@ -267,7 +267,7 @@ int base = 4;
 int doubled = base * 2;
 |===|
 [output = data]
-{ result: (doubled), }`, "../..")
+{ result: doubled, }`, "../..")
 		tAssert.NoError(err)
 		assertExpectedValue(variables["doubled"], expectedValue{kind: ValueInt, int64: 8})
 
@@ -276,7 +276,7 @@ int base = 4;
 int tripled = base * 3;
 |===|
 [output = data]
-{ result: (tripled), }`, "../..", "../..")
+{ result: tripled, }`, "../..", "../..")
 		tAssert.NoError(err)
 		assertExpectedValue(variables["tripled"], expectedValue{kind: ValueInt, int64: 12})
 	})
@@ -377,7 +377,7 @@ var _ = Describe("Processor entrypoints", func() {
 
 		proc := NewWithInput(map[string]Value{"seed": {Kind: ValueInt, Int: 1}})
 		inputPath := writeFixtureFile(workspace, "input.mace", `[output = data]
-{ result: (seed), }`)
+{ result: seed, }`)
 		_, err = proc.Process(`{ result: 1, }`)
 		tAssert.NoError(err)
 		_, err = proc.ProcessScriptBlock(`|===|
@@ -520,8 +520,8 @@ int value = 2;
 		tAssert.Error(err)
 		_, err = processor.ProcessFileInDir(filepath.Join(workspace, "missing.mace"), workspace)
 		tAssert.Error(err)
-		_, _ = processor.processParsedOutput(ast.OutputBlock{Mode: ast.OutputModeSchema}, ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.VariableDeclaration{Name: "value", Type: ast.PrimitiveType{Name: "int"}, HasValue: true, Value: ast.IntLiteral{Lexeme: "1"}}}}}, newProcessContext(workspace, workspace), true)
-		_, _ = processor.processParsedOutput(ast.OutputBlock{Mode: ast.OutputModeSchema, SchemaFields: []ast.OutputSchemaField{{Name: "name", Type: ast.NamedType{Name: "Missing"}}}}, ast.File{}, newProcessContext(workspace, workspace), true)
+		_, _ = processor.processParsedOutput(ast.OutputBlock{Mode: ast.OutputModeSchema}, ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.VariableDeclaration{Name: "value", Type: ast.PrimitiveType{Name: "int"}, HasValue: true, Value: ast.IntLiteral{Lexeme: "1"}}}}}, newProcessContext(workspace, workspace))
+		_, _ = processor.processParsedOutput(ast.OutputBlock{Mode: ast.OutputModeSchema, SchemaFields: []ast.OutputSchemaField{{Name: "name", Type: ast.NamedType{Name: "Missing"}}}}, ast.File{}, newProcessContext(workspace, workspace))
 		_, _ = importFileAsDeclaration("bad", map[string]importedDeclaration{"x": {name: "x", kind: symbolKindVariable, value: Value{Kind: ValueString, String: "Ada"}, vtype: valueType{kind: ValueString}}})
 	})
 

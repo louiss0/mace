@@ -522,7 +522,6 @@ type OutputField struct {
 	Name        string
 	Optional    bool
 	Shorthand   bool
-	Evaluated   bool
 	Value       Expression
 	Description string
 }

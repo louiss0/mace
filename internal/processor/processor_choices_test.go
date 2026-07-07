@@ -42,7 +42,7 @@ Value fallback = %s;
 |===|
 [output = data]
 {
-  result: (result),
+  result: result,
 }`, expectedValue{kind: ValueString, string: "Apple"}),
 		Entry("choice aliases can be mixed", `|===|
  type Environment: choice["dev", "prod"];
@@ -52,7 +52,7 @@ Value fallback = %s;
 |===|
 [output = data]
 {
-  result: (result),
+  result: result,
 }`, expectedValue{kind: ValueInt, int64: 2}),
 		Entry("choice float members preserve precision", `|===|
  type Ratio: choice[1.04, 1.0];
@@ -61,7 +61,7 @@ Value fallback = %s;
 |===|
 [output = data]
 {
-  result: { first: (first), second: (second), },
+  result: { first: first, second: second, },
 }`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{
 			"first":  {kind: ValueFloat, float: 1.04},
 			"second": {kind: ValueFloat, float: 1.0},
@@ -88,7 +88,7 @@ Value fallback = %s;
 |===|
 [output = data]
 {
-  result: (result),
+  result: result,
 }`, "type mismatch: expected choice[\"Apple\", \"Strawberry\"], got \"Pear\""),
 		Entry("conditional branch outside choice domain", `|===|
  boolean enabled = true;
@@ -97,7 +97,7 @@ Value fallback = %s;
 |===|
 [output = data]
 {
-  result: (result),
+  result: result,
 }`, "type mismatch: expected choice[\"Apple\", \"Strawberry\"], got \"Pear\""),
 	)
 

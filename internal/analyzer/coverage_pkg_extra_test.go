@@ -137,11 +137,11 @@ schema_doc User {
 		}
 		valueStart, valueEnd := nameRange(text, "value")
 		snapshot := analysisSnapshot{
-			text:         text,
-			documentURI:  uri,
-			file:         &file,
-			result:       &processor.Result{Output: map[string]processor.Value{"value": {Kind: processor.ValueString, String: "x"}}},
-			symbols: []semanticSymbol{{Name: "value", Kind: protocol.CompletionItemKindVariable, Detail: "string value", Documentation: "docs", Range: protocol.Range{Start: valueStart, End: valueEnd}, Definition: protocol.Location{URI: uri, Range: protocol.Range{}}}},
+			text:        text,
+			documentURI: uri,
+			file:        &file,
+			result:      &processor.Result{Output: map[string]processor.Value{"value": {Kind: processor.ValueString, String: "x"}}},
+			symbols:     []semanticSymbol{{Name: "value", Kind: protocol.CompletionItemKindVariable, Detail: "string value", Documentation: "docs", Range: protocol.Range{Start: valueStart, End: valueEnd}, Definition: protocol.Location{URI: uri, Range: protocol.Range{}}}},
 		}
 		snapshot.symbolIndex = indexSymbols(snapshot.symbols)
 		_ = Hover(text, snapshot, valueStart)
@@ -169,7 +169,7 @@ string value = alias;
 |===|
 [output = data]
 {
-  value: (alias),
+  value: alias,
 }
 `
 		aliasURI := protocol.DocumentUri(fileURI(filepath.Join(workspace, "alias.mace")))
@@ -182,8 +182,8 @@ string value = alias;
 			text:        aliasText,
 			documentURI: aliasURI,
 			tokens:      aliasTokens,
-			file: &ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "User", Alias: "alias"}}}}},
-			symbols: []semanticSymbol{{Name: "alias", Kind: protocol.CompletionItemKindVariable, Origin: symbolOriginImport, Range: protocol.Range{Start: usageStart, End: usageEnd}, Definition: protocol.Location{URI: protocol.DocumentUri(fileURI(filepath.Join(workspace, "shared.mace"))), Range: protocol.Range{}}}},
+			file:        &ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "User", Alias: "alias"}}}}},
+			symbols:     []semanticSymbol{{Name: "alias", Kind: protocol.CompletionItemKindVariable, Origin: symbolOriginImport, Range: protocol.Range{Start: usageStart, End: usageEnd}, Definition: protocol.Location{URI: protocol.DocumentUri(fileURI(filepath.Join(workspace, "shared.mace"))), Range: protocol.Range{}}}},
 		}
 		manualAliasSnapshot.symbolIndex = indexSymbols(manualAliasSnapshot.symbols)
 		_, _ = Rename(aliasText, manualAliasSnapshot, aliasURI, usageStart, "renamed_alias")
@@ -194,8 +194,8 @@ alias`
 			text:        importRenameText,
 			documentURI: aliasURI,
 			tokens:      lexAnalysisTokens(importRenameText),
-			file: &ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "User", Alias: "alias"}}}}},
-			symbols: []semanticSymbol{{Name: "alias", Kind: protocol.CompletionItemKindClass, Origin: symbolOriginImport, Range: protocol.Range{Start: protocol.Position{Line: 1, Character: 0}, End: protocol.Position{Line: 1, Character: 5}}, Definition: protocol.Location{URI: foreignURI, Range: protocol.Range{Start: protocol.Position{Line: 0, Character: 0}, End: protocol.Position{Line: 0, Character: 5}}}}},
+			file:        &ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "User", Alias: "alias"}}}}},
+			symbols:     []semanticSymbol{{Name: "alias", Kind: protocol.CompletionItemKindClass, Origin: symbolOriginImport, Range: protocol.Range{Start: protocol.Position{Line: 1, Character: 0}, End: protocol.Position{Line: 1, Character: 5}}, Definition: protocol.Location{URI: foreignURI, Range: protocol.Range{Start: protocol.Position{Line: 0, Character: 0}, End: protocol.Position{Line: 0, Character: 5}}}}},
 		}
 		importRenameSnapshot.symbolIndex = indexSymbols(importRenameSnapshot.symbols)
 		_, _ = Rename(importRenameText, importRenameSnapshot, aliasURI, protocol.Position{Line: 1, Character: 1}, "renamed_alias")

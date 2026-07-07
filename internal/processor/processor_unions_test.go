@@ -18,7 +18,7 @@ User value = {
 |===|
 [output = data]
 {
-  result: (value),
+  result: value,
 }`)
 		tAssert.NoError(err)
 

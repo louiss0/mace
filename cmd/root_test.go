@@ -97,7 +97,7 @@ var _ = Describe("CLI", func() {
 int value = 1;
 |===|
 [output = data]
-{ value: (value), }`)
+{ value: value, }`)
 
 			file, err := parseFile(path)
 			tAssert.NoError(err)
@@ -217,7 +217,7 @@ int base = 2 + 2;
 |===|
 [output = data]
 {
-  base: (base),
+  base: base,
   profile: { name: "Ada", active: true, },
 }`)
 
@@ -247,9 +247,9 @@ hex_float whole = 0x2.0;
 |===|
 [output = data]
 {
-  mask: (mask),
-  ratio: (ratio),
-  whole: (whole),
+  mask: mask,
+  ratio: ratio,
+  whole: whole,
 }`)
 
 			var stdout bytes.Buffer

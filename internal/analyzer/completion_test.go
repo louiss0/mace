@@ -90,12 +90,12 @@ var _ = Describe("completion analysis", func() {
 		text := `[output = data]
 {
   foo: 1,
-  result: (true ? $self.foo : $)
+  result: true ? $self.foo : $
 }`
 
 		position := protocol.Position{
 			Line:      3,
-			Character: uint32(len(`  result: (true ? $self.foo : $`)),
+			Character: uint32(len(`  result: true ? $self.foo : $`)),
 		}
 		documentPath := filepath.Join("workspace", "document.mace")
 		snapshot := AnalyzeCompletionContext(text, documentPath, position)
@@ -1353,7 +1353,7 @@ from "../shared.mace" import base;
 |===|
 [output = data]
 {
-  base: (base),
+  base: base,
   result: $self.base.
 }`
 		position := protocol.Position{Line: 6, Character: protocol.UInteger(len(`  result: $self.base.`))}
@@ -2031,7 +2031,7 @@ var _ = Describe("completion delimiter coverage helpers", func() {
 	It("covers quoted and mismatched expression closer branches", func() {
 		tAssert.Equal("}", completionExpressionClosers(`value: { text: "unterminated`, len(`value: { text: "unterminated`)))
 		tAssert.Equal(")", completionExpressionClosers(`value: ("escaped\\"`, len(`value: ("escaped\\"`)))
-		tAssert.Equal(")", completionExpressionClosers("value: ([)]", len("value: ([)]")))
+		tAssert.Equal("", completionExpressionClosers("value: []", len("value: []")))
 		tAssert.Equal("", completionExpressionClosers("abc", len("abc")+1))
 	})
 })

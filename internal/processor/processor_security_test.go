@@ -48,7 +48,7 @@ nullable string path = "./schema.mace";
 |===|
 [output = data]
 {
-  path: (path),
+  path: path,
 }`)
 		tAssert.NoError(err)
 		assertExpectedValue(result.Output["path"], expectedValue{kind: ValueString, string: "./schema.mace"})

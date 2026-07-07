@@ -721,20 +721,9 @@ func (p *Parser) parseOutputField() (ast.OutputField, error) {
 		return ast.OutputField{}, err
 	}
 
-	evaluated := p.hasWrappedOutputEvaluation()
-	if evaluated {
-		p.advance()
-	}
-
 	value, err := p.parseExpression(precedenceLowest)
 	if err != nil {
 		return ast.OutputField{}, err
-	}
-
-	if evaluated {
-		if _, err := p.consume(lexer.TokenRParen, "parser: expected ')' after output field expression"); err != nil {
-			return ast.OutputField{}, err
-		}
 	}
 
 	description := p.parseOptionalInlineDescription()
@@ -753,7 +742,6 @@ func (p *Parser) parseOutputField() (ast.OutputField, error) {
 		NameToken:   nameToken,
 		Name:        name,
 		Optional:    optional,
-		Evaluated:   evaluated,
 		Value:       value,
 		Description: description,
 	}, nil
@@ -1261,37 +1249,6 @@ func (p *Parser) isFieldShorthandStart() bool {
 	default:
 		return false
 	}
-}
-
-func (p *Parser) hasWrappedOutputEvaluation() bool {
-	if p.current().Type != lexer.TokenLParen {
-		return false
-	}
-
-	depth := 0
-	for index := p.position; index < len(p.tokens); index++ {
-		token := p.tokens[index]
-		switch token.Type {
-		case lexer.TokenLParen:
-			depth++
-		case lexer.TokenRParen:
-			depth--
-			if depth == 0 {
-				nextIndex := index + 1
-				if nextIndex >= len(p.tokens) {
-					return false
-				}
-				switch p.tokens[nextIndex].Type {
-				case lexer.TokenComma, lexer.TokenRBrace:
-					return true
-				default:
-					return false
-				}
-			}
-		}
-	}
-
-	return false
 }
 
 func (p *Parser) consumeOptionalToken(tokenType lexer.TokenType) bool {

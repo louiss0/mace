@@ -60,7 +60,7 @@ string value = "x";
 {
   profile: user.profile,
   digits: numbers[12],
-  guarded: ("name" in user && 'age' in profile ? 1 : 0),
+  guarded: "name" in user && 'age' in profile ? 1 : 0,
   literal: "a \"quote\" b",
 }
 `
