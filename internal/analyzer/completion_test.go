@@ -1715,7 +1715,7 @@ int count = 1;
 			tAssert.NotContains(labels, "./skip.txt")
 		})
 
-		It("merges completion union records", func() {
+		It("merges completion fusion records", func() {
 			model := completionModel{
 				schemas: map[string]ast.RecordType{
 					"Base": {Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}},

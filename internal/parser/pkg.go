@@ -870,7 +870,7 @@ func (p *Parser) parseTypeReference() (ast.TypeReference, error) {
 	case lexer.TokenUnion:
 		token := p.current()
 		p.advance()
-		if _, err := p.consume(lexer.TokenLBracket, "parser: expected '[' after union type"); err != nil {
+		if _, err := p.consume(lexer.TokenLBracket, "parser: expected '[' after fusion type"); err != nil {
 			return nil, err
 		}
 		members := []ast.TypeReference{}
@@ -885,7 +885,7 @@ func (p *Parser) parseTypeReference() (ast.TypeReference, error) {
 			}
 			p.advance()
 		}
-		if _, err := p.consume(lexer.TokenRBracket, "parser: expected ']' after union type"); err != nil {
+		if _, err := p.consume(lexer.TokenRBracket, "parser: expected ']' after fusion type"); err != nil {
 			return nil, err
 		}
 		return ast.UnionType{Token: token, Members: members}, nil

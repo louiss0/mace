@@ -1903,7 +1903,7 @@ var _ = Describe("analyzer coverage helpers", func() {
 		_, err = parseExpression("\x00")
 		tAssert.Error(err)
 
-		tAssert.Equal("union[string, int]", typeReferenceDetail(ast.UnionType{Members: []ast.TypeReference{ast.PrimitiveType{Name: "string"}, ast.PrimitiveType{Name: "int"}}}))
+		tAssert.Equal("fusion[string, int]", typeReferenceDetail(ast.UnionType{Members: []ast.TypeReference{ast.PrimitiveType{Name: "string"}, ast.PrimitiveType{Name: "int"}}}))
 		tAssert.Equal("variant[string, int]", typeReferenceDetail(ast.VariantType{Members: []ast.TypeReference{ast.PrimitiveType{Name: "string"}, ast.PrimitiveType{Name: "int"}}}))
 		tAssert.Equal("choice[\"a\", 1]", typeReferenceDetail(ast.ChoiceType{Members: []ast.Expression{ast.StringLiteral{Lexeme: `"a"`}, ast.IntLiteral{Lexeme: "1"}}}))
 		tAssert.Equal("unknown", typeReferenceDetail(ast.RecordMapType{Value: ast.PrimitiveType{Name: "string"}}))

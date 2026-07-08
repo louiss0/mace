@@ -193,14 +193,14 @@ schema Runtime: { name: string, };
 		}, result.Schema)
 	})
 
-	It("returns structured union schema outputs", func() {
+	It("returns structured fusion schema outputs", func() {
 		result, err := Parse(`|===|
 schema Profile: { name: string, };
 schema Audit: { created_at: string, };
 |===|
 [output = schema]
 {
-  value: union[Profile, Audit],
+  value: fusion[Profile, Audit],
 }`)
 		tAssert.NoError(err)
 		tAssert.Equal(map[SchemaField]SchemaType{
@@ -996,13 +996,13 @@ var _ = Describe("Codec helpers", func() {
 		tAssert.ErrorContains(err, "unsupported enum value")
 	})
 
-	It("validates union and variant member helpers", func() {
+	It("validates fusion and variant member helpers", func() {
 		_, err := validateUnionMembers([]inferredType{{kind: inferredTypePrimitive}})
-		tAssert.ErrorContains(err, "union members must be schemas")
+		tAssert.ErrorContains(err, "fusion members must be schemas")
 
-		union, err := validateUnionMembers([]inferredType{{kind: inferredTypeRecord}})
+		fusion, err := validateUnionMembers([]inferredType{{kind: inferredTypeRecord}})
 		tAssert.NoError(err)
-		tAssert.Equal(inferredTypeUnion, union.kind)
+		tAssert.Equal(inferredTypeUnion, fusion.kind)
 
 		_, err = validateVariantMembers([]inferredType{{kind: inferredTypePrimitive}, {kind: inferredTypePrimitive}})
 		tAssert.NoError(err)
@@ -1351,7 +1351,7 @@ schema Audit: {
 {
   value: variant[Profile, Audit]
 }`),
-		Entry("allOf becomes a union", "allOf", `|===|
+		Entry("allOf becomes a fusion", "allOf", `|===|
 schema Profile: {
   name: string
 }
@@ -1361,7 +1361,7 @@ schema Audit: {
 |===|
 [output = schema]
 {
-  value: union[Profile, Audit]
+  value: fusion[Profile, Audit]
 }`),
 	)
 })
@@ -1719,7 +1719,7 @@ schema Profile: {
 }`, source)
 	})
 
-	It("maps allOf composition into unions", func() {
+	It("maps allOf composition into fusions", func() {
 		source, err := ImportJSONSchema(`{
   "$schema": "./schemas/draft-2020-12/schema.json",
   "$defs": {
@@ -1760,7 +1760,7 @@ schema Audit: {
 |===|
 [output = schema]
 {
-  value: union[Profile, Audit]
+  value: fusion[Profile, Audit]
 }`, source)
 	})
 

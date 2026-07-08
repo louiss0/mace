@@ -472,24 +472,24 @@ hex_float ratio = 0x02.80;
 }`, output)
 	})
 
-	It("formats union type references", func() {
+	It("formats fusion type references", func() {
 		file, err := parseMaceFile(`|===|
-type Value: union[Profile, Audit];
+type Value: fusion[Profile, Audit];
 |===|
 [output = schema]
 {
-  value: union[Profile, Audit],
+  value: fusion[Profile, Audit],
 }`)
 		tAssert.NoError(err)
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
-		tAssert.Equal(`|==================================|
-type Value: union[Profile, Audit];
-|==================================|
+		tAssert.Equal(`|===================================|
+type Value: fusion[Profile, Audit];
+|===================================|
 [output = schema]
 {
-  value: union[Profile, Audit]
+  value: fusion[Profile, Audit]
 }`, output)
 	})
 
@@ -584,7 +584,7 @@ from "./base.mace" import User;
 		Entry("nil type reference", nil),
 		Entry("array element", ast.ArrayType{}),
 		Entry("record map value", ast.RecordMapType{}),
-		Entry("union member", ast.UnionType{Members: []ast.TypeReference{nil}}),
+		Entry("fusion member", ast.UnionType{Members: []ast.TypeReference{nil}}),
 		Entry("variant member", ast.VariantType{Members: []ast.TypeReference{nil}}),
 	)
 

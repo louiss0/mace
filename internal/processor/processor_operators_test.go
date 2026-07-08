@@ -510,7 +510,7 @@ var _ = Describe("Operator helpers", func() {
 		tAssert.False(arrayMergeTypesMatch(Value{Kind: ValueArray, Array: []Value{{Kind: ValueInt, Int: 1}}}, Value{Kind: ValueArray, Array: []Value{{Kind: ValueString, String: "a"}}}))
 
 		_, err = resolveUnionRecordType(ast.UnionType{Members: []ast.TypeReference{ast.PrimitiveType{Name: "string"}}}, newSymbolTable(), newTypeRegistry(), newSchemaRegistry())
-		tAssert.ErrorContains(err, "union members must be schemas")
+		tAssert.ErrorContains(err, "fusion members must be schemas")
 	})
 
 	It("covers numeric and boolean evaluation helpers", func() {

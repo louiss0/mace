@@ -1503,8 +1503,8 @@ func validateTypeReference(typeRef ast.TypeReference, symbols *symbolTable, type
 		return validateTypeReference(ref.Value, symbols, types, schemas, enums)
 	case ast.UnionType:
 		_, err := resolveUnionRecordType(ref, symbols, types, schemas)
-		if err != nil && strings.Contains(err.Error(), "union members must be schemas") {
-			return validationErrorf("union members must be schemas")
+		if err != nil && strings.Contains(err.Error(), "fusion members must be schemas") {
+			return validationErrorf("fusion members must be schemas")
 		}
 		return err
 	case ast.VariantType:
@@ -3803,9 +3803,9 @@ func resolveUnionRecordType(typeRef ast.TypeReference, symbols *symbolTable, typ
 			return resolveUnionRecordType(resolved, symbols, types, schemas)
 		}
 
-		return ast.RecordType{}, validationErrorf("union members must be schemas")
+		return ast.RecordType{}, validationErrorf("fusion members must be schemas")
 	default:
-		return ast.RecordType{}, validationErrorf("union members must be schemas")
+		return ast.RecordType{}, validationErrorf("fusion members must be schemas")
 	}
 }
 
@@ -3833,7 +3833,7 @@ func mergeRecordTypes(left, right ast.RecordType) (ast.RecordType, error) {
 
 		existing := merged.Fields[index]
 		if !reflect.DeepEqual(existing.Type, field.Type) {
-			return ast.RecordType{}, validationErrorf("conflicting field %q in union schema composition", field.Name)
+			return ast.RecordType{}, validationErrorf("conflicting field %q in fusion schema composition", field.Name)
 		}
 		merged.Fields[index].Optional = existing.Optional && field.Optional
 	}

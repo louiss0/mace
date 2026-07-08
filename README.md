@@ -73,7 +73,7 @@ Mace supports:
 - primitive types: `string`, `int`, `float`, `hex_int`, `hex_float`, `boolean`
 - arrays: `array<T>`
 - open records: `record<T>` for arbitrary keys whose values must match `T`
-- unions: `union[T1, T2, ...]`
+- fusions: `fusion[T1, T2, ...]`
 - variants: `variant[T1, T2, ...]`
 - choices: `choice["a", 1, true, OtherChoice]`
 - named type aliases
@@ -87,7 +87,7 @@ Mace supports:
 - `$self` references inside output evaluation
 - hexadecimal integer and fractional numeric types with canonical string JSON output
 
-Union and variant types are first-class across the language, including named
+Fusion and variant types are first-class across the language, including named
 aliases, output schema validation, imports, formatter output, and editor
 tooling.
 
@@ -124,14 +124,14 @@ Values tags = ["api", "web"];
 }
 ```
 
-Mace treats unions as composition: schema members are combined into one closed
+Mace treats fusions as composition: schema members are combined into one closed
 record shape.
 
 ```mace
 |===|
 schema Profile: { name: string };
 schema Audit: { created_at: string };
-type User: union[Profile, Audit];
+type User: fusion[Profile, Audit];
 User value = {
   name: "Ada",
   created_at: "2026-04-08"
@@ -249,13 +249,13 @@ Converts JSON, YAML, and TOML files into `.mace` files.
 - JSON Schema `null` maps to field optionality during schema conversion
 - JSON Schema `anyOf` and `oneOf` alternatives can be emitted as Mace
   `variant[...]` types during import
-- JSON Schema `allOf` schema composition can be emitted as Mace `union[...]`
+- JSON Schema `allOf` schema composition can be emitted as Mace `fusion[...]`
   types during import
 - imported `variant[...]` types use Mace's closed variant semantics rather than
   preserving a distinct `anyOf` versus `oneOf` behavior
-- imported `union[...]` types represent schema composition and require schema
+- imported `fusion[...]` types represent schema composition and require schema
   members only
-- imported `variant[...]` and `union[...]` types remain regular Mace types that
+- imported `variant[...]` and `fusion[...]` types remain regular Mace types that
   work in scripts, schema validation, formatting, and LSP tooling
 - when multiple files are imported, successful files are still written even if
   some files fail

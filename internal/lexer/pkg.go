@@ -445,7 +445,7 @@ func keywordToken(lexeme string) (TokenType, bool) {
 		return TokenSchemaDoc, true
 	case "array":
 		return TokenArray, true
-	case "union":
+	case "fusion":
 		return TokenUnion, true
 	case "variant":
 		return TokenVariant, true

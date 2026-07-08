@@ -708,8 +708,8 @@ var _ = Describe("Parser", func() {
 			`array<`,
 			`record<`,
 			`record<string`,
-			`union[`,
-			`union[string`,
+			`fusion[`,
+			`fusion[string`,
 			`variant`,
 			`variant[string`,
 			`choice[string`,
@@ -1402,9 +1402,9 @@ type Value: variant[array<string>, array<int>];
 			}
 		})
 
-		It("parses union type references", func() {
+		It("parses fusion type references", func() {
 			input := `|===|
-type Value: union[Profile, Audit];
+type Value: fusion[Profile, Audit];
 |===|
 [output = data] {}`
 
@@ -1620,7 +1620,7 @@ type Names: record;
 |===|
 [output = data] {}`,
 				`|===|
-type Names: union;
+type Names: fusion;
 |===|
 [output = data] {}`,
 				`|===|

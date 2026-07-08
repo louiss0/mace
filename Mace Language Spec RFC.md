@@ -199,7 +199,7 @@ keywords by the grammar.
 The reserved keywords are:
 
 `from`, `import`, `type`, `schema`, `choice`, `string`, `int`,
-`float`, `boolean`, `array`, `union`, `variant`, `gen_doc`,
+`float`, `boolean`, `array`, `fusion`, `variant`, `gen_doc`,
 `schema_doc`, `true`, and `false`.
 
 Directive words such as `output`, `data`, and `schema_file` are interpreted
@@ -416,7 +416,7 @@ Mace File
 >     ws0 , ">" ;
 > 
 > union_type
->   = "union" , ws0 , "[" , ws0 ,
+>   = "fusion" , ws0 , "[" , ws0 ,
 >     type_reference , { ws0 , "," , ws0 , type_reference } ,
 >     ws0 , "]" ;
 > 
@@ -858,7 +858,7 @@ created by record literals, variables, output fields, and merge expressions.
 
 Mace types craft smaller schemas toward a larger schema. A primitive type
 describes a scalar value, an array type describes a repeated value shape, a
-schema describes a closed record shape, a union composes schemas, a choice
+schema describes a closed record shape, a fusion composes schemas, a choice
 describes a finite set of literal values, and a variant describes a closed set
 of alternatives.
 
@@ -882,7 +882,7 @@ Array identity is determined by element type identity.
 
 Variant identity is determined by its exact member set and member ordering.
 
-Union identity is determined by the resulting composed schema.
+Fusion identity is determined by the resulting composed schema.
 
 ### Primitive Types
 
@@ -998,7 +998,7 @@ values in the resolved choice domain.
 
 Variant assignability requires exactly one matching member type.
 
-Union assignability depends on the composed schema result.
+Fusion assignability depends on the composed schema result.
 
 ### Validation Boundaries
 
@@ -1032,8 +1032,8 @@ Type validation rejects invalid type constructions.
 This includes:
 
 - unknown type references,
-- incompatible union categories,
-- conflicting schema union fields,
+- incompatible fusion categories,
+- conflicting schema fusion fields,
 - invalid choice composition inside variants,
 - invalid variant member categories,
 - and ambiguous variant constructions.
@@ -1462,7 +1462,7 @@ The processor validates the following categories:
 - choice-constrained assignments;
 - schema conformance for record literals and output blocks;
 - homogeneous array literals;
-- variant and union conformance;
+- variant and fusion conformance;
 - valid `$self` references;
 - valid member access;
 - valid array access targets and indexes;
@@ -1558,11 +1558,11 @@ are evaluated top to bottom. A `$self` reference **MAY** only access fields that
 have already been evaluated. Accessing a field that has not yet been evaluated
 is invalid. Accessing an unknown nested member is invalid.
 
-#[## Union Validation](#mace-language-specification)
+#[## Fusion Validation](#mace-language-specification)
 
-Schema unions compose all member schema fields into one closed record shape.
-Union members must be schemas. Conflicting schema fields are invalid. Required
-fields remain required unless every union member marks the field optional.
+Schema fusions compose all member schema fields into one closed record shape.
+Fusion members must be schemas. Conflicting schema fields are invalid. Required
+fields remain required unless every fusion member marks the field optional.
 
 #[## Variant Validation](#mace-language-specification)
 
@@ -1762,7 +1762,7 @@ If a static semantic rule is violated, processing fails with a static error.
 
 The processor resolves all type references.
 
-Primitive types, array types, union types, variant types, choice types, schema types, and declared type aliases are resolved before expression type checking.
+Primitive types, array types, fusion types, variant types, choice types, schema types, and declared type aliases are resolved before expression type checking.
 
 If a type reference cannot be resolved, processing fails with a type resolution error.
 
@@ -1780,7 +1780,7 @@ If the output block is declared as `output = data`, output fields are interprete
 
 Array literals MUST be homogeneous.
 
-record literals MUST conform to their expected record, schema, union, or variant type when an expected type is present.
+record literals MUST conform to their expected record, schema, fusion, or variant type when an expected type is present.
 
 Choice values MUST be literal values in the resolved choice domain.
 
@@ -2338,20 +2338,20 @@ This section focuses on only processor diagnostics! The examples below are suppo
 > expected '>' after array element type
 > ```
 
-> [!info] `mace.syntax.union-type-missing-opening-bracket`
+> [!info] `mace.syntax.fusion-type-missing-opening-bracket`
 > 
-> Reported when a union type does not begin with `[`.
+> Reported when a fusion type does not begin with `[`.
 > 
 > ```txt
-> expected '[' after union
+> expected '[' after fusion
 > ```
 
-> [!info] `mace.syntax.union-type-missing-closing-bracket`
+> [!info] `mace.syntax.fusion-type-missing-closing-bracket`
 > 
-> Reported when a union type is missing `]`.
+> Reported when a fusion type is missing `]`.
 > 
 > ```txt
-> expected ']' after union members
+> expected ']' after fusion members
 > ```
 
 > [!info] `mace.syntax.variant-type-missing-opening-bracket`

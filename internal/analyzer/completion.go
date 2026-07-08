@@ -54,7 +54,7 @@ var scriptKeywordCompletions = []completionDefinition{
 	{Label: "schema_doc", Kind: protocol.CompletionItemKindKeyword, Detail: "schema documentation declaration"},
 	{Label: "string", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
 	{Label: "type", Kind: protocol.CompletionItemKindKeyword, Detail: "type declaration"},
-	{Label: "union", Kind: protocol.CompletionItemKindKeyword, Detail: "schema composition"},
+	{Label: "fusion", Kind: protocol.CompletionItemKindKeyword, Detail: "schema composition"},
 	{Label: "variant", Kind: protocol.CompletionItemKindKeyword, Detail: "type constructor"},
 }
 

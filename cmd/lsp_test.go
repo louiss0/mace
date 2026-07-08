@@ -435,18 +435,18 @@ Login login = {
 		}
 	})
 
-	It("publishes processor diagnostics for invalid union declarations", func() {
+	It("publishes processor diagnostics for invalid fusion declarations", func() {
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `|===|
-type Broken: union[string, int];
+type Broken: fusion[string, int];
 |===|
 [output = data] {}`, &notifications)
 
 		if tAssert.Len(notifications, 1) {
 			params := requireDiagnostics(notifications[0])
 			tAssert.Len(params.Diagnostics, 1)
-			tAssert.Contains(params.Diagnostics[0].Message, `processor: union members must be schemas`)
+			tAssert.Contains(params.Diagnostics[0].Message, `processor: fusion members must be schemas`)
 			tAssert.NotNil(params.Diagnostics[0].Code)
 		}
 	})
@@ -1537,12 +1537,12 @@ schema Runtime: { env: string, region: string, };
 		tAssert.Contains(labels, `{ name: "" }`)
 	})
 
-	It("suggests composed schema literals for nested output union aliases", func() {
+	It("suggests composed schema literals for nested output fusion aliases", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
 schema Profile: { name: string, };
 schema Audit: { created_at: string, };
-type User: union[Profile, Audit];
+type User: fusion[Profile, Audit];
 schema Envelope: { value: User, };
 schema Response: { payload: Envelope, };
 |===|
@@ -1781,7 +1781,7 @@ from "./shared.mace" import ImportedUser;
 		didOpen(server, uri, `|===|
 schema User: { name: string, };
 type Identity: variant[string, int];
-type UserRecord: union[User, Profile];
+type UserRecord: fusion[User, Profile];
 schema Profile: { age: int, };
 |===|
 [output = data] { name: "Ada", }`, nil)
@@ -1910,7 +1910,7 @@ string env = "dev";
 schema Profile: { name: string, };
 schema Audit: { created_at: string, };
 type Identity: variant[string, int];
-type User: union[Profile, Audit];
+type User: fusion[Profile, Audit];
 Identity id = "Ada";
 User user = { name: "Ada", created_at: "2026-04-09", };
 |===|
@@ -1979,7 +1979,7 @@ User user = { name: "Ada", created_at: "2026-04-09", };
 		content, ok = hover.Contents.(protocol.MarkupContent)
 		tAssert.True(ok)
 		if ok {
-			tAssert.Contains(content.Value, `union[Profile, Audit] user = record literal`)
+			tAssert.Contains(content.Value, `fusion[Profile, Audit] user = record literal`)
 		}
 	})
 
