@@ -116,8 +116,8 @@ from "./shared.mace" import User, Runtime;
 		_ = completionFile(doc, "")
 		_ = currentImports(doc, "")
 		_ = completionRoot(snapshot, uri)
-		_ = relativePathItems(doc, uri, "./", nil, true)
-		_ = schemaFileItems(doc, uri, "", "./")
+		_ = relativePathItems(doc, uri, "./", nil, true, protocol.Position{})
+		_ = schemaFileItems(doc, uri, "", "./", protocol.Position{})
 		_ = schemaReferenceItems(doc, uri, "", "Us")
 		_ = availableSchemaNames(doc, uri, "")
 		_ = importedPaths(doc, "")
@@ -200,8 +200,8 @@ string digits = ["x", "y"];
 		_, _ = resolveCompletionValue(ast.SelfReference{Path: []string{"user", "profile"}}, nil, selfValue)
 
 		locals := map[string]ast.Expression{
-			"name": ast.StringLiteral{Lexeme: `"Ada"`},
-			"user": ast.RecordLiteral{Fields: []ast.RecordField{{Name: "profile", Value: ast.StringLiteral{Lexeme: `"Ada"`}}}},
+			"name":  ast.StringLiteral{Lexeme: `"Ada"`},
+			"user":  ast.RecordLiteral{Fields: []ast.RecordField{{Name: "profile", Value: ast.StringLiteral{Lexeme: `"Ada"`}}}},
 			"items": ast.ArrayLiteral{Elements: []ast.Expression{ast.StringLiteral{Lexeme: `"a"`}, ast.StringLiteral{Lexeme: `"b"`}}},
 		}
 		_, _ = resolveLocalCompletionValue(ast.Identifier{Name: "name"}, locals, map[string]struct{}{})
@@ -366,12 +366,12 @@ string value = "x";
 		doc := document{text: text, analysis: snapshot}
 		uri := protocol.DocumentUri(fileURI(documentPath))
 
-		_, _ = importCompletionItems(doc, "from \"./", uri)
-		_, _ = importCompletionItems(doc, "from \"./shared.mace\" import Un", uri)
-		_, _ = importCompletionItems(doc, "from \"./shared.mace\" ", uri)
-		_, _ = directiveCompletionItems(doc, uri, "[")
-		_, _ = directiveCompletionItems(doc, uri, "[output = data,")
-		_, _ = directiveCompletionItems(doc, uri, "[output = schema, schema = ")
+		_, _ = importCompletionItems(doc, "from \"./", uri, protocol.Position{})
+		_, _ = importCompletionItems(doc, "from \"./shared.mace\" import Un", uri, protocol.Position{})
+		_, _ = importCompletionItems(doc, "from \"./shared.mace\" ", uri, protocol.Position{})
+		_, _ = directiveCompletionItems(doc, uri, "[", protocol.Position{})
+		_, _ = directiveCompletionItems(doc, uri, "[output = data,", protocol.Position{})
+		_, _ = directiveCompletionItems(doc, uri, "[output = schema, schema = ", protocol.Position{})
 		_, _ = stringLiteralInitializerCompletionItems(doc, uri, protocol.Position{Line: 0, Character: 13}, false)
 		_, _ = stringLiteralInitializerCompletionItems(doc, uri, protocol.Position{Line: 4, Character: 12}, true)
 		_, _ = initializerCompletionItems(doc, uri, protocol.Position{Line: 2, Character: 18})

@@ -1882,7 +1882,7 @@ int count = 1;
 			tAssert.Equal(completionScopeScript, completionScopeAt("|===|\nint x = 1;\n|===|", protocol.Position{Line: 1, Character: 0}))
 			_ = completionScopeAt("|===|\n|===|\n[output = data] {}", protocol.Position{Line: 2, Character: 0})
 
-			items, ok := directiveCompletionItems(document{}, protocol.DocumentUri("file:///tmp/doc.mace"), "[")
+			items, ok := directiveCompletionItems(document{}, protocol.DocumentUri("file:///tmp/doc.mace"), "[", protocol.Position{})
 			_ = items
 			_ = ok
 
@@ -1917,19 +1917,19 @@ int count = 1;
 
 var _ = Describe("completion coverage helpers", func() {
 	It("covers directive and literal helper branches directly", func() {
-		items, handled := directiveCompletionItems(document{}, "file:///doc.mace", "  [")
+		items, handled := directiveCompletionItems(document{}, "file:///doc.mace", "  [", protocol.Position{})
 		tAssert.True(handled)
 		tAssert.NotEmpty(items)
-		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = ")
+		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = ", protocol.Position{})
 		tAssert.True(handled)
 		tAssert.Len(items, 2)
-		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = schema, schema = ")
+		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = schema, schema = ", protocol.Position{})
 		tAssert.True(handled)
 		tAssert.Empty(items)
-		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = data,")
+		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = data,", protocol.Position{})
 		tAssert.True(handled)
 		tAssert.NotEmpty(items)
-		_, handled = directiveCompletionItems(document{}, "file:///doc.mace", "not a directive")
+		_, handled = directiveCompletionItems(document{}, "file:///doc.mace", "not a directive", protocol.Position{})
 		tAssert.False(handled)
 
 		content, ok := directivePrefix("  [schema")
@@ -1975,19 +1975,19 @@ var _ = Describe("completion coverage helpers", func() {
 		doc := document{text: "", analysis: analyzeDocumentAtInRoot("", docPath, workspace)}
 		uri := protocol.DocumentUri(fileURI(docPath))
 
-		items, handled := importCompletionItems(doc, `from "./`, uri)
+		items, handled := importCompletionItems(doc, `from "./`, uri, protocol.Position{})
 		tAssert.True(handled)
 		tAssert.NotEmpty(items)
-		items, handled = importCompletionItems(doc, `from "./shared.mace" import U`, uri)
+		items, handled = importCompletionItems(doc, `from "./shared.mace" import U`, uri, protocol.Position{})
 		tAssert.True(handled)
 		tAssert.NotEmpty(items)
-		items, handled = importCompletionItems(doc, `from "./shared.mace" imp`, uri)
+		items, handled = importCompletionItems(doc, `from "./shared.mace" imp`, uri, protocol.Position{})
 		tAssert.True(handled)
 		tAssert.NotEmpty(items)
-		items, handled = importCompletionItems(doc, `from "./shared.mace" nope`, uri)
+		items, handled = importCompletionItems(doc, `from "./shared.mace" nope`, uri, protocol.Position{})
 		tAssert.True(handled)
 		tAssert.Empty(items)
-		_, handled = importCompletionItems(doc, `let x`, uri)
+		_, handled = importCompletionItems(doc, `let x`, uri, protocol.Position{})
 		tAssert.False(handled)
 
 		entries, err := directoryEntries(workspace, workspace, "./", nil, true)
@@ -2016,19 +2016,19 @@ var _ = Describe("completion remaining low-coverage helpers", func() {
 	})
 
 	It("covers additional directive completion branches", func() {
-		items, handled := directiveCompletionItems(document{}, "file:///doc.mace", "  [output")
+		items, handled := directiveCompletionItems(document{}, "file:///doc.mace", "  [output", protocol.Position{})
 		tAssert.True(handled)
 		tAssert.NotEmpty(items)
-		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = data, schema = ")
+		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = data, schema = ", protocol.Position{})
 		tAssert.True(handled)
 		tAssert.Empty(items)
-		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = data, schema_file = \"")
+		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = data, schema_file = \"", protocol.Position{})
 		tAssert.True(handled)
 		_ = items
-		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = data, parse = ")
+		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = data, parse = ", protocol.Position{})
 		tAssert.True(handled)
 		tAssert.Empty(items)
-		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = data, parse_file = \"")
+		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = data, parse_file = \"", protocol.Position{})
 		tAssert.True(handled)
 		_ = items
 	})

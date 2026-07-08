@@ -79,7 +79,7 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 	}
 
 	if scope == completionScopeScript {
-		if items, handled := importCompletionItems(document, linePrefix, uri); handled {
+		if items, handled := importCompletionItems(document, linePrefix, uri, position); handled {
 			return items
 		}
 	}
@@ -97,7 +97,7 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 	if scope == completionScopeOutput {
 		bareSelfItems := bareSelfCompletionItems(linePrefix, position)
 
-		if items, handled := directiveCompletionItems(document, uri, linePrefix); handled {
+		if items, handled := directiveCompletionItems(document, uri, linePrefix, position); handled {
 			return items
 		}
 
@@ -929,9 +929,9 @@ func completionScopeAt(text string, position protocol.Position) completionScope 
 	return completionScopeFile
 }
 
-func importCompletionItems(document document, linePrefix string, uri protocol.DocumentUri) ([]protocol.CompletionItem, bool) {
+func importCompletionItems(document document, linePrefix string, uri protocol.DocumentUri, position protocol.Position) ([]protocol.CompletionItem, bool) {
 	if matches := importOpenPathPattern.FindStringSubmatch(linePrefix); len(matches) == 2 {
-		return relativePathItems(document, uri, matches[1], nil, false), true
+		return relativePathItems(document, uri, matches[1], nil, false, position), true
 	}
 
 	if matches := importIdentifiersPattern.FindStringSubmatch(linePrefix); len(matches) == 3 {
@@ -972,7 +972,7 @@ func importCompletionItems(document document, linePrefix string, uri protocol.Do
 	return nil, false
 }
 
-func directiveCompletionItems(document document, uri protocol.DocumentUri, linePrefix string) ([]protocol.CompletionItem, bool) {
+func directiveCompletionItems(document document, uri protocol.DocumentUri, linePrefix string, position protocol.Position) ([]protocol.CompletionItem, bool) {
 	content, ok := directivePrefix(linePrefix)
 	if !ok {
 		return nil, false
@@ -1021,7 +1021,7 @@ func directiveCompletionItems(document document, uri protocol.DocumentUri, lineP
 		if state.outputMode == "schema" {
 			return []protocol.CompletionItem{}, true
 		}
-		return schemaFileItems(document, uri, linePrefix, matches[1]), true
+		return schemaFileItems(document, uri, linePrefix, matches[1], position), true
 	}
 
 	if matches := directiveParsePattern.FindStringSubmatch(lastPart); len(matches) == 2 {
@@ -1035,7 +1035,7 @@ func directiveCompletionItems(document document, uri protocol.DocumentUri, lineP
 		if state.outputMode == "schema" {
 			return []protocol.CompletionItem{}, true
 		}
-		return schemaFileItems(document, uri, linePrefix, matches[1]), true
+		return schemaFileItems(document, uri, linePrefix, matches[1], position), true
 	}
 
 	prefix := trailingIdentifierPrefix(lastPart)
@@ -1289,7 +1289,7 @@ func documentPathFromURI(uri protocol.DocumentUri) (string, bool) {
 	return filepath.FromSlash(path), true
 }
 
-func relativePathItems(document document, uri protocol.DocumentUri, pathPrefix string, excludedPaths []string, rootBounded bool) []protocol.CompletionItem {
+func relativePathItems(document document, uri protocol.DocumentUri, pathPrefix string, excludedPaths []string, rootBounded bool, position protocol.Position) []protocol.CompletionItem {
 	documentPath, ok := documentPathFromURI(uri)
 	if !ok {
 		return []protocol.CompletionItem{}
@@ -1300,6 +1300,12 @@ func relativePathItems(document document, uri protocol.DocumentUri, pathPrefix s
 		return []protocol.CompletionItem{}
 	}
 
+	replaceStart := position
+	replaceStart.Character -= uint32(len(pathPrefix))
+	replaceRange := protocol.Range{Start: replaceStart, End: position}
+	for index := range items {
+		items[index].TextEdit = protocol.TextEdit{Range: replaceRange, NewText: items[index].Label}
+	}
 	return sortCompletionItems(items)
 }
 
@@ -1316,8 +1322,8 @@ func schemaReferenceItems(document document, uri protocol.DocumentUri, linePrefi
 	return sortCompletionItems(items)
 }
 
-func schemaFileItems(document document, uri protocol.DocumentUri, linePrefix string, pathPrefix string) []protocol.CompletionItem {
-	return relativePathItems(document, uri, pathPrefix, importedPaths(document, linePrefix), true)
+func schemaFileItems(document document, uri protocol.DocumentUri, linePrefix string, pathPrefix string, position protocol.Position) []protocol.CompletionItem {
+	return relativePathItems(document, uri, pathPrefix, importedPaths(document, linePrefix), true, position)
 }
 
 func completionRoot(snapshot analysisSnapshot, uri protocol.DocumentUri) string {
