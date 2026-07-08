@@ -1,0 +1,15 @@
+|===|
+schema User: {
+  name: string,
+};
+
+User user = {
+  name: "Ada",
+};
+
+string message = "Hello $(user)";
+|===|
+[output = data]
+{
+  result: "unreachable",
+}

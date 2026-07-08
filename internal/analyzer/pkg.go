@@ -12,6 +12,7 @@ import (
 	"github.com/samber/lo"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
+	"github.com/louiss0/mace/internal/diagnostic"
 	"github.com/louiss0/mace/internal/lexer"
 	"github.com/louiss0/mace/internal/parser"
 	"github.com/louiss0/mace/internal/parser/ast"
@@ -35,8 +36,8 @@ var directiveKeywordDocs = map[string]string{
 	"output":      "Selects the output mode with `output = data` or `output = schema`.",
 	"schema":      "Validates `output = data` against a named local or imported schema. It does not switch output mode.",
 	"schema_file": "Only valid for data output; loads declarations from another Mace file for output validation. Without `schema`, the referenced file's schema output block defines the expected data output structure.",
-	"parse":       "Only valid for data output; validates the runtime `input` record against a schema already available in the current context and injects matching fields into the output block as global variables.",
-	"parse_file":  "Only valid for data output; loads schema declarations from another Mace file for parse-driven validation. When used without `schema`, the referenced file must expose exactly one schema. Matching runtime input fields are injected into the output block as global variables, just like `parse = <Schema>`. It still parses the runtime `input` record, not external JSON, YAML, or TOML data.",
+	"parse":       "Only valid for data output; validates the host-provided runtime input record against a schema already available in the current context.",
+	"parse_file":  "Only valid for data output; loads schema declarations from another Mace file for parse-driven validation. When used without `schema`, the referenced file must expose exactly one schema. It validates the host-provided runtime input record, not external JSON, YAML, or TOML data.",
 }
 
 var declarationKeywordDocs = map[string]string{
@@ -328,6 +329,33 @@ func FormatDocumentText(text string) string {
 
 func DiagnosticFromError(err error) protocol.Diagnostic {
 	position := protocol.Position{}
+	end := position
+	code := classifyDiagnosticCode(err.Error())
+	message := err.Error()
+	if diagnosticError, ok := sharedDiagnosticError(err); ok {
+		code = diagnosticCode(diagnosticError.Code)
+		message = diagnosticError.Message
+		if diagnosticError.Range.Start.Line != 0 || diagnosticError.Range.Start.Column != 0 || diagnosticError.Range.End.Line != 0 || diagnosticError.Range.End.Column != 0 {
+			position.Line = protocol.UInteger(diagnosticError.Range.Start.Line - 1)
+			position.Character = protocol.UInteger(diagnosticError.Range.Start.Column - 1)
+			end.Line = protocol.UInteger(diagnosticError.Range.End.Line - 1)
+			end.Character = protocol.UInteger(diagnosticError.Range.End.Column - 1)
+			return diagnosticWithCode(protocol.Range{Start: position, End: end}, protocol.DiagnosticSeverityError, code, message)
+		}
+	}
+
+	if diagnosticError, ok := processorDiagnosticError(err); ok {
+		code = diagnosticCodeFromProcessorError(diagnosticError)
+		message = diagnosticError.Message
+		if diagnosticError.Range.Start.Line != 0 || diagnosticError.Range.Start.Column != 0 || diagnosticError.Range.End.Line != 0 || diagnosticError.Range.End.Column != 0 {
+			position.Line = protocol.UInteger(diagnosticError.Range.Start.Line - 1)
+			position.Character = protocol.UInteger(diagnosticError.Range.Start.Column - 1)
+			end.Line = protocol.UInteger(diagnosticError.Range.End.Line - 1)
+			end.Character = protocol.UInteger(diagnosticError.Range.End.Column - 1)
+			return diagnosticWithCode(protocol.Range{Start: position, End: end}, protocol.DiagnosticSeverityError, code, message)
+		}
+	}
+
 	matches := diagnosticPositionPattern.FindStringSubmatch(err.Error())
 	if len(matches) == 3 {
 		line := parseUint(matches[1])
@@ -340,20 +368,10 @@ func DiagnosticFromError(err error) protocol.Diagnostic {
 		}
 	}
 
-	end := position
+	end = position
 	end.Character++
 
-	code := classifyDiagnosticCode(err.Error())
-	message := err.Error()
-	if diagnosticError, ok := processorDiagnosticError(err); ok {
-		code = diagnosticCodeFromProcessorError(diagnosticError)
-		message = diagnosticError.Message
-	}
-
-	return diagnosticWithCode(protocol.Range{
-		Start: position,
-		End:   end,
-	}, protocol.DiagnosticSeverityError, code, message)
+	return diagnosticWithCode(protocol.Range{Start: position, End: end}, protocol.DiagnosticSeverityError, code, message)
 }
 
 func DocumentPath(uri protocol.DocumentUri) string {
@@ -367,6 +385,15 @@ func DocumentPath(uri protocol.DocumentUri) string {
 
 func diagnosticFromError(err error) protocol.Diagnostic {
 	return DiagnosticFromError(err)
+}
+
+func sharedDiagnosticError(err error) (diagnostic.Error, bool) {
+	var diagnosticError diagnostic.Error
+	if !errors.As(err, &diagnosticError) {
+		return diagnostic.Error{}, false
+	}
+
+	return diagnosticError, true
 }
 
 func processorDiagnosticError(err error) (processor.DiagnosticError, bool) {
@@ -579,8 +606,13 @@ func identifierPrefixAt(text string, position protocol.Position) string {
 	index := positionIndex(text, position)
 
 	start := index
-	for start > 0 && isIdentifierCharacter(text[start-1]) {
-		start--
+	for start > 0 {
+		character := text[start-1]
+		if isIdentifierCharacter(character) || character == '$' {
+			start--
+			continue
+		}
+		break
 	}
 
 	return text[start:index]
@@ -601,8 +633,13 @@ func identifierRangeAt(text string, position protocol.Position) (protocol.Range,
 	index := positionIndex(text, position)
 
 	start := index
-	for start > 0 && isIdentifierCharacter(text[start-1]) {
-		start--
+	for start > 0 {
+		character := text[start-1]
+		if isIdentifierCharacter(character) || character == '$' {
+			start--
+			continue
+		}
+		break
 	}
 
 	end := index

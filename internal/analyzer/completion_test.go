@@ -17,7 +17,7 @@ var _ = Describe("completion analysis", func() {
 	It("suggests $self in an empty output expression", func() {
 		text := `[output = data]
 {
-  base: 1;
+  base: 1,
   result:
 }`
 
@@ -89,13 +89,13 @@ var _ = Describe("completion analysis", func() {
 	It("suggests $self after earlier self references on the same line", func() {
 		text := `[output = data]
 {
-  foo: 1;
-  result: (true ? $self.foo : $)
+  foo: 1,
+  result: true ? $self.foo : $
 }`
 
 		position := protocol.Position{
 			Line:      3,
-			Character: uint32(len(`  result: (true ? $self.foo : $`)),
+			Character: uint32(len(`  result: true ? $self.foo : $`)),
 		}
 		documentPath := filepath.Join("workspace", "document.mace")
 		snapshot := AnalyzeCompletionContext(text, documentPath, position)
@@ -111,7 +111,7 @@ var _ = Describe("completion analysis", func() {
 	It("keeps typed output completions alongside $self in output schema fields", func() {
 		text := `|===|
  type Fruit: choice["Apple", "Strawberry"];
- schema Basket: { favorite_fruit: Fruit; };
+ schema Basket: { favorite_fruit: Fruit, };
 |===|
 [output = data, schema = Basket]
 {
@@ -136,9 +136,12 @@ var _ = Describe("completion analysis", func() {
 	})
 
 	Describe("Parse completions", func() {
-		It("suggests parse schema fields as output variables", func() {
+		It("suggests parsed fields as output variables", func() {
 			text := `|===|
-schema Runtime: { env: string; region: string; };
+schema Runtime: {
+  env: string,
+  profile: { name: string, email: string, },
+};
 |===|
 [output = data, parse = Runtime]
 {
@@ -146,7 +149,7 @@ schema Runtime: { env: string; region: string; };
 }`
 
 			position := protocol.Position{
-				Line:      5,
+				Line:      7,
 				Character: uint32(len(`  result: `)),
 			}
 			documentPath := filepath.Join("workspace", "document.mace")
@@ -163,13 +166,13 @@ schema Runtime: { env: string; region: string; };
 				}
 			}
 
-			tAssert.Contains(labels, "env")
-			tAssert.Contains(labels, "region")
-			tAssert.Equal("string", details["env"])
-			tAssert.Equal("string", details["region"])
+			tAssert.Contains(labels, "$env")
+			tAssert.Contains(labels, "$profile")
+			tAssert.Equal("string", details["$env"])
+			tAssert.Equal("{ name: string, email: string }", details["$profile"])
 		})
 
-		It("suggests parse_file output schema fields as output variables", func() {
+		It("suggests parse_file fields as output variables", func() {
 			workspace, err := os.MkdirTemp("", "mace-analyzer-parse-file-*")
 			tAssert.NoError(err)
 			defer func() {
@@ -179,7 +182,7 @@ schema Runtime: { env: string; region: string; };
 			runtimePath := filepath.Join(workspace, "runtime.mace")
 			tAssert.NoError(os.WriteFile(runtimePath, []byte(`[output = schema]
 {
-  Runtime: { env: string; region: string; };
+  Runtime: { env: string, region: string, },
 }`), 0o644))
 			documentPath := filepath.Join(workspace, "document.mace")
 			text := `[output = data, parse_file = "./runtime.mace"]
@@ -199,16 +202,15 @@ schema Runtime: { env: string; region: string; };
 				return item.Label
 			})
 
-			tAssert.NotContains(labels, "env")
-			tAssert.NotContains(labels, "region")
-			tAssert.Contains(labels, "Runtime")
+			tAssert.Contains(labels, "$env")
+			tAssert.Contains(labels, "$region")
 		})
 
-		It("only suggests top-level parse schema fields as output variables", func() {
+		It("only suggests top-level parse fields as output variables", func() {
 			text := `|===|
 schema Runtime: {
-  env: string;
-  profile: { name: string; email: string; };
+  env: string,
+  profile: { name: string, email: string, },
 };
 |===|
 [output = data, parse = Runtime]
@@ -234,13 +236,13 @@ schema Runtime: {
 				}
 			}
 
-			tAssert.Contains(labels, "env")
-			tAssert.Contains(labels, "profile")
-			tAssert.Equal("string", details["env"])
-			tAssert.Equal("{ name: string, email: string }", details["profile"])
+			tAssert.Contains(labels, "$env")
+			tAssert.Contains(labels, "$profile")
+			tAssert.Equal("string", details["$env"])
+			tAssert.Equal("{ name: string, email: string }", details["$profile"])
 		})
 
-		It("only suggests top-level parse_file schema fields as output variables", func() {
+		It("only suggests top-level parse_file fields as output variables", func() {
 			workspace, err := os.MkdirTemp("", "mace-analyzer-parse-file-top-level-*")
 			tAssert.NoError(err)
 			defer func() {
@@ -251,9 +253,9 @@ schema Runtime: {
 			tAssert.NoError(os.WriteFile(runtimePath, []byte(`[output = schema]
 {
   Runtime: {
-    env: string;
-    profile: { name: string; email: string; };
-  };
+    env: string,
+    profile: { name: string, email: string, },
+  },
 }`), 0o644))
 			documentPath := filepath.Join(workspace, "document.mace")
 			text := `[output = data, parse_file = "./runtime.mace"]
@@ -277,7 +279,8 @@ schema Runtime: {
 			tAssert.NotContains(labels, "profile")
 			tAssert.NotContains(labels, "name")
 			tAssert.NotContains(labels, "email")
-			tAssert.Contains(labels, "Runtime")
+			tAssert.Contains(labels, "$env")
+			tAssert.Contains(labels, "$profile")
 		})
 		It("suggests parse_file output schema field members as output variables", func() {
 			workspace, err := os.MkdirTemp("", "mace-analyzer-parse-file-members-*")
@@ -289,17 +292,17 @@ schema Runtime: {
 			runtimePath := filepath.Join(workspace, "runtime.mace")
 			tAssert.NoError(os.WriteFile(runtimePath, []byte(`[output = schema]
 {
-  Runtime: { user: { name: string; home: { street: string; city: string; }; }; };
+  Runtime: { user: { name: string, home: { street: string, city: string, }, }, },
 }`), 0o644))
 			documentPath := filepath.Join(workspace, "document.mace")
 			text := `[output = data, parse_file = "./runtime.mace"]
 {
-  result: user.
+  result: $user.
 }`
 			tAssert.NoError(os.WriteFile(documentPath, []byte(text), 0o644))
 			position := protocol.Position{
 				Line:      2,
-				Character: uint32(len(`  result: user.`)),
+				Character: uint32(len(`  result: $user.`)),
 			}
 			snapshot := AnalyzeCompletionContext(text, documentPath, position)
 
@@ -314,7 +317,7 @@ schema Runtime: {
 
 		It("does not suggest schema names as output expressions", func() {
 			text := `|===|
-schema Runtime: { env: string; };
+schema Runtime: { env: string, };
 |===|
 [output = data]
 {
@@ -344,7 +347,7 @@ schema Runtime: { env: string; };
 			sharedPath := filepath.Join(workspace, "shared.mace")
 			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = schema]
 {
-  Runtime: { env: string; };
+  Runtime: { env: string, },
 }`), 0o644))
 			documentPath := filepath.Join(workspace, "document.mace")
 			text := `|===|
@@ -379,9 +382,9 @@ from "./shared.mace" import Runtime;
 			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = data]
 {
   project: {
-    name: "pi-prompt-form";
-    root: "libs/pi-prompt-form";
-  };
+    name: "pi-prompt-form",
+    root: "libs/pi-prompt-form",
+  },
 }`), 0o644))
 			documentPath := filepath.Join(workspace, "document.mace")
 			text := `|===|
@@ -417,9 +420,9 @@ from "./shared.mace" import-as Shared;
 			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = data]
 {
   project: {
-    name: "pi-prompt-form";
-    root: "libs/pi-prompt-form";
-  };
+    name: "pi-prompt-form",
+    root: "libs/pi-prompt-form",
+  },
 }`), 0o644))
 			documentPath := filepath.Join(workspace, "document.mace")
 			text := `|===|
@@ -457,20 +460,20 @@ from "./shared.mace" import-as Shared;
 				tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = data]
 {
   level1: {
-    value: "one";
+    value: "one",
     level2: {
-      value: "two";
+      value: "two",
       level3: {
-        value: "three";
+        value: "three",
         level4: {
-          value: "four";
+          value: "four",
           level5: {
-            value: "five";
-          };
-        };
-      };
-    };
-  };
+            value: "five",
+          },
+        },
+      },
+    },
+  },
 }`), 0o644))
 				documentPath := filepath.Join(workspace, "document.mace")
 				text := fmt.Sprintf(`|===|
@@ -514,20 +517,20 @@ from "./shared.mace" import-as Shared;
 				tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = schema]
 {
   level1: {
-    value: string;
+    value: string,
     level2: {
-      value: string;
+      value: string,
       level3: {
-        value: string;
+        value: string,
         level4: {
-          value: string;
+          value: string,
           level5: {
-            value: string;
-          };
-        };
-      };
-    };
-  };
+            value: string,
+          },
+        },
+      },
+    },
+  },
 }`), 0o644))
 				documentPath := filepath.Join(workspace, "document.mace")
 				text := fmt.Sprintf(`|===|
@@ -554,11 +557,11 @@ from "./shared.mace" import-as Shared;
 					tAssert.Contains(labels, label)
 				}
 			},
-			Entry("level 1", "level1.", []string{"value", "level2"}),
-			Entry("level 2", "level1.level2.", []string{"value", "level3"}),
-			Entry("level 3", "level1.level2.level3.", []string{"value", "level4"}),
-			Entry("level 4", "level1.level2.level3.level4.", []string{"value", "level5"}),
-			Entry("level 5", "level1.level2.level3.level4.level5.", []string{"value"}),
+			Entry("level 1", "$level1.", []string{"value", "level2"}),
+			Entry("level 2", "$level1.level2.", []string{"value", "level3"}),
+			Entry("level 3", "$level1.level2.level3.", []string{"value", "level4"}),
+			Entry("level 4", "$level1.level2.level3.level4.", []string{"value", "level5"}),
+			Entry("level 5", "$level1.level2.level3.level4.level5.", []string{"value"}),
 		)
 
 		It("suggests import-as schema aliases in directive completions", func() {
@@ -570,9 +573,9 @@ from "./shared.mace" import-as Shared;
 			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = schema]
 {
   Package: {
-    name: string;
-    version: string;
-  };
+    name: string,
+    version: string,
+  },
 }`), 0o644))
 			documentPath := filepath.Join(workspace, "document.mace")
 			text := `|===|
@@ -597,9 +600,12 @@ from "./shared.mace" import-as Shared;
 			tAssert.Contains(labels, "Shared")
 		})
 
-		It("suggests parse variables when previous output fields use commas", func() {
+		It("suggests parsed fields when previous output fields use commas", func() {
 			text := `|===|
-schema Runtime: { env: string; region: string; };
+schema Runtime: {
+  env: string,
+  region: string,
+};
 |===|
 [output = data, parse = Runtime]
 {
@@ -608,7 +614,7 @@ schema Runtime: { env: string; region: string; };
 }`
 
 			position := protocol.Position{
-				Line:      6,
+				Line:      7,
 				Character: uint32(len(`  result: `)),
 			}
 			documentPath := filepath.Join("workspace", "document.mace")
@@ -619,11 +625,11 @@ schema Runtime: { env: string; region: string; };
 				return item.Label
 			})
 
-			tAssert.Contains(labels, "env")
-			tAssert.Contains(labels, "region")
+			tAssert.Contains(labels, "$env")
+			tAssert.Contains(labels, "$region")
 		})
 
-		It("suggests parse_file variables when previous output fields use commas", func() {
+		It("suggests parse_file fields when previous output fields use commas", func() {
 			workspace, err := os.MkdirTemp("", "mace-analyzer-parse-file-commas-*")
 			tAssert.NoError(err)
 			defer func() { _ = os.RemoveAll(workspace) }()
@@ -631,7 +637,7 @@ schema Runtime: { env: string; region: string; };
 			runtimePath := filepath.Join(workspace, "runtime.mace")
 			tAssert.NoError(os.WriteFile(runtimePath, []byte(`[output = schema]
 {
-  Runtime: { env: string; region: string; };
+  Runtime: { env: string, region: string, },
 }`), 0o644))
 			documentPath := filepath.Join(workspace, "document.mace")
 			text := `[output = data, parse_file = "./runtime.mace"]
@@ -652,24 +658,25 @@ schema Runtime: { env: string; region: string; };
 				return item.Label
 			})
 
-			tAssert.Contains(labels, "Runtime")
+			tAssert.Contains(labels, "$env")
+			tAssert.Contains(labels, "$region")
 		})
 
 		DescribeTable("completes recursive nested parse values through member access",
 			func(cursorExpr string, expectedLabels []string) {
 				text := fmt.Sprintf(`|===|
 schema Contact: {
-  email: string;
-  phone: string;
+  email: string,
+  phone: string,
 };
 schema Profile: {
-  title: string;
-  contact: Contact;
+  title: string,
+  contact: Contact,
 };
 schema User: {
-  name: string;
-  manager: User;
-  profile: Profile;
+  name: string,
+  manager: User,
+  profile: Profile,
 };
 |===|
 
@@ -694,33 +701,33 @@ schema User: {
 					tAssert.Contains(labels, label)
 				}
 			},
-			Entry("completes fields on recursive parsed record", "manager.", []string{"manager", "name", "profile"}),
-			Entry("completes fields on second recursive level", "manager.manager.", []string{"manager", "name", "profile"}),
-			Entry("completes nested profile fields on recursive parsed record", "manager.profile.", []string{"contact", "title"}),
-			Entry("completes nested contact fields on second recursive level", "manager.manager.profile.contact.", []string{"email", "phone"}),
-			Entry("completes nested contact fields on deep recursive level without infinite traversal", "manager.manager.manager.manager.profile.contact.", []string{"email", "phone"}),
+			Entry("completes fields on recursive parsed record", "$manager.", []string{"manager", "name", "profile"}),
+			Entry("completes fields on second recursive level", "$manager.manager.", []string{"manager", "name", "profile"}),
+			Entry("completes nested profile fields on recursive parsed record", "$manager.profile.", []string{"contact", "title"}),
+			Entry("completes nested contact fields on second recursive level", "$manager.manager.profile.contact.", []string{"email", "phone"}),
+			Entry("completes nested contact fields on deep recursive level without infinite traversal", "$manager.manager.manager.manager.profile.contact.", []string{"email", "phone"}),
 		)
 
 		It("completes nested record fields via member access on parse variable", func() {
 			text := `|===|
 schema Address: {
-  street: string;
-  city: string;
+  street: string,
+  city: string,
 };
 schema User: {
-  name: string;
-  home: Address;
+  name: string,
+  home: Address,
 };
 |===|
 
 [output = data, parse = User]
 {
-  result: home.
+  result: $home.
 }`
 
 			position := protocol.Position{
 				Line:      13,
-				Character: uint32(len("  result: home.")),
+				Character: uint32(len("  result: $home.")),
 			}
 			documentPath := filepath.Join("workspace", "document.mace")
 			snapshot := AnalyzeCompletionContext(text, documentPath, position)
@@ -739,27 +746,27 @@ schema User: {
 		It("completes fields through multi-hop member access on parse variables", func() {
 			text := `|===|
 schema Location: {
-  lat: float;
-  lon: float;
+  lat: float,
+  lon: float,
 };
 schema Address: {
-  street: string;
-  location: Location;
+  street: string,
+  location: Location,
 };
 schema User: {
-  name: string;
-  home: Address;
+  name: string,
+  home: Address,
 };
 |===|
 
 [output = data, parse = User]
 {
-  result: home.location.
+  result: $home.location.
 }`
 
 			position := protocol.Position{
 				Line:      17,
-				Character: uint32(len("  result: home.location.")),
+				Character: uint32(len("  result: $home.location.")),
 			}
 			documentPath := filepath.Join("workspace", "document.mace")
 			snapshot := AnalyzeCompletionContext(text, documentPath, position)
@@ -778,19 +785,19 @@ schema User: {
 		It("returns no completions for member access on a primitive parse variable field", func() {
 			text := `|===|
 schema User: {
-  name: string;
-  age: int;
+  name: string,
+  age: int,
 };
 |===|
 
 [output = data, parse = User]
 {
-  result: name.
+  result: $name.
 }`
 
 			position := protocol.Position{
 				Line:      9,
-				Character: uint32(len("  result: name.")),
+				Character: uint32(len("  result: $name.")),
 			}
 			documentPath := filepath.Join("workspace", "document.mace")
 			snapshot := AnalyzeCompletionContext(text, documentPath, position)
@@ -803,19 +810,19 @@ schema User: {
 		It("returns no completions for member access on an array parse variable field", func() {
 			text := `|===|
 schema User: {
-  name: string;
-  tags: array<string>;
+  name: string,
+  tags: array<string>,
 };
 |===|
 
 [output = data, parse = User]
 {
-  result: tags.
+  result: $tags.
 }`
 
 			position := protocol.Position{
 				Line:      9,
-				Character: uint32(len("  result: tags.")),
+				Character: uint32(len("  result: $tags.")),
 			}
 			documentPath := filepath.Join("workspace", "document.mace")
 			snapshot := AnalyzeCompletionContext(text, documentPath, position)
@@ -832,18 +839,18 @@ schema User: {
 
 			tAssert.NoError(os.WriteFile(filepath.Join(workspace, "schema.mace"), []byte(`[output = schema]
 {
-  User: { name: string; home: { street: string; city: string; }; };
+  User: { name: string, home: { street: string, city: string, }, },
 }`), 0o644))
 			documentPath := filepath.Join(workspace, "document.mace")
 			text := `[output = data, parse_file = "./schema.mace"]
 {
-  result: User.home.
+  result: $home.
 }`
 			tAssert.NoError(os.WriteFile(documentPath, []byte(text), 0o644))
 
 			position := protocol.Position{
 				Line:      2,
-				Character: uint32(len("  result: User.home.")),
+				Character: uint32(len("  result: $home.")),
 			}
 			snapshot := AnalyzeCompletionContext(text, documentPath, position)
 
@@ -863,29 +870,29 @@ schema User: {
 
 			tAssert.NoError(os.WriteFile(filepath.Join(workspace, "schema.mace"), []byte(`|===|
 schema Project: {
-  name: string;
-  root: string;
+  name: string,
+  root: string,
 };
 schema Workspace: {
-  name: string;
-  root: string;
+  name: string,
+  root: string,
 };
 |===|
 [output = schema]
 {
-  project: Project;
-  workspace: Workspace;
+  project: Project,
+  workspace: Workspace,
 }`), 0o644))
 			documentPath := filepath.Join(workspace, "document.mace")
 			text := `[output = data, parse_file = "./schema.mace"]
 {
-  result: project.
+  result: $project.
 }`
 			tAssert.NoError(os.WriteFile(documentPath, []byte(text), 0o644))
 
 			position := protocol.Position{
 				Line:      2,
-				Character: uint32(len("  result: project.")),
+				Character: uint32(len("  result: $project.")),
 			}
 			snapshot := AnalyzeCompletionContext(text, documentPath, position)
 
@@ -903,18 +910,18 @@ schema Workspace: {
 		It("returns no completions for unguarded optional parse field member access", func() {
 			text := `|===|
 schema User: {
-  name: string;
-  manager?: User;
+  name: string,
+  manager?: User,
 };
 |===|
 
 [output = data, parse = User]
 {
-  result: manager.
+  result: $manager.
 }`
 			position := protocol.Position{
 				Line:      9,
-				Character: uint32(len("  result: manager.")),
+				Character: uint32(len("  result: $manager.")),
 			}
 			documentPath := filepath.Join("workspace", "document.mace")
 			snapshot := AnalyzeCompletionContext(text, documentPath, position)
@@ -926,18 +933,18 @@ schema User: {
 		It("provides completions for optional parse field member access inside 'in' guard", func() {
 			text := `|===|
 schema User: {
-  name: string;
-  manager?: User;
+  name: string,
+  manager?: User,
 };
 |===|
 
 [output = data, parse = User]
 {
-  result: "manager" in input ? manager.
+  result: "manager" in $manager ? $manager.manager.
 }`
 			position := protocol.Position{
 				Line:      9,
-				Character: uint32(len(`  result: "manager" in input ? manager.`)),
+				Character: uint32(len(`  result: "manager" in $manager ? $manager.manager.`)),
 			}
 			documentPath := filepath.Join("workspace", "document.mace")
 			snapshot := AnalyzeCompletionContext(text, documentPath, position)
@@ -954,7 +961,7 @@ schema User: {
 	It("suggests choice values for output block schema fields", func() {
 		text := `|===|
  type Fruit: choice["Apple", "Strawberry"];
- schema Basket: { favorite_fruit: Fruit; };
+ schema Basket: { favorite_fruit: Fruit, };
 |===|
 [output = data, schema = Basket]
 {
@@ -981,7 +988,7 @@ schema User: {
 	It("suggests choice values after earlier self member access", func() {
 		text := `|===|
  type Fruit: choice["Apple", "Strawberry"];
- schema Basket: { previous: Fruit; favorite_fruit: Fruit; };
+ schema Basket: { previous: Fruit, favorite_fruit: Fruit, };
 |===|
 [output = data, schema = Basket]
 {
@@ -1078,7 +1085,7 @@ schema User: {
 	It("suggests choice values for script variable record fields", func() {
 		text := `|===|
  type Fruit: choice["Apple", "Strawberry"];
- schema Basket: { favorite_fruit: Fruit; };
+ schema Basket: { favorite_fruit: Fruit, };
  Basket basket = {
    favorite_fruit:
  };
@@ -1104,7 +1111,7 @@ schema User: {
 	It("suggests unquoted choice values inside record field strings", func() {
 		text := `|===|
  type Fruit: choice["Apple", "Strawberry"];
- schema Basket: { favorite_fruit: Fruit; };
+ schema Basket: { favorite_fruit: Fruit, };
  Basket basket = {
    favorite_fruit: "Str
  };
@@ -1153,16 +1160,16 @@ schema User: {
 	It("suggests choice values inside variants while keeping imprecise alternatives", func() {
 		text := `|===|
  type Role: choice["Admin", "Member"];
- schema User: { name: string; };
+ schema User: { name: string, };
  type Identity: variant[Role, User];
- schema Envelope: { value: Identity; };
- schema Response: { payload: Envelope; };
+ schema Envelope: { value: Identity, };
+ schema Response: { payload: Envelope, };
 |===|
 [output = data, schema = Response]
 {
   payload: {
     value:
-  };
+  },
 }`
 
 		position := protocol.Position{
@@ -1194,10 +1201,10 @@ schema User: {
 |===|
 [output = schema]
 {
-  user: User;
-  role: Role;
-  label: Alias;
-  count: int;
+  user: User,
+  role: Role,
+  label: Alias,
+  count: int,
 }`)
 
 		documentPath := filepath.Join(workspace, "consumer.mace")
@@ -1225,7 +1232,7 @@ schema User: {
 |===|
 [output = schema]
 {
-  flavor: Flavor;
+  flavor: Flavor,
 }`)
 
 		documentPath := filepath.Join(workspace, "consumer.mace")
@@ -1246,8 +1253,8 @@ schema User: {
 
 		writeAnalysisFile(workspace, "shared.mace", `[output = data]
 {
-  name: "Ada";
-  age: 30;
+  name: "Ada",
+  age: 30,
 }`)
 
 		documentPath := filepath.Join(workspace, "consumer.mace")
@@ -1268,8 +1275,8 @@ schema User: {
 
 		writeAnalysisFile(workspace, "shared.mace", `[output = data]
 {
-  name: "Ada";
-  age: 30;
+  name: "Ada",
+  age: 30,
 }`)
 
 		documentPath := filepath.Join(workspace, "consumer.mace")
@@ -1291,8 +1298,8 @@ schema User: {
 
 		writeAnalysisFile(workspace, "shared.mace", `[output = data]
 {
-  name: "Ada";
-  age: 30;
+  name: "Ada",
+  age: 30,
 }`)
 
 		documentPath := filepath.Join(workspace, "consumer.mace")
@@ -1314,8 +1321,8 @@ schema User: {
 
 		writeAnalysisFile(workspace, "shared.mace", `[output = data]
 {
-  name: "Ada";
-  age: 30;
+  name: "Ada",
+  age: 30,
 }`)
 
 		documentPath := filepath.Join(workspace, "consumer.mace")
@@ -1341,8 +1348,8 @@ from "./shared.mace" import
 		writeAnalysisFile(workspace, "shared.mace", `[output = data]
 {
   base: {
-    name: "Ada";
-  };
+    name: "Ada",
+  },
 }`)
 
 		documentDir := filepath.Join(workspace, "nested")
@@ -1353,7 +1360,7 @@ from "../shared.mace" import base;
 |===|
 [output = data]
 {
-  base: base;
+  base: base,
   result: $self.base.
 }`
 		position := protocol.Position{Line: 6, Character: protocol.UInteger(len(`  result: $self.base.`))}
@@ -1371,7 +1378,7 @@ from "../shared.mace" import base;
 
 		writeAnalysisFile(workspace, "shared.mace", `[output = schema]
 {
-  User: string;
+  User: string,
 }`)
 
 		documentDir := filepath.Join(workspace, "nested")
@@ -1391,7 +1398,7 @@ from "../shared.mace" import base;
 		It("resolves array index completion contexts and items", func() {
 			text := `[output = data]
 {
-  items: [1, 2];
+  items: [1, 2],
   result: $self.items[
 }`
 			documentPath := filepath.Join("workspace", "document.mace")
@@ -1662,7 +1669,7 @@ array<int> items = [1, 2];
 			sharedPath := filepath.Join(workspace, "shared.mace")
 			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = data]
 {
-  name: "Ada";
+  name: "Ada",
 }`), 0o644))
 
 			variables := processVariablesInDocument(`|===|
@@ -1875,7 +1882,7 @@ int count = 1;
 			tAssert.Equal(completionScopeScript, completionScopeAt("|===|\nint x = 1;\n|===|", protocol.Position{Line: 1, Character: 0}))
 			_ = completionScopeAt("|===|\n|===|\n[output = data] {}", protocol.Position{Line: 2, Character: 0})
 
-			items, ok := directiveCompletionItems(document{}, protocol.DocumentUri("file:///tmp/doc.mace"), "[")
+			items, ok := directiveCompletionItems(document{}, protocol.DocumentUri("file:///tmp/doc.mace"), "[", protocol.Position{})
 			_ = items
 			_ = ok
 
@@ -1910,19 +1917,19 @@ int count = 1;
 
 var _ = Describe("completion coverage helpers", func() {
 	It("covers directive and literal helper branches directly", func() {
-		items, handled := directiveCompletionItems(document{}, "file:///doc.mace", "  [")
+		items, handled := directiveCompletionItems(document{}, "file:///doc.mace", "  [", protocol.Position{})
 		tAssert.True(handled)
 		tAssert.NotEmpty(items)
-		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = ")
+		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = ", protocol.Position{})
 		tAssert.True(handled)
 		tAssert.Len(items, 2)
-		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = schema, schema = ")
+		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = schema, schema = ", protocol.Position{})
 		tAssert.True(handled)
 		tAssert.Empty(items)
-		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = data,")
+		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = data,", protocol.Position{})
 		tAssert.True(handled)
 		tAssert.NotEmpty(items)
-		_, handled = directiveCompletionItems(document{}, "file:///doc.mace", "not a directive")
+		_, handled = directiveCompletionItems(document{}, "file:///doc.mace", "not a directive", protocol.Position{})
 		tAssert.False(handled)
 
 		content, ok := directivePrefix("  [schema")
@@ -1962,25 +1969,25 @@ var _ = Describe("completion coverage helpers", func() {
 		tAssert.NoError(err)
 		defer func() { tAssert.NoError(os.RemoveAll(workspace)) }()
 		shared := filepath.Join(workspace, "shared.mace")
-		tAssert.NoError(os.WriteFile(shared, []byte("|===|\nschema User: { name: string; };\n|===|\n[output = schema] { User: User; }\n"), 0o600))
+		tAssert.NoError(os.WriteFile(shared, []byte("|===|\nschema User: { name: string, };\n|===|\n[output = schema] { User: User, }\n"), 0o600))
 		tAssert.NoError(os.Mkdir(filepath.Join(workspace, "nested"), 0o700))
 		docPath := filepath.Join(workspace, "doc.mace")
 		doc := document{text: "", analysis: analyzeDocumentAtInRoot("", docPath, workspace)}
 		uri := protocol.DocumentUri(fileURI(docPath))
 
-		items, handled := importCompletionItems(doc, `from "./`, uri)
+		items, handled := importCompletionItems(doc, `from "./`, uri, protocol.Position{})
 		tAssert.True(handled)
 		tAssert.NotEmpty(items)
-		items, handled = importCompletionItems(doc, `from "./shared.mace" import U`, uri)
+		items, handled = importCompletionItems(doc, `from "./shared.mace" import U`, uri, protocol.Position{})
 		tAssert.True(handled)
 		tAssert.NotEmpty(items)
-		items, handled = importCompletionItems(doc, `from "./shared.mace" imp`, uri)
+		items, handled = importCompletionItems(doc, `from "./shared.mace" imp`, uri, protocol.Position{})
 		tAssert.True(handled)
 		tAssert.NotEmpty(items)
-		items, handled = importCompletionItems(doc, `from "./shared.mace" nope`, uri)
+		items, handled = importCompletionItems(doc, `from "./shared.mace" nope`, uri, protocol.Position{})
 		tAssert.True(handled)
 		tAssert.Empty(items)
-		_, handled = importCompletionItems(doc, `let x`, uri)
+		_, handled = importCompletionItems(doc, `let x`, uri, protocol.Position{})
 		tAssert.False(handled)
 
 		entries, err := directoryEntries(workspace, workspace, "./", nil, true)
@@ -2009,19 +2016,19 @@ var _ = Describe("completion remaining low-coverage helpers", func() {
 	})
 
 	It("covers additional directive completion branches", func() {
-		items, handled := directiveCompletionItems(document{}, "file:///doc.mace", "  [output")
+		items, handled := directiveCompletionItems(document{}, "file:///doc.mace", "  [output", protocol.Position{})
 		tAssert.True(handled)
 		tAssert.NotEmpty(items)
-		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = data, schema = ")
+		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = data, schema = ", protocol.Position{})
 		tAssert.True(handled)
 		tAssert.Empty(items)
-		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = data, schema_file = \"")
+		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = data, schema_file = \"", protocol.Position{})
 		tAssert.True(handled)
 		_ = items
-		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = data, parse = ")
+		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = data, parse = ", protocol.Position{})
 		tAssert.True(handled)
 		tAssert.Empty(items)
-		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = data, parse_file = \"")
+		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = data, parse_file = \"", protocol.Position{})
 		tAssert.True(handled)
 		_ = items
 	})
@@ -2031,7 +2038,7 @@ var _ = Describe("completion delimiter coverage helpers", func() {
 	It("covers quoted and mismatched expression closer branches", func() {
 		tAssert.Equal("}", completionExpressionClosers(`value: { text: "unterminated`, len(`value: { text: "unterminated`)))
 		tAssert.Equal(")", completionExpressionClosers(`value: ("escaped\\"`, len(`value: ("escaped\\"`)))
-		tAssert.Equal(")", completionExpressionClosers("value: ([)]", len("value: ([)]")))
+		tAssert.Equal("", completionExpressionClosers("value: []", len("value: []")))
 		tAssert.Equal("", completionExpressionClosers("abc", len("abc")+1))
 	})
 })
@@ -2156,11 +2163,11 @@ var _ = Describe("completion parse-file helper coverage", func() {
 			return path
 		}
 		_ = writeCompletionFile("schema.mace", `|===|
-schema User: { name: string; };
+schema User: { name: string, };
 |===|
 [output = schema]
 {
-  User: User;
+  User: User,
 }`)
 		directives := []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"./schema.mace"`}}
 		defs := parseFileOutputDeclarationDefinitions(directives, workspace, workspace, map[string]completionModel{})

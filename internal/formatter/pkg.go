@@ -305,7 +305,7 @@ func formatDocDeclaration(declaration ast.DocDeclaration) (string, error) {
 		for _, key := range keys {
 			lines = append(lines, fmt.Sprintf("    %s: %s,", key, declaration.Documentation.Props[key].Lexeme))
 		}
-		lines = append(lines, "  };")
+		lines = append(lines, "  },")
 	}
 	lines = append(lines, "};")
 	return strings.Join(lines, "\n"), nil
@@ -334,17 +334,21 @@ func formatOutputDirectives(directives []ast.OutputDirective) (string, error) {
 }
 
 func formatOutputField(field ast.OutputField, trailingComma bool) (string, error) {
-	value, err := formatExpressionWithDepth(field.Value, 1)
-	if err != nil {
-		return "", err
-	}
-
 	optional := ""
 	if field.Optional {
 		optional = "?"
 	}
 
 	description := formatInlineDescription(field.Description)
+	if field.Shorthand {
+		return formatTrailingComma(fmt.Sprintf("%s%s", field.Name, description), trailingComma), nil
+	}
+
+	value, err := formatExpressionWithDepth(field.Value, 1)
+	if err != nil {
+		return "", err
+	}
+
 	return formatTrailingComma(fmt.Sprintf("%s%s: %s%s", field.Name, optional, value, description), trailingComma), nil
 }
 
@@ -505,14 +509,19 @@ func formatRecordLiteral(record ast.RecordLiteral, depth int) (string, error) {
 	indent := strings.Repeat("  ", depth+1)
 	closingIndent := strings.Repeat("  ", depth)
 	for index, field := range record.Fields {
-		value, err := formatExpressionWithDepth(field.Value, depth+1)
-		if err != nil {
-			return "", err
-		}
-
 		optional := ""
 		if field.Optional {
 			optional = "?"
+		}
+
+		if field.Shorthand {
+			lines = append(lines, formatMultilineRecordFieldShorthand(field.Name, optional, indent, index < len(record.Fields)-1))
+			continue
+		}
+
+		value, err := formatExpressionWithDepth(field.Value, depth+1)
+		if err != nil {
+			return "", err
 		}
 
 		lines = append(lines, formatMultilineRecordField(field.Name, optional, value, indent, index < len(record.Fields)-1))
@@ -575,6 +584,10 @@ func formatMultilineRecordField(name string, optional string, value string, inde
 	lines[0] = indent + fmt.Sprintf("%s%s: %s", name, optional, lines[0])
 	lines[len(lines)-1] = formatTrailingComma(lines[len(lines)-1], trailingComma)
 	return strings.Join(lines, "\n")
+}
+
+func formatMultilineRecordFieldShorthand(name string, optional string, indent string, trailingComma bool) string {
+	return formatTrailingComma(indent+name+optional, trailingComma)
 }
 
 func formatTrailingComma(value string, trailingComma bool) string {

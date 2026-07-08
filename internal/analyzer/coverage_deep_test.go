@@ -60,7 +60,7 @@ string value = "x";
 {
   profile: user.profile,
   digits: numbers[12],
-  guarded: ("name" in user && 'age' in profile ? 1 : 0),
+  guarded: "name" in user && 'age' in profile ? 1 : 0,
   literal: "a \"quote\" b",
 }
 `
@@ -95,8 +95,8 @@ string value = "x";
 		tAssert.NoError(os.WriteFile(sharedPath, []byte(`
 [output = schema]
 {
-  User: { name: string; home: { city: string; }; };
-  Runtime: { env: string; };
+  User: { name: string, home: { city: string, }, },
+  Runtime: { env: string, },
 }
 `), 0o644))
 
@@ -116,8 +116,8 @@ from "./shared.mace" import User, Runtime;
 		_ = completionFile(doc, "")
 		_ = currentImports(doc, "")
 		_ = completionRoot(snapshot, uri)
-		_ = relativePathItems(doc, uri, "./", nil, true)
-		_ = schemaFileItems(doc, uri, "", "./")
+		_ = relativePathItems(doc, uri, "./", nil, true, protocol.Position{})
+		_ = schemaFileItems(doc, uri, "", "./", protocol.Position{})
 		_ = schemaReferenceItems(doc, uri, "", "Us")
 		_ = availableSchemaNames(doc, uri, "")
 		_ = importedPaths(doc, "")
@@ -166,8 +166,8 @@ from "./shared.mace" import User, Runtime;
 		tAssert.NoError(os.WriteFile(sharedPath, []byte(`
 [output = schema]
 {
-  User: { name: string; profile: { city: string; }; };
-  Numbers: { values: array<string>; };
+  User: { name: string, profile: { city: string, }, },
+  Numbers: { values: array<string>, },
 }
 `), 0o644))
 		documentPath := filepath.Join(workspace, "doc.mace")
@@ -200,8 +200,8 @@ string digits = ["x", "y"];
 		_, _ = resolveCompletionValue(ast.SelfReference{Path: []string{"user", "profile"}}, nil, selfValue)
 
 		locals := map[string]ast.Expression{
-			"name": ast.StringLiteral{Lexeme: `"Ada"`},
-			"user": ast.RecordLiteral{Fields: []ast.RecordField{{Name: "profile", Value: ast.StringLiteral{Lexeme: `"Ada"`}}}},
+			"name":  ast.StringLiteral{Lexeme: `"Ada"`},
+			"user":  ast.RecordLiteral{Fields: []ast.RecordField{{Name: "profile", Value: ast.StringLiteral{Lexeme: `"Ada"`}}}},
 			"items": ast.ArrayLiteral{Elements: []ast.Expression{ast.StringLiteral{Lexeme: `"a"`}, ast.StringLiteral{Lexeme: `"b"`}}},
 		}
 		_, _ = resolveLocalCompletionValue(ast.Identifier{Name: "name"}, locals, map[string]struct{}{})
@@ -238,24 +238,24 @@ string digits = ["x", "y"];
 		tAssert.NoError(os.WriteFile(sharedPath, []byte(`
 [output = schema]
 {
-  User: { name: string; profile: { city: string; }; tags: string; };
-  Runtime: { env: string; };
+  User: { name: string, profile: { city: string, }, tags: string, },
+  Runtime: { env: string, },
 }
 `), 0o644))
 		documentPath := filepath.Join(workspace, "doc.mace")
 		text := `|===|
 from "./shared.mace" import User, Runtime;
 type Alias: string;
-schema Doc: { field: string; };
-Profile record = { age: 1; active: true; };
+schema Doc: { field: string, };
+Profile record = { age: 1, active: true, };
 |===|
 [output = data, schema = User, schema_file = "./shared.mace", parse = Runtime, parse_file = "./shared.mace"]
 {
-  user: { name: "Ada"; profile: { city: "LA"; }; tags: "x"; };
-  list: ["a", "b"];
-  mixed: ["a", 1];
-  item: values[0];
-  self_ref: $self.user.profile;
+  user: { name: "Ada", profile: { city: "LA", }, tags: "x", },
+  list: ["a", "b"],
+  mixed: ["a", 1],
+  item: values[0],
+  self_ref: $self.user.profile,
 }
 `
 		tAssert.NoError(os.WriteFile(documentPath, []byte(text), 0o644))
@@ -318,7 +318,7 @@ Profile record = { age: 1; active: true; };
 		tAssert.NoError(os.WriteFile(singleSchemaPath, []byte(`
 [output = schema]
 {
-  Only: { value: string; };
+  Only: { value: string, },
 }
 `), 0o644))
 		_, _ = parseInputSemanticSchemaName(ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"./single.mace"`}}}}, workspace)
@@ -327,7 +327,7 @@ Profile record = { age: 1; active: true; };
 		_, _ = importedImportAsSemanticSymbol(ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData, DataFields: []ast.OutputField{{Name: "Only", Value: ast.StringLiteral{Lexeme: `"x"`}}}}}, documentPath, "Alias")
 		_, _ = addMissingScriptSemicolonText("|===|\ntype Alias: string\n|===|")
 		_, _ = moveScriptBlockBeforeOutputText("[output = data]\n{}\n|===|\ntype Alias: string;\n|===|")
-		_, _ = extractRecordLiteralIntoSchemaText("|===|\nProfile record = { age: 1; active: true; };\n|===|")
+		_, _ = extractRecordLiteralIntoSchemaText("|===|\nProfile record = { age: 1, active: true, };\n|===|")
 		_, _ = replaceVariableDeclaration("string value = \"x\";", regexp.MustCompile(`(?m)^([ \t]*)(string)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*("[^"]*");`), func(matches []string) string { return matches[1] + matches[2] + " fresh = " + matches[4] + ";" })
 		_, _ = semanticDiagnosticFromError(ast.File{}, nil, processor.DiagnosticError{Code: processor.CodeInvalidNullUsage, Message: "null bad"})
 		_, _ = semanticDiagnosticFromError(ast.File{}, nil, processor.DiagnosticError{Code: processor.CodeTypeMismatch, Message: "processor: type mismatch: expected string, got int"})
@@ -344,8 +344,8 @@ Profile record = { age: 1; active: true; };
 		tAssert.NoError(os.WriteFile(sharedPath, []byte(`
 [output = schema]
 {
-  User: { name: string; home: { city: string; }; };
-  Runtime: { env: string; };
+  User: { name: string, home: { city: string, }, },
+  Runtime: { env: string, },
 }
 `), 0o644))
 		documentPath := filepath.Join(workspace, "doc.mace")
@@ -366,12 +366,12 @@ string value = "x";
 		doc := document{text: text, analysis: snapshot}
 		uri := protocol.DocumentUri(fileURI(documentPath))
 
-		_, _ = importCompletionItems(doc, "from \"./", uri)
-		_, _ = importCompletionItems(doc, "from \"./shared.mace\" import Un", uri)
-		_, _ = importCompletionItems(doc, "from \"./shared.mace\" ", uri)
-		_, _ = directiveCompletionItems(doc, uri, "[")
-		_, _ = directiveCompletionItems(doc, uri, "[output = data,")
-		_, _ = directiveCompletionItems(doc, uri, "[output = schema, schema = ")
+		_, _ = importCompletionItems(doc, "from \"./", uri, protocol.Position{})
+		_, _ = importCompletionItems(doc, "from \"./shared.mace\" import Un", uri, protocol.Position{})
+		_, _ = importCompletionItems(doc, "from \"./shared.mace\" ", uri, protocol.Position{})
+		_, _ = directiveCompletionItems(doc, uri, "[", protocol.Position{})
+		_, _ = directiveCompletionItems(doc, uri, "[output = data,", protocol.Position{})
+		_, _ = directiveCompletionItems(doc, uri, "[output = schema, schema = ", protocol.Position{})
 		_, _ = stringLiteralInitializerCompletionItems(doc, uri, protocol.Position{Line: 0, Character: 13}, false)
 		_, _ = stringLiteralInitializerCompletionItems(doc, uri, protocol.Position{Line: 4, Character: 12}, true)
 		_, _ = initializerCompletionItems(doc, uri, protocol.Position{Line: 2, Character: 18})

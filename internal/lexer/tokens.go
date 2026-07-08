@@ -6,6 +6,7 @@ const (
 	TokenEOF TokenType = iota
 	TokenIdentifier
 	TokenSelf
+	TokenDollar
 
 	TokenFrom
 	TokenImport

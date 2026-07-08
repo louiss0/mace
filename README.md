@@ -24,7 +24,7 @@ is documented in [the formal specification](./docs/src/content/docs/reference/sp
 - Deterministic expression evaluation
 - Output validation against local schemas or external schema files in implicit or explicit data outputs
 - Relative imports between Mace files and remote imports over HTTP(S)
-- Schema-validated runtime input through `parse = <Schema>` and `parse_file = "<path>"` in data outputs, including remote schema files over HTTP(S); both inject matching input fields into the output block as global variables, `parse` selects an already-available schema, and `parse_file` loads schema declarations and can infer the schema when the referenced file exports exactly one schema
+- Schema-validated runtime input through `parse = <Schema>` and `parse_file = "<path>"` in data outputs, including remote schema files over HTTP(S); parsed fields are exposed as `$`-prefixed variables, `parse` selects an already-available schema, and `parse_file` loads schema declarations and can infer the schema when the referenced file exports exactly one schema
 - Canonical source formatting
 - Language Server Protocol support over stdio
 - Go bindings for parsing, unmarshalling, and marshalling
@@ -81,6 +81,9 @@ Mace supports:
 - literal `choice[...]` aliases with mixed scalar members, reusable choice aliases,
   and variant-friendly autocomplete
 - record, array, arithmetic, logical, merge, and conditional expressions
+- record and data output field shorthand: `{ name, }` expands to `{ name: name, }`, and it works for strings, numbers, arrays, nested records, and output blocks
+- output fields evaluate expressions directly; parentheses are for grouping math and other expressions
+- commas separate record, schema, and output fields; semicolons terminate declarations and statements
 - `$self` references inside output evaluation
 - hexadecimal integer and fractional numeric types with canonical string JSON output
 
@@ -221,7 +224,7 @@ int base = 2 + 2;
 |===|
 [output = data, parse = Runtime]
 {
-  env: env,
+  env: $env,
   base: base
 }
 ```
@@ -384,7 +387,7 @@ schema Runtime: { env: string; };
 |===|
 [output = data, parse = Runtime]
 {
-  env: env
+  env: $env
 }`, map[string]any{
 	"env": "prod",
 })

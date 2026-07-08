@@ -81,11 +81,11 @@ var _ = Describe("FormatFile", func() {
 from "./base.mace" import User, Config;
 type Name: string;
 type Fruit: choice["Apple", "strawberry"];
-schema User: { name: string; age?: int; };
+schema User: { name: string, age?: int, };
 string user = "Ada";
 |===|
 [output = data, schema = User]
-{ name: user; age: 1 + 2 * 3; }`)
+{ name: user, age: 1 + 2 * 3, }`)
 		tAssert.NoError(err)
 
 		output, err := FormatFile(file)
@@ -113,7 +113,7 @@ from "./base.mace" import User:Person, Config;
 |===|
 [output = data]
 {
-  display_name?: "Ada" /# Optional display name;
+  display_name?: "Ada" /# Optional display name,
 }`)
 		tAssert.NoError(err)
 
@@ -144,7 +144,7 @@ from "./base.mace" import User:Person, Config;
 from "./base.mace" import-as Base;
 |===|
 [output = data]
-{ result: Base.name; }`)
+{ result: Base.name, }`)
 		tAssert.NoError(err)
 
 		output, err := FormatFile(file)
@@ -179,10 +179,10 @@ from "./base.mace" import-as Base;
 	It("formats record map type references", func() {
 		file, err := parseMaceFile(`|===|
 type Dependencies: record<string>;
-record<string> deps = { foo: "bar"; };
+record<string> deps = { foo: "bar", };
 |===|
 [output = schema]
-{ dependencies: record<string>; }`)
+{ dependencies: record<string>, }`)
 		tAssert.NoError(err)
 
 		output, err := FormatFile(file)
@@ -201,7 +201,7 @@ record<string> deps = {
 
 	It("formats all output directive kinds", func() {
 		file, err := parseMaceFile(`[output = data, schema_file = "./schemas.mace", parse = Runtime, parse_file = "./input.mace"]
-{ result: "ok"; }`)
+{ result: "ok", }`)
 		tAssert.NoError(err)
 
 		output, err := FormatFile(file)
@@ -218,7 +218,7 @@ record<string> deps = {
  type Mode: choice[Environment, 1, true];
 |===|
 [output = data]
-{ value: "dev"; }`)
+{ value: "dev", }`)
 		tAssert.NoError(err)
 
 		output, err := FormatFile(file)
@@ -240,10 +240,10 @@ schema_doc User {
   props: {
     name: "Display name",
     age: "Age in years",
-  };
+  },
 };
 |===|
-[output = data] { result: "ok"; }`)
+[output = data] { result: "ok", }`)
 		tAssert.NoError(err)
 
 		output, err := FormatFile(file)
@@ -254,7 +254,7 @@ schema_doc User {
   props: {
     age: "Age in years",
     name: "Display name",
-  };
+  },
 };
 |==========================|
 [output = data]
@@ -269,7 +269,7 @@ from "./shared.mace" import User;
 string name = "Ada";
 |===|
 [output = data]
-{ result: name; }`)
+{ result: name, }`)
 		tAssert.NoError(err)
 
 		output, err := FormatFile(file)
@@ -287,12 +287,12 @@ string name = "Ada";
 	It("formats booleans, self references, prefixes, and comparisons", func() {
 		file, err := parseMaceFile(`[output = data]
 {
-  enabled: true;
-  disabled: false;
-  current: $self.profile.name;
-  inverse: !false;
-  bits: ~1;
-  comparison: 1 < 2 && 3 >= 2 || 4 != 5;
+  enabled: true,
+  disabled: false,
+  current: $self.profile.name,
+  inverse: !false,
+  bits: ~1,
+  comparison: 1 < 2 && 3 >= 2 || 4 != 5,
 }`)
 		tAssert.NoError(err)
 
@@ -311,7 +311,7 @@ string name = "Ada";
 
 	It("formats documentation declarations and inline output docs", func() {
 		file, err := parseMaceFile(`|===|
-schema User: { name: string; };
+schema User: { name: string, };
 schema_doc User {
   summary: "Represents a user.",
   description: """
@@ -323,7 +323,7 @@ schema_doc User {
 """
 # Public User Output
 """
-{ user: User; }`)
+{ user: User, }`)
 		tAssert.NoError(err)
 
 		output, err := FormatFile(file)
@@ -349,7 +349,7 @@ schema_doc User {
 	})
 
 	It("preserves expression semantics with parentheses", func() {
-		file, err := parseMaceFile(`[output = data] { result: (1 + 2) * (3 - 4 ? 5 : 6); }`)
+		file, err := parseMaceFile(`[output = data] { result: ((1 + 2) * (3 - 4 ? 5 : 6)), }`)
 		tAssert.NoError(err)
 
 		output, err := FormatFile(file)
@@ -361,7 +361,7 @@ schema_doc User {
 	})
 
 	It("formats array access expressions", func() {
-		file, err := parseMaceFile(`[output = data] { result: users [ 0 ] . name; }`)
+		file, err := parseMaceFile(`[output = data] { result: users [ 0 ] . name, }`)
 		tAssert.NoError(err)
 
 		output, err := FormatFile(file)
@@ -373,7 +373,7 @@ schema_doc User {
 	})
 
 	It("formats bare output blocks without injecting a directive", func() {
-		file, err := parseMaceFile(`{ result: 1 + 2; }`)
+		file, err := parseMaceFile(`{ result: 1 + 2, }`)
 		tAssert.NoError(err)
 
 		output, err := FormatFile(file)
@@ -386,7 +386,7 @@ schema_doc User {
 	It("keeps arrays and nested records expanded instead of collapsing them", func() {
 		file, err := parseMaceFile(`[output = data]
 {
-  result: [{ profile: { name: "Ada"; }; }, { profile: { name: "Bob"; }; }];
+  result: [{ profile: { name: "Ada", }, }, { profile: { name: "Bob", }, }],
 }`)
 		tAssert.NoError(err)
 
@@ -412,8 +412,8 @@ schema_doc User {
 	It("formats schema-mode output blocks with type references", func() {
 		file, err := parseMaceFile(`[output = schema]
 {
-  name: string;
-  tags?: array<string>;
+  name: string,
+  tags?: array<string>,
 }`)
 		tAssert.NoError(err)
 
@@ -432,7 +432,7 @@ type Value: variant[string, int];
 |===|
 [output = schema]
 {
-  value: variant[string, int];
+  value: variant[string, int],
 }`)
 		tAssert.NoError(err)
 
@@ -454,8 +454,8 @@ hex_float ratio = 0x02.80;
 |===|
 [output = data]
 {
-  mask: mask;
-  ratio: ratio;
+  mask: mask,
+  ratio: ratio,
 }`)
 		tAssert.NoError(err)
 
@@ -478,7 +478,7 @@ type Value: union[Profile, Audit];
 |===|
 [output = schema]
 {
-  value: union[Profile, Audit];
+  value: union[Profile, Audit],
 }`)
 		tAssert.NoError(err)
 

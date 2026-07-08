@@ -152,7 +152,10 @@ func yamlRootExpression(file *yamlast.File) (recordExpression, error) {
 			fields = append(fields, recordField{name: name, value: expression})
 			continue
 		}
-		record, _ = yamlRecordWithHoists(record, &state)
+		record, err = yamlRecordWithHoists(record, &state)
+		if err != nil {
+			return recordExpression{}, err
+		}
 		fields = append(fields, recordField{name: name, value: record})
 	}
 
@@ -912,7 +915,11 @@ func (expression recordExpression) render(depth int) string {
 	closingIndent := strings.Repeat("  ", depth)
 	lines := []string{"{"}
 	for index, field := range expression.fields {
-		line := indent + field.name + ": " + field.value.render(depth+1)
+		value := field.value.render(depth + 1)
+		if raw, ok := field.value.(rawExpression); ok && (strings.HasPrefix(raw.text, "$self.") || (importFieldPattern.MatchString(raw.text) && raw.text != "true" && raw.text != "false" && raw.text != "null")) {
+			value = "(" + value + ")"
+		}
+		line := indent + field.name + ": " + value
 		if index < len(expression.fields)-1 {
 			line += ","
 		}

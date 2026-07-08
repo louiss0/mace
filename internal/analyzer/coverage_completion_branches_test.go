@@ -26,19 +26,19 @@ var _ = Describe("analyzer completion branch coverage", func() {
 
 		schemaText := `[output = schema]
 {
-  User: { name: string; profile: { city: string; }; };
-  Shared: { value: string; };
-  Choice: choice["Ada", 1, true];
+  User: { name: string, profile: { city: string, }, },
+  Shared: { value: string, },
+  Choice: choice["Ada", 1, true],
 }`
 		dataText := `[output = data, schema = User]
 {
-  user: { name: "Ada"; profile: { city: "LA"; }; };
-  count: 1;
-  values: [1, 2];
+  user: { name: "Ada", profile: { city: "LA", }, },
+  count: 1,
+  values: [1, 2],
 }`
 		importText := `[output = schema]
 {
-  Exported: { value: string; };
+  Exported: { value: string, },
 }`
 		scriptText := `|===|
 string value = "Ada";
@@ -46,7 +46,7 @@ int number = 1;
 |===|`
 		memberText := `[output = data, schema = User]
 {
-  user: { name: "Ada"; profile: { city: "LA"; }; };
+  user: { name: "Ada", profile: { city: "LA", }, },
   ref: user.profile.
 }`
 		emptyText := `[output = data]
@@ -121,30 +121,30 @@ int number = 1;
 		_ = completionDeclarations(document{text: "plain", analysis: analysisSnapshot{}}, scriptURI, protocol.Position{Line: 0, Character: 0}, "", completionScopeFile)
 		_ = completionDeclarations(document{text: "plain", analysis: analysisSnapshot{}}, scriptURI, protocol.Position{Line: 0, Character: 0}, "", completionScope(99))
 
-		_, _ = importCompletionItems(document{text: "from \"./", analysis: schemaSnapshot}, scriptURI, "from \"./",)
-		_, _ = importCompletionItems(document{text: "from \"./schema.mace\" import Ex", analysis: schemaSnapshot}, scriptURI, `from "./schema.mace" import Ex`)
-		_, _ = importCompletionItems(document{text: "import ", analysis: schemaSnapshot}, scriptURI, `import `)
-		_, _ = importCompletionItems(document{text: "plain", analysis: schemaSnapshot}, scriptURI, `plain`)
+		_, _ = importCompletionItems(document{text: "from \"./", analysis: schemaSnapshot}, `from "./`, scriptURI, protocol.Position{})
+		_, _ = importCompletionItems(document{text: "from \"./schema.mace\" import Ex", analysis: schemaSnapshot}, `from "./schema.mace" import Ex`, scriptURI, protocol.Position{})
+		_, _ = importCompletionItems(document{text: "import ", analysis: schemaSnapshot}, `import `, scriptURI, protocol.Position{})
+		_, _ = importCompletionItems(document{text: "plain", analysis: schemaSnapshot}, `plain`, scriptURI, protocol.Position{})
 
-		_, _ = directiveCompletionItems(schemaDoc, scriptURI, "[")
-		_, _ = directiveCompletionItems(schemaDoc, scriptURI, "[output = ")
-		_, _ = directiveCompletionItems(schemaDoc, scriptURI, "[output = data, ")
-		_, _ = directiveCompletionItems(schemaDoc, scriptURI, "[output = schema, schema = ")
-		_, _ = directiveCompletionItems(schemaDoc, scriptURI, "[output = schema, schema_file = \"./")
-		_, _ = directiveCompletionItems(schemaDoc, scriptURI, "plain")
+		_, _ = directiveCompletionItems(schemaDoc, scriptURI, "[", protocol.Position{})
+		_, _ = directiveCompletionItems(schemaDoc, scriptURI, "[output = ", protocol.Position{})
+		_, _ = directiveCompletionItems(schemaDoc, scriptURI, "[output = data, ", protocol.Position{})
+		_, _ = directiveCompletionItems(schemaDoc, scriptURI, "[output = schema, schema = ", protocol.Position{})
+		_, _ = directiveCompletionItems(schemaDoc, scriptURI, "[output = schema, schema_file = \"./", protocol.Position{})
+		_, _ = directiveCompletionItems(schemaDoc, scriptURI, "plain", protocol.Position{})
 		stringLiteralText := "|===|\nstring value = \"Ada\";\n|===|"
 		stringLiteralSnapshot := AnalyzeDocumentAt(stringLiteralText, scriptPath)
-		outputStringText := "[output = data, schema = User]\n{\n  value: \"Ada\";\n}\n"
+		outputStringText := "[output = data, schema = User]\n{\n  value: \"Ada\",\n}\n"
 		outputStringSnapshot := AnalyzeDocumentAt(outputStringText, scriptPath)
 		_, _ = stringLiteralInitializerCompletionItems(document{text: stringLiteralText, analysis: stringLiteralSnapshot}, scriptURI, protocol.Position{Line: 1, Character: protocol.UInteger(len("string value = \"Ada"))}, false)
 		_, _ = stringLiteralInitializerCompletionItems(document{text: stringLiteralText, analysis: stringLiteralSnapshot}, scriptURI, protocol.Position{Line: 1, Character: protocol.UInteger(len("string value = \"Ada"))}, true)
 		_, _ = stringLiteralInitializerCompletionItems(document{text: outputStringText, analysis: outputStringSnapshot}, scriptURI, protocol.Position{Line: 2, Character: protocol.UInteger(len("  value: \"Ada"))}, true)
 		richOutputText := `|===|
-schema User: { value: string; user: { profile: { city: string; }; }; };
+schema User: { value: string, user: { profile: { city: string, }, }, };
 |===|
 [output = data, schema = User]
 {
-  value: "Ada";
+  value: "Ada",
   ref: user.profile.
 }`
 		richOutputSnapshot := AnalyzeDocumentAt(richOutputText, scriptPath)
@@ -155,17 +155,17 @@ schema User: { value: string; user: { profile: { city: string; }; }; };
 		_, _ = outputInitializerCompletionItems(richOutputDoc, scriptURI, protocol.Position{Line: 5, Character: protocol.UInteger(len("  value: \"Ada"))})
 		_, _ = outputInitializerCompletionItems(richOutputDoc, scriptURI, protocol.Position{Line: 6, Character: protocol.UInteger(len("  ref: user.profile."))})
 		parseOutputText := `|===|
-schema User: { value: string; };
+schema User: { value: string, };
 |===|
 [output = data, parse = User]
 {
-  value: "Ada";
+  value: "Ada",
 }`
 		parseOutputSnapshot := AnalyzeDocumentAt(parseOutputText, scriptPath)
 		parseOutputDoc := document{text: parseOutputText, analysis: parseOutputSnapshot}
 		_, _ = outputInitializerCompletionItems(parseOutputDoc, scriptURI, protocol.Position{Line: 5, Character: protocol.UInteger(len("  value: \"Ada"))})
 		parseEmptyText := `|===|
-schema User: { value: string; };
+schema User: { value: string, };
 |===|
 [output = data, parse = User]
 {
@@ -184,13 +184,13 @@ schema User: { value: string; };
   value:
 }
 |===|
-schema User: { name: string; };
+schema User: { name: string, };
 |===|`, analysis: AnalyzeDocumentAt(`[output = data, parse = User]
 {
   value:
 }
 |===|
-schema User: { name: string; };
+schema User: { name: string, };
 |===|`, root)}, scriptURI, protocol.Position{Line: 2, Character: protocol.UInteger(len("  value:"))})
 		_ = bareSelfCompletionItems("", protocol.Position{Line: 0, Character: 0})
 		_, _ = selfKeywordCompletionItems("", protocol.Position{Line: 0, Character: 0})
@@ -199,8 +199,8 @@ schema User: { name: string; };
 		_, _ = importableSymbols(protocol.DocumentUri("http://example.com"), root, "./schema.mace")
 		_, _ = documentPathFromURI(protocol.DocumentUri(fileURI(schemaPath)))
 		_, _ = documentPathFromURI(protocol.DocumentUri("http://example.com"))
-		_ = relativePathItems(schemaDoc, protocol.DocumentUri(fileURI(schemaPath)), "", nil, true)
-		_ = relativePathItems(document{text: "plain"}, protocol.DocumentUri("http://example.com"), "", nil, true)
+		_ = relativePathItems(schemaDoc, protocol.DocumentUri(fileURI(schemaPath)), "", nil, true, protocol.Position{})
+		_ = relativePathItems(document{text: "plain"}, protocol.DocumentUri("http://example.com"), "", nil, true, protocol.Position{})
 		_ = availableSchemaNames(schemaDoc, protocol.DocumentUri(fileURI(schemaPath)), "[output = schema]")
 		_ = availableSchemaNames(document{text: "plain"}, protocol.DocumentUri(fileURI(schemaPath)), "plain")
 		_ = importedPaths(schemaDoc, "[output = data, schema_file = \"./schema.mace\"]")
@@ -217,8 +217,8 @@ schema User: { name: string; };
 		_, _ = partialOutputResult(memberDoc, memberURI, protocol.Position{Line: 0, Character: 0})
 		_, _ = outputFieldRanges(memberText, lexAnalysisTokens(memberText), strings.Index(memberText, "{"))
 		_, _ = outputFieldRanges("plain", lexAnalysisTokens("plain"), 0)
-		_ = isOutputFieldHeader(lexAnalysisTokens("{ value: 1; }"), 1)
-		_ = isOutputFieldHeader(lexAnalysisTokens("{ value ? : 1; }"), 1)
+		_ = isOutputFieldHeader(lexAnalysisTokens("{ value: 1, }"), 1)
+		_ = isOutputFieldHeader(lexAnalysisTokens("{ value ? : 1, }"), 1)
 		_, _ = stringLiteralValue(ast.StringLiteral{Lexeme: `"Ada"`})
 		_, _ = stringLiteralValue(ast.StringLiteral{Lexeme: `Ada`})
 		_, _ = completionFileWithPlaceholder(scriptText, protocol.Position{Line: 1, Character: 15})

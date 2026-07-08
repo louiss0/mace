@@ -659,6 +659,7 @@ const (
 	inferredTypeNamed
 	inferredTypeUnion
 	inferredTypeVariant
+	inferredTypeChoice
 )
 
 type schemaField struct {
@@ -680,6 +681,7 @@ type inferredType struct {
 	element       *inferredType
 	record        recordSchema
 	members       []inferredType
+	choices       []string
 }
 
 func formatRecord(fields []recordField, depth int) string {
@@ -755,6 +757,8 @@ func formatSchemaType(value inferredType, depth int) string {
 			parts = append(parts, formatSchemaType(member, depth))
 		}
 		return fmt.Sprintf("variant[%s]", strings.Join(parts, ", "))
+	case inferredTypeChoice:
+		return fmt.Sprintf("choice[%s]", strings.Join(value.choices, ", "))
 	default:
 		return "string"
 	}
@@ -907,7 +911,6 @@ type jsonSchemaContext struct {
 	declarationIndex    map[string]int
 	definitionNames     map[string]string
 	definitionTypes     map[string]inferredType
-	inlineEnumTypes     map[string]inferredType
 	usedDeclarationName map[string]struct{}
 }
 
@@ -917,7 +920,6 @@ func newJSONSchemaContext(root map[string]any) *jsonSchemaContext {
 		declarationIndex:    map[string]int{},
 		definitionNames:     map[string]string{},
 		definitionTypes:     map[string]inferredType{},
-		inlineEnumTypes:     map[string]inferredType{},
 		usedDeclarationName: map[string]struct{}{},
 	}
 }
@@ -1246,25 +1248,21 @@ func (context *jsonSchemaContext) referenceType(path string) (inferredType, erro
 }
 
 func (context *jsonSchemaContext) enumType(values []any, path []string) (inferredType, error) {
-	baseName := jsonSchemaPathName(path)
-	if cached, ok := context.inlineEnumTypes[baseName]; ok {
-		return cached, nil
-	}
-
-	name := context.uniqueDeclarationName(baseName)
-	declarationSource, declarationType, err := jsonSchemaEnumDeclaration(name, values)
+	choiceType, err := jsonSchemaChoiceType(values)
 	if err != nil {
 		return inferredType{}, err
 	}
-	context.addDeclaration(name, declarationSource)
-	context.inlineEnumTypes[baseName] = declarationType
-	return declarationType, nil
+
+	return choiceType, nil
 }
 
 func (context *jsonSchemaContext) declarationForSchema(name string, record map[string]any, path []string) (inferredType, string, error) {
 	if enumValues, ok := record["enum"].([]any); ok && len(enumValues) > 0 {
-		declarationSource, declarationType, err := jsonSchemaEnumDeclaration(name, enumValues)
-		return declarationType, declarationSource, err
+		declarationType, err := jsonSchemaChoiceType(enumValues)
+		if err != nil {
+			return inferredType{}, "", err
+		}
+		return inferredType{kind: inferredTypeNamed, name: name, namedCategory: "choice", backingType: declarationType.backingType}, fmt.Sprintf("type %s: %s;", name, formatSchemaType(declarationType, 0)), nil
 	}
 
 	valueType, _, err := context.propertyType(record, path)
@@ -1347,74 +1345,49 @@ func jsonSchemaIdentifier(value string) string {
 	return result
 }
 
-func jsonSchemaEnumDeclaration(name string, values []any) (string, inferredType, error) {
-	backingType, members, err := jsonSchemaEnumMembers(values)
+func jsonSchemaChoiceType(values []any) (inferredType, error) {
+	choices, backingType, err := jsonSchemaChoiceValues(values)
 	if err != nil {
-		return "", inferredType{}, err
+		return inferredType{}, err
 	}
 
-	lines := []string{fmt.Sprintf("enum %s: %s {", name, backingType)}
-	for index, member := range members {
-		line := fmt.Sprintf("  %s = %s", member.name, member.value)
-		lines = append(lines, appendTrailingComma(line, index < len(members)-1))
-	}
-	lines = append(lines, "}")
-
-	return strings.Join(lines, "\n"), inferredType{kind: inferredTypeNamed, name: name, namedCategory: "enum", backingType: backingType}, nil
+	return inferredType{kind: inferredTypeChoice, backingType: backingType, choices: choices}, nil
 }
 
-type jsonSchemaEnumMember struct {
-	name  string
-	value string
-}
-
-func jsonSchemaEnumMembers(values []any) (string, []jsonSchemaEnumMember, error) {
-	members := make([]jsonSchemaEnumMember, 0, len(values))
-	usedNames := map[string]struct{}{}
+func jsonSchemaChoiceValues(values []any) ([]string, string, error) {
+	choices := make([]string, 0, len(values))
 	backingType := ""
 
 	for index, value := range values {
-		member, memberType, err := jsonSchemaEnumMemberValue(value, index)
+		choice, choiceType, err := jsonSchemaChoiceValue(value, index)
 		if err != nil {
-			return "", nil, err
+			return nil, "", err
 		}
 		if backingType == "" {
-			backingType = memberType
-		} else if backingType != memberType {
-			return "", nil, fmt.Errorf("mixed enum value types are not supported")
+			backingType = choiceType
+		} else if backingType != choiceType {
+			return nil, "", fmt.Errorf("mixed enum value types are not supported")
 		}
-
-		name := member.name
-		suffix := 2
-		for {
-			if _, exists := usedNames[name]; !exists {
-				usedNames[name] = struct{}{}
-				member.name = name
-				break
-			}
-			name = fmt.Sprintf("%s%d", member.name, suffix)
-			suffix++
-		}
-		members = append(members, member)
+		choices = append(choices, choice)
 	}
 
 	if backingType != "string" && backingType != "int" {
-		return "", nil, fmt.Errorf("unsupported enum backing type %q", backingType)
+		return nil, "", fmt.Errorf("unsupported enum backing type %q", backingType)
 	}
 
-	return backingType, members, nil
+	return choices, backingType, nil
 }
 
-func jsonSchemaEnumMemberValue(value any, index int) (jsonSchemaEnumMember, string, error) {
+func jsonSchemaChoiceValue(value any, index int) (string, string, error) {
 	switch typed := value.(type) {
 	case string:
-		return jsonSchemaEnumMember{name: jsonSchemaIdentifier(typed), value: strconv.Quote(typed)}, "string", nil
+		return strconv.Quote(typed), "string", nil
 	case int64:
-		return jsonSchemaEnumMember{name: fmt.Sprintf("Value%d", typed), value: strconv.FormatInt(typed, 10)}, "int", nil
+		return strconv.FormatInt(typed, 10), "int", nil
 	case int:
-		return jsonSchemaEnumMember{name: fmt.Sprintf("Value%d", typed), value: strconv.Itoa(typed)}, "int", nil
+		return strconv.Itoa(typed), "int", nil
 	default:
-		return jsonSchemaEnumMember{}, "", fmt.Errorf("unsupported enum value %v at index %d", value, index)
+		return "", "", fmt.Errorf("unsupported enum value %v at index %d", value, index)
 	}
 }
 
@@ -1443,23 +1416,30 @@ func validateUnionMembers(members []inferredType) (inferredType, error) {
 }
 
 func validateVariantMembers(members []inferredType) (inferredType, error) {
-	hasEnum := false
 	hasSchema := false
 	hasPrimitive := false
-	enumBacking := ""
+	hasChoice := false
+	choiceBacking := ""
 
 	for _, member := range members {
 		switch member.kind {
 		case inferredTypePrimitive:
 			hasPrimitive = true
+		case inferredTypeChoice:
+			hasChoice = true
+			if choiceBacking == "" {
+				choiceBacking = member.backingType
+			} else if choiceBacking != member.backingType {
+				return inferredType{}, fmt.Errorf("choice variants require the same backing type")
+			}
 		case inferredTypeNamed:
 			switch member.namedCategory {
-			case "enum":
-				hasEnum = true
-				if enumBacking == "" {
-					enumBacking = member.backingType
-				} else if enumBacking != member.backingType {
-					return inferredType{}, fmt.Errorf("enum variants require the same backing type")
+			case "choice":
+				hasChoice = true
+				if choiceBacking == "" {
+					choiceBacking = member.backingType
+				} else if choiceBacking != member.backingType {
+					return inferredType{}, fmt.Errorf("choice variants require the same backing type")
 				}
 			case "schema":
 				hasSchema = true
@@ -1469,12 +1449,12 @@ func validateVariantMembers(members []inferredType) (inferredType, error) {
 				return inferredType{}, fmt.Errorf("unsupported named variant member")
 			}
 		default:
-			return inferredType{}, fmt.Errorf("variant members must be primitives, schemas, or enums")
+			return inferredType{}, fmt.Errorf("variant members must be primitives, schemas, or choices")
 		}
 	}
 
-	if hasEnum && (hasPrimitive || hasSchema) {
-		return inferredType{}, fmt.Errorf("enum variants may only combine enums with the same backing type")
+	if hasChoice && (hasPrimitive || hasSchema) {
+		return inferredType{}, fmt.Errorf("choice variants may only combine choices")
 	}
 
 	return inferredType{kind: inferredTypeVariant, members: members}, nil

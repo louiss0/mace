@@ -97,7 +97,7 @@ var _ = Describe("CLI", func() {
 int value = 1;
 |===|
 [output = data]
-{ value: value; }`)
+{ value: value, }`)
 
 			file, err := parseFile(path)
 			tAssert.NoError(err)
@@ -108,7 +108,7 @@ int value = 1;
 		})
 
 		It("reports lexer and parser errors", func() {
-			_, err := lex("$x")
+			_, err := lex("@")
 			tAssert.ErrorContains(err, "unexpected character")
 
 			path := writeTempFile("broken.mace", `[output = data]
@@ -116,7 +116,7 @@ int value = 1;
 			_, err = parseFile(path)
 			tAssert.Error(err)
 
-			lexPath := writeTempFile("lexer.mace", `$x`)
+			lexPath := writeTempFile("lexer.mace", `@`)
 			_, err = parseFile(lexPath)
 			tAssert.Error(err)
 		})
@@ -217,8 +217,8 @@ int base = 2 + 2;
 |===|
 [output = data]
 {
-  base: base;
-  profile: { name: "Ada"; active: true; };
+  base: base,
+  profile: { name: "Ada", active: true, },
 }`)
 
 			var stdout bytes.Buffer
@@ -247,9 +247,9 @@ hex_float whole = 0x2.0;
 |===|
 [output = data]
 {
-  mask: mask;
-  ratio: ratio;
-  whole: whole;
+  mask: mask,
+  ratio: ratio,
+  whole: whole,
 }`)
 
 			var stdout bytes.Buffer
@@ -270,34 +270,34 @@ hex_float whole = 0x2.0;
 
 		It("accepts parse input as a Mace record literal", func() {
 			path := writeMaceFile(`|===|
-schema Runtime: { env: string; };
+schema Runtime: { env: string, };
 |===|
 [output = data, parse = Runtime]
 {
-  env: env;
+  ok: true,
 }`)
 
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer
 
 			command := newRootCommand(&stdout, &stderr)
-			command.SetArgs([]string{"json", path, "--input", `{ env: "prod"; }`})
+			command.SetArgs([]string{"json", path, "--input", `{ env: "prod", }`})
 
 			err := command.Execute()
 			tAssert.NoError(err)
 			tAssert.Equal("", stderr.String())
 			tAssert.JSONEq(`{
-  "env": "prod"
+  "ok": true
 }`, stdout.String())
 		})
 
 		It("fails when parse input is malformed", func() {
 			path := writeMaceFile(`|===|
-schema Runtime: { env: string; };
+schema Runtime: { env: string, };
 |===|
 [output = data, parse = Runtime]
 {
-  env: env;
+  ok: true,
 }`)
 
 			var stdout bytes.Buffer
@@ -314,11 +314,11 @@ schema Runtime: { env: string; };
 
 		It("fails when parse input is missing required fields", func() {
 			path := writeMaceFile(`|===|
-schema Runtime: { env: string; };
+schema Runtime: { env: string, };
 |===|
 [output = data, parse = Runtime]
 {
-  env: env;
+  ok: true,
 }`)
 
 			var stdout bytes.Buffer
@@ -699,7 +699,7 @@ schema Runtime: { env: string; };
 
 	Describe("nodes", func() {
 		It("prints the parsed node structure", func() {
-			path := writeMaceFile(`[output = data] { result: 1 + 2; }`)
+			path := writeMaceFile(`[output = data] { result: 1 + 2, }`)
 
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer
@@ -721,7 +721,7 @@ Unknown value = 1;
 |===|
 [output = data]
 {
-  result: 1;
+  result: 1,
 }`)
 
 			var stdout bytes.Buffer
@@ -756,10 +756,10 @@ Unknown value = 1;
 		It("prints canonical Mace source from the parsed file", func() {
 			path := writeMaceFile(`|===|
 from "./base.mace" import User;
-schema User: { name: string; age?: int; };
+schema User: { name: string, age?: int, };
 |===|
 [output = data, schema = User]
-{ name: "Ada"; age: 1 + 2 * 3; }`)
+{ name: "Ada", age: 1 + 2 * 3, }`)
 
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer
@@ -821,7 +821,7 @@ schema User: {
 			}
 
 			path := writeMaceFile(`[output = data]
-{ name: "Ada"; }`)
+{ name: "Ada", }`)
 
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer

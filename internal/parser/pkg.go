@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/louiss0/mace/internal/diagnostic"
 	"github.com/louiss0/mace/internal/lexer"
 	"github.com/louiss0/mace/internal/parser/ast"
 )
@@ -40,7 +41,7 @@ func New(tokens []lexer.Token) *Parser {
 
 func (p *Parser) ParseFile() (ast.File, error) {
 	if len(p.tokens) == 0 {
-		return ast.File{}, fmt.Errorf("parser: empty token stream")
+		return ast.File{}, p.diagnosticError(lexer.Token{}, diagnostic.Code("mace.syntax.missing-expression"), "parser: empty token stream")
 	}
 
 	var script *ast.ScriptBlock
@@ -76,7 +77,7 @@ func (p *Parser) ParseFile() (ast.File, error) {
 
 func (p *Parser) ParseScriptBlock() (ast.ScriptBlock, error) {
 	if len(p.tokens) == 0 {
-		return ast.ScriptBlock{}, fmt.Errorf("parser: empty token stream")
+		return ast.ScriptBlock{}, p.diagnosticError(lexer.Token{}, diagnostic.Code("mace.syntax.missing-expression"), "parser: empty token stream")
 	}
 
 	script, err := p.parseScriptBlock()
@@ -93,7 +94,7 @@ func (p *Parser) ParseScriptBlock() (ast.ScriptBlock, error) {
 
 func (p *Parser) ParseOutputBlock() (ast.OutputBlock, error) {
 	if len(p.tokens) == 0 {
-		return ast.OutputBlock{}, fmt.Errorf("parser: empty token stream")
+		return ast.OutputBlock{}, p.diagnosticError(lexer.Token{}, diagnostic.Code("mace.syntax.missing-expression"), "parser: empty token stream")
 	}
 
 	if p.current().Type != lexer.TokenLBracket && p.current().Type != lexer.TokenLBrace {
@@ -114,7 +115,7 @@ func (p *Parser) ParseOutputBlock() (ast.OutputBlock, error) {
 
 func (p *Parser) ParseExpression() (ast.Expression, error) {
 	if len(p.tokens) == 0 {
-		return nil, fmt.Errorf("parser: empty token stream")
+		return nil, p.diagnosticError(lexer.Token{}, diagnostic.Code("mace.syntax.missing-expression"), "parser: empty token stream")
 	}
 
 	expression, err := p.parseExpression(precedenceLowest)
@@ -303,7 +304,7 @@ func (p *Parser) parseVariableDeclaration() (ast.Declaration, error) {
 	}
 
 	if p.current().Type == lexer.TokenInlineDescription {
-		return nil, fmt.Errorf("parser: inline descriptions are not allowed on variable declarations at %d:%d", p.current().Line, p.current().Column)
+		return nil, p.diagnosticError(p.current(), diagnostic.Code("mace.syntax.variable-inline-description-not-allowed"), fmt.Sprintf("parser: inline descriptions are not allowed on variable declarations at %d:%d", p.current().Line, p.current().Column))
 	}
 	if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after variable declaration"); err != nil {
 		return nil, err
@@ -403,7 +404,7 @@ func (p *Parser) parseDocDeclaration(kind ast.DocumentationKind, keywordType lex
 			return nil, err
 		}
 		if _, exists := seenEntries[entryToken.Lexeme]; exists {
-			return nil, fmt.Errorf("parser: duplicate %s entry %q at %d:%d", keyword, entryToken.Lexeme, entryToken.Line, entryToken.Column)
+			return nil, p.diagnosticError(entryToken, diagnostic.Code("mace.doc.duplicate-entry"), fmt.Sprintf("parser: duplicate %s entry %q at %d:%d", keyword, entryToken.Lexeme, entryToken.Line, entryToken.Column))
 		}
 		seenEntries[entryToken.Lexeme] = struct{}{}
 
@@ -430,7 +431,7 @@ func (p *Parser) parseDocDeclaration(kind ast.DocumentationKind, keywordType lex
 			}
 		case "props":
 			if kind != ast.DocumentationKindSchema {
-				return nil, fmt.Errorf("parser: props entry is only allowed in schema_doc at %d:%d", entryToken.Line, entryToken.Column)
+				return nil, p.diagnosticError(entryToken, diagnostic.Code("mace.doc.unknown-entry"), fmt.Sprintf("parser: props entry is only allowed in schema_doc at %d:%d", entryToken.Line, entryToken.Column))
 			}
 			if _, err := p.consume(lexer.TokenLBrace, "parser: expected '{' to start props entry"); err != nil {
 				return nil, err
@@ -442,7 +443,7 @@ func (p *Parser) parseDocDeclaration(kind ast.DocumentationKind, keywordType lex
 					return nil, err
 				}
 				if _, exists := documentation.Props[nameToken.Lexeme]; exists {
-					return nil, fmt.Errorf("parser: duplicate props entry %q at %d:%d", nameToken.Lexeme, nameToken.Line, nameToken.Column)
+					return nil, p.diagnosticError(nameToken, diagnostic.Code("mace.doc.duplicate-entry"), fmt.Sprintf("parser: duplicate props entry %q at %d:%d", nameToken.Lexeme, nameToken.Line, nameToken.Column))
 				}
 				if _, err := p.consume(lexer.TokenColon, "parser: expected ':' after props entry name"); err != nil {
 					return nil, err
@@ -464,7 +465,7 @@ func (p *Parser) parseDocDeclaration(kind ast.DocumentationKind, keywordType lex
 				return nil, err
 			}
 		default:
-			return nil, fmt.Errorf("parser: unknown %s entry %q at %d:%d", keyword, entryToken.Lexeme, entryToken.Line, entryToken.Column)
+			return nil, p.diagnosticError(entryToken, diagnostic.Code("mace.doc.unknown-entry"), fmt.Sprintf("parser: unknown %s entry %q at %d:%d", keyword, entryToken.Lexeme, entryToken.Line, entryToken.Column))
 		}
 	}
 
@@ -711,6 +712,10 @@ func (p *Parser) parseDirectivePair() (ast.OutputDirective, error) {
 }
 
 func (p *Parser) parseOutputField() (ast.OutputField, error) {
+	if p.isFieldShorthandStart() {
+		return p.parseOutputFieldShorthand()
+	}
+
 	nameToken, name, optional, err := p.parseFieldHeader("output field")
 	if err != nil {
 		return ast.OutputField{}, err
@@ -738,6 +743,21 @@ func (p *Parser) parseOutputField() (ast.OutputField, error) {
 		Name:        name,
 		Optional:    optional,
 		Value:       value,
+		Description: description,
+	}, nil
+}
+
+func (p *Parser) parseOutputFieldShorthand() (ast.OutputField, error) {
+	nameToken, description, err := p.parseFieldShorthand("output field")
+	if err != nil {
+		return ast.OutputField{}, err
+	}
+
+	return ast.OutputField{
+		NameToken:   nameToken,
+		Name:        nameToken.Lexeme,
+		Shorthand:   true,
+		Value:       ast.Identifier{Name: nameToken.Lexeme},
 		Description: description,
 	}, nil
 }
@@ -1038,6 +1058,8 @@ func (p *Parser) parsePrefix(token lexer.Token) (ast.Expression, error) {
 		return ast.NullLiteral{Token: token}, nil
 	case lexer.TokenSelf:
 		return p.parseSelfReference()
+	case lexer.TokenDollar:
+		return p.parseDollarReference()
 	case lexer.TokenLBracket:
 		return p.parseArrayLiteral()
 	case lexer.TokenLBrace:
@@ -1096,6 +1118,26 @@ func (p *Parser) parseSelfReference() (ast.Expression, error) {
 	return ast.SelfReference{Token: selfToken, Path: segments}, nil
 }
 
+func (p *Parser) parseDollarReference() (ast.Expression, error) {
+	dollarToken, err := p.consume(lexer.TokenDollar, "parser: expected '$' to start parsed variable reference")
+	if err != nil {
+		return nil, err
+	}
+
+	nameToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier after '$'")
+	if err != nil {
+		return nil, err
+	}
+
+	identifierToken := lexer.Token{
+		Type:   lexer.TokenIdentifier,
+		Lexeme: "$" + nameToken.Lexeme,
+		Line:   dollarToken.Line,
+		Column: dollarToken.Column,
+	}
+	return ast.Identifier{Token: identifierToken, Name: identifierToken.Lexeme}, nil
+}
+
 func (p *Parser) parseArrayLiteral() (ast.Expression, error) {
 	startToken, err := p.consume(lexer.TokenLBracket, "parser: expected '[' to start array literal")
 	if err != nil {
@@ -1148,6 +1190,10 @@ func (p *Parser) parseRecordLiteral() (ast.Expression, error) {
 }
 
 func (p *Parser) parseRecordField() (ast.RecordField, error) {
+	if p.isFieldShorthandStart() {
+		return p.parseRecordFieldShorthand()
+	}
+
 	nameToken, name, optional, err := p.parseFieldHeader("record field")
 	if err != nil {
 		return ast.RecordField{}, err
@@ -1176,6 +1222,57 @@ func (p *Parser) parseRecordField() (ast.RecordField, error) {
 	}, nil
 }
 
+func (p *Parser) parseRecordFieldShorthand() (ast.RecordField, error) {
+	nameToken, _, err := p.parseFieldShorthand("record field")
+	if err != nil {
+		return ast.RecordField{}, err
+	}
+
+	return ast.RecordField{
+		NameToken: nameToken,
+		Name:      nameToken.Lexeme,
+		Shorthand: true,
+		Value:     ast.Identifier{Name: nameToken.Lexeme},
+	}, nil
+}
+
+func (p *Parser) parseFieldShorthand(context string) (lexer.Token, string, error) {
+	nameToken := p.current()
+	p.advance()
+
+	description := p.parseOptionalInlineDescription()
+	trailingDescription, trailingToken, err := p.consumeRecordSeparatorWithInlineDescription(context)
+	if err != nil {
+		return lexer.Token{}, "", err
+	}
+
+	description, err = p.mergeInlineDescriptions(context, description, trailingDescription, trailingToken)
+	if err != nil {
+		return lexer.Token{}, "", err
+	}
+
+	return nameToken, description, nil
+}
+
+func (p *Parser) isFieldShorthandStart() bool {
+	nameToken := p.current()
+	if !isFieldNameToken(nameToken.Type) {
+		return false
+	}
+
+	if p.position+1 >= len(p.tokens) {
+		return false
+	}
+
+	nextToken := p.tokens[p.position+1]
+	switch nextToken.Type {
+	case lexer.TokenComma, lexer.TokenRBrace, lexer.TokenInlineDescription:
+		return true
+	default:
+		return false
+	}
+}
+
 func (p *Parser) consumeOptionalToken(tokenType lexer.TokenType) bool {
 	if p.current().Type != tokenType {
 		return false
@@ -1187,7 +1284,7 @@ func (p *Parser) consumeOptionalToken(tokenType lexer.TokenType) bool {
 
 func (p *Parser) consumePairSeparator(context string) error {
 	switch p.current().Type {
-	case lexer.TokenComma, lexer.TokenSemicolon:
+	case lexer.TokenComma:
 		p.advance()
 		return nil
 	default:
@@ -1197,7 +1294,7 @@ func (p *Parser) consumePairSeparator(context string) error {
 
 func (p *Parser) consumeRecordSeparator(context string) error {
 	switch p.current().Type {
-	case lexer.TokenComma, lexer.TokenSemicolon:
+	case lexer.TokenComma:
 		p.advance()
 		return nil
 	case lexer.TokenRBrace:
@@ -1223,7 +1320,7 @@ func (p *Parser) consumeRecordSeparatorWithInlineDescription(context string) (st
 
 func (p *Parser) mergeInlineDescriptions(context string, leading string, trailing string, trailingToken lexer.Token) (string, error) {
 	if leading != "" && trailing != "" {
-		return "", fmt.Errorf("parser: duplicate inline description on %s at %d:%d", context, trailingToken.Line, trailingToken.Column)
+		return "", p.diagnosticError(trailingToken, diagnostic.Code("mace.doc.duplicate-inline-description"), fmt.Sprintf("parser: duplicate inline description on %s at %d:%d", context, trailingToken.Line, trailingToken.Column))
 	}
 
 	if trailing != "" {
@@ -1254,7 +1351,7 @@ func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token)
 	}
 
 	if operator.Type == lexer.TokenMerge && !isMergeLeftOperand(left) {
-		return nil, fmt.Errorf("parser: expected identifier, array literal, or record literal before '<>' at %d:%d", operator.Line, operator.Column)
+		return nil, p.diagnosticError(operator, diagnostic.Code("mace.syntax.unexpected-token"), fmt.Sprintf("parser: expected identifier, array literal, or record literal before '<>' at %d:%d", operator.Line, operator.Column))
 	}
 
 	precedence := p.precedenceFor(operator.Type)
@@ -1269,7 +1366,7 @@ func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token)
 	}
 
 	if operator.Type == lexer.TokenMerge && !isMergeOperand(right) {
-		return nil, fmt.Errorf("parser: expected identifier, array literal, or record literal after '<>' at %d:%d", operator.Line, operator.Column)
+		return nil, p.diagnosticError(operator, diagnostic.Code("mace.syntax.unexpected-token"), fmt.Sprintf("parser: expected identifier, array literal, or record literal after '<>' at %d:%d", operator.Line, operator.Column))
 	}
 
 	return ast.InfixExpression{
@@ -1394,16 +1491,4 @@ func (p *Parser) precedenceFor(tokenType lexer.TokenType) int {
 	default:
 		return precedenceLowest
 	}
-}
-
-func (p *Parser) unexpectedTokenError(message string) error {
-	token := p.current()
-	if token.Type == lexer.TokenEOF {
-		return fmt.Errorf("%s: EOF", message)
-	}
-
-	sanitizedLexeme := strings.ReplaceAll(token.Lexeme, "\n", "\\n")
-	sanitizedLexeme = strings.ReplaceAll(sanitizedLexeme, "\r", "\\r")
-
-	return fmt.Errorf("%s at %d:%d near %q", message, token.Line, token.Column, sanitizedLexeme)
 }

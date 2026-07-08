@@ -45,8 +45,13 @@ func (l *Lexer) NextToken() (Token, error) {
 	case '\'', '"':
 		return l.lexString(current, startPosition, startLine, startColumn)
 	case '$':
-		if l.match('s') && l.match('e') && l.match('l') && l.match('f') {
+		if l.peek() == 's' && strings.HasPrefix(l.input[l.position:], "self") && !isIdentifierPart(runeAt(l.input, l.position+len("self"))) {
+			l.position += len("self")
+			l.column += len("self")
 			return l.makeToken(TokenSelf, startPosition, startLine, startColumn), nil
+		}
+		if isLetter(l.peek()) {
+			return l.makeToken(TokenDollar, startPosition, startLine, startColumn), nil
 		}
 		return Token{}, fmt.Errorf("lexer: unexpected character %q at %d:%d", current, startLine, startColumn)
 	case '=':
@@ -413,6 +418,15 @@ func (l *Lexer) peekNextRune() (rune, int) {
 		return 0, 0
 	}
 	return utf8.DecodeRuneInString(l.input[l.position+size:])
+}
+
+func runeAt(input string, position int) rune {
+	if position < 0 || position >= len(input) {
+		return 0
+	}
+
+	r, _ := utf8.DecodeRuneInString(input[position:])
+	return r
 }
 
 func keywordToken(lexeme string) (TokenType, bool) {

@@ -1307,7 +1307,7 @@ name = "orbital-array"
 			return "", errors.New("format failed")
 		}
 
-		_, err = formatImportedSource("[output = data]\n{ name: \"Ada\"; }")
+		_, err = formatImportedSource("[output = data]\n{ name: \"Ada\", }")
 		tAssert.ErrorContains(err, "format generated source")
 		tAssert.Error(err)
 

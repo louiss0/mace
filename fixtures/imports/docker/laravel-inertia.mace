@@ -37,7 +37,7 @@ DockerService queue = {
 
 DockerService scheduler = {
   build: "./docker/app",
-  command: "sh -lc 'while true; do php artisan schedule:run --verbose --no-interaction; sleep 60; done'",
+  command: "sh -lc 'while true, do php artisan schedule:run --verbose --no-interaction, sleep 60, done'",
   environment: {
     APP_ENV: "local",
     QUEUE_CONNECTION: "redis",

@@ -192,14 +192,14 @@ func nestedSelfDocument(depth int) string {
 		keys = append(keys, fmt.Sprintf("level%d", index+1))
 	}
 
-	leaf := `{ final: 9; }`
+	leaf := `{ final: 9, }`
 	for index := len(keys) - 1; index >= 0; index-- {
-		leaf = fmt.Sprintf("{ %s: %s; }", keys[index], leaf)
+		leaf = fmt.Sprintf("{ %s: %s, }", keys[index], leaf)
 	}
 
 	return fmt.Sprintf(`[output = data]
 {
-  tree: %s;
+  tree: %s,
   result: $self.tree.%s.
 }`, leaf, strings.Join(keys, "."))
 }
@@ -332,7 +332,7 @@ var _ = Describe("LSP server", func() {
 	It("publishes empty diagnostics when a valid document opens", func() {
 		notifications := []capturedNotification{}
 
-		didOpen(server, uri, `[output = data] { result: 1 + 2; }`, &notifications)
+		didOpen(server, uri, `[output = data] { result: 1 + 2, }`, &notifications)
 
 		if tAssert.Len(notifications, 1) {
 			params := requireDiagnostics(notifications[0])
@@ -349,7 +349,7 @@ var _ = Describe("LSP server", func() {
 
 		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
 {
-  Name: string;
+  Name: string,
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `|===|
 from "./shared.mace" import Name;
@@ -357,7 +357,7 @@ Name user = "Ada";
 |===|
 [output = data]
 {
-  user: user;
+  user: user,
 }`))
 
 		didOpen(server, uri, `|===|
@@ -366,7 +366,7 @@ Name user = "Ada";
 |===|
 [output = data]
 {
-  user: user;
+  user: user,
 }`, &notifications)
 
 		if tAssert.Len(notifications, 1) {
@@ -378,7 +378,7 @@ Name user = "Ada";
 	It("publishes syntax diagnostics when an invalid document opens", func() {
 		notifications := []capturedNotification{}
 
-		didOpen(server, uri, `[output = data] { result: ; }`, &notifications)
+		didOpen(server, uri, `[output = data] { result: , }`, &notifications)
 
 		if tAssert.Len(notifications, 1) {
 			params := requireDiagnostics(notifications[0])
@@ -397,7 +397,7 @@ int count = "Ada";
 |===|
 [output = data]
 {
-  result: count;
+  result: count,
 }`, &notifications)
 
 		if tAssert.Len(notifications, 1) {
@@ -414,17 +414,17 @@ int count = "Ada";
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `|===|
-schema EmailLogin: { email: string; };
-schema ApiKeyLogin: { api_key: string; };
+schema EmailLogin: { email: string, };
+schema ApiKeyLogin: { api_key: string, };
 type Login: variant[EmailLogin, ApiKeyLogin];
 Login login = {
-  email: "ada@example.com";
-  api_key: "secret";
+  email: "ada@example.com",
+  api_key: "secret",
 };
 |===|
 [output = data]
 {
-  result: login;
+  result: login,
 }`, &notifications)
 
 		if tAssert.Len(notifications, 1) {
@@ -460,7 +460,7 @@ int count = "seven";
 |===|
 [output = data]
 {
-  result: name;
+  result: name,
 }`, &notifications)
 
 		if tAssert.Len(notifications, 1) {
@@ -475,8 +475,8 @@ int count = "seven";
 	It("replaces document content on change and clears diagnostics", func() {
 		notifications := []capturedNotification{}
 
-		didOpen(server, uri, `[output = data] { result: ; }`, &notifications)
-		didChange(server, uri, 2, `[output = data] { result: 3; }`, &notifications)
+		didOpen(server, uri, `[output = data] { result: , }`, &notifications)
+		didChange(server, uri, 2, `[output = data] { result: 3, }`, &notifications)
 
 		if tAssert.Len(notifications, 2) {
 			params := requireDiagnostics(notifications[1])
@@ -492,14 +492,14 @@ int count = "Ada";
 |===|
 [output = data]
 {
-  result: count;
+  result: count,
 }`, &notifications)
 		didChange(server, uri, 2, `|===|
 int count = 7;
 |===|
 [output = data]
 {
-  result: count;
+  result: count,
 }`, &notifications)
 
 		if tAssert.Len(notifications, 2) {
@@ -632,12 +632,12 @@ array<string> names = ['Kyle', 'Tyrone', 'Luke'];
 		workspace, err := os.MkdirTemp("", "mace-lsp-save-diagnostics-*")
 		tAssert.NoError(err)
 
-		path := writeWorkspaceFile(workspace, "consumer.mace", `[output = data] { result: ; }`)
+		path := writeWorkspaceFile(workspace, "consumer.mace", `[output = data] { result: , }`)
 		uri := protocol.DocumentUri(path)
 
-		didOpen(server, uri, `[output = data] { result: ; }`, &notifications)
+		didOpen(server, uri, `[output = data] { result: , }`, &notifications)
 
-		fixedText := `[output = data] { result: 3; }`
+		fixedText := `[output = data] { result: 3, }`
 		err = os.WriteFile(filepath.FromSlash(documentPath(uri)), []byte(fixedText), 0o600)
 		tAssert.NoError(err)
 
@@ -649,48 +649,48 @@ array<string> names = ['Kyle', 'Tyrone', 'Luke'];
 		}
 	})
 
-	It("warns when parse directives inject unknown runtime values", func() {
+	It("warns when parse directives require runtime input", func() {
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `|===|
-schema Package: { name: string; project: string; };
+schema Package: { name: string, project: string, };
 |===|
 [output = data, parse = Package]
 {
-  result: "ok";
+  result: "ok",
 }`, &notifications)
 
 		if tAssert.Len(notifications, 1) {
 			params := requireDiagnostics(notifications[0])
 			if tAssert.Len(params.Diagnostics, 1) {
-				tAssert.Contains(params.Diagnostics[0].Message, "The analyzer cannot know which runtime values will be injected")
+				tAssert.Contains(params.Diagnostics[0].Message, "host-provided input that satisfies the selected schema")
 				tAssert.Equal(protocol.DiagnosticSeverityWarning, *params.Diagnostics[0].Severity)
 				tAssert.NotNil(params.Diagnostics[0].Code)
 			}
 		}
 	})
 
-	It("warns when parse_file directives inject unknown runtime values", func() {
+	It("warns when parse_file directives require runtime input", func() {
 		notifications := []capturedNotification{}
 		workspace, err := os.MkdirTemp("", "mace-lsp-parse-ignore-*")
 		tAssert.NoError(err)
 
 		writeWorkspaceFile(workspace, "runtime.mace", `[output = schema]
 {
-  Package: { project: string; };
+  Package: { project: string, },
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = data, parse_file = "./runtime.mace"]
 {
-  result: "ok";
+  result: "ok",
 }`, &notifications)
 
 		if tAssert.Len(notifications, 1) {
 			params := requireDiagnostics(notifications[0])
 			if tAssert.Len(params.Diagnostics, 1) {
-				tAssert.Contains(params.Diagnostics[0].Message, "The analyzer cannot know which runtime values will be injected")
+				tAssert.Contains(params.Diagnostics[0].Message, "host-provided input that satisfies the selected schema")
 				tAssert.Equal(protocol.DiagnosticSeverityWarning, *params.Diagnostics[0].Severity)
 				tAssert.NotNil(params.Diagnostics[0].Code)
 			}
@@ -701,15 +701,15 @@ schema Package: { name: string; project: string; };
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `|===|
-schema Point: { x: int; y: int; };
-schema Plot: { points: array<Point>; };
+schema Point: { x: int, y: int, };
+schema Plot: { points: array<Point>, };
 |===|
 [output = data, schema = Plot]
 {
   points: [
-    { x: 1; y: 2; },
-    { x: 3; }
-  ];
+    { x: 1, y: 2, },
+    { x: 3, }
+  ],
 }`, &notifications)
 
 		if tAssert.Len(notifications, 1) {
@@ -725,26 +725,26 @@ schema Plot: { points: array<Point>; };
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `|===|
-schema Point: { x: int; y: int; };
-schema Plot: { points: array<Point>; };
+schema Point: { x: int, y: int, };
+schema Plot: { points: array<Point>, };
 |===|
 [output = data, schema = Plot]
 {
   points: [
-    { x: 1; y: 2; },
-    { x: 3; }
-  ];
+    { x: 1, y: 2, },
+    { x: 3, }
+  ],
 }`, &notifications)
 		didChange(server, uri, 2, `|===|
-schema Point: { x: int; y: int; };
-schema Plot: { points: array<Point>; };
+schema Point: { x: int, y: int, };
+schema Plot: { points: array<Point>, };
 |===|
 [output = data, schema = Plot]
 {
   points: [
-    { x: 1; y: 2; },
-    { x: 3; y: 4; }
-  ];
+    { x: 1, y: 2, },
+    { x: 3, y: 4, }
+  ],
 }`, &notifications)
 
 		if tAssert.Len(notifications, 2) {
@@ -756,7 +756,7 @@ schema Plot: { points: array<Point>; };
 	It("drops document state on close and clears diagnostics", func() {
 		notifications := []capturedNotification{}
 
-		didOpen(server, uri, `[output = data] { result: 1; }`, &notifications)
+		didOpen(server, uri, `[output = data] { result: 1, }`, &notifications)
 		didClose(server, uri, &notifications)
 
 		if tAssert.Len(notifications, 2) {
@@ -818,8 +818,8 @@ schema Plot: { points: array<Point>; };
 
 		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
 {
-  User: { name: string; };
-  Config: string;
+  User: { name: string, },
+  Config: string,
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `|===|
 from "./shared.mace" imp`))
@@ -837,8 +837,8 @@ from "./shared.mace" imp`, nil)
 		workspace, err := os.MkdirTemp("", "mace-lsp-import-path-*")
 		tAssert.NoError(err)
 
-		writeWorkspaceFile(workspace, "shared.mace", `[output = data] { name: "Ada"; }`)
-		writeWorkspaceFile(workspace, "nested/roles.mace", `[output = data] { role: "admin"; }`)
+		writeWorkspaceFile(workspace, "shared.mace", `[output = data] { name: "Ada", }`)
+		writeWorkspaceFile(workspace, "nested/roles.mace", `[output = data] { role: "admin", }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
 		openEmptyDocument(server, uri, nil)
@@ -855,7 +855,7 @@ from "`, nil)
 		workspace, err := os.MkdirTemp("", "mace-lsp-parent-import-path-*")
 		tAssert.NoError(err)
 
-		writeWorkspaceFile(workspace, "shared.mace", `[output = data] { name: "Ada"; }`)
+		writeWorkspaceFile(workspace, "shared.mace", `[output = data] { name: "Ada", }`)
 		consumerURI := protocol.DocumentUri(writeWorkspaceFile(workspace, "nested/consumer.mace", ``))
 
 		openEmptyDocument(server, consumerURI, nil)
@@ -873,7 +873,7 @@ from "../`, nil)
 
 		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
 {
-  User: { name: string; };
+  User: { name: string, },
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
@@ -892,8 +892,8 @@ from "./shared.mace" `, nil)
 
 		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
 {
-  User: { name: string; };
-  Config: string;
+  User: { name: string, },
+  Config: string,
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `|===|
 from "./shared.mace" import U`))
@@ -913,8 +913,8 @@ from "./shared.mace" import U`, nil)
 
 		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
 {
-  User: { name: string; };
-  Config: string;
+  User: { name: string, },
+  Config: string,
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
@@ -933,7 +933,7 @@ from "./shared.mace" import `, nil)
 
 		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
 {
-  User: { name: string; };
+  User: { name: string, },
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
@@ -1037,7 +1037,7 @@ Label label =
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
 type Fruit: choice["Apple", "Strawberry"];
-schema Basket: { favorite_fruit: Fruit; };
+schema Basket: { favorite_fruit: Fruit, };
 Basket basket = {
   favorite_fruit:
 };
@@ -1053,7 +1053,7 @@ Basket basket = {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
 type Fruit: choice["Apple", "Strawberry"];
-schema Basket: { favorite_fruit: Fruit; };
+schema Basket: { favorite_fruit: Fruit, };
 Basket basket = {
   favorite_fruit: "Str
 };
@@ -1164,8 +1164,8 @@ from "./shared.mace" import names;
 	It("suggests schema record literals for nested schema fields after a record colon", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
-schema Profile: { name: string; age?: int; };
-schema Basket: { owner: Profile; };
+schema Profile: { name: string, age?: int, };
+schema Basket: { owner: Profile, };
 Basket basket = {
   owner:
 };
@@ -1179,7 +1179,7 @@ Basket basket = {
 	It("suggests parse schema fields as output variables", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
-schema Runtime: { env: string; region: string; };
+schema Runtime: { env: string, region: string, };
 |===|
 [output = data, parse = Runtime]
 {
@@ -1187,8 +1187,8 @@ schema Runtime: { env: string; region: string; };
 }`, nil)
 
 		labels := completeLabels(server, uri, 5, uint32(len(`  result: `)))
-		tAssert.Contains(labels, "env")
-		tAssert.Contains(labels, "region")
+		tAssert.Contains(labels, "$env")
+		tAssert.Contains(labels, "$region")
 	})
 
 	It("suggests parse_file output schema fields as output variables", func() {
@@ -1197,7 +1197,7 @@ schema Runtime: { env: string; region: string; };
 
 		writeWorkspaceFile(workspace, "runtime.mace", `[output = schema]
 {
-  Runtime: { env: string; region: string; };
+  Runtime: { env: string, region: string, },
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
@@ -1208,17 +1208,17 @@ schema Runtime: { env: string; region: string; };
 }`, nil)
 
 		labels := completeLabels(server, uri, 2, uint32(len(`  result: `)))
-		tAssert.NotContains(labels, "env")
-		tAssert.NotContains(labels, "region")
-		tAssert.Contains(labels, "Runtime")
+		tAssert.Contains(labels, "$env")
+		tAssert.Contains(labels, "$region")
+		tAssert.NotContains(labels, "Runtime")
 	})
 
 	It("only suggests top-level parse schema fields as output variables", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
 schema Runtime: {
-  env: string;
-  profile: { name: string; email: string; };
+  env: string,
+  profile: { name: string, email: string, },
 };
 |===|
 [output = data, parse = Runtime]
@@ -1253,12 +1253,12 @@ schema Runtime: {
 			}
 		}
 
-		tAssert.Contains(labels, "env")
-		tAssert.Contains(labels, "profile")
+		tAssert.Contains(labels, "$env")
+		tAssert.Contains(labels, "$profile")
 		tAssert.NotContains(labels, "name")
 		tAssert.NotContains(labels, "email")
-		tAssert.Equal("string", details["env"])
-		tAssert.Equal("{ name: string, email: string }", details["profile"])
+		tAssert.Equal("string", details["$env"])
+		tAssert.Equal("{ name: string, email: string }", details["$profile"])
 	})
 
 	It("only suggests top-level parse_file schema fields as output variables", func() {
@@ -1268,9 +1268,9 @@ schema Runtime: {
 		writeWorkspaceFile(workspace, "runtime.mace", `[output = schema]
 {
   Runtime: {
-    env: string;
-    profile: { name: string; email: string; };
-  };
+    env: string,
+    profile: { name: string, email: string, },
+  },
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
@@ -1281,11 +1281,11 @@ schema Runtime: {
 }`, nil)
 
 		labels := completeLabels(server, uri, 2, uint32(len(`  result: `)))
-		tAssert.NotContains(labels, "env")
-		tAssert.NotContains(labels, "profile")
+		tAssert.Contains(labels, "$env")
+		tAssert.Contains(labels, "$profile")
 		tAssert.NotContains(labels, "name")
 		tAssert.NotContains(labels, "email")
-		tAssert.Contains(labels, "Runtime")
+		tAssert.NotContains(labels, "Runtime")
 	})
 
 	It("suggests parse_file output schema field members as output variables", func() {
@@ -1294,17 +1294,17 @@ schema Runtime: {
 
 		writeWorkspaceFile(workspace, "runtime.mace", `[output = schema]
 {
-  Runtime: { user: { name: string; home: { street: string; city: string; }; }; };
+  Runtime: { user: { name: string, home: { street: string, city: string, }, }, },
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = data, parse_file = "./runtime.mace"]
 {
-  result: user.
+  result: $user.
 }`, nil)
 
-		labels := completeLabels(server, uri, 2, uint32(len(`  result: user.`)))
+		labels := completeLabels(server, uri, 2, uint32(len(`  result: $user.`)))
 		tAssert.Contains(labels, "name")
 		tAssert.Contains(labels, "home")
 	})
@@ -1313,25 +1313,25 @@ schema Runtime: {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
 schema Contact: {
-  email: string;
-  phone: string;
+  email: string,
+  phone: string,
 };
 schema Profile: {
-  title: string;
-  contact: Contact;
+  title: string,
+  contact: Contact,
 };
 schema User: {
-  name: string;
-  manager: User;
-  profile: Profile;
+  name: string,
+  manager: User,
+  profile: Profile,
 };
 |===|
 [output = data, parse = User]
 {
-  result: manager.manager.profile.contact.
+  result: $manager.manager.profile.contact.
 }`, nil)
 
-		labels := completeLabels(server, uri, 17, uint32(len(`  result: manager.manager.profile.contact.`)))
+		labels := completeLabels(server, uri, 17, uint32(len(`  result: $manager.manager.profile.contact.`)))
 		tAssert.Contains(labels, "email")
 		tAssert.Contains(labels, "phone")
 	})
@@ -1342,18 +1342,18 @@ schema User: {
 
 		writeWorkspaceFile(workspace, "nx_inputs.mace", `|===|
 schema Project: {
-  name: string;
-  root: string;
+  name: string,
+  root: string,
 };
 schema Workspace: {
-  name: string;
-  root: string;
+  name: string,
+  root: string,
 };
 |===|
 [output = schema]
 {
-  project: Project;
-  workspace: Workspace;
+  project: Project,
+  workspace: Workspace,
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
@@ -1364,8 +1364,8 @@ schema Workspace: {
 }`, nil)
 
 		labels := completeLabels(server, uri, 2, 2)
-		tAssert.Contains(labels, "project")
-		tAssert.Contains(labels, "workspace")
+		tAssert.Contains(labels, "$project")
+		tAssert.Contains(labels, "$workspace")
 		tAssert.NotContains(labels, "name")
 		tAssert.NotContains(labels, "root")
 		tAssert.NotContains(labels, "cwd")
@@ -1377,38 +1377,38 @@ schema Workspace: {
 
 		writeWorkspaceFile(workspace, "nx_inputs.mace", `|===|
 schema Project: {
-  name: string;
-  root: string;
+  name: string,
+  root: string,
 };
 schema Workspace: {
-  name: string;
-  root: string;
+  name: string,
+  root: string,
 };
 |===|
 [output = schema]
 {
-  project: Project;
-  workspace: Workspace;
+  project: Project,
+  workspace: Workspace,
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = data, parse_file = "./nx_inputs.mace"]
 {
-  result: project.
+  result: $project.
 }`, nil)
 
-		labels := completeLabels(server, uri, 2, uint32(len(`  result: project.`)))
+		labels := completeLabels(server, uri, 2, uint32(len(`  result: $project.`)))
 		tAssert.Contains(labels, "name")
 		tAssert.Contains(labels, "root")
-		tAssert.NotContains(labels, "project")
-		tAssert.NotContains(labels, "workspace")
+		tAssert.NotContains(labels, "$project")
+		tAssert.NotContains(labels, "$workspace")
 	})
 
 	It("does not suggest schema names as output expressions", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
-schema Runtime: { env: string; };
+schema Runtime: { env: string, };
 |===|
 [output = data]
 {
@@ -1425,7 +1425,7 @@ schema Runtime: { env: string; };
 
 		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
 {
-  Runtime: { env: string; };
+  Runtime: { env: string, },
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
@@ -1445,7 +1445,7 @@ from "./shared.mace" import Runtime;
 	It("suggests parse variables when previous output fields use commas", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
-schema Runtime: { env: string; region: string; };
+schema Runtime: { env: string, region: string, };
 |===|
 [output = data, parse = Runtime]
 {
@@ -1454,8 +1454,8 @@ schema Runtime: { env: string; region: string; };
 }`, nil)
 
 		labels := completeLabels(server, uri, 6, uint32(len(`  result: `)))
-		tAssert.Contains(labels, "env")
-		tAssert.Contains(labels, "region")
+		tAssert.Contains(labels, "$env")
+		tAssert.Contains(labels, "$region")
 	})
 
 	It("suggests parse_file variables when previous output fields use commas", func() {
@@ -1464,7 +1464,7 @@ schema Runtime: { env: string; region: string; };
 
 		writeWorkspaceFile(workspace, "runtime.mace", `[output = schema]
 {
-  Runtime: { env: string; region: string; };
+  Runtime: { env: string, region: string, },
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
@@ -1476,16 +1476,16 @@ schema Runtime: { env: string; region: string; };
 }`, nil)
 
 		labels := completeLabels(server, uri, 3, uint32(len(`  result: `)))
-		tAssert.NotContains(labels, "env")
-		tAssert.NotContains(labels, "region")
-		tAssert.Contains(labels, "Runtime")
+		tAssert.Contains(labels, "$env")
+		tAssert.Contains(labels, "$region")
+		tAssert.NotContains(labels, "Runtime")
 	})
 
 	It("suggests choice values for output schema fields", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
  type Fruit: choice["Apple", "Strawberry"];
- schema Basket: { favorite_fruit: Fruit; };
+ schema Basket: { favorite_fruit: Fruit, };
 |===|
 [output = data, schema = Basket]
 {
@@ -1502,7 +1502,7 @@ schema Runtime: { env: string; region: string; };
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
  type Fruit: choice["Apple", "Strawberry"];
- schema Basket: { previous: Fruit; favorite_fruit: Fruit; };
+ schema Basket: { previous: Fruit, favorite_fruit: Fruit, };
 |===|
 [output = data, schema = Basket]
 {
@@ -1518,16 +1518,16 @@ schema Runtime: { env: string; region: string; };
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
  type Role: choice["Admin", "Member"];
- schema User: { name: string; };
+ schema User: { name: string, };
  type Identity: variant[Role, User];
- schema Envelope: { value: Identity; };
- schema Response: { payload: Envelope; };
+ schema Envelope: { value: Identity, };
+ schema Response: { payload: Envelope, };
 |===|
 [output = data, schema = Response]
 {
   payload: {
     value:
-  };
+  },
 }`, nil)
 
 		labels := completeLabels(server, uri, 10, uint32(len(`    value: `)))
@@ -1540,17 +1540,17 @@ schema Runtime: { env: string; region: string; };
 	It("suggests composed schema literals for nested output union aliases", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
-schema Profile: { name: string; };
-schema Audit: { created_at: string; };
+schema Profile: { name: string, };
+schema Audit: { created_at: string, };
 type User: union[Profile, Audit];
-schema Envelope: { value: User; };
-schema Response: { payload: Envelope; };
+schema Envelope: { value: User, };
+schema Response: { payload: Envelope, };
 |===|
 [output = data, schema = Response]
 {
   payload: {
     value:
-  };
+  },
 }`, nil)
 
 		labels := completeLabels(server, uri, 10, uint32(len(`    value: `)))
@@ -1562,7 +1562,7 @@ schema Response: { payload: Envelope; };
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
  type Fruit: choice["Apple", "Strawberry"];
- schema Basket: { favorite_fruit: Fruit; };
+ schema Basket: { favorite_fruit: Fruit, };
 |===|
 [output = data, schema = Basket]
 {
@@ -1590,14 +1590,14 @@ schema Response: { payload: Envelope; };
 
 		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
 {
-  ImportedUser: { name: string; };
+  ImportedUser: { name: string, },
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
 from "./shared.mace" import ImportedUser;
-schema LocalUser: { id: int; };
+schema LocalUser: { id: int, };
 |===|
 [output = data, schema = `, nil)
 
@@ -1612,11 +1612,11 @@ schema LocalUser: { id: int; };
 
 		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
 {
-  ImportedUser: { name: string; };
+  ImportedUser: { name: string, },
 }`)
 		writeWorkspaceFile(workspace, "other.mace", `[output = schema]
 {
-  OtherUser: { name: string; };
+  OtherUser: { name: string, },
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 
@@ -1635,7 +1635,7 @@ from "./shared.mace" import ImportedUser;
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = data]
 {
-  base: 1;
+  base: 1,
   result:
 }`, nil)
 
@@ -1647,14 +1647,14 @@ from "./shared.mace" import ImportedUser;
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = data]
 {
-  base: 1;
-  profile: { name: "Ada"; };
+  base: 1,
+  profile: { name: "Ada", },
   result:
 }`, nil)
 
 		labels := completeLabels(server, uri, 3, uint32(len(`  result: `)))
 		tAssert.NotContains(labels, "base")
-		tAssert.NotContains(labels, "profile")
+		tAssert.NotContains(labels, "$profile")
 		tAssert.Contains(labels, "$self")
 	})
 
@@ -1684,8 +1684,8 @@ from "./shared.mace" import ImportedUser;
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = data]
 {
-  base: 4;
-  profile: { name: "Ada"; };
+  base: 4,
+  profile: { name: "Ada", },
   result: $self.
 }`, nil)
 
@@ -1697,7 +1697,7 @@ from "./shared.mace" import ImportedUser;
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = data]
 {
-  profile: { name: "Ada"; details: { age: 30; }; };
+  profile: { name: "Ada", details: { age: 30, }, },
   result: $self.profile.
 }`, nil)
 
@@ -1709,7 +1709,7 @@ from "./shared.mace" import ImportedUser;
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = data]
 {
-  User: { profile: { age: 30; }; };
+  User: { profile: { age: 30, }, },
   result: $self.User.profile.
 }`, nil)
 
@@ -1746,13 +1746,13 @@ from "./shared.mace" import ImportedUser;
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = data]
 {
-  profile: { stats: { base: 2; multiplier: 3; }; };
+  profile: { stats: { base: 2, multiplier: 3, }, },
   summary: {
     stats: {
-      total: $self.profile.stats.base * $self.profile.stats.multiplier;
-      base: $self.profile.stats.base;
-    };
-  };
+      total: $self.profile.stats.base * $self.profile.stats.multiplier,
+      base: $self.profile.stats.base,
+    },
+  },
   result: $self.summary.stats.
 }`, nil)
 
@@ -1764,12 +1764,12 @@ from "./shared.mace" import ImportedUser;
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `[output = data]
 {
-  account: { balance: 10; bonus: 5; };
+  account: { balance: 10, bonus: 5, },
   ledger: {
-    previous: $self.account.balance;
-    next: $self.account.balance + $self.account.bonus;
-    nested: { delta: $self.account.bonus; };
-  };
+    previous: $self.account.balance,
+    next: $self.account.balance + $self.account.bonus,
+    nested: { delta: $self.account.bonus, },
+  },
   result: $self.ledger.
 }`, nil)
 
@@ -1779,12 +1779,12 @@ from "./shared.mace" import ImportedUser;
 
 	It("returns hover documentation for language keywords", func() {
 		didOpen(server, uri, `|===|
-schema User: { name: string; };
+schema User: { name: string, };
 type Identity: variant[string, int];
 type UserRecord: union[User, Profile];
-schema Profile: { age: int; };
+schema Profile: { age: int, };
 |===|
-[output = data] { name: "Ada"; }`, nil)
+[output = data] { name: "Ada", }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
@@ -1878,7 +1878,7 @@ schema Profile: { age: int; };
 	It("returns directive-aware hover documentation for schema inside output directives", func() {
 		didOpen(server, uri, `[output = data, schema = User]
 {
-  result: 1;
+  result: 1,
 }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
@@ -1907,14 +1907,14 @@ schema Profile: { age: int; };
 	It("returns hover details for user declarations", func() {
 		didOpen(server, uri, `|===|
 string env = "dev";
-schema Profile: { name: string; };
-schema Audit: { created_at: string; };
+schema Profile: { name: string, };
+schema Audit: { created_at: string, };
 type Identity: variant[string, int];
 type User: union[Profile, Audit];
 Identity id = "Ada";
-User user = { name: "Ada"; created_at: "2026-04-09"; };
+User user = { name: "Ada", created_at: "2026-04-09", };
 |===|
-[output = data] { result: env; chosen: id; record: user; }`, nil)
+[output = data] { result: env, chosen: id, record: user, }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
@@ -1987,12 +1987,12 @@ User user = { name: "Ada"; created_at: "2026-04-09"; };
 		didOpen(server, uri, `|===|
  type Flavor: choice["Vanilla", "Chocolate"];
  gen_doc Flavor {
-   summary: "Selectable flavor values";
-   description: "Use autocomplete to choose a supported flavor.";
+   summary: "Selectable flavor values",
+   description: "Use autocomplete to choose a supported flavor.",
  };
  Flavor current = "Vanilla";
 |===|
-[output = data] { result: current; }`, nil)
+[output = data] { result: current, }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
@@ -2024,7 +2024,7 @@ User user = { name: "Ada"; created_at: "2026-04-09"; };
 type UserID: string /# A stable user identifier;
 UserID current = "user_1";
 |===|
-[output = data] { result: current; }`, nil)
+[output = data] { result: current, }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
@@ -2056,19 +2056,19 @@ UserID current = "user_1";
 
 		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
 {
-  User: { name: string; } /# Public user schema;
+  User: { name: string, } /# Public user schema,
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `|===|
 from "./shared.mace" import User;
-User current = { name: "Ada"; };
+User current = { name: "Ada", };
 |===|
-[output = data] { result: current; }`))
+[output = data] { result: current, }`))
 
 		didOpen(server, uri, `|===|
 from "./shared.mace" import User;
-User current = { name: "Ada"; };
+User current = { name: "Ada", };
 |===|
-[output = data] { result: current; }`, nil)
+[output = data] { result: current, }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
@@ -2096,21 +2096,21 @@ User current = { name: "Ada"; };
 
 	It("includes documentation declaration metadata in hover details", func() {
 		didOpen(server, uri, `|===|
-schema User: { name: string; };
+schema User: { name: string, };
 
 schema_doc User {
-  summary: "Represents a user.";
+  summary: "Represents a user.",
   description: """
 # User
 Reusable schema.
-""";
+""",
   props: {
-    name: "The user's display name";
-  };
+    name: "The user's display name",
+  },
 };
 |===|
 [output = schema]
-{ user: User; }`, nil)
+{ user: User, }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
@@ -2142,25 +2142,25 @@ Reusable schema.
 	It("loads hover documentation from the docs fixture", func() {
 		didOpen(server, uri, `|===|
 schema User: {
-  name: string;
+  name: string,
 };
 
 string greeting = "Hello";
 
 gen_doc greeting {
-  summary: "Rendered greeting";
+  summary: "Rendered greeting",
 };
 
 schema_doc User {
-  summary: "Represents a user";
+  summary: "Represents a user",
   description: """
 # User
 
 Hover should surface this documentation.
-""";
+""",
   props: {
-    name: "The user's display name";
-  };
+    name: "The user's display name",
+  },
 };
 |===|
 [output = schema]
@@ -2168,7 +2168,7 @@ Hover should surface this documentation.
 # User Output
 """
 {
-  user: User /# Public user schema;
+  user: User /# Public user schema,
 }
 `, nil)
 
@@ -2201,11 +2201,11 @@ Hover should surface this documentation.
 
 	It("prefers output field hover details over same-named schema declarations", func() {
 		didOpen(server, uri, `|===|
-schema User: { name: string; };
+schema User: { name: string, };
 |===|
 [output = data]
 {
-  User: { name: "Ada"; };
+  User: { name: "Ada", },
 }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
@@ -2235,17 +2235,17 @@ schema User: { name: string; };
 	It("returns hover details for nested output record fields", func() {
 		didOpen(server, uri, `|===|
 type Name: string;
-schema Profile: { age: int; };
-schema User: { name: Name; profile: Profile; };
+schema Profile: { age: int, };
+schema User: { name: Name, profile: Profile, };
 Name default_name = "Ada";
 int default_age = 30;
 |===|
 [output = data]
 {
   User: {
-    name: default_name;
-    profile: { age: default_age; };
-  };
+    name: default_name,
+    profile: { age: default_age, },
+  },
 }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
@@ -2274,20 +2274,20 @@ int default_age = 30;
 	It("prefers output field hover details when the same name is reused later in self references", func() {
 		didOpen(server, uri, `|===|
 type Name: string;
-schema Profile: { age: int; };
-schema User: { name: Name; profile: Profile; };
+schema Profile: { age: int, };
+schema User: { name: Name, profile: Profile, };
 Name default_name = "Ada";
 int default_age = 30;
 |===|
 [output = data]
 {
   User: {
-    name: default_name;
-    profile: { age: default_age; };
-  };
-  foo: $self.User.profile.age;
-  bar: $self.foo;
-  baz: ($self.User.name);
+    name: default_name,
+    profile: { age: default_age, },
+  },
+  foo: $self.User.profile.age,
+  bar: $self.foo,
+  baz: $self.User.name,
 }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
@@ -2309,7 +2309,7 @@ int default_age = 30;
 		content, ok := hover.Contents.(protocol.MarkupContent)
 		tAssert.True(ok)
 		if ok {
-			tAssert.Contains(content.Value, `output User: { name: string; profile: { age: int; } }`)
+			tAssert.Contains(content.Value, `output User: { name: string, profile: { age: int, } }`)
 			tAssert.Contains(content.Value, `name: "Ada"`)
 			tAssert.NotContains(content.Value, "schema User")
 		}
@@ -2318,8 +2318,8 @@ int default_age = 30;
 	It("returns hover details for nested self references", func() {
 		didOpen(server, uri, `[output = data]
 {
-  User: { profile: { age: 30; }; };
-  foo: $self.User.profile.age;
+  User: { profile: { age: 30, }, },
+  foo: $self.User.profile.age,
 }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
@@ -2350,10 +2350,10 @@ int default_age = 30;
 {
   summary: {
     stats: {
-      totals: { users: 3; };
-    };
-  };
-  result: $self.summary.stats.totals.users;
+      totals: { users: 3, },
+    },
+  },
+  result: $self.summary.stats.totals.users,
 }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
@@ -2389,19 +2389,19 @@ int default_age = 30;
 |===|
 [output = schema]
 {
-  Flavor: Flavor;
+  Flavor: Flavor,
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `|===|
 from "./shared.mace" import Flavor;
 Flavor current = "Vanilla";
 |===|
-[output = data] { result: current; }`))
+[output = data] { result: current, }`))
 
 		didOpen(server, uri, `|===|
 from "./shared.mace" import Flavor;
 Flavor current = "Vanilla";
 |===|
-[output = data] { result: current; }`, nil)
+[output = data] { result: current, }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
@@ -2433,19 +2433,19 @@ Flavor current = "Vanilla";
 
 		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
 {
-  User: { name: string; };
+  User: { name: string, },
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `|===|
 from "./shared.mace" import User;
-User current = { name: "Ada"; };
+User current = { name: "Ada", };
 |===|
-[output = data] { result: current; }`))
+[output = data] { result: current, }`))
 
 		didOpen(server, uri, `|===|
 from "./shared.mace" import User;
-User current = { name: "Ada"; };
+User current = { name: "Ada", };
 |===|
-[output = data] { result: current; }`, nil)
+[output = data] { result: current, }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
@@ -2477,19 +2477,19 @@ User current = { name: "Ada"; };
 
 		importPath := writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
 {
-  User: { name: string; };
+  User: { name: string, },
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `|===|
 from "./shared.mace" import User;
-User current = { name: "Ada"; };
+User current = { name: "Ada", };
 |===|
-[output = data] { result: current; }`))
+[output = data] { result: current, }`))
 
 		didOpen(server, uri, `|===|
 from "./shared.mace" import User;
-User current = { name: "Ada"; };
+User current = { name: "Ada", };
 |===|
-[output = data] { result: current; }`, nil)
+[output = data] { result: current, }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentDefinition, protocol.DefinitionParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
@@ -2512,11 +2512,11 @@ User current = { name: "Ada"; };
 
 	It("prefers output field definitions over same-named schema declarations", func() {
 		didOpen(server, uri, `|===|
-schema User: { name: string; };
+schema User: { name: string, };
 |===|
 [output = data]
 {
-  User: { name: "Ada"; };
+  User: { name: "Ada", },
 }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentDefinition, protocol.DefinitionParams{
@@ -2551,7 +2551,7 @@ schema User: { name: string; };
 
 
 
-       qux: 1;
+       qux: 1,
 }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `|===|
 from "./shared.mace" import qux;
@@ -2559,7 +2559,7 @@ int qux = 2;
 |===|
 
 {
-  bar: qux;
+  bar: qux,
 }`))
 
 		didOpen(server, uri, `|===|
@@ -2568,7 +2568,7 @@ int qux = 2;
 |===|
 
 {
-  bar: qux;
+  bar: qux,
 }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentDefinition, protocol.DefinitionParams{
@@ -2598,13 +2598,13 @@ int qux = 2;
 		workspace, err := os.MkdirTemp("", "mace-lsp-code-action-*")
 		tAssert.NoError(err)
 
-		writeWorkspaceFile(workspace, "shared.mace", `[output = data] { name: "Ada"; }`)
+		writeWorkspaceFile(workspace, "shared.mace", `[output = data] { name: "Ada", }`)
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `|===|
 from "./shared" import name;
 |===|
 [output = data]
 {
-  result: name;
+  result: name,
 }`))
 
 		didOpen(server, uri, `|===|
@@ -2612,7 +2612,7 @@ from "./shared" import name;
 |===|
 [output = data]
 {
-  result: name;
+  result: name,
 }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentCodeAction, protocol.CodeActionParams{
@@ -2643,20 +2643,20 @@ from "./shared" import name;
 
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `|===|
 from "./shared.mace" import User;
-schema User: { name: string; };
+schema User: { name: string, };
 |===|
 [output = data, schema = User, schema_file = "./shared.mace"]
 {
-  result: { name: "Ada"; };
+  result: { name: "Ada", },
 }`))
 
 		didOpen(server, uri, `|===|
 from "./shared.mace" import User;
-schema User: { name: string; };
+schema User: { name: string, };
 |===|
 [output = data, schema = User, schema_file = "./shared.mace"]
 {
-  result: { name: "Ada"; };
+  result: { name: "Ada", },
 }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentCodeAction, protocol.CodeActionParams{
@@ -2688,13 +2688,13 @@ string name = "Ada";
 |===|
 [output = data]
 {
-  name: { name: name; };
+  name: { name: name, },
 }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentRename, protocol.RenameParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
-				Position:     protocol.Position{Line: 5, Character: 16},
+				Position:     protocol.Position{Line: 5, Character: 17},
 			},
 			NewName: "username",
 		}, nil)
@@ -2720,7 +2720,7 @@ string name = "Ada";
 		tAssert.NoError(err)
 		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
 {
-  User: { name: string; };
+  User: { name: string, },
 }`)
 		consumerURI := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
 		openEmptyDocument(server, consumerURI, nil)
@@ -2729,7 +2729,7 @@ from "./shared.mace" import User;
 |===|
 [output = data, schema = User]
 {
-  result: { name: "Ada"; };
+  result: { name: "Ada", },
 }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentPrepareRename, protocol.PrepareRenameParams{
@@ -2761,7 +2761,7 @@ string greeting = name;
 |===|
 [output = data]
 {
-  result: name;
+  result: name,
 }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentRename, protocol.RenameParams{
@@ -2789,14 +2789,14 @@ string greeting = name;
 		tAssert.NoError(err)
 		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
 {
-  User: { name: string; };
+  User: { name: string, },
 }`)
 		consumerPath := writeWorkspaceFile(workspace, "consumer.mace", `|===|
 from "./shared.mace" import User;
 |===|
 [output = data, schema = User]
 {
-  result: { name: "Ada"; };
+  result: { name: "Ada", },
 }`)
 		consumerURI := protocol.DocumentUri(consumerPath)
 		openEmptyDocument(server, consumerURI, nil)
@@ -2805,7 +2805,7 @@ from "./shared.mace" import User;
 |===|
 [output = data, schema = User]
 {
-  result: { name: "Ada"; };
+  result: { name: "Ada", },
 }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentRename, protocol.RenameParams{
@@ -2839,15 +2839,15 @@ from "./shared.mace" import User;
 		tAssert.NoError(err)
 		writeWorkspaceFile(workspace, "shared.mace", `[output = schema]
 {
-  Scripts: { name: string; };
+  Scripts: { name: string, },
 }`)
 		consumerPath := writeWorkspaceFile(workspace, "consumer.mace", `|===|
 from "./shared.mace" import Scripts:MyScripts;
 |===|
 [output = schema]
 {
-  scripts: MyScripts;
-  Scripts: { name: string; };
+  scripts: MyScripts,
+  Scripts: { name: string, },
 }`)
 		consumerURI := protocol.DocumentUri(consumerPath)
 		openEmptyDocument(server, consumerURI, nil)
@@ -2856,8 +2856,8 @@ from "./shared.mace" import Scripts:MyScripts;
 |===|
 [output = schema]
 {
-  scripts: MyScripts;
-  Scripts: { name: string; };
+  scripts: MyScripts,
+  Scripts: { name: string, },
 }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentRename, protocol.RenameParams{
@@ -2892,12 +2892,12 @@ from "./shared.mace" import Scripts:MyScripts;
 
 	It("returns hierarchical document symbols", func() {
 		didOpen(server, uri, `|===|
-schema User: { name: string; age?: int; };
+schema User: { name: string, age?: int, };
 string env = "dev";
 |===|
 [output = data]
 {
-  result: env;
+  result: env,
 }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentDocumentSymbol, protocol.DocumentSymbolParams{
@@ -2928,7 +2928,7 @@ string env = "dev";
 |===|
 [output = data]
 {
-  result: "Vanilla";
+  result: "Vanilla",
 }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentDocumentSymbol, protocol.DocumentSymbolParams{
@@ -2953,12 +2953,12 @@ string env = "dev";
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `|===|
-schema User: { name: string; };
+schema User: { name: string, };
 string value = "Ada";
 |===|
 [output = schema]
 {
-  User: User;
+  User: User,
 }`, &notifications)
 
 		if tAssert.Len(notifications, 1) {
@@ -2970,7 +2970,7 @@ string value = "Ada";
 	})
 
 	It("formats a document into canonical source", func() {
-		didOpen(server, uri, `[output = data]{result:1+2;}`, nil)
+		didOpen(server, uri, `[output = data]{result:1+2,}`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentFormatting, protocol.DocumentFormattingParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
@@ -2990,7 +2990,7 @@ string value = "Ada";
 		}
 
 		if tAssert.Len(edits, 1) {
-			tAssert.Equal(`[output = data]{result:1+2;}`, edits[0].NewText)
+			tAssert.Equal(`[output = data]{result:1+2,}`, edits[0].NewText)
 		}
 	})
 
@@ -3000,7 +3000,7 @@ string display_name = "Ada";
 |===|
 [output = data]
 {
-  result: [{ profile: { name: "Ada"; }; }, { profile: { name: "Bob"; }; }];
+  result: [{ profile: { name: "Ada", }, }, { profile: { name: "Bob", }, }],
 }`, nil)
 
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentFormatting, protocol.DocumentFormattingParams{
@@ -3026,7 +3026,7 @@ string display_name = "Ada";
 |============================|
 [output = data]
 {
-  result: [{ profile: { name: "Ada"; }; }, { profile: { name: "Bob"; }; }];
+  result: [{ profile: { name: "Ada", }, }, { profile: { name: "Bob", }, }],
 }`, edits[0].NewText)
 		}
 	})
@@ -3102,7 +3102,7 @@ string display_name = "Ada";
 int value = 1;
 |===|
 [output = data]
-{ value: value; }`
+{ value: value, }`
 		didSave(server, uriValue, &saved, nil)
 	})
 
@@ -3195,14 +3195,14 @@ int value = 1;
 	It("covers remaining LSP server branches", func() {
 		uriValue := protocol.DocumentUri(uri)
 		server.documents[uriValue] = document{
-			text:    `[output = data] { value: 1; }`,
+			text:    `[output = data] { value: 1, }`,
 			version: 1,
 		}
 
-		textEdit := protocol.TextDocumentContentChangeEventWhole{Text: `[output = data] { value: 2; }`}
+		textEdit := protocol.TextDocumentContentChangeEventWhole{Text: `[output = data] { value: 2, }`}
 		err := server.didChange(&glsp.Context{}, &protocol.DidChangeTextDocumentParams{
 			TextDocument: protocol.VersionedTextDocumentIdentifier{
-				Version: 2,
+				Version:                2,
 				TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uriValue},
 			},
 			ContentChanges: []any{textEdit},
@@ -3211,7 +3211,7 @@ int value = 1;
 
 		err = server.didChange(&glsp.Context{}, &protocol.DidChangeTextDocumentParams{
 			TextDocument: protocol.VersionedTextDocumentIdentifier{
-				Version: 3,
+				Version:                3,
 				TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uriValue},
 			},
 			ContentChanges: []any{protocol.TextDocumentContentChangeEvent{
@@ -3226,25 +3226,25 @@ int value = 1;
 
 		err = server.didChange(&glsp.Context{}, &protocol.DidChangeTextDocumentParams{
 			TextDocument: protocol.VersionedTextDocumentIdentifier{
-				Version: 4,
+				Version:                4,
 				TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uriValue},
 			},
-			ContentChanges: []any{protocol.TextDocumentContentChangeEvent{Text: `[output = data] { value: 3; }`}},
+			ContentChanges: []any{protocol.TextDocumentContentChangeEvent{Text: `[output = data] { value: 3, }`}},
 		})
 		tAssert.NoError(err)
 
 		err = server.didChange(&glsp.Context{}, &protocol.DidChangeTextDocumentParams{
 			TextDocument: protocol.VersionedTextDocumentIdentifier{
-				Version: 5,
+				Version:                5,
 				TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uriValue},
 			},
-			ContentChanges: []any{protocol.TextDocumentContentChangeEvent{Text: `[output = data] { value: 4; }`}},
+			ContentChanges: []any{protocol.TextDocumentContentChangeEvent{Text: `[output = data] { value: 4, }`}},
 		})
 		tAssert.NoError(err)
 
 		err = server.didChange(&glsp.Context{}, &protocol.DidChangeTextDocumentParams{
 			TextDocument: protocol.VersionedTextDocumentIdentifier{
-				Version: 6,
+				Version:                6,
 				TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uriValue},
 			},
 			ContentChanges: []any{protocol.TextDocumentContentChangeEvent{
@@ -3263,7 +3263,7 @@ int value = 1;
 
 		err = server.didChange(&glsp.Context{}, &protocol.DidChangeTextDocumentParams{
 			TextDocument: protocol.VersionedTextDocumentIdentifier{
-				Version: 7,
+				Version:                7,
 				TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uriValue},
 			},
 			ContentChanges: []any{
@@ -3317,7 +3317,7 @@ int value = 1;
 		tAssert.Nil(definition)
 
 		renameURI := protocol.DocumentUri(fileURI(filepath.Join("workspace", "rename.mace")))
-		server.documents[renameURI] = document{text: `[output = data] { value: 1; }`, version: 1}
+		server.documents[renameURI] = document{text: `[output = data] { value: 1, }`, version: 1}
 		definition, err = server.definition(nil, &protocol.DefinitionParams{TextDocumentPositionParams: protocol.TextDocumentPositionParams{TextDocument: protocol.TextDocumentIdentifier{URI: renameURI}, Position: protocol.Position{Line: 0, Character: 0}}})
 		tAssert.NoError(err)
 		tAssert.Nil(definition)
@@ -3384,7 +3384,7 @@ int value = 1;
 			_, _ = io.Copy(io.Discard, right)
 		}()
 
-		params := json.RawMessage(fmt.Sprintf(`{"textDocument":{"uri":%q,"languageId":"mace","version":1,"text":"[output = data] { value: 1; }"}}`, uri))
+		params := json.RawMessage(fmt.Sprintf(`{"textDocument":{"uri":%q,"languageId":"mace","version":1,"text":"[output = data] { value: 1, }"}}`, uri))
 		_, err := server.handle(context.Background(), connection, &jsonrpc2.Request{
 			Method: protocol.MethodTextDocumentDidOpen,
 			Params: &params,

@@ -1,0 +1,9 @@
+|===|
+nullable string name = null;
+schema User: { name: string, };
+User user = { name, };
+|===|
+[output = data]
+{
+  user,
+}
