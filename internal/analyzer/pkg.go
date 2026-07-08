@@ -336,10 +336,10 @@ func DiagnosticFromError(err error) protocol.Diagnostic {
 		code = diagnosticCode(diagnosticError.Code)
 		message = diagnosticError.Message
 		if diagnosticError.Range.Start.Line != 0 || diagnosticError.Range.Start.Column != 0 || diagnosticError.Range.End.Line != 0 || diagnosticError.Range.End.Column != 0 {
-			position.Line = protocol.UInteger(diagnosticError.Range.Start.Line)
-			position.Character = protocol.UInteger(diagnosticError.Range.Start.Column)
-			end.Line = protocol.UInteger(diagnosticError.Range.End.Line)
-			end.Character = protocol.UInteger(diagnosticError.Range.End.Column)
+			position.Line = protocol.UInteger(diagnosticError.Range.Start.Line - 1)
+			position.Character = protocol.UInteger(diagnosticError.Range.Start.Column - 1)
+			end.Line = protocol.UInteger(diagnosticError.Range.End.Line - 1)
+			end.Character = protocol.UInteger(diagnosticError.Range.End.Column - 1)
 			return diagnosticWithCode(protocol.Range{Start: position, End: end}, protocol.DiagnosticSeverityError, code, message)
 		}
 	}
@@ -348,10 +348,10 @@ func DiagnosticFromError(err error) protocol.Diagnostic {
 		code = diagnosticCodeFromProcessorError(diagnosticError)
 		message = diagnosticError.Message
 		if diagnosticError.Range.Start.Line != 0 || diagnosticError.Range.Start.Column != 0 || diagnosticError.Range.End.Line != 0 || diagnosticError.Range.End.Column != 0 {
-			position.Line = protocol.UInteger(diagnosticError.Range.Start.Line)
-			position.Character = protocol.UInteger(diagnosticError.Range.Start.Column)
-			end.Line = protocol.UInteger(diagnosticError.Range.End.Line)
-			end.Character = protocol.UInteger(diagnosticError.Range.End.Column)
+			position.Line = protocol.UInteger(diagnosticError.Range.Start.Line - 1)
+			position.Character = protocol.UInteger(diagnosticError.Range.Start.Column - 1)
+			end.Line = protocol.UInteger(diagnosticError.Range.End.Line - 1)
+			end.Character = protocol.UInteger(diagnosticError.Range.End.Column - 1)
 			return diagnosticWithCode(protocol.Range{Start: position, End: end}, protocol.DiagnosticSeverityError, code, message)
 		}
 	}

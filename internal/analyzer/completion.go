@@ -1301,7 +1301,7 @@ func relativePathItems(document document, uri protocol.DocumentUri, pathPrefix s
 	}
 
 	replaceStart := position
-	replaceStart.Character -= uint32(len(pathPrefix))
+	replaceStart.Character -= utf16LineLength(pathPrefix)
 	replaceRange := protocol.Range{Start: replaceStart, End: position}
 	for index := range items {
 		items[index].TextEdit = protocol.TextEdit{Range: replaceRange, NewText: items[index].Label}
