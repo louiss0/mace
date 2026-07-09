@@ -94,6 +94,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Checkout Zed extension repository
+        uses: actions/checkout@v5
+        with:
+          repository: louiss0/zed-extension-mace
+          token: ${{ secrets.ZED_EXTENSION_MACE_PUSH_TOKEN }}
+          path: zed-extension-mace
+
       - name: Update version file
         run: |
           VERSION="${GITHUB_REF_NAME}"
