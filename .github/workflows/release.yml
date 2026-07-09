@@ -94,11 +94,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Load secret
+        id: load_secrets
+        uses: 1password/load-secrets-action@v4
+        with:
+          export-env: false
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          GH_GENERAL_TOKEN: "op://Development/GENERAL_TOKEN GH--PT Fine Grained/credential"
+
       - name: Checkout Zed extension repository
         uses: actions/checkout@v5
         with:
           repository: louiss0/zed-extension-mace
-          token: ${{ secrets.ZED_EXTENSION_MACE_PUSH_TOKEN }}
+          token: ${{ steps.load_secrets.outputs.GH_GENERAL_TOKEN }}
           path: zed-extension-mace
 
       - name: Update version file
