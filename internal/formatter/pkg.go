@@ -638,6 +638,8 @@ func tokenLexeme(tokenType lexer.TokenType) string {
 		return "&&"
 	case lexer.TokenOrOr:
 		return "||"
+	case lexer.TokenCoalesce:
+		return "??"
 	case lexer.TokenShiftLeft:
 		return "<<"
 	case lexer.TokenShiftRight:
@@ -652,6 +654,7 @@ func tokenLexeme(tokenType lexer.TokenType) string {
 const (
 	precedenceLowest = iota
 	precedenceConditional
+	precedenceCoalesce
 	precedenceLogicalOr
 	precedenceLogicalAnd
 	precedenceBitwiseOr
@@ -672,6 +675,8 @@ func infixPrecedence(tokenType lexer.TokenType) int {
 	switch tokenType {
 	case lexer.TokenOrOr:
 		return precedenceLogicalOr
+	case lexer.TokenCoalesce:
+		return precedenceCoalesce
 	case lexer.TokenAndAnd:
 		return precedenceLogicalAnd
 	case lexer.TokenPipe:

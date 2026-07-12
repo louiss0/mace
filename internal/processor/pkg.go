@@ -1923,45 +1923,51 @@ func validateDataOutputFields(fields []ast.OutputField, variables *variableRegis
 }
 
 func validateNullableVariableAccess(expression ast.Expression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
+	return validateExpressionPresence(expression, variables, symbols, types, schemas, enums, false)
+}
+
+func validateExpressionPresence(expression ast.Expression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any, allowAbsent bool) error {
 	switch expr := expression.(type) {
 	case ast.MemberAccess:
-		targetType, err := inferExpressionType(expr.Target, variables, symbols, types, schemas, enums)
+		expressionType, err := inferExpressionType(expr, variables, symbols, types, schemas, enums)
 		if err != nil {
 			return err
 		}
-		if targetType.nullable {
-			if _, isOptionalProperty := expr.Target.(ast.MemberAccess); !isOptionalProperty || !expr.Optional {
-				return nullableVariableAccessError(expr.Name)
-			}
+		if expressionType.presence == presencePossiblyAbsent && !allowAbsent {
+			return possiblyAbsentValueError()
 		}
-		return validateNullableVariableAccess(expr.Target, variables, symbols, types, schemas, enums)
+		return validateExpressionPresence(expr.Target, variables, symbols, types, schemas, enums, true)
 	case ast.ArrayLiteral:
 		for _, element := range expr.Elements {
-			if err := validateNullableVariableAccess(element, variables, symbols, types, schemas, enums); err != nil {
+			if err := validateExpressionPresence(element, variables, symbols, types, schemas, enums, false); err != nil {
 				return err
 			}
 		}
 	case ast.RecordLiteral:
 		for _, field := range expr.Fields {
-			if err := validateNullableVariableAccess(field.Value, variables, symbols, types, schemas, enums); err != nil {
+			if err := validateExpressionPresence(field.Value, variables, symbols, types, schemas, enums, false); err != nil {
 				return err
 			}
 		}
 	case ast.PrefixExpression:
-		return validateNullableVariableAccess(expr.Right, variables, symbols, types, schemas, enums)
+		return validateExpressionPresence(expr.Right, variables, symbols, types, schemas, enums, false)
 	case ast.InfixExpression:
-		if err := validateNullableVariableAccess(expr.Left, variables, symbols, types, schemas, enums); err != nil {
+		if expr.Operator == lexer.TokenCoalesce {
+			_, err := inferCoalesceType(expr, variables, symbols, types, schemas, enums)
 			return err
 		}
-		return validateNullableVariableAccess(expr.Right, variables, symbols, types, schemas, enums)
+		if err := validateExpressionPresence(expr.Left, variables, symbols, types, schemas, enums, false); err != nil {
+			return err
+		}
+		return validateExpressionPresence(expr.Right, variables, symbols, types, schemas, enums, false)
 	case ast.ConditionalExpression:
-		if err := validateNullableVariableAccess(expr.Condition, variables, symbols, types, schemas, enums); err != nil {
+		if err := validateExpressionPresence(expr.Condition, variables, symbols, types, schemas, enums, false); err != nil {
 			return err
 		}
-		if err := validateNullableVariableAccess(expr.Then, narrowedVariables(expr.Condition, variables), symbols, types, schemas, enums); err != nil {
+		if err := validateExpressionPresence(expr.Then, narrowedVariables(expr.Condition, variables), symbols, types, schemas, enums, false); err != nil {
 			return err
 		}
-		return validateNullableVariableAccess(expr.Else, variables, symbols, types, schemas, enums)
+		return validateExpressionPresence(expr.Else, variables, symbols, types, schemas, enums, false)
 	}
 
 	return nil
@@ -2338,6 +2344,9 @@ func validateEvaluatedOutputSchema(schemaName string, fields map[string]Value, s
 }
 
 func validateEvaluatedValueAgainstType(value Value, expectedType valueType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
+	if value.Absent {
+		return possiblyAbsentValueError()
+	}
 	if value.Kind == ValueNull {
 		if expectedType.nullable {
 			return nil
@@ -2489,6 +2498,7 @@ func directiveKindName(kind ast.OutputDirectiveKind) string {
 }
 
 type Value struct {
+	Absent  bool
 	Kind    ValueKind
 	Int     int64
 	Float   float64
@@ -2592,6 +2602,9 @@ func evaluateOutputFields(items []ast.OutputField, environment *valueEnvironment
 		value, err := evaluateExpression(item.Value, environment, self, symbols, types, schemas, enums)
 		if err != nil {
 			return nil, err
+		}
+		if value.Absent {
+			return nil, possiblyAbsentValueError()
 		}
 		if value.Kind == ValueNull {
 			continue
@@ -3006,10 +3019,13 @@ func evaluateMemberAccess(expr ast.MemberAccess, environment *valueEnvironment, 
 	if err != nil {
 		return Value{}, err
 	}
-	if target.Kind == ValueNull {
-		if _, isOptionalProperty := expr.Target.(ast.MemberAccess); isOptionalProperty && expr.Optional {
-			return Value{Kind: ValueNull}, nil
+	if target.Absent {
+		if expr.Optional {
+			return Value{Absent: true}, nil
 		}
+		return Value{}, optionalFieldAccessError(expr.Name)
+	}
+	if target.Kind == ValueNull {
 		return Value{}, nullableVariableAccessError(expr.Name)
 	}
 	if target.Kind != ValueRecord {
@@ -3043,7 +3059,7 @@ func evaluateMemberAccess(expr ast.MemberAccess, environment *valueEnvironment, 
 	member, ok := target.Record[expr.Name]
 	if !ok {
 		if expr.Optional {
-			return Value{Kind: ValueNull}, nil
+			return Value{Absent: true}, nil
 		}
 		return Value{}, validationErrorf("unknown member %q", expr.Name)
 	}
@@ -3088,6 +3104,9 @@ func evaluatePrefix(expr ast.PrefixExpression, environment *valueEnvironment, se
 }
 
 func evaluateInfix(expr ast.InfixExpression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
+	if expr.Operator == lexer.TokenCoalesce {
+		return evaluateCoalesce(expr, environment, self, symbols, types, schemas, enums)
+	}
 	if expr.Operator == lexer.TokenAndAnd {
 		return evaluateLogicalAnd(expr, environment, self, symbols, types, schemas, enums)
 	}
@@ -3124,6 +3143,18 @@ func evaluateInfix(expr ast.InfixExpression, environment *valueEnvironment, self
 	default:
 		return Value{}, validationErrorf("unknown infix operator")
 	}
+}
+
+func evaluateCoalesce(expr ast.InfixExpression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
+	left, err := evaluateExpression(expr.Left, environment, self, symbols, types, schemas, enums)
+	if err != nil {
+		return Value{}, err
+	}
+	if !left.Absent {
+		return left, nil
+	}
+
+	return evaluateExpression(expr.Right, environment, self, symbols, types, schemas, enums)
 }
 
 func evaluateContains(left, right Value) (Value, error) {
@@ -3579,6 +3610,9 @@ func evaluateArrayLiteral(expr ast.ArrayLiteral, environment *valueEnvironment, 
 		if err != nil {
 			return Value{}, err
 		}
+		if value.Absent {
+			return Value{}, possiblyAbsentValueError()
+		}
 		values = append(values, value)
 	}
 	return Value{Kind: ValueArray, Array: values}, nil
@@ -3593,6 +3627,9 @@ func evaluateRecordLiteral(expr ast.RecordLiteral, environment *valueEnvironment
 		value, err := evaluateExpression(field.Value, environment, self, symbols, types, schemas, enums)
 		if err != nil {
 			return Value{}, err
+		}
+		if value.Absent {
+			return Value{}, possiblyAbsentValueError()
 		}
 		if value.Kind == ValueNull {
 			continue
@@ -3677,9 +3714,17 @@ const (
 	ValueRecord
 )
 
+type valuePresence int
+
+const (
+	presenceGuaranteed valuePresence = iota
+	presencePossiblyAbsent
+)
+
 type valueType struct {
 	kind         ValueKind
 	nullable     bool
+	presence     valuePresence
 	element      *valueType
 	schemaName   string
 	record       *ast.RecordType
@@ -4010,9 +4055,10 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 			return valueType{kind: ValueUnknown}, nil
 		}
 		if targetType.nullable {
-			if _, isOptionalProperty := expr.Target.(ast.MemberAccess); !isOptionalProperty || !expr.Optional {
-				return valueType{}, nullableVariableAccessError(expr.Name)
-			}
+			return valueType{}, nullableVariableAccessError(expr.Name)
+		}
+		if targetType.presence == presencePossiblyAbsent && !expr.Optional {
+			return valueType{}, optionalFieldAccessError(expr.Name)
 		}
 		if targetType.kind != ValueRecord {
 			return valueType{}, validationErrorf("member access requires a record value")
@@ -4041,7 +4087,10 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 			if err != nil {
 				return valueType{}, err
 			}
-			memberType.nullable = memberType.nullable || field.Optional || expr.Optional
+			memberType.presence = presenceGuaranteed
+			if field.Optional || targetType.presence == presencePossiblyAbsent {
+				memberType.presence = presencePossiblyAbsent
+			}
 			return memberType, nil
 		}
 		return valueType{}, validationErrorf("unknown field %q", expr.Name)
@@ -4148,6 +4197,10 @@ func inferPrefixType(expr ast.PrefixExpression, variables *variableRegistry, sym
 }
 
 func inferInfixType(expr ast.InfixExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
+	if expr.Operator == lexer.TokenCoalesce {
+		return inferCoalesceType(expr, variables, symbols, types, schemas, enums)
+	}
+
 	leftType, err := inferExpressionType(expr.Left, variables, symbols, types, schemas, enums)
 	if err != nil {
 		return valueType{}, err
@@ -4226,6 +4279,50 @@ func inferInfixType(expr ast.InfixExpression, variables *variableRegistry, symbo
 	default:
 		return valueType{}, validationErrorf("unknown infix operator")
 	}
+}
+
+func inferCoalesceType(expr ast.InfixExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
+	operands := coalesceOperands(expr)
+	var result valueType
+
+	for index, operand := range operands {
+		operandType, err := inferExpressionType(operand, variables, symbols, types, schemas, enums)
+		if err != nil {
+			return valueType{}, err
+		}
+		if index == len(operands)-1 {
+			if operandType.nullable || operandType.presence != presenceGuaranteed {
+				return valueType{}, validationErrorf("coalescing fallback must be guaranteed present")
+			}
+			if !typesEqual(result, operandType) {
+				return valueType{}, typeMismatchError(result.name(), operandType.name())
+			}
+			result.presence = presenceGuaranteed
+			return result, nil
+		}
+		if operandType.presence != presencePossiblyAbsent {
+			return valueType{}, validationErrorf("coalescing operands before the fallback must be possibly absent")
+		}
+		if index == 0 {
+			result = operandType
+			continue
+		}
+		if !typesEqual(result, operandType) {
+			return valueType{}, typeMismatchError(result.name(), operandType.name())
+		}
+	}
+
+	return valueType{}, validationErrorf("coalescing requires a fallback")
+}
+
+func coalesceOperands(expression ast.Expression) []ast.Expression {
+	infix, ok := expression.(ast.InfixExpression)
+	if !ok || infix.Operator != lexer.TokenCoalesce {
+		return []ast.Expression{expression}
+	}
+
+	operands := []ast.Expression{infix.Left}
+	return append(operands, coalesceOperands(infix.Right)...)
 }
 
 func inferMergeType(leftType, rightType valueType) (valueType, error) {
@@ -4360,6 +4457,9 @@ func typesEqual(leftType, rightType valueType) bool {
 }
 
 func ensureAssignable(expectedType, actualType valueType) error {
+	if actualType.presence == presencePossiblyAbsent {
+		return possiblyAbsentValueError()
+	}
 	if actualType.nullable && !expectedType.nullable {
 		return invalidNullUsageError()
 	}

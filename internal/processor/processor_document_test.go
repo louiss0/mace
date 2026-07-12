@@ -98,11 +98,12 @@ User user = {
   name: "Ada" /# Record name before separator,
   age?: 27, /# Record age after separator
 };
+int fallback_age = 0;
 |===|
 [output = data]
 {
   user_name: user.name, /# Output value after separator
-  user_age?: user?.age /# Output value before separator
+  user_age: user?.age ?? fallback_age /# Output value before separator
 }`),
 		Entry("schema output fields with inline descriptions before and after separators", `[output = schema]
 {

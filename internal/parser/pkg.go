@@ -12,6 +12,7 @@ import (
 const (
 	precedenceLowest = iota
 	precedenceTernary
+	precedenceCoalesce
 	precedenceOr
 	precedenceAnd
 	precedenceBitwiseOr
@@ -1018,6 +1019,8 @@ func (p *Parser) parseExpression(precedence int) (ast.Expression, error) {
 
 		if operator.Type == lexer.TokenQuestion {
 			left, err = p.parseConditionalExpression(left, operator)
+		} else if operator.Type == lexer.TokenCoalesce {
+			left, err = p.parseCoalesceExpression(left, operator)
 		} else {
 			left, err = p.parseInfixExpression(left, operator)
 		}
@@ -1383,6 +1386,15 @@ func (p *Parser) parseConditionalExpression(left ast.Expression, operator lexer.
 	}, nil
 }
 
+func (p *Parser) parseCoalesceExpression(left ast.Expression, operator lexer.Token) (ast.Expression, error) {
+	right, err := p.parseExpression(precedenceCoalesce - 1)
+	if err != nil {
+		return nil, err
+	}
+
+	return ast.InfixExpression{Left: left, Operator: operator.Type, Right: right}, nil
+}
+
 func (p *Parser) consume(tokenType lexer.TokenType, message string) (lexer.Token, error) {
 	if p.current().Type != tokenType {
 		return lexer.Token{}, p.unexpectedTokenError(message)
@@ -1426,6 +1438,8 @@ func (p *Parser) precedenceFor(tokenType lexer.TokenType) int {
 	switch tokenType {
 	case lexer.TokenQuestion:
 		return precedenceTernary
+	case lexer.TokenCoalesce:
+		return precedenceCoalesce
 	case lexer.TokenOrOr:
 		return precedenceOr
 	case lexer.TokenAndAnd:

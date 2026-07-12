@@ -117,6 +117,15 @@ func nullableVariableAccessError(field string) error {
 	)
 }
 
+func possiblyAbsentValueError() error {
+	return diagnosticErrorf(
+		ErrorType,
+		CodeOptionalFieldAccess,
+		DiagnosticFields{},
+		"possibly absent expressions must be resolved with '??' before use",
+	)
+}
+
 func missingRequiredFieldError(field string, schema string) error {
 	fields := DiagnosticFields{Field: field, Schema: schema}
 	if schema == "" {

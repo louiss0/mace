@@ -46,6 +46,7 @@ const (
 	TokenComma
 	TokenColon
 	TokenQuestion
+	TokenCoalesce
 	TokenOptionalDot
 	TokenDot
 

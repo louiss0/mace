@@ -74,7 +74,7 @@ schema User: {
 		assertExpectedValue(requireOutputValue(result, "records"), expectedValue{kind: ValueRecord, record: map[string]expectedValue{
 			"primary": {kind: ValueString, string: "active"},
 		}})
-		tAssert.Equal("Paris", requireOutputValue(result, "city").String)
+		tAssert.Equal("", requireOutputValue(result, "city").String)
 	})
 
 	It("requires every optional property in a nested chain to be guarded", func() {
@@ -85,21 +85,32 @@ schema User: {
 		requireOptionalFieldAccessError(err)
 	})
 
-	It("propagates absence through nested optional properties", func() {
-		result, err := New().Process(optionalChainDocument(userSchemas, `User user = { records: {}, profile: {}, };`, `
-  city?: user?.profile?.address?.city,
+	It("resolves absence through a coalescing fallback", func() {
+		result, err := New().Process(optionalChainDocument(userSchemas, `User user = { records: {}, profile: {}, };
+string fallback = "";`, `
+  city: user?.profile?.address?.city ?? fallback,
 `))
 
 		tAssert.NoError(err)
-		tAssert.NotContains(result.Output, "city")
+		tAssert.Equal("", requireOutputValue(result, "city").String)
+	})
+
+	It("allows a literal coalescing fallback", func() {
+		result, err := New().Process(optionalChainDocument(userSchemas, `User user = { records: {}, profile: {}, };`, `
+  city: user?.profile?.address?.city ?? "unknown",
+`))
+
+		tAssert.NoError(err)
+		tAssert.Equal("unknown", requireOutputValue(result, "city").String)
 	})
 
 	It("resolves a fully present nested optional-property chain", func() {
 		result, err := New().Process(optionalChainDocument(userSchemas, `User user = {
   records: {},
   profile: { address: { city: "Paris", }, },
-};`, `
-  city?: user?.profile?.address?.city,
+};
+string fallback = "";`, `
+  city: user?.profile?.address?.city ?? fallback,
 `))
 
 		tAssert.NoError(err)
