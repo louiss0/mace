@@ -2577,8 +2577,6 @@ func usedVariableNames(file ast.File) map[string]struct{} {
 			usedNames[typed.Name] = struct{}{}
 		case ast.MemberAccess:
 			visit(typed.Target)
-		case ast.ArrayAccess:
-			visit(typed.Target)
 		case ast.ArrayLiteral:
 			for _, element := range typed.Elements {
 				visit(element)
@@ -2808,12 +2806,6 @@ func semanticDiagnosticFromError(file ast.File, tokens []lexer.Token, err error)
 	}
 
 	if hasDiagnosticError {
-		if diagnostic, ok := arrayAccessDiagnostic(tokens, diagnosticError, message); ok {
-			return diagnostic, true
-		}
-	}
-
-	if hasDiagnosticError {
 		if diagnostic, ok := schemaDiagnostic(tokens, diagnosticError, message); ok {
 			return diagnostic, true
 		}
@@ -2928,99 +2920,6 @@ func mixedArrayLiteralDiagnostic(file ast.File, tokens []lexer.Token, message st
 	}
 
 	return protocol.Diagnostic{}, false
-}
-
-func arrayAccessDiagnostic(tokens []lexer.Token, diagnosticError processor.DiagnosticError, message string) (protocol.Diagnostic, bool) {
-	if diagnosticError.Code != processor.CodeArrayValueRequired && diagnosticError.Code != processor.CodeArrayIndexOutOfRange {
-		return protocol.Diagnostic{}, false
-	}
-
-	candidates := arrayAccessCandidates(tokens)
-	if diagnosticError.Code == processor.CodeArrayIndexOutOfRange {
-		if token, ok := outOfRangeArrayAccessToken(candidates, diagnosticError); ok {
-			return diagnosticWithCode(tokenProtocolRange(token), protocol.DiagnosticSeverityError, diagnosticTypeInvalidArrayAccess, message), true
-		}
-	}
-
-	if token, ok := invalidArrayAccessToken(candidates, diagnosticError); ok {
-		return diagnosticWithCode(tokenProtocolRange(token), protocol.DiagnosticSeverityError, diagnosticTypeInvalidArrayAccess, message), true
-	}
-
-	return protocol.Diagnostic{}, false
-}
-
-type arrayAccessCandidate struct {
-	Bracket lexer.Token
-	Index   *lexer.Token
-	Level   int
-	End     int
-}
-
-func arrayAccessCandidates(tokens []lexer.Token) []arrayAccessCandidate {
-	candidates := []arrayAccessCandidate{}
-	for index, token := range tokens {
-		if token.Type != lexer.TokenLBracket || !isArrayAccessOpen(tokens, index) {
-			continue
-		}
-
-		candidate := arrayAccessCandidate{
-			Bracket: token,
-			Level:   1,
-			End:     index,
-		}
-		if len(candidates) > 0 {
-			previous := candidates[len(candidates)-1]
-			if previous.End == index-1 {
-				candidate.Level = previous.Level + 1
-			}
-		}
-		if index+1 < len(tokens) && tokens[index+1].Type == lexer.TokenInt {
-			candidate.Index = &tokens[index+1]
-			candidate.End = index + 1
-		}
-		if candidate.End+1 < len(tokens) && tokens[candidate.End+1].Type == lexer.TokenRBracket {
-			candidate.End++
-		}
-		candidates = append(candidates, candidate)
-	}
-
-	return candidates
-}
-
-func isArrayAccessOpen(tokens []lexer.Token, index int) bool {
-	if index == 0 {
-		return false
-	}
-
-	switch tokens[index-1].Type {
-	case lexer.TokenIdentifier, lexer.TokenSelf,
-		lexer.TokenString, lexer.TokenInt, lexer.TokenFloat, lexer.TokenHexInt, lexer.TokenHexFloat, lexer.TokenBoolean,
-		lexer.TokenRParen, lexer.TokenRBracket, lexer.TokenRBrace:
-		return true
-	default:
-		return false
-	}
-}
-
-func invalidArrayAccessToken(candidates []arrayAccessCandidate, diagnosticError processor.DiagnosticError) (lexer.Token, bool) {
-	for _, candidate := range candidates {
-		if candidate.Level == diagnosticError.Fields.Level {
-			return candidate.Bracket, true
-		}
-	}
-
-	return lexer.Token{}, false
-}
-
-func outOfRangeArrayAccessToken(candidates []arrayAccessCandidate, diagnosticError processor.DiagnosticError) (lexer.Token, bool) {
-	for _, candidate := range candidates {
-		if candidate.Level != diagnosticError.Fields.Level || candidate.Index == nil || candidate.Index.Lexeme != diagnosticError.Fields.Index {
-			continue
-		}
-		return *candidate.Index, true
-	}
-
-	return lexer.Token{}, false
 }
 
 func parseExpectedAndActualType(message string) (string, string, bool) {

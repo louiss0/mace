@@ -27,8 +27,6 @@ const (
 type ErrorCode string
 
 const (
-	CodeArrayIndexOutOfRange         ErrorCode = "mace.type.invalid-array-access"
-	CodeArrayValueRequired           ErrorCode = "mace.type.invalid-array-access"
 	CodeImportFileFailedParse        ErrorCode = "mace.import.file-failed-to-parse"
 	CodeImportFileNotFound           ErrorCode = "mace.import.file-not-found"
 	CodeInternal                     ErrorCode = "mace.internal"
@@ -48,8 +46,6 @@ type DiagnosticFields struct {
 	Schema   string
 	Expected string
 	Actual   string
-	Index    string
-	Level    int
 	Operator string
 	Path     string
 	Details  map[string]string
@@ -98,6 +94,16 @@ func invalidNullUsageError() error {
 		CodeInvalidNullUsage,
 		DiagnosticFields{},
 		"null can only be assigned to nullable variables and optional schema fields",
+	)
+}
+
+func optionalFieldAccessError(field string) error {
+	return diagnosticErrorf(
+		ErrorType,
+		CodeOptionalFieldAccess,
+		DiagnosticFields{Field: field},
+		"member %q may be null or absent; use optional chaining '?.'",
+		field,
 	)
 }
 
@@ -153,8 +159,6 @@ func inferErrorCode(message string) ErrorCode {
 		return ErrorCode("mace.declaration.duplicate-output-field")
 	case strings.Contains(message, "array literal has mixed element types"):
 		return ErrorCode("mace.type.mixed-array-literal")
-	case strings.Contains(message, "array access requires an array value") || strings.Contains(message, "array index ") && strings.Contains(message, "out of range"):
-		return CodeArrayIndexOutOfRange
 	case strings.Contains(message, "unknown identifier"):
 		return ErrorCode("mace.type.unknown-identifier")
 	case strings.Contains(message, "unknown self reference"):
@@ -165,6 +169,8 @@ func inferErrorCode(message string) ErrorCode {
 		return ErrorCode("mace.type.invalid-unary-operator")
 	case strings.Contains(message, "expected numeric operands") || strings.Contains(message, "expected int operands") || strings.Contains(message, "expected boolean operands") || strings.Contains(message, "incompatible equality comparison") || strings.Contains(message, "merge operands") || strings.Contains(message, "expected ") && strings.Contains(message, " operands"):
 		return ErrorCode("mace.type.invalid-binary-operator")
+	case strings.Contains(message, "use optional chaining '?.'"):
+		return CodeOptionalFieldAccess
 	case strings.Contains(message, "null can only be assigned to nullable variables and optional schema fields"):
 		return CodeInvalidNullUsage
 	case strings.Contains(message, "type mismatch"):
@@ -194,7 +200,7 @@ func inferErrorKind(message string) ErrorKind {
 		return ErrorSchema
 	case strings.Contains(message, "runtime"):
 		return ErrorRuntime
-	case strings.Contains(message, "value") || strings.Contains(message, "literal") || strings.Contains(message, "expression") || strings.Contains(message, "self reference") || strings.Contains(message, "member access") || strings.Contains(message, "array access"):
+	case strings.Contains(message, "value") || strings.Contains(message, "literal") || strings.Contains(message, "expression") || strings.Contains(message, "self reference") || strings.Contains(message, "member access"):
 		return ErrorValue
 	default:
 		return ErrorInternal

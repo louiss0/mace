@@ -2586,8 +2586,6 @@ func evaluateExpression(expression ast.Expression, environment *valueEnvironment
 		return value, nil
 	case ast.MemberAccess:
 		return evaluateMemberAccess(expr, environment, self, symbols, types, schemas, enums)
-	case ast.ArrayAccess:
-		return evaluateArrayAccess(expr, environment, self, symbols, types, schemas, enums)
 	case ast.IntLiteral:
 		return parseInt(expr.Lexeme)
 	case ast.FloatLiteral:
@@ -2953,35 +2951,23 @@ func evaluateMemberAccess(expr ast.MemberAccess, environment *valueEnvironment, 
 	if err != nil {
 		return Value{}, err
 	}
+	if target.Kind == ValueNull {
+		if expr.Optional {
+			return Value{Kind: ValueNull}, nil
+		}
+		return Value{}, optionalFieldAccessError(expr.Name)
+	}
 	if target.Kind != ValueRecord {
 		return Value{}, validationErrorf("member access requires a record value")
 	}
 	member, ok := target.Record[expr.Name]
 	if !ok {
-		return Value{}, validationErrorf("unknown member %q", expr.Name)
+		if expr.Optional {
+			return Value{Kind: ValueNull}, nil
+		}
+		return Value{}, optionalFieldAccessError(expr.Name)
 	}
 	return member, nil
-}
-
-func evaluateArrayAccess(expr ast.ArrayAccess, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
-	target, err := evaluateExpression(expr.Target, environment, self, symbols, types, schemas, enums)
-	if err != nil {
-		return Value{}, err
-	}
-	if target.Kind != ValueArray {
-		level := arrayAccessLevel(expr)
-		return Value{}, diagnosticErrorf(ErrorValue, CodeArrayValueRequired, DiagnosticFields{Level: level}, "array access requires an array value at level %d", level)
-	}
-
-	index, err := strconv.Atoi(expr.Index.Lexeme)
-	if err != nil {
-		return Value{}, validationErrorf("array access requires a valid integer index")
-	}
-	if index < 0 || index >= len(target.Array) {
-		level := arrayAccessLevel(expr)
-		return Value{}, diagnosticErrorf(ErrorValue, CodeArrayIndexOutOfRange, DiagnosticFields{Index: strconv.Itoa(index), Level: level}, "array index %d is out of range at level %d", index, level)
-	}
-	return target.Array[index], nil
 }
 
 func evaluatePrefix(expr ast.PrefixExpression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
@@ -3938,6 +3924,9 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 		if targetType.kind == ValueUnknown {
 			return valueType{kind: ValueUnknown}, nil
 		}
+		if targetType.nullable && !expr.Optional {
+			return valueType{}, optionalFieldAccessError(expr.Name)
+		}
 		if targetType.kind != ValueRecord {
 			return valueType{}, validationErrorf("member access requires a record value")
 		}
@@ -3958,25 +3947,17 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 			if field.Name != expr.Name {
 				continue
 			}
-			return resolveValueType(field.Type, symbols, types, schemas, enums)
+			if field.Optional && !expr.Optional {
+				return valueType{}, optionalFieldAccessError(expr.Name)
+			}
+			memberType, err := resolveValueType(field.Type, symbols, types, schemas, enums)
+			if err != nil {
+				return valueType{}, err
+			}
+			memberType.nullable = memberType.nullable || field.Optional || expr.Optional
+			return memberType, nil
 		}
 		return valueType{}, validationErrorf("unknown field %q", expr.Name)
-	case ast.ArrayAccess:
-		targetType, err := inferExpressionType(expr.Target, variables, symbols, types, schemas, enums)
-		if err != nil {
-			return valueType{}, err
-		}
-		if targetType.kind == ValueUnknown {
-			return valueType{kind: ValueUnknown}, nil
-		}
-		if targetType.kind != ValueArray {
-			level := arrayAccessLevel(expr)
-			return valueType{}, diagnosticErrorf(ErrorValue, CodeArrayValueRequired, DiagnosticFields{Level: level}, "array access requires an array value at level %d", level)
-		}
-		if targetType.element == nil {
-			return valueType{kind: ValueUnknown}, nil
-		}
-		return *targetType.element, nil
 	case ast.IntLiteral:
 		value, err := parseInt(expr.Lexeme)
 		if err != nil {
@@ -4028,19 +4009,6 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 	default:
 		return valueType{}, validationErrorf("unknown expression")
 	}
-}
-
-func arrayAccessLevel(expression ast.Expression) int {
-	access, ok := expression.(ast.ArrayAccess)
-	if !ok {
-		return 0
-	}
-
-	if parent, ok := access.Target.(ast.ArrayAccess); ok {
-		return arrayAccessLevel(parent) + 1
-	}
-
-	return 1
 }
 
 func inferArrayLiteralType(expr ast.ArrayLiteral, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {

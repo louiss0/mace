@@ -85,10 +85,6 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 	}
 
 	if scope == completionScopeScript {
-		if items, handled := arrayIndexCompletionItems(document, uri, position, linePrefix, scope); handled {
-			return items
-		}
-
 		if items, handled := initializerCompletionItems(document, uri, position); handled {
 			return items
 		}
@@ -135,9 +131,6 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 			return items
 		}
 
-		if items, handled := arrayIndexCompletionItems(document, uri, position, linePrefix, scope); handled {
-			return items
-		}
 	}
 
 	items := []protocol.CompletionItem{}
@@ -573,101 +566,6 @@ func selfCompletionContext(linePrefix string) ([]string, string, bool) {
 	return segments[:len(segments)-1], segments[len(segments)-1], true
 }
 
-func arrayIndexCompletionItems(document document, uri protocol.DocumentUri, position protocol.Position, linePrefix string, scope completionScope) ([]protocol.CompletionItem, bool) {
-	targetText, prefix, ok := arrayIndexCompletionContext(linePrefix)
-	if !ok {
-		return nil, false
-	}
-
-	arrayValue, ok := resolveArrayCompletionTarget(document, uri, position, targetText, scope)
-	if !ok || arrayValue.Kind != processor.ValueArray {
-		return []protocol.CompletionItem{}, true
-	}
-
-	items := make([]protocol.CompletionItem, 0, len(arrayValue.Array))
-	for index := range arrayValue.Array {
-		label := strconv.Itoa(index)
-		if !strings.HasPrefix(label, prefix) {
-			continue
-		}
-		items = append(items, protocol.CompletionItem{
-			Label:  label,
-			Kind:   Ptr(protocol.CompletionItemKindValue),
-			Detail: Ptr("array index"),
-		})
-	}
-
-	return sortCompletionItems(items), true
-}
-
-func arrayIndexCompletionContext(linePrefix string) (string, string, bool) {
-	trimmedPrefix := strings.TrimRight(linePrefix, " \t")
-	index := strings.LastIndex(trimmedPrefix, "[")
-	if index < 0 {
-		return "", "", false
-	}
-
-	prefix := trimmedPrefix[index+1:]
-	if prefix != "" && !isDigits(prefix) {
-		return "", "", false
-	}
-
-	target := strings.TrimSpace(trimmedPrefix[:index])
-	for start := len(target) - 1; start >= 0; start-- {
-		if !strings.ContainsRune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.$[]()", rune(target[start])) {
-			target = strings.TrimSpace(target[start+1:])
-			break
-		}
-	}
-	if target == "" {
-		return "", "", false
-	}
-
-	return target, prefix, true
-}
-
-func resolveArrayCompletionTarget(document document, uri protocol.DocumentUri, position protocol.Position, targetText string, scope completionScope) (processor.Value, bool) {
-	expression, err := parseExpression(targetText)
-	if err != nil {
-		return processor.Value{}, false
-	}
-
-	variables := partialScriptVariables(document.text, uri, position)
-	self := processor.Value{Kind: processor.ValueRecord, Record: map[string]processor.Value{}}
-	if scope == completionScopeOutput {
-		variables = scriptVariablesForOutput(document.text, uri)
-		result, ok := partialOutputResult(document, uri, position)
-		if ok {
-			self = processor.Value{Kind: processor.ValueRecord, Record: result.Output}
-		}
-	}
-
-	value, ok := resolveCompletionValue(expression, variables, self)
-	if ok {
-		return value, true
-	}
-
-	return resolveLocalArrayCompletionTarget(document.text, position, expression)
-}
-
-func resolveLocalArrayCompletionTarget(text string, position protocol.Position, expression ast.Expression) (processor.Value, bool) {
-	file, ok := partialScriptFile(text, position)
-	if !ok || file.Script == nil {
-		return processor.Value{}, false
-	}
-
-	declarations := map[string]ast.Expression{}
-	for _, item := range file.Script.Items {
-		declaration, ok := item.(ast.VariableDeclaration)
-		if !ok || !declaration.HasValue {
-			continue
-		}
-		declarations[declaration.Name] = declaration.Value
-	}
-
-	return resolveLocalCompletionValue(expression, declarations, map[string]struct{}{})
-}
-
 func resolveLocalCompletionValue(expression ast.Expression, declarations map[string]ast.Expression, seen map[string]struct{}) (processor.Value, bool) {
 	switch typed := expression.(type) {
 	case ast.Identifier:
@@ -688,16 +586,6 @@ func resolveLocalCompletionValue(expression ast.Expression, declarations map[str
 		}
 		value, ok := target.Record[typed.Name]
 		return value, ok
-	case ast.ArrayAccess:
-		target, ok := resolveLocalCompletionValue(typed.Target, declarations, seen)
-		if !ok || target.Kind != processor.ValueArray {
-			return processor.Value{}, false
-		}
-		index, err := strconv.Atoi(typed.Index.Lexeme)
-		if err != nil || index < 0 || index >= len(target.Array) {
-			return processor.Value{}, false
-		}
-		return target.Array[index], true
 	case ast.ArrayLiteral:
 		values := make([]processor.Value, 0, len(typed.Elements))
 		for _, element := range typed.Elements {
@@ -797,16 +685,6 @@ func resolveCompletionValue(expression ast.Expression, variables map[string]proc
 		}
 		value, ok := target.Record[typed.Name]
 		return value, ok
-	case ast.ArrayAccess:
-		target, ok := resolveCompletionValue(typed.Target, variables, self)
-		if !ok || target.Kind != processor.ValueArray {
-			return processor.Value{}, false
-		}
-		index, err := strconv.Atoi(typed.Index.Lexeme)
-		if err != nil || index < 0 || index >= len(target.Array) {
-			return processor.Value{}, false
-		}
-		return target.Array[index], true
 	case ast.ArrayLiteral:
 		values := make([]processor.Value, 0, len(typed.Elements))
 		for _, element := range typed.Elements {

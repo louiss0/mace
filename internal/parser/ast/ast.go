@@ -49,8 +49,9 @@ func (i Identifier) Range() SourceRange {
 }
 
 type MemberAccess struct {
-	Target Expression
-	Name   string
+	Target   Expression
+	Name     string
+	Optional bool
 }
 
 func (MemberAccess) expressionNode() {
@@ -59,19 +60,6 @@ func (MemberAccess) expressionNode() {
 
 func (m MemberAccess) Range() SourceRange {
 	return m.Target.Range()
-}
-
-type ArrayAccess struct {
-	Target Expression
-	Index  IntLiteral
-}
-
-func (ArrayAccess) expressionNode() {
-	_ = 0
-}
-
-func (a ArrayAccess) Range() SourceRange {
-	return a.Target.Range()
 }
 
 type StringLiteral struct {
