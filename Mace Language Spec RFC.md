@@ -5,7 +5,9 @@
 Mace is a deterministic, strongly typed configuration language. A conforming
 processor produces either a fully valid data record or schema metadata, or an
 error; it never emits a partial result. Source is UTF-8 and string values may
-contain Unicode. Mace has no general `null` runtime value.
+contain Unicode. Mace has no general `null` runtime value. The `null` literal
+is permitted only to initialize a `nullable` variable; it is not an ordinary
+value that can be emitted, stored in records or arrays, or compared.
 
 This RFC is normative. **[`mace.ebnf`](.&#x2f;mace.ebnf) is the canonical grammar
 source.** The grammar excerpt below is an exact copy of that file and MUST
@@ -76,6 +78,7 @@ float_literal = digit , { digit } , &quot;.&quot; , digit , { digit } ;
 hex_int_literal = ( &quot;0x&quot; | &quot;0X&quot; ) , hex_digit , { hex_digit } ;
 hex_float_literal = ( &quot;0x&quot; | &quot;0X&quot; ) , hex_digit , { hex_digit } , &quot;.&quot; , hex_digit , { hex_digit } ;
 boolean_literal = &quot;true&quot; | &quot;false&quot; ;
+null_literal = &quot;null&quot; ;
 
 (* DOCUMENT STRUCTURE *)
 mace_file = ws0 , [ script_block , ws0 ] , output_block , ws0 ;
@@ -89,7 +92,7 @@ imported_identifier = identifier , [ ws0 , &quot;:&quot; , ws0 , identifier ] ;
 
 declaration = variable_declaration | type_declaration | schema_declaration
             | gen_doc_declaration | schema_doc_declaration ;
-variable_declaration = type_reference , ws1 , identifier , ws0 , &quot;=&quot; , ws0 , expression , [ ws0 , inline_description ] , ws0 , &quot;;&quot; ;
+variable_declaration = [ &quot;nullable&quot; , ws1 ] , type_reference , ws1 , identifier , ws0 , &quot;=&quot; , ws0 , expression , [ ws0 , inline_description ] , ws0 , &quot;;&quot; ;
 type_declaration = &quot;type&quot; , ws1 , identifier , ws0 , &quot;:&quot; , ws0 , type_reference , [ ws0 , inline_description ] , ws0 , &quot;;&quot; ;
 schema_declaration = &quot;schema&quot; , ws1 , identifier , ws0 , &quot;:&quot; , ws0 , record_type , ws0 , &quot;;&quot; ;
 
@@ -134,7 +137,8 @@ schema_output_field = identifier , [ &quot;?&quot; ] , ws0 , &quot;:&quot; , ws0
 
 (* EXPRESSIONS *)
 expression = conditional_expression ;
-conditional_expression = logical_or_expression , [ ws0 , &quot;?&quot; , ws0 , expression , ws0 , &quot;:&quot; , ws0 , conditional_expression ] ;
+conditional_expression = coalescing_expression , [ ws0 , &quot;?&quot; , ws0 , expression , ws0 , &quot;:&quot; , ws0 , conditional_expression ] ;
+coalescing_expression = logical_or_expression , [ ws0 , &quot;??&quot; , ws0 , coalescing_expression ] ;
 logical_or_expression = logical_and_expression , { ws0 , &quot;||&quot; , ws0 , logical_and_expression } ;
 logical_and_expression = bitwise_or_expression , { ws0 , &quot;&amp;&amp;&quot; , ws0 , bitwise_or_expression } ;
 bitwise_or_expression = bitwise_xor_expression , { ws0 , &quot;|&quot; , ws0 , bitwise_xor_expression } ;
@@ -149,8 +153,8 @@ multiplicative_expression = exponent_expression , { ws0 , ( &quot;*&quot; | &quo
 exponent_expression = unary_expression , [ ws0 , &quot;**&quot; , ws0 , exponent_expression ] ;
 unary_expression = ( &quot;!&quot; | &quot;~&quot; | &quot;+&quot; | &quot;-&quot; ) , ws0 , unary_expression | postfix_expression ;
 postfix_expression = primary_atom , { postfix_suffix } ;
-primary_atom = identifier | self_reference | parsed_input_reference | int_literal | float_literal | hex_int_literal | hex_float_literal | string_literal | boolean_literal | array_literal | record_literal | grouped_expression ;
-postfix_suffix = ws0 , &quot;.&quot; , ws0 , identifier | ws0 , &quot;[&quot; , ws0 , int_literal , ws0 , &quot;]&quot; ;
+primary_atom = identifier | self_reference | parsed_input_reference | int_literal | float_literal | hex_int_literal | hex_float_literal | string_literal | boolean_literal | null_literal | array_literal | record_literal | grouped_expression ;
+postfix_suffix = ws0 , ( &quot;.&quot; | &quot;?.&quot; ) , ws0 , identifier ;
 self_reference = &quot;$self&quot; , &quot;.&quot; , identifier , { &quot;.&quot; , identifier } ;
 parsed_input_reference = &quot;$&quot; , identifier ;
 grouped_expression = &quot;(&quot; , ws0 , expression , ws0 , &quot;)&quot; ;
@@ -330,6 +334,21 @@ Mace emits structured data or schema metadata in a host-defined representation.
 JSON, YAML, and TOML conversion is lossy with respect to comments, formatting,
 quoted&#x2f;non-identifier keys, duplicate keys, null as a normal runtime value, and
 non-record data roots. No conversion grants executable behavior.
+
+## Nullability
+
+`nullable T name = null;` declares a variable that may be unavailable during
+evaluation. `null` is falsy. Before accessing a nullable variable, an
+expression MUST guard it with a truthiness condition; the true branch treats
+that variable as non-null.
+
+```mace
+user ? user.profile.address?.city ?? "" : ""
+```
+
+Using either `user.member` or `user?.member` without that guard is invalid.
+`null` cannot be placed in an array or record, emitted, imported, exported,
+compared, or interpolated.
 
 ## Optional member access
 

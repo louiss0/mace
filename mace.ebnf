@@ -37,6 +37,7 @@ float_literal = digit , { digit } , "." , digit , { digit } ;
 hex_int_literal = ( "0x" | "0X" ) , hex_digit , { hex_digit } ;
 hex_float_literal = ( "0x" | "0X" ) , hex_digit , { hex_digit } , "." , hex_digit , { hex_digit } ;
 boolean_literal = "true" | "false" ;
+null_literal = "null" ;
 
 (* DOCUMENT STRUCTURE *)
 mace_file = ws0 , [ script_block , ws0 ] , output_block , ws0 ;
@@ -50,7 +51,7 @@ imported_identifier = identifier , [ ws0 , ":" , ws0 , identifier ] ;
 
 declaration = variable_declaration | type_declaration | schema_declaration
             | gen_doc_declaration | schema_doc_declaration ;
-variable_declaration = type_reference , ws1 , identifier , ws0 , "=" , ws0 , expression , [ ws0 , inline_description ] , ws0 , ";" ;
+variable_declaration = [ "nullable" , ws1 ] , type_reference , ws1 , identifier , ws0 , "=" , ws0 , expression , [ ws0 , inline_description ] , ws0 , ";" ;
 type_declaration = "type" , ws1 , identifier , ws0 , ":" , ws0 , type_reference , [ ws0 , inline_description ] , ws0 , ";" ;
 schema_declaration = "schema" , ws1 , identifier , ws0 , ":" , ws0 , record_type , ws0 , ";" ;
 
@@ -94,7 +95,8 @@ schema_output_field = identifier , [ "?" ] , ws0 , ":" , ws0 , type_reference , 
 
 (* EXPRESSIONS *)
 expression = conditional_expression ;
-conditional_expression = logical_or_expression , [ ws0 , "?" , ws0 , expression , ws0 , ":" , ws0 , conditional_expression ] ;
+conditional_expression = coalescing_expression , [ ws0 , "?" , ws0 , expression , ws0 , ":" , ws0 , conditional_expression ] ;
+coalescing_expression = logical_or_expression , [ ws0 , "??" , ws0 , coalescing_expression ] ;
 logical_or_expression = logical_and_expression , { ws0 , "||" , ws0 , logical_and_expression } ;
 logical_and_expression = bitwise_or_expression , { ws0 , "&&" , ws0 , bitwise_or_expression } ;
 bitwise_or_expression = bitwise_xor_expression , { ws0 , "|" , ws0 , bitwise_xor_expression } ;
@@ -109,8 +111,8 @@ multiplicative_expression = exponent_expression , { ws0 , ( "*" | "/" | "%" ) , 
 exponent_expression = unary_expression , [ ws0 , "**" , ws0 , exponent_expression ] ;
 unary_expression = ( "!" | "~" | "+" | "-" ) , ws0 , unary_expression | postfix_expression ;
 postfix_expression = primary_atom , { postfix_suffix } ;
-primary_atom = identifier | self_reference | parsed_input_reference | int_literal | float_literal | hex_int_literal | hex_float_literal | string_literal | boolean_literal | array_literal | record_literal | grouped_expression ;
-postfix_suffix = ws0 , "." , ws0 , identifier ;
+primary_atom = identifier | self_reference | parsed_input_reference | int_literal | float_literal | hex_int_literal | hex_float_literal | string_literal | boolean_literal | null_literal | array_literal | record_literal | grouped_expression ;
+postfix_suffix = ws0 , ( "." | "?." ) , ws0 , identifier ;
 self_reference = "$self" , "." , identifier , { "." , identifier } ;
 parsed_input_reference = "$" , identifier ;
 grouped_expression = "(" , ws0 , expression , ws0 , ")" ;
