@@ -74,7 +74,7 @@ schema User: {
 		assertExpectedValue(requireOutputValue(result, "records"), expectedValue{kind: ValueRecord, record: map[string]expectedValue{
 			"primary": {kind: ValueString, string: "active"},
 		}})
-		tAssert.Equal("", requireOutputValue(result, "city").String)
+		tAssert.Equal("Paris", requireOutputValue(result, "city").String)
 	})
 
 	It("requires every optional property in a nested chain to be guarded", func() {
@@ -102,6 +102,14 @@ string fallback = "";`, `
 
 		tAssert.NoError(err)
 		tAssert.Equal("unknown", requireOutputValue(result, "city").String)
+	})
+
+	It("processes the null coalescing fixture", func() {
+		result, err := New().ProcessFile("../../fixtures/processor/null_coalescing/optional_profile.mace")
+
+		tAssert.NoError(err)
+		tAssert.Equal("unknown", requireOutputValue(result, "city").String)
+		tAssert.Equal("unknown", requireOutputValue(result, "literal_city").String)
 	})
 
 	It("resolves a fully present nested optional-property chain", func() {

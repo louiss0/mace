@@ -69,6 +69,27 @@ from "fixtures/processor/imports/optional_profile.mace" import profile;
 		tAssert.Equal("Paris", requireOutputValue(result, "city").String)
 	})
 
+	It("tracks optional properties from imported schemas as possibly absent", func() {
+		unguardedDocument := `|===|
+from "fixtures/processor/imports/base.mace" import User;
+User user = { name: "Ada", age: 30, };
+|===|
+[output = data]
+{ profile: user.profile, }`
+		_, err := New().ProcessInDir(unguardedDocument, "../..")
+		requireOptionalFieldAccessError(err)
+
+		resolvedDocument := `|===|
+from "fixtures/processor/imports/base.mace" import User;
+User user = { name: "Ada", age: 30, };
+|===|
+[output = data]
+{ bio: user?.profile?.bio ?? "unknown", }`
+		result, err := New().ProcessInDir(resolvedDocument, "../..")
+		tAssert.NoError(err)
+		tAssert.Equal("unknown", requireOutputValue(result, "bio").String)
+	})
+
 	It("covers remote import helper branches", func() {
 		workspace, err := os.MkdirTemp("", "processor-imports-*")
 		tAssert.NoError(err)

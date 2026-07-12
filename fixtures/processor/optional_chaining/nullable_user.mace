@@ -24,5 +24,5 @@ string fallback = "";
 {
   fallback_records: missing_user ? missing_user.records : {},
   records: user ? user.records : {},
-  city: fallback,
+  city: user ? user.profile.address?.city ?? fallback : ""
 }

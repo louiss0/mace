@@ -376,6 +376,24 @@ var _ = Describe("Parser", func() {
 		Entry("nested ternary", "a ? b : c ? d : e"),
 	)
 
+	It("parses coalescing inside a conditional branch", func() {
+		expression, err := parseExpressionInput("user ? user.profile.address?.city ?? fallback : fallback")
+		tAssert.NoError(err)
+
+		conditional := requireConditional(expression)
+		requireIdentifier(conditional.Condition, "user")
+
+		coalesce := requireInfix(conditional.Then, lexer.TokenCoalesce)
+		city, ok := coalesce.Left.(ast.MemberAccess)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Equal("city", city.Name)
+			tAssert.True(city.Optional)
+		}
+		requireIdentifier(coalesce.Right, "fallback")
+		requireIdentifier(conditional.Else, "fallback")
+	})
+
 	DescribeTable("returns an error when expressions are malformed",
 		func(input string) {
 			_, err := parseExpressionInput(input)
