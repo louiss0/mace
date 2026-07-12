@@ -206,4 +206,3 @@ var _ = Describe("Helpers", func() {
 		tAssert.ErrorContains(err, "unsupported equality")
 	})
 })
-

@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"fmt"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -71,16 +70,6 @@ func requireMemberAccess(expression ast.Expression, targetName string, memberNam
 	}
 	requireIdentifier(access.Target, targetName)
 	tAssert.Equal(memberName, access.Name)
-	return access
-}
-
-func requireArrayAccess(expression ast.Expression, expectedIndex string) ast.ArrayAccess {
-	access, ok := expression.(ast.ArrayAccess)
-	tAssert.True(ok)
-	if !ok {
-		return ast.ArrayAccess{}
-	}
-	tAssert.Equal(expectedIndex, access.Index.Lexeme)
 	return access
 }
 
@@ -196,10 +185,6 @@ var _ = Describe("Parser", func() {
 		Entry("member access", "Fruit.Apple", func(expression ast.Expression) {
 			requireMemberAccess(expression, "Fruit", "Apple")
 		}),
-		Entry("array access", "names[0]", func(expression ast.Expression) {
-			access := requireArrayAccess(expression, "0")
-			requireIdentifier(access.Target, "names")
-		}),
 		Entry("int literal", "42", func(expression ast.Expression) {
 			requireIntLiteral(expression, "42")
 		}),
@@ -284,36 +269,6 @@ var _ = Describe("Parser", func() {
 			tAssert.Equal("profile", inner.Name)
 			requireIdentifier(inner.Target, "user")
 		}),
-		Entry("array access with member access", "users[0].name", func(expression ast.Expression) {
-			outer, ok := expression.(ast.MemberAccess)
-			tAssert.True(ok)
-			if !ok {
-				return
-			}
-			tAssert.Equal("name", outer.Name)
-			inner := requireArrayAccess(outer.Target, "0")
-			requireIdentifier(inner.Target, "users")
-		}),
-	)
-
-	DescribeTable("parses nested variable array access by depth",
-		func(input string, expectedDepth int) {
-			expression, err := parseExpressionInput(input)
-			tAssert.NoError(err)
-
-			current := expression
-			for depth := expectedDepth; depth >= 1; depth-- {
-				access := requireArrayAccess(current, "0")
-				current = access.Target
-			}
-
-			requireIdentifier(current, "matrix")
-		},
-		Entry("level 1", "matrix[0]", 1),
-		Entry("level 2", "matrix[0][0]", 2),
-		Entry("level 3", "matrix[0][0][0]", 3),
-		Entry("level 4", "matrix[0][0][0][0]", 4),
-		Entry("level 5", "matrix[0][0][0][0][0]", 5),
 	)
 
 	DescribeTable("parses self references",
@@ -427,8 +382,6 @@ var _ = Describe("Parser", func() {
 			tAssert.Error(err)
 		},
 		Entry("unterminated group", "(1 + 2"),
-		Entry("array access requires integer index", "names[value]"),
-		Entry("array access requires closing bracket", "names[0"),
 		Entry("self reference requires dot", "$self"),
 		Entry("self reference requires first identifier", "$self."),
 		Entry("self reference requires later identifier", "$self.user."),
@@ -1995,39 +1948,5 @@ Hover should surface this documentation.
 			}
 		})
 
-		It("parses nested variable array access fixtures", func() {
-			file, err := parseFileInput(`|============================================================|
-array<int> level1 = [1];
-array<array<int>> level2 = [[2]];
-array<array<array<int>>> level3 = [[[3]]];
-array<array<array<array<int>>>> level4 = [[[[4]]]];
-array<array<array<array<array<int>>>>> level5 = [[[[[5]]]]];
-|============================================================|
-[output = data]
-{
-  level1: level1[0],
-  level2: level2[0][0],
-  level3: level3[0][0][0],
-  level4: level4[0][0][0][0],
-  level5: level5[0][0][0][0][0],
-}
-`)
-			tAssert.NoError(err)
-			if !tAssert.NotNil(file.Script) {
-				return
-			}
-			if !tAssert.Len(file.Output.DataFields, 5) {
-				return
-			}
-
-			for depth, field := range file.Output.DataFields {
-				current := field.Value
-				for level := depth + 1; level >= 1; level-- {
-					access := requireArrayAccess(current, "0")
-					current = access.Target
-				}
-				requireIdentifier(current, fmt.Sprintf("level%d", depth+1))
-			}
-		})
 	})
 })

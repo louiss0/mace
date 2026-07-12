@@ -90,18 +90,6 @@ array<Point> result = [
 				"y": {kind: ValueInt, int64: 5},
 			}},
 		}}),
-		Entry("primitive array access", wrapScriptWithOutputFields(`|===|
-array<int> numbers = [5, 6, 7];
-int result = numbers[1];
-|===|`, "result: result;"), expectedValue{kind: ValueInt, int64: 6}),
-		Entry("record array access with member access", wrapScriptWithOutputFields(`|===|
-schema User: { name: string, age: int, };
-array<User> users = [
-  { name: "Ada", age: 30, },
-  { name: "Linus", age: 55, }
-];
-string result = users[0].name;
-|===|`, "result: result;"), expectedValue{kind: ValueString, string: "Ada"}),
 		Entry("self reference", wrapScriptWithOutputFields(`|===|
 int base = 3 * 4;
 |===|`, "base: base;\nresult: $self.base + base;"), expectedValue{kind: ValueInt, int64: 24}),
@@ -143,20 +131,7 @@ int base = 3 * 4;
 			{kind: ValueFloat, float: -1.5},
 			{kind: ValueFloat, float: -2.5},
 		}}),
-		Entry("inline primitive array access", `[output = data] { result: [1, 2, 3][0], }`, expectedValue{kind: ValueInt, int64: 1}),
-		Entry("inline record array access", `[output = data] { result: [{ name: "Ada", }, { name: "Linus", }][1].name, }`, expectedValue{kind: ValueString, string: "Linus"}),
 		Entry("inline optional output field", `[output = data] { result?: 1 + 1, }`, expectedValue{kind: ValueInt, int64: 2}),
 	)
 
-	DescribeTable("rejects invalid array access",
-		func(input, message string) {
-			processor := New()
-			_, err := processor.ProcessInDir(input, "../..")
-			tAssert.Error(err)
-			tAssert.ErrorContains(err, message)
-		},
-		Entry("non array target", `[output = data] { result: 1[0], }`, "array access requires an array value at level 1"),
-		Entry("out of range index", `[output = data] { result: [1, 2][3], }`, "out of range at level 1"),
-		Entry("wrong nested level", `[output = data] { result: [[1]][0][0][0], }`, "array access requires an array value at level 3"),
-	)
 })

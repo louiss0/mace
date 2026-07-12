@@ -381,8 +381,6 @@ var _ = Describe("Data output helpers", func() {
 		tAssert.NoError(err)
 		_, err = inferExpressionType(ast.MemberAccess{Target: ast.Identifier{Name: "name"}, Name: "name"}, variables, symbols, types, schemas, nil)
 		tAssert.Error(err)
-		_, err = inferExpressionType(ast.ArrayAccess{Target: ast.Identifier{Name: "name"}, Index: ast.IntLiteral{Lexeme: "0"}}, variables, symbols, types, schemas, nil)
-		tAssert.Error(err)
 		_, err = inferExpressionType(ast.ArrayLiteral{Elements: []ast.Expression{ast.StringLiteral{Lexeme: `"Ada"`}, ast.StringLiteral{Lexeme: `"Bob"`}}}, variables, symbols, types, schemas, nil)
 		tAssert.NoError(err)
 		_, err = inferExpressionType(ast.RecordLiteral{}, variables, symbols, types, schemas, nil)

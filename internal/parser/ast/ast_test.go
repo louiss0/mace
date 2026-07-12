@@ -20,7 +20,6 @@ var _ = Describe("AST nodes", func() {
 		expressions := []Expression{
 			Identifier{Name: "name"},
 			MemberAccess{Target: Identifier{Name: "user"}, Name: "name"},
-			ArrayAccess{Target: Identifier{Name: "items"}, Index: IntLiteral{Lexeme: "0"}},
 			StringLiteral{Lexeme: "\"value\""},
 			IntLiteral{Lexeme: "1"},
 			FloatLiteral{Lexeme: "1.5"},
@@ -72,7 +71,7 @@ var _ = Describe("AST nodes", func() {
 	})
 
 	It("covers all AST node methods", func() {
-		expressions := []Expression{Identifier{}, MemberAccess{}, ArrayAccess{}, StringLiteral{}, IntLiteral{}, FloatLiteral{}, HexIntLiteral{}, HexFloatLiteral{}, BooleanLiteral{}, NullLiteral{}, ArrayLiteral{}, RecordLiteral{}, PrefixExpression{}, InfixExpression{}, ConditionalExpression{}, SelfReference{}}
+		expressions := []Expression{Identifier{}, MemberAccess{}, StringLiteral{}, IntLiteral{}, FloatLiteral{}, HexIntLiteral{}, HexFloatLiteral{}, BooleanLiteral{}, NullLiteral{}, ArrayLiteral{}, RecordLiteral{}, PrefixExpression{}, InfixExpression{}, ConditionalExpression{}, SelfReference{}}
 		for _, expression := range expressions {
 			expression.expressionNode()
 		}

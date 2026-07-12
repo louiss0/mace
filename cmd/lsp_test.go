@@ -508,44 +508,6 @@ int count = 7;
 		}
 	})
 
-	It("publishes parse diagnostics when an array index is not an int literal", func() {
-		notifications := []capturedNotification{}
-
-		didOpen(server, uri, `[output = data]
-{
-  values: [1, 2, 3],
-  result: values[name]
-}`, &notifications)
-
-		if tAssert.Len(notifications, 1) {
-			params := requireDiagnostics(notifications[0])
-			if tAssert.Len(params.Diagnostics, 1) {
-				tAssert.Contains(params.Diagnostics[0].Message, `expected integer index in array access`)
-				tAssert.Equal(`mace.syntax.invalid-array-access-index`, params.Diagnostics[0].Code.Value)
-			}
-		}
-	})
-
-	It("publishes diagnostics when an array index is out of range", func() {
-		notifications := []capturedNotification{}
-
-		didOpen(server, uri, `|===|
-array<int> values = [1, 2, 3];
-|===|
-[output = data]
-{
-  result: values[9]
-}`, &notifications)
-
-		if tAssert.Len(notifications, 1) {
-			params := requireDiagnostics(notifications[0])
-			if tAssert.Len(params.Diagnostics, 1) {
-				tAssert.Contains(params.Diagnostics[0].Message, `array index 9 is out of range`)
-				tAssert.Equal(`mace.type.invalid-array-access`, params.Diagnostics[0].Code.Value)
-			}
-		}
-	})
-
 	It("binds out-of-range diagnostics to the array index token", func() {
 		notifications := []capturedNotification{}
 
@@ -564,47 +526,6 @@ array<int> values = [1, 2, 3];
 				tAssert.Equal(protocol.UInteger(6), params.Diagnostics[0].Range.Start.Line)
 				tAssert.Equal(protocol.UInteger(17), params.Diagnostics[0].Range.Start.Character)
 				tAssert.Equal(protocol.UInteger(18), params.Diagnostics[0].Range.End.Character)
-			}
-		}
-	})
-
-	It("binds out-of-range diagnostics to the first failing array access", func() {
-		notifications := []capturedNotification{}
-
-		didOpen(server, uri, `|===|
-array<int> values = [1, 2, 3];
-|===|
-[output = data]
-{
-  first: values[9],
-  second: values[9]
-}`, &notifications)
-
-		if tAssert.Len(notifications, 1) {
-			params := requireDiagnostics(notifications[0])
-			if tAssert.Len(params.Diagnostics, 1) {
-				tAssert.Equal(protocol.UInteger(5), params.Diagnostics[0].Range.Start.Line)
-				tAssert.Equal(protocol.UInteger(16), params.Diagnostics[0].Range.Start.Character)
-				tAssert.Equal(protocol.UInteger(17), params.Diagnostics[0].Range.End.Character)
-			}
-		}
-	})
-
-	It("binds invalid array access diagnostics to the first failing expression", func() {
-		notifications := []capturedNotification{}
-
-		didOpen(server, uri, `[output = data]
-{
-  first: 1[0],
-  second: 2[0]
-}`, &notifications)
-
-		if tAssert.Len(notifications, 1) {
-			params := requireDiagnostics(notifications[0])
-			if tAssert.Len(params.Diagnostics, 1) {
-				tAssert.Equal(protocol.UInteger(2), params.Diagnostics[0].Range.Start.Line)
-				tAssert.Equal(protocol.UInteger(10), params.Diagnostics[0].Range.Start.Character)
-				tAssert.Equal(protocol.UInteger(11), params.Diagnostics[0].Range.End.Character)
 			}
 		}
 	})

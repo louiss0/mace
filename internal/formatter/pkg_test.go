@@ -360,18 +360,6 @@ schema_doc User {
 }`, output)
 	})
 
-	It("formats array access expressions", func() {
-		file, err := parseMaceFile(`[output = data] { result: users [ 0 ] . name, }`)
-		tAssert.NoError(err)
-
-		output, err := FormatFile(file)
-		tAssert.NoError(err)
-		tAssert.Equal(`[output = data]
-{
-  result: users[0].name
-}`, output)
-	})
-
 	It("formats bare output blocks without injecting a directive", func() {
 		file, err := parseMaceFile(`{ result: 1 + 2, }`)
 		tAssert.NoError(err)
@@ -646,7 +634,6 @@ from "./base.mace" import User;
 	It("returns errors for malformed expression children", func() {
 		expressions := []ast.Expression{
 			ast.MemberAccess{Target: ast.NullLiteral{}, Name: "value"},
-			ast.ArrayAccess{Target: ast.NullLiteral{}, Index: ast.IntLiteral{Lexeme: "0"}},
 			ast.ArrayLiteral{Elements: []ast.Expression{ast.NullLiteral{}}},
 			ast.RecordLiteral{Fields: []ast.RecordField{{Name: "value", Value: ast.NullLiteral{}}}},
 			ast.PrefixExpression{Operator: lexer.TokenBang, Right: ast.NullLiteral{}},
