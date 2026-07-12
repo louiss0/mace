@@ -94,7 +94,7 @@ array<Scalar> right = ["x"];
 			tAssert.Contains(err.Error(), expected)
 		},
 		Entry("different kinds", `[output = data] { result: { name: "Ada", } <> [1], }`, "merge operands must have the same type"),
-		Entry("primitive operands", `[output = data] { result: 1 <> 2, }`, "expected identifier, array literal, or record literal before '<>'"),
+		Entry("primitive operands", `[output = data] { result: 1 <> 2, }`, "merge operands must be records or arrays"),
 		Entry("different array element types", `|===|
 array<int> left = [1];
 array<string> right = ["two"];

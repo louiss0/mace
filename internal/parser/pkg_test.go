@@ -429,9 +429,6 @@ var _ = Describe("Parser", func() {
 		Entry("unterminated group", "(1 + 2"),
 		Entry("array access requires integer index", "names[value]"),
 		Entry("array access requires closing bracket", "names[0"),
-		Entry("merge rejects scalar left operand", "1 <> right"),
-		Entry("merge rejects scalar right operand", "left <> 2"),
-		Entry("merge rejects member access operand", "base.value <> override"),
 		Entry("self reference requires dot", "$self"),
 		Entry("self reference requires first identifier", "$self."),
 		Entry("self reference requires later identifier", "$self.user."),
@@ -448,6 +445,15 @@ var _ = Describe("Parser", func() {
 		Entry("infix expression requires right operand", "1 +"),
 		Entry("grouped expression rejects missing expression", "()"),
 	)
+
+	It("parses normal expressions as merge operands", func() {
+		expression, err := parseExpressionInput("base.value <> overrides")
+		tAssert.NoError(err)
+
+		root := requireInfix(expression, lexer.TokenMerge)
+		requireMemberAccess(root.Left, "base", "value")
+		requireIdentifier(root.Right, "overrides")
+	})
 
 	It("parses chained merge expressions", func() {
 		expression, err := parseExpressionInput("base <> middle <> override")
