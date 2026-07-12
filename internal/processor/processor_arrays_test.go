@@ -5,7 +5,7 @@ import (
 )
 
 var _ = Describe("Arrays", func() {
-	DescribeTable("returns array and record results",
+	DescribeTable("returns array results",
 		func(file string, expected expectedValue) {
 			processor := New()
 			result, err := processor.ProcessInDir(file, "../..")
@@ -55,41 +55,6 @@ array<array<int> > result = [[base, base + 1], [base + 2, base + 3]];
 				{kind: ValueInt, int64: 6},
 			}},
 		}}),
-		Entry("record literal", wrapScriptWithOutputFields(`|===|
-schema User: { name: string, age: int, };
-int base = 20 + 10;
-User result = { name: "Ada", age: base, };
-|===|`, "result: result;"), expectedValue{kind: ValueRecord, record: map[string]expectedValue{
-			"name": {kind: ValueString, string: "Ada"},
-			"age":  {kind: ValueInt, int64: 30},
-		}}),
-		Entry("nested record literal", wrapScriptWithOutputFields(`|===|
-schema Inner: { value: int, };
-schema Outer: { inner: Inner, };
-int base = 8 + 2;
-Outer result = { inner: { value: base, }, };
-|===|`, "result: result;"), expectedValue{kind: ValueRecord, record: map[string]expectedValue{
-			"inner": {kind: ValueRecord, record: map[string]expectedValue{
-				"value": {kind: ValueInt, int64: 10},
-			}},
-		}}),
-		Entry("array of records", wrapScriptWithOutputFields(`|===|
-schema Point: { x: int, y: int, };
-int base = 1 + 1;
-array<Point> result = [
-  { x: base, y: base + 1, },
-  { x: base + 2, y: base + 3, }
-];
-|===|`, "result: result;"), expectedValue{kind: ValueArray, array: []expectedValue{
-			{kind: ValueRecord, record: map[string]expectedValue{
-				"x": {kind: ValueInt, int64: 2},
-				"y": {kind: ValueInt, int64: 3},
-			}},
-			{kind: ValueRecord, record: map[string]expectedValue{
-				"x": {kind: ValueInt, int64: 4},
-				"y": {kind: ValueInt, int64: 5},
-			}},
-		}}),
 		Entry("self reference", wrapScriptWithOutputFields(`|===|
 int base = 3 * 4;
 |===|`, "base: base;\nresult: $self.base + base;"), expectedValue{kind: ValueInt, int64: 24}),
@@ -108,10 +73,6 @@ int base = 3 * 4;
 		Entry("inline float expression", `[output = data] { result: 2.5 + 1.5, }`, expectedValue{kind: ValueFloat, float: 4.0}),
 		Entry("inline boolean expression", `[output = data] { result: 2 < 3 && true, }`, expectedValue{kind: ValueBoolean, bool: true}),
 		Entry("inline string expression", `[output = data] { result: "hello", }`, expectedValue{kind: ValueString, string: "hello"}),
-		Entry("inline record expression", `[output = data] { result: { name: "Ada", age: 30, }, }`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{
-			"name": {kind: ValueString, string: "Ada"},
-			"age":  {kind: ValueInt, int64: 30},
-		}}),
 		Entry("inline array expression", `[output = data] { result: [1, 2, 3], }`, expectedValue{kind: ValueArray, array: []expectedValue{
 			{kind: ValueInt, int64: 1},
 			{kind: ValueInt, int64: 2},

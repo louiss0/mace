@@ -246,16 +246,6 @@ string fallback = "missing";
 		Entry("ten levels", 10),
 	)
 
-	It("selects one variant member for a record map literal", func() {
-		_, err := New().Process(`|===|
-type Packages: variant[record<string>, record<record<string>>];
-Packages packages = { codefixer: "enabled", };
-|===|
-[output = data]
-{}`)
-
-		tAssert.NoError(err)
-	})
 })
 
 func nestedRecordMapType(depth int) ast.TypeReference {

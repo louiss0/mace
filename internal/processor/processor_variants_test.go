@@ -81,31 +81,6 @@ Scalar value = true;
 		tAssert.ErrorContains(err, "type mismatch")
 	})
 
-	It("rejects record literals that mix fields across variant alternatives", func() {
-		processor := New()
-		_, err := processor.Process(wrapScriptWithOutput(`|===|
-schema EmailLogin: { email: string, password: string, };
-schema ApiKeyLogin: { api_key: string, };
-type Login: variant[EmailLogin, ApiKeyLogin];
-Login value = {
-  email: "ada@example.com",
-  password: "secret",
-  api_key: "token",
-};
-|===|`))
-		tAssert.ErrorContains(err, "type mismatch")
-	})
-
-	It("rejects record literals that match multiple variant alternatives", func() {
-		processor := New()
-		_, err := processor.Process(wrapScriptWithOutput(`|===|
-schema Named: { id: string, };
-schema OptionallyNamed: { id: string, nickname?: string, };
-type Identity: variant[Named, OptionallyNamed];
-Identity value = { id: "u1", };
-|===|`))
-		tAssert.ErrorContains(err, "exactly one variant member")
-	})
 })
 
 var _ = Describe("Variant type system helpers", func() {

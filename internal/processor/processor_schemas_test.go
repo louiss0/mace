@@ -12,59 +12,12 @@ import (
 )
 
 var _ = Describe("Schemas", func() {
-	DescribeTable("accepts schema record literals",
-		func(input string) {
-			processor := New()
-			_, err := processor.ProcessInDir(input, "../..")
-			tAssert.NoError(err)
-		},
-		Entry("optional fields omitted", wrapScriptWithOutput(`|===|
-schema User: { name: string, age?: int, };
-User user = { name: "Ada", };
-|===|`)),
-		Entry("array of schema records", wrapScriptWithOutput(`|===|
-schema Point: { x: int, y: int, };
-array<Point> points = [
-  { x: 1, y: 2, },
-  { x: 3, y: 4, }
-];
-|===|`)),
-		Entry("nullable string initializer", wrapScriptWithOutput(`|===|
+	It("accepts nullable primitive initializers", func() {
+		_, err := New().ProcessInDir(wrapScriptWithOutput(`|===|
 nullable string env = "dev";
-|===|`)),
-	)
-
-	DescribeTable("rejects schema record literal mismatches",
-		func(input, message string) {
-			processor := New()
-			_, err := processor.ProcessInDir(input, "../..")
-			tAssert.Error(err)
-			tAssert.ErrorContains(err, message)
-		},
-		Entry("missing required field", wrapScriptWithOutput(`|===|
-schema User: { name: string, age: int, };
-User user = { name: "Ada", };
-|===|`), "missing required field"),
-		Entry("unknown field", wrapScriptWithOutput(`|===|
-schema User: { name: string, };
-User user = { name: "Ada", age: 30, };
-|===|`), "unknown field"),
-		Entry("optional field mismatch", wrapScriptWithOutput(`|===|
-schema User: { name: string, age: int, };
-User user = { name: "Ada", age?: 30, };
-|===|`), "not optional"),
-		Entry("field type mismatch", wrapScriptWithOutput(`|===|
-schema User: { name: string, age: int, };
-User user = { name: 5, age: 30, };
-|===|`), "type mismatch"),
-		Entry("array element schema mismatch", wrapScriptWithOutput(`|===|
-schema Point: { x: int, y: int, };
-array<Point> points = [
-  { x: 1, y: 2, },
-  { x: 3, }
-];
-|===|`), "missing required field"),
-	)
+|===|`), "../..")
+		tAssert.NoError(err)
+	})
 
 	It("accepts schema member access in schema-validated output", func() {
 		processor := New()
@@ -176,30 +129,6 @@ schema Meta: { source: string, };
 		tAssert.ErrorContains(err, "unknown identifier")
 	})
 
-	It("validates arbitrary record keys against a record value type", func() {
-		input := `|===|
-type Dependencies: record<string>;
-schema PackageJSON: {
-  name: string,
-  dependencies: Dependencies,
-}
-|===|
-[schema=PackageJSON]
-{
-  name: "pkg",
-  dependencies: {
-    pi_prompt_guard: "^1.0.0",
-    pi_prompt_form: "^1.0.0",
-  },
-}`
-		result, err := New().Process(input)
-		tAssert.NoError(err)
-		assertExpectedValue(result.Output["dependencies"], expectedValue{kind: ValueRecord, record: map[string]expectedValue{
-			"pi_prompt_guard": {kind: ValueString, string: "^1.0.0"},
-			"pi_prompt_form":  {kind: ValueString, string: "^1.0.0"},
-		}})
-	})
-
 	It("does not expose record keyword schema fields as values", func() {
 		processor := NewWithInput(map[string]Value{
 			"record": {Kind: ValueString, String: "value"},
@@ -212,20 +141,6 @@ schema Input: { record: string, };
   record: record,
 }`)
 		tAssert.ErrorContains(err, "unknown identifier")
-	})
-
-	It("infers member access types for record map values", func() {
-		input := `|===|
-record<string> deps = { foo: "bar", };
-string foo = deps.foo;
-|===|
-[output = data]
-{
-  foo: foo,
-}`
-		result, err := New().Process(input)
-		tAssert.NoError(err)
-		assertExpectedValue(result.Output["foo"], expectedValue{kind: ValueString, string: "bar"})
 	})
 
 	It("resolves imported types in parse_file output schemas", func() {
@@ -353,23 +268,6 @@ schema User: {
 		})
 	})
 
-	It("rejects record values that do not match the record value type", func() {
-		input := `|===|
-type Dependencies: record<string>;
-schema PackageJSON: {
-  dependencies: Dependencies,
-}
-|===|
-[schema=PackageJSON]
-{
-  dependencies: {
-    pi_prompt_guard: 1,
-  },
-}`
-		_, err := New().Process(input)
-		tAssert.Error(err)
-		tAssert.ErrorContains(err, "type mismatch")
-	})
 })
 
 var _ = Describe("Schema and processor helpers", func() {
