@@ -331,4 +331,19 @@ JSON, YAML, and TOML conversion is lossy with respect to comments, formatting,
 quoted&#x2f;non-identifier keys, duplicate keys, null as a normal runtime value, and
 non-record data roots. No conversion grants executable behavior.
 
-\n## Optional member access\n\n`target?.member` is optional member access. Plain `.` is invalid when `target` is nullable or `member` is an optional schema field. Every nullable or optional step in a nested path requires `?.`. Optional member access produces the member value when present and `null` otherwise.\n
+## Optional member access
+
+`target?.member` is optional member access. Plain `.` is invalid when `target`
+is nullable or `member` is an optional schema field. Optional record map lookups
+also use `?.`; every optional step in a nested path requires `?.`. Optional
+member access produces an absent evaluation result when its member is absent.
+The result must be resolved with `??` before it is stored, emitted, or otherwise
+used as a value.
+
+Nested record access follows the declared record value type. For example,
+`packages.codefixer.cn_efs` requires `packages` to be declared as
+`record<record<string>>`; `record<string>` only supports one member lookup.
+
+For `variant` record members, an optional chain can proceed only while every
+variant member at that position is a record. The permitted depth is therefore
+the shallowest variant member's record depth.

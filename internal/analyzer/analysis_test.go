@@ -435,6 +435,30 @@ string greeting = "hello";
 		tAssert.Contains(content.Value, "{ name: string }")
 	})
 
+	It("renders record map types in schema hovers", func() {
+		text := `|===|
+schema User: {
+  records: record<record<string>>,
+};
+|===|
+[output = data]
+{}`
+		snapshot := analyzeDocumentAt(text, "user.mace")
+		hover := Hover(text, snapshot, protocol.Position{Line: 1, Character: 8})
+		tAssert.NotNil(hover)
+		if hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if !ok {
+			return
+		}
+
+		tAssert.Contains(content.Value, "records: record<record<string>>")
+	})
+
 	It("surfaces only LSP-visible declarations from imports, script, and output", func() {
 		workspace, err := os.MkdirTemp("", "mace-analysis-visible-*")
 		tAssert.NoError(err)
@@ -1803,7 +1827,8 @@ var _ = Describe("analyzer coverage helpers", func() {
 		tAssert.Equal("fusion[string, int]", typeReferenceDetail(ast.UnionType{Members: []ast.TypeReference{ast.PrimitiveType{Name: "string"}, ast.PrimitiveType{Name: "int"}}}))
 		tAssert.Equal("variant[string, int]", typeReferenceDetail(ast.VariantType{Members: []ast.TypeReference{ast.PrimitiveType{Name: "string"}, ast.PrimitiveType{Name: "int"}}}))
 		tAssert.Equal("choice[\"a\", 1]", typeReferenceDetail(ast.ChoiceType{Members: []ast.Expression{ast.StringLiteral{Lexeme: `"a"`}, ast.IntLiteral{Lexeme: "1"}}}))
-		tAssert.Equal("unknown", typeReferenceDetail(ast.RecordMapType{Value: ast.PrimitiveType{Name: "string"}}))
+		tAssert.Equal("record<string>", typeReferenceDetail(ast.RecordMapType{Value: ast.PrimitiveType{Name: "string"}}))
+		tAssert.Equal("record<record<string>>", typeReferenceDetail(ast.RecordMapType{Value: ast.RecordMapType{Value: ast.PrimitiveType{Name: "string"}}}))
 		start, end := nameRange("abc", "missing")
 		tAssert.Equal(protocol.Position{}, start)
 		tAssert.Equal(protocol.Position{}, end)
@@ -1832,6 +1857,7 @@ var _ = Describe("analyzer coverage helpers", func() {
 		tAssert.IsType(ast.HexIntLiteral{}, defaultExpressionForType(ast.PrimitiveType{Name: "hex_int"}))
 		tAssert.IsType(ast.HexFloatLiteral{}, defaultExpressionForType(ast.PrimitiveType{Name: "hex_float"}))
 		tAssert.IsType(ast.RecordLiteral{}, defaultExpressionForType(ast.RecordType{}))
+		tAssert.IsType(ast.RecordLiteral{}, defaultExpressionForType(ast.RecordMapType{}))
 		tAssert.IsType(ast.PrimitiveType{}, inferredTypeFromExpression(ast.HexIntLiteral{}))
 		tAssert.IsType(ast.PrimitiveType{}, inferredTypeFromExpression(ast.HexFloatLiteral{}))
 		tAssert.IsType(ast.ArrayType{}, inferredTypeFromExpression(ast.ArrayLiteral{}))

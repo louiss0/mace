@@ -1824,6 +1824,13 @@ func completionTypeAtPath(typeReference ast.TypeReference, path []string, model 
 			current = resolved.element
 			continue
 		}
+		if resolved.kind == completionTypeRecordMap {
+			if resolved.element == nil {
+				return nil, false
+			}
+			current = resolved.element
+			continue
+		}
 		if resolved.kind != completionTypeSchema {
 			return nil, false
 		}
@@ -1930,6 +1937,8 @@ func syntheticCompletionValue(typeReference ast.TypeReference, model completionM
 			Kind:  processor.ValueArray,
 			Array: []processor.Value{syntheticCompletionValue(resolved.element, model, depth-1)},
 		}
+	case completionTypeRecordMap:
+		return processor.Value{Kind: processor.ValueRecord, Record: map[string]processor.Value{}}
 	case completionTypeChoice:
 		return processor.Value{Kind: processor.ValueString, String: ""}
 	case completionTypePrimitive:
@@ -2131,6 +2140,13 @@ func parseMemberCompletionType(typeReference ast.TypeReference, path []string, m
 	current := typeReference
 	for _, segment := range path {
 		resolved := resolveCompletionType(current, model, map[string]struct{}{})
+		if resolved.kind == completionTypeRecordMap {
+			if resolved.element == nil {
+				return nil, false, false
+			}
+			current = resolved.element
+			continue
+		}
 		if resolved.kind != completionTypeSchema {
 			return nil, false, false
 		}
@@ -2480,6 +2496,8 @@ func resolveCompletionType(typeReference ast.TypeReference, model completionMode
 		return completionType{kind: completionTypePrimitive, primitive: typed.Name}
 	case ast.ArrayType:
 		return completionType{kind: completionTypeArray, element: typed.Element}
+	case ast.RecordMapType:
+		return completionType{kind: completionTypeRecordMap, element: typed.Value}
 	case ast.UnionType:
 		record, ok := completionUnionRecord(typed.Members, model, seen)
 		if !ok {
@@ -2631,6 +2649,8 @@ func defaultLiteralForType(typeReference ast.TypeReference, model completionMode
 		}
 	case completionTypeArray:
 		return "[]"
+	case completionTypeRecordMap:
+		return "{}"
 	case completionTypeChoice:
 		if len(resolved.choice.members) > 0 {
 			return resolved.choice.members[0].Label
@@ -2862,6 +2882,7 @@ const (
 	completionTypeUnknown completionTypeKind = iota
 	completionTypePrimitive
 	completionTypeArray
+	completionTypeRecordMap
 	completionTypeSchema
 	completionTypeChoice
 	completionTypeVariant

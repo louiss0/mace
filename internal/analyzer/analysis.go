@@ -1934,6 +1934,8 @@ func defaultExpressionForType(typeReference ast.TypeReference) ast.Expression {
 		}
 	case ast.ArrayType:
 		return ast.ArrayLiteral{}
+	case ast.RecordMapType:
+		return ast.RecordLiteral{}
 	case ast.RecordType:
 		return ast.RecordLiteral{}
 	default:
@@ -2473,6 +2475,8 @@ func referencedNames(file ast.File) map[string]struct{} {
 			names[typed.Name] = struct{}{}
 		case ast.ArrayType:
 			visitType(typed.Element)
+		case ast.RecordMapType:
+			visitType(typed.Value)
 		case ast.UnionType:
 			for _, member := range typed.Members {
 				visitType(member)

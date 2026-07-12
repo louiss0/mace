@@ -2100,6 +2100,9 @@ func validateOutputSchema(schemaName string, items []ast.OutputField, variables 
 }
 
 func validateExpressionAgainstType(expression ast.Expression, expectedType valueType, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
+	if _, ok := expression.(ast.NullLiteral); ok && expectedType.nullable {
+		return nil
+	}
 	if len(expectedType.members) > 0 {
 		return validateExpressionAgainstVariantMembers(expression, expectedType.members, variables, symbols, types, schemas, enums)
 	}
@@ -2228,6 +2231,9 @@ func countVariantChoiceMatchesForExpression(expression ast.Expression, actualTyp
 func countVariantMatchesForExpression(expression ast.Expression, actualType valueType, members []valueType, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) int {
 	matchCount := 0
 	for _, member := range members {
+		if !recordMapTypesMatch(member, actualType) {
+			continue
+		}
 		if err := ensureAssignable(member, actualType); err != nil {
 			continue
 		}
@@ -3029,7 +3035,7 @@ func evaluateMemberAccess(expr ast.MemberAccess, environment *valueEnvironment, 
 		return Value{}, nullableVariableAccessError(expr.Name)
 	}
 	if target.Kind != ValueRecord {
-		return Value{}, validationErrorf("member access requires a record value")
+		return Value{}, nonRecordMemberAccessError(expr.Name)
 	}
 	var memberType *valueType
 	if target.Type != nil {
@@ -4051,7 +4057,7 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 		if err != nil {
 			return valueType{}, err
 		}
-		if targetType.kind == ValueUnknown {
+		if targetType.kind == ValueUnknown && len(targetType.members) == 0 && len(targetType.choiceValues) == 0 {
 			return valueType{kind: ValueUnknown}, nil
 		}
 		if targetType.nullable {
@@ -4060,40 +4066,7 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 		if targetType.presence == presencePossiblyAbsent && !expr.Optional {
 			return valueType{}, optionalFieldAccessError(expr.Name)
 		}
-		if targetType.kind != ValueRecord {
-			return valueType{}, validationErrorf("member access requires a record value")
-		}
-		if targetType.element != nil {
-			return *targetType.element, nil
-		}
-		if targetType.record == nil {
-			if targetType.schemaName == "" {
-				return valueType{kind: ValueUnknown}, nil
-			}
-			record, ok := schemas.Get(targetType.schemaName)
-			if !ok {
-				return valueType{kind: ValueUnknown}, nil
-			}
-			targetType.record = &record
-		}
-		for _, field := range targetType.record.Fields {
-			if field.Name != expr.Name {
-				continue
-			}
-			if field.Optional && !expr.Optional {
-				return valueType{}, optionalFieldAccessError(expr.Name)
-			}
-			memberType, err := resolveValueType(field.Type, symbols, types, schemas, enums)
-			if err != nil {
-				return valueType{}, err
-			}
-			memberType.presence = presenceGuaranteed
-			if field.Optional || targetType.presence == presencePossiblyAbsent {
-				memberType.presence = presencePossiblyAbsent
-			}
-			return memberType, nil
-		}
-		return valueType{}, validationErrorf("unknown field %q", expr.Name)
+		return inferMemberAccessType(targetType, expr, symbols, types, schemas, enums)
 	case ast.IntLiteral:
 		value, err := parseInt(expr.Lexeme)
 		if err != nil {
@@ -4133,7 +4106,7 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 	case ast.ArrayLiteral:
 		return inferArrayLiteralType(expr, variables, symbols, types, schemas, enums)
 	case ast.RecordLiteral:
-		return valueType{kind: ValueRecord}, nil
+		return inferRecordLiteralType(expr, variables, symbols, types, schemas, enums)
 	case ast.SelfReference:
 		return valueType{kind: ValueUnknown}, nil
 	case ast.PrefixExpression:
@@ -4145,6 +4118,67 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 	default:
 		return valueType{}, validationErrorf("unknown expression")
 	}
+}
+
+func inferMemberAccessType(targetType valueType, expr ast.MemberAccess, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
+	if len(targetType.members) > 0 {
+		memberTypes := make([]valueType, 0, len(targetType.members))
+		for _, variantMember := range targetType.members {
+			memberType, err := inferMemberAccessType(variantMember, expr, symbols, types, schemas, enums)
+			if err != nil {
+				return valueType{}, err
+			}
+			memberTypes = append(memberTypes, memberType)
+		}
+
+		presence := presenceGuaranteed
+		if expr.Optional || targetType.presence == presencePossiblyAbsent {
+			presence = presencePossiblyAbsent
+		}
+		return valueType{members: memberTypes, presence: presence}, nil
+	}
+	if targetType.kind == ValueUnknown && len(targetType.choiceValues) == 0 {
+		return valueType{kind: ValueUnknown}, nil
+	}
+	if targetType.kind != ValueRecord {
+		return valueType{}, nonRecordMemberAccessError(expr.Name)
+	}
+	if targetType.element != nil {
+		memberType := *targetType.element
+		memberType.presence = presenceGuaranteed
+		if expr.Optional || targetType.presence == presencePossiblyAbsent {
+			memberType.presence = presencePossiblyAbsent
+		}
+		return memberType, nil
+	}
+	if targetType.record == nil {
+		if targetType.schemaName == "" {
+			return valueType{kind: ValueUnknown}, nil
+		}
+		record, ok := schemas.Get(targetType.schemaName)
+		if !ok {
+			return valueType{kind: ValueUnknown}, nil
+		}
+		targetType.record = &record
+	}
+	for _, field := range targetType.record.Fields {
+		if field.Name != expr.Name {
+			continue
+		}
+		if field.Optional && !expr.Optional {
+			return valueType{}, optionalFieldAccessError(expr.Name)
+		}
+		memberType, err := resolveValueType(field.Type, symbols, types, schemas, enums)
+		if err != nil {
+			return valueType{}, err
+		}
+		memberType.presence = presenceGuaranteed
+		if field.Optional || targetType.presence == presencePossiblyAbsent {
+			memberType.presence = presencePossiblyAbsent
+		}
+		return memberType, nil
+	}
+	return valueType{}, validationErrorf("unknown field %q", expr.Name)
 }
 
 func inferArrayLiteralType(expr ast.ArrayLiteral, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
@@ -4167,6 +4201,28 @@ func inferArrayLiteralType(expr ast.ArrayLiteral, variables *variableRegistry, s
 
 	elementType := valueType{members: elementTypes}
 	return valueType{kind: ValueArray, element: &elementType}, nil
+}
+
+func inferRecordLiteralType(expr ast.RecordLiteral, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
+	if len(expr.Fields) == 0 {
+		return valueType{kind: ValueRecord}, nil
+	}
+
+	valueTypes := []valueType{}
+	for _, field := range expr.Fields {
+		fieldType, err := inferExpressionType(field.Value, variables, symbols, types, schemas, enums)
+		if err != nil {
+			return valueType{}, err
+		}
+		valueTypes = appendUniqueValueType(valueTypes, fieldType)
+	}
+
+	if len(valueTypes) == 1 {
+		return valueType{kind: ValueRecord, element: &valueTypes[0]}, nil
+	}
+
+	variantType := valueType{members: valueTypes}
+	return valueType{kind: ValueRecord, element: &variantType}, nil
 }
 
 func inferPrefixType(expr ast.PrefixExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
@@ -4448,12 +4504,28 @@ func typesEqual(leftType, rightType valueType) bool {
 		return typesEqual(*leftType.element, *rightType.element)
 	}
 	if leftType.kind == ValueRecord {
+		if leftType.element != nil || rightType.element != nil {
+			if leftType.element == nil || rightType.element == nil {
+				return false
+			}
+			return typesEqual(*leftType.element, *rightType.element)
+		}
 		if leftType.schemaName == "" || rightType.schemaName == "" {
 			return true
 		}
 		return leftType.schemaName == rightType.schemaName
 	}
 	return true
+}
+
+func recordMapTypesMatch(expectedType valueType, actualType valueType) bool {
+	if expectedType.kind != ValueRecord || actualType.kind != ValueRecord {
+		return true
+	}
+	if expectedType.element == nil || actualType.element == nil {
+		return true
+	}
+	return typesEqual(expectedType, actualType)
 }
 
 func ensureAssignable(expectedType, actualType valueType) error {

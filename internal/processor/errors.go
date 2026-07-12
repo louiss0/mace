@@ -117,6 +117,16 @@ func nullableVariableAccessError(field string) error {
 	)
 }
 
+func nonRecordMemberAccessError(field string) error {
+	return diagnosticErrorf(
+		ErrorType,
+		CodeTypeMismatch,
+		DiagnosticFields{Field: field},
+		"member %q cannot be accessed because its target is not a record",
+		field,
+	)
+}
+
 func possiblyAbsentValueError() error {
 	return diagnosticErrorf(
 		ErrorType,

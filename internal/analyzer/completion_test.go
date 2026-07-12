@@ -1513,6 +1513,29 @@ from "../shared.mace" import base;
 			}
 		})
 
+		It("resolves record map types and their member paths", func() {
+			model := completionModel{
+				aliases:   map[string]ast.TypeReference{},
+				schemas:   map[string]ast.RecordType{},
+				variables: map[string]ast.TypeReference{},
+			}
+			recordType := ast.RecordMapType{Value: ast.RecordMapType{Value: ast.PrimitiveType{Name: "string"}}}
+
+			resolved := resolveCompletionType(recordType, model, map[string]struct{}{})
+			tAssert.Equal(completionTypeRecordMap, resolved.kind)
+			tAssert.Equal(`record<record<string>>`, typeReferenceDetail(recordType))
+			tAssert.Equal("{}", defaultLiteralForType(recordType, model, map[string]struct{}{}))
+
+			memberType, ok := completionTypeAtPath(recordType, []string{"codefixer", "cn_efs"}, model)
+			tAssert.True(ok)
+			tAssert.Equal("string", typeReferenceDetail(memberType))
+
+			memberType, ok, guarded := parseMemberCompletionType(recordType, []string{"codefixer", "cn_efs"}, model, map[string]struct{}{})
+			tAssert.True(ok)
+			tAssert.False(guarded)
+			tAssert.Equal("string", typeReferenceDetail(memberType))
+		})
+
 		It("handles directives and completion delimiters", func() {
 			directives := []ast.OutputDirective{{
 				Kind:  ast.OutputDirectiveSchema,

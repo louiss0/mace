@@ -475,4 +475,27 @@ writing, the specification lists these as not yet implemented:
 
 Add a license file if you intend to publish or distribute this project.
 
-\n## Optional chaining\n\nUse `?.` only for optional schema properties. A nullable variable must first be guarded with a truthiness check; its true branch treats that variable as non-null. Optional access evaluates to `null` when its property is absent.\n\n```mace\ncity: user ? user.profile.address?.city : "",\n```\n\nAccessing a nullable variable with either `.` or `?.` without a truthiness check reports `mace.type.optional-field-access`.\n
+## Optional chaining
+
+Use `?.` for optional schema properties and record keys that may be absent. A
+nullable variable must first be guarded with a truthiness check; its true branch
+treats that variable as non-null. Resolve an optional access with `??` before
+placing it in output.
+
+```mace
+city: user ? user.profile.address?.city ?? "" : "",
+packages: record<record<string>>,
+value: packages?.codefixer?.cn_efs ?? "",
+```
+
+Each nested record lookup requires a corresponding nested record type. For
+example, `packages.codefixer.cn_efs` requires `record<record<string>>`; it is
+invalid for `record<string>`.
+
+For a record variant, the permitted chain depth is the common record depth of
+every variant member. For example,
+`variant[record<string>, record<record<string>>]` permits one optional lookup
+but rejects a second because the first member is already a `string`.
+
+Accessing a nullable variable with either `.` or `?.` without a truthiness check
+reports `mace.type.optional-field-access`.
