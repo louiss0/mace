@@ -102,7 +102,7 @@ User user = {
 [output = data]
 {
   user_name: user.name, /# Output value after separator
-  user_age?: user.age /# Output value before separator
+  user_age?: user?.age /# Output value before separator
 }`),
 		Entry("schema output fields with inline descriptions before and after separators", `[output = schema]
 {

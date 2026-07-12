@@ -2960,13 +2960,39 @@ func evaluateMemberAccess(expr ast.MemberAccess, environment *valueEnvironment, 
 	if target.Kind != ValueRecord {
 		return Value{}, validationErrorf("member access requires a record value")
 	}
+	var memberType *valueType
+	if target.Type != nil {
+		record := target.Type.record
+		if record == nil && target.Type.schemaName != "" {
+			if schema, ok := schemas.Get(target.Type.schemaName); ok {
+				record = &schema
+			}
+		}
+		if record != nil {
+			for _, field := range record.Fields {
+				if field.Name != expr.Name {
+					continue
+				}
+				if field.Optional && !expr.Optional {
+					return Value{}, optionalFieldAccessError(expr.Name)
+				}
+				resolved, resolveErr := resolveValueType(field.Type, symbols, types, schemas, enums)
+				if resolveErr != nil {
+					return Value{}, resolveErr
+				}
+				memberType = &resolved
+				break
+			}
+		}
+	}
 	member, ok := target.Record[expr.Name]
 	if !ok {
 		if expr.Optional {
 			return Value{Kind: ValueNull}, nil
 		}
-		return Value{}, optionalFieldAccessError(expr.Name)
+		return Value{}, validationErrorf("unknown member %q", expr.Name)
 	}
+	member.Type = memberType
 	return member, nil
 }
 
