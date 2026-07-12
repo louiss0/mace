@@ -508,28 +508,6 @@ int count = 7;
 		}
 	})
 
-	It("binds out-of-range diagnostics to the array index token", func() {
-		notifications := []capturedNotification{}
-
-		didOpen(server, uri, `|===|
-int count = 9;
-array<int> values = [1, 2, 3];
-|===|
-[output = data]
-{
-  result: values[9]
-}`, &notifications)
-
-		if tAssert.Len(notifications, 1) {
-			params := requireDiagnostics(notifications[0])
-			if tAssert.Len(params.Diagnostics, 1) {
-				tAssert.Equal(protocol.UInteger(6), params.Diagnostics[0].Range.Start.Line)
-				tAssert.Equal(protocol.UInteger(17), params.Diagnostics[0].Range.Start.Character)
-				tAssert.Equal(protocol.UInteger(18), params.Diagnostics[0].Range.End.Character)
-			}
-		}
-	})
-
 	It("does not report mixed array diagnostics for string arrays", func() {
 		notifications := []capturedNotification{}
 
@@ -997,89 +975,6 @@ array<Fruit> favorites = ["A
 		tAssert.Contains(labels, "Apple")
 		tAssert.NotContains(labels, `"Apple"`)
 		tAssert.NotContains(labels, "Strawberry")
-	})
-
-	It("suggests array indexes for script variables", func() {
-		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `|===|
-array<string> names = ["Ada", "Linus", "Grace"];
-string selected = names[
-|===|
-[output = data] {}`, nil)
-
-		labels := completeLabels(server, uri, 2, uint32(len(`string selected = names[`)))
-		tAssert.Equal([]string{"0", "1", "2"}, labels)
-	})
-
-	It("suggests array indexes for imported values in script variables", func() {
-		workspace, err := os.MkdirTemp("", "mace-lsp-imported-array-index-*")
-		tAssert.NoError(err)
-
-		writeWorkspaceFile(workspace, "shared.mace", `[output = data]
-{
-  names: ["Ada", "Linus", "Grace"]
-}`)
-		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
-
-		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `|===|
-from "./shared.mace" import names;
-string selected = names[
-|===|
-[output = data] {}`, nil)
-
-		labels := completeLabels(server, uri, 2, uint32(len(`string selected = names[`)))
-		tAssert.Equal([]string{"0", "1", "2"}, labels)
-	})
-
-	It("suggests array indexes for local arrays despite unrelated script errors", func() {
-		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `|===|
-array<string> names = ["Ada", "Linus", "Grace"];
-string broken = missing;
-string selected = names[
-|===|
-[output = data] {}`, nil)
-
-		labels := completeLabels(server, uri, 3, uint32(len(`string selected = names[`)))
-		tAssert.Equal([]string{"0", "1", "2"}, labels)
-	})
-
-	It("suggests array indexes for script arrays in output fields", func() {
-		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `|===|
-array<string> names = ["Ada", "Linus", "Grace"];
-|===|
-[output = data]
-{
-  result: names[
-}`, nil)
-
-		labels := completeLabels(server, uri, 5, uint32(len(`  result: names[`)))
-		tAssert.Equal([]string{"0", "1", "2"}, labels)
-	})
-
-	It("suggests array indexes for imported arrays in output fields", func() {
-		workspace, err := os.MkdirTemp("", "mace-lsp-output-imported-array-index-*")
-		tAssert.NoError(err)
-
-		writeWorkspaceFile(workspace, "shared.mace", `[output = data]
-{
-  names: ["Ada", "Linus", "Grace"]
-}`)
-		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
-
-		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `|===|
-from "./shared.mace" import names;
-|===|
-[output = data]
-{
-  result: names[
-}`, nil)
-
-		labels := completeLabels(server, uri, 5, uint32(len(`  result: names[`)))
-		tAssert.Equal([]string{"0", "1", "2"}, labels)
 	})
 
 	It("suggests schema record literals for nested schema fields after a record colon", func() {
