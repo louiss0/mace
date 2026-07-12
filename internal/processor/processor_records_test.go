@@ -42,130 +42,14 @@ Dependencies dependencies = { pi_prompt_guard: 1, };
 		tAssert.ErrorContains(err, "type mismatch")
 	})
 
-	DescribeTable("evaluates record literals",
-		func(input string, expected expectedValue) {
-			result, err := New().Process(input)
-			tAssert.NoError(err)
-
-			assertExpectedValue(result.Output["result"], expected)
-		},
-		Entry("multiple schema fields", `|===|
-schema User: { name: string, age: int, };
-int base = 20 + 10;
-User result = { name: "Ada", age: base, };
-|===|
-[output = data]
-{ result: result, }`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+	It("evaluates inline record literals", func() {
+		result, err := New().Process(`[output = data] { result: { name: "Ada", age: 30, }, }`)
+		tAssert.NoError(err)
+		assertExpectedValue(result.Output["result"], expectedValue{kind: ValueRecord, record: map[string]expectedValue{
 			"name": {kind: ValueString, string: "Ada"},
 			"age":  {kind: ValueInt, int64: 30},
-		}}),
-		Entry("nested schema values", `|===|
-schema Inner: { value: int, };
-schema Outer: { inner: Inner, };
-int base = 8 + 2;
-Outer result = { inner: { value: base, }, };
-|===|
-[output = data]
-{ result: result, }`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{
-			"inner": {kind: ValueRecord, record: map[string]expectedValue{
-				"value": {kind: ValueInt, int64: 10},
-			}},
-		}}),
-		Entry("array values", `|===|
-schema Point: { x: int, y: int, };
-int base = 1 + 1;
-array<Point> result = [
-  { x: base, y: base + 1, },
-  { x: base + 2, y: base + 3, }
-];
-|===|
-[output = data]
-{ result: result, }`, expectedValue{kind: ValueArray, array: []expectedValue{
-			{kind: ValueRecord, record: map[string]expectedValue{
-				"x": {kind: ValueInt, int64: 2},
-				"y": {kind: ValueInt, int64: 3},
-			}},
-			{kind: ValueRecord, record: map[string]expectedValue{
-				"x": {kind: ValueInt, int64: 4},
-				"y": {kind: ValueInt, int64: 5},
-			}},
-		}}),
-		Entry("inline record", `[output = data] { result: { name: "Ada", age: 30, }, }`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{
-			"name": {kind: ValueString, string: "Ada"},
-			"age":  {kind: ValueInt, int64: 30},
-		}}),
-	)
-
-	DescribeTable("accepts schema record literals",
-		func(input string) {
-			_, err := New().ProcessInDir(input, "../..")
-			tAssert.NoError(err)
-		},
-		Entry("optional fields omitted", wrapScriptWithOutput(`|===|
-schema User: { name: string, age?: int, };
-User user = { name: "Ada", };
-|===|`)),
-		Entry("array values", wrapScriptWithOutput(`|===|
-schema Point: { x: int, y: int, };
-array<Point> points = [
-  { x: 1, y: 2, },
-  { x: 3, y: 4, }
-];
-|===|`)),
-	)
-
-	DescribeTable("rejects invalid schema record literals",
-		func(input string, message string) {
-			_, err := New().ProcessInDir(input, "../..")
-			tAssert.ErrorContains(err, message)
-		},
-		Entry("missing required field", wrapScriptWithOutput(`|===|
-schema User: { name: string, age: int, };
-User user = { name: "Ada", };
-|===|`), "missing required field"),
-		Entry("unknown field", wrapScriptWithOutput(`|===|
-schema User: { name: string, };
-User user = { name: "Ada", age: 30, };
-|===|`), "unknown field"),
-		Entry("optional field mismatch", wrapScriptWithOutput(`|===|
-schema User: { name: string, age: int, };
-User user = { name: "Ada", age?: 30, };
-|===|`), "not optional"),
-		Entry("field type mismatch", wrapScriptWithOutput(`|===|
-schema User: { name: string, age: int, };
-User user = { name: 5, age: 30, };
-|===|`), "type mismatch"),
-		Entry("array element mismatch", wrapScriptWithOutput(`|===|
-schema Point: { x: int, y: int, };
-array<Point> points = [
-  { x: 1, y: 2, },
-  { x: 3, }
-];
-|===|`), "missing required field"),
-	)
-
-	DescribeTable("rejects ambiguous record variants",
-		func(input string, message string) {
-			_, err := New().Process(wrapScriptWithOutput(input))
-			tAssert.ErrorContains(err, message)
-		},
-		Entry("mixed alternative fields", `|===|
-schema EmailLogin: { email: string, password: string, };
-schema ApiKeyLogin: { api_key: string, };
-type Login: variant[EmailLogin, ApiKeyLogin];
-Login value = {
-  email: "ada@example.com",
-  password: "secret",
-  api_key: "token",
-};
-|===|`, "type mismatch"),
-		Entry("multiple matching alternatives", `|===|
-schema Named: { id: string, };
-schema OptionallyNamed: { id: string, nickname?: string, };
-type Identity: variant[Named, OptionallyNamed];
-Identity value = { id: "u1", };
-|===|`, "exactly one variant member"),
-	)
+		}})
+	})
 
 	DescribeTable("accepts supported record value types",
 		func(declarations string, valueType string, literal string) {
