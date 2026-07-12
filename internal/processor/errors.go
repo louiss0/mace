@@ -107,6 +107,16 @@ func optionalFieldAccessError(field string) error {
 	)
 }
 
+func nullableVariableAccessError(field string) error {
+	return diagnosticErrorf(
+		ErrorType,
+		CodeOptionalFieldAccess,
+		DiagnosticFields{Field: field},
+		"member %q belongs to a nullable variable; guard the variable with a truthiness check",
+		field,
+	)
+}
+
 func missingRequiredFieldError(field string, schema string) error {
 	fields := DiagnosticFields{Field: field, Schema: schema}
 	if schema == "" {

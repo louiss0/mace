@@ -16,9 +16,21 @@ schema User: {
 };
 `
 
-	It("requires optional chaining before accessing a nullable record variable", func() {
-		_, err := New().Process(optionalChainDocument(userSchemas, `nullable User user = null;`, `
+	It("requires a truthiness check before accessing a nullable record variable", func() {
+		_, err := New().Process(optionalChainDocument(userSchemas, `nullable User user = {
+  records: { primary: "active", },
+};`, `
   records: user.records,
+`))
+
+		requireOptionalFieldAccessError(err)
+	})
+
+	It("rejects optional chaining on a nullable record variable", func() {
+		_, err := New().Process(optionalChainDocument(userSchemas, `nullable User user = {
+  records: { primary: "active", },
+};`, `
+  records?: user?.records,
 `))
 
 		requireOptionalFieldAccessError(err)
@@ -32,13 +44,37 @@ schema User: {
 		requireOptionalFieldAccessError(err)
 	})
 
-	It("allows optional chaining on a nullable record variable", func() {
+	It("uses the fallback when a nullable record variable is null", func() {
 		result, err := New().Process(optionalChainDocument(userSchemas, `nullable User user = null;`, `
-  records?: user?.records,
+  records: user ? user.records : {},
 `))
 
 		tAssert.NoError(err)
-		tAssert.NotContains(result.Output, "records")
+		assertExpectedValue(requireOutputValue(result, "records"), expectedValue{kind: ValueRecord, record: map[string]expectedValue{}})
+	})
+
+	It("allows a nullable record variable after a truthiness check", func() {
+		result, err := New().Process(optionalChainDocument(userSchemas, `nullable User user = {
+  records: { primary: "active", },
+};`, `
+  records: user ? user.records : {},
+`))
+
+		tAssert.NoError(err)
+		assertExpectedValue(requireOutputValue(result, "records"), expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+			"primary": {kind: ValueString, string: "active"},
+		}})
+	})
+
+	It("processes the nullable user fixture", func() {
+		result, err := New().ProcessFile("../../fixtures/processor/optional_chaining/nullable_user.mace")
+
+		tAssert.NoError(err)
+		assertExpectedValue(requireOutputValue(result, "fallback_records"), expectedValue{kind: ValueRecord, record: map[string]expectedValue{}})
+		assertExpectedValue(requireOutputValue(result, "records"), expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+			"primary": {kind: ValueString, string: "active"},
+		}})
+		tAssert.Equal("Paris", requireOutputValue(result, "city").String)
 	})
 
 	It("requires every optional property in a nested chain to be guarded", func() {

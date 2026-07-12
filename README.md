@@ -475,4 +475,4 @@ writing, the specification lists these as not yet implemented:
 
 Add a license file if you intend to publish or distribute this project.
 
-\n## Optional chaining\n\nUse `?.` whenever the target record is nullable or the selected schema property is optional. Each optional property in a nested path must be guarded. Optional access evaluates to `null` when its target is null or its property is absent, so the containing output field must be optional.\n\n```mace\ncity?: user?.profile?.address?.city,\n```\n\nUsing `.` in either case reports `mace.type.optional-field-access`.\n
+\n## Optional chaining\n\nUse `?.` only for optional schema properties. A nullable variable must first be guarded with a truthiness check; its true branch treats that variable as non-null. Optional access evaluates to `null` when its property is absent.\n\n```mace\ncity: user ? user.profile.address?.city : "",\n```\n\nAccessing a nullable variable with either `.` or `?.` without a truthiness check reports `mace.type.optional-field-access`.\n

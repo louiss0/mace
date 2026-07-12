@@ -347,7 +347,7 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 		return Result{}, err
 	}
 
-	if err := validateDataOutputFields(outputBlock.DataFields, outputContext.symbols); err != nil {
+	if err := validateDataOutputFields(outputBlock.DataFields, outputContext.variables, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
 		return Result{}, err
 	}
 
@@ -1144,11 +1144,18 @@ func collectImportExports(output ast.OutputBlock, context processContext) (map[s
 		if err != nil {
 			return nil, err
 		}
+		exportedType.nullable = field.Optional
+
+		value, exists := values[field.Name]
+		if !exists {
+			value = Value{Kind: ValueNull}
+		}
+		value.Type = &exportedType
 
 		exports[field.Name] = importedDeclaration{
 			name:  field.Name,
 			kind:  symbolKindVariable,
-			value: values[field.Name],
+			value: value,
 			vtype: exportedType,
 		}
 	}
@@ -1902,11 +1909,59 @@ func hasSchemaFile(directives []ast.OutputDirective) bool {
 	return false
 }
 
-func validateDataOutputFields(fields []ast.OutputField, symbols *symbolTable) error {
+func validateDataOutputFields(fields []ast.OutputField, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
 	for _, field := range fields {
 		if err := validateDataOutputExpression(field.Value, symbols); err != nil {
 			return err
 		}
+		if err := validateNullableVariableAccess(field.Value, variables, symbols, types, schemas, enums); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func validateNullableVariableAccess(expression ast.Expression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
+	switch expr := expression.(type) {
+	case ast.MemberAccess:
+		targetType, err := inferExpressionType(expr.Target, variables, symbols, types, schemas, enums)
+		if err != nil {
+			return err
+		}
+		if targetType.nullable {
+			if _, isOptionalProperty := expr.Target.(ast.MemberAccess); !isOptionalProperty || !expr.Optional {
+				return nullableVariableAccessError(expr.Name)
+			}
+		}
+		return validateNullableVariableAccess(expr.Target, variables, symbols, types, schemas, enums)
+	case ast.ArrayLiteral:
+		for _, element := range expr.Elements {
+			if err := validateNullableVariableAccess(element, variables, symbols, types, schemas, enums); err != nil {
+				return err
+			}
+		}
+	case ast.RecordLiteral:
+		for _, field := range expr.Fields {
+			if err := validateNullableVariableAccess(field.Value, variables, symbols, types, schemas, enums); err != nil {
+				return err
+			}
+		}
+	case ast.PrefixExpression:
+		return validateNullableVariableAccess(expr.Right, variables, symbols, types, schemas, enums)
+	case ast.InfixExpression:
+		if err := validateNullableVariableAccess(expr.Left, variables, symbols, types, schemas, enums); err != nil {
+			return err
+		}
+		return validateNullableVariableAccess(expr.Right, variables, symbols, types, schemas, enums)
+	case ast.ConditionalExpression:
+		if err := validateNullableVariableAccess(expr.Condition, variables, symbols, types, schemas, enums); err != nil {
+			return err
+		}
+		if err := validateNullableVariableAccess(expr.Then, narrowedVariables(expr.Condition, variables), symbols, types, schemas, enums); err != nil {
+			return err
+		}
+		return validateNullableVariableAccess(expr.Else, variables, symbols, types, schemas, enums)
 	}
 
 	return nil
@@ -2952,10 +3007,10 @@ func evaluateMemberAccess(expr ast.MemberAccess, environment *valueEnvironment, 
 		return Value{}, err
 	}
 	if target.Kind == ValueNull {
-		if expr.Optional {
+		if _, isOptionalProperty := expr.Target.(ast.MemberAccess); isOptionalProperty && expr.Optional {
 			return Value{Kind: ValueNull}, nil
 		}
-		return Value{}, optionalFieldAccessError(expr.Name)
+		return Value{}, nullableVariableAccessError(expr.Name)
 	}
 	if target.Kind != ValueRecord {
 		return Value{}, validationErrorf("member access requires a record value")
@@ -3502,15 +3557,19 @@ func evaluateConditional(expr ast.ConditionalExpression, environment *valueEnvir
 	if err != nil {
 		return Value{}, err
 	}
-	if condition.Kind != ValueBoolean {
-		return Value{}, validationErrorf("type mismatch: expected boolean condition")
+	if condition.Kind != ValueBoolean && condition.Kind != ValueNull && condition.Kind != ValueRecord {
+		return Value{}, validationErrorf("type mismatch: expected boolean or record condition")
 	}
 
-	if condition.Boolean {
+	if isTruthy(condition) {
 		return evaluateExpression(expr.Then, environment, self, symbols, types, schemas, enums)
 	}
 
 	return evaluateExpression(expr.Else, environment, self, symbols, types, schemas, enums)
+}
+
+func isTruthy(value Value) bool {
+	return value.Kind != ValueNull && (value.Kind != ValueBoolean || value.Boolean)
 }
 
 func evaluateArrayLiteral(expr ast.ArrayLiteral, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
@@ -3950,8 +4009,10 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 		if targetType.kind == ValueUnknown {
 			return valueType{kind: ValueUnknown}, nil
 		}
-		if targetType.nullable && !expr.Optional {
-			return valueType{}, optionalFieldAccessError(expr.Name)
+		if targetType.nullable {
+			if _, isOptionalProperty := expr.Target.(ast.MemberAccess); !isOptionalProperty || !expr.Optional {
+				return valueType{}, nullableVariableAccessError(expr.Name)
+			}
 		}
 		if targetType.kind != ValueRecord {
 			return valueType{}, validationErrorf("member access requires a record value")
@@ -4204,11 +4265,11 @@ func inferConditionalType(expr ast.ConditionalExpression, variables *variableReg
 	if err != nil {
 		return valueType{}, err
 	}
-	if conditionType.kind != ValueBoolean {
+	if conditionType.kind != ValueBoolean && !(conditionType.nullable && conditionType.kind == ValueRecord) {
 		return valueType{}, validationErrorf("type mismatch: expected boolean condition")
 	}
 
-	thenType, err := inferExpressionType(expr.Then, variables, symbols, types, schemas, enums)
+	thenType, err := inferExpressionType(expr.Then, narrowedVariables(expr.Condition, variables), symbols, types, schemas, enums)
 	if err != nil {
 		return valueType{}, err
 	}
@@ -4246,6 +4307,23 @@ func inferConditionalType(expr ast.ConditionalExpression, variables *variableReg
 	}
 
 	return valueType{kind: thenType.kind}, nil
+}
+
+func narrowedVariables(condition ast.Expression, variables *variableRegistry) *variableRegistry {
+	identifier, ok := condition.(ast.Identifier)
+	if !ok {
+		return variables
+	}
+
+	variableType, ok := variables.Get(identifier.Name)
+	if !ok || !variableType.nullable {
+		return variables
+	}
+
+	narrowed := variables.Clone()
+	variableType.nullable = false
+	narrowed.Add(identifier.Name, variableType)
+	return narrowed
 }
 
 func typesEqual(leftType, rightType valueType) bool {

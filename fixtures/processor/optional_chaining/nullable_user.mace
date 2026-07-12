@@ -1,0 +1,27 @@
+|===================================================|
+schema Address: {
+  city?: string,
+};
+
+schema Profile: {
+  address: Address,
+};
+
+schema User: {
+  records: record<string>,
+  profile: Profile,
+};
+
+nullable User missing_user = null;
+nullable User user = {
+  records: { primary: "active", },
+  profile: { address: { city: "Paris", }, },
+};
+|===================================================|
+
+[output = data]
+{
+  fallback_records: missing_user ? missing_user.records : {},
+  records: user ? user.records : {},
+  city: user ? user.profile.address?.city : "",
+}
