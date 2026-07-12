@@ -36,13 +36,13 @@ type Fields struct {
 }
 
 type Error struct {
-	Kind    string
-	Code    Code
-	Message string
-	Range   Range
+	Kind     string
+	Code     Code
+	Message  string
+	Range    Range
 	Severity Severity
-	Fields  Fields
-	Cause   error
+	Fields   Fields
+	Cause    error
 }
 
 func (err Error) Error() string {
