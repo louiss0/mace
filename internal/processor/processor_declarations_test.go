@@ -97,4 +97,24 @@ Runtime config = { env, };
 		tAssert.Error(err)
 		tAssert.ErrorContains(err, "null can only be assigned to nullable variables and optional schema fields")
 	})
+
+	It("accepts empty conditional branches with an explicit variant type", func() {
+		result, err := New().Process(`|===|
+variant[string, array<string>] value = false ? "configured" : [];
+|===|
+[output = data]
+{
+  value: value,
+}`)
+		tAssert.NoError(err)
+		assertExpectedValue(requireOutputValue(result, "value"), expectedValue{kind: ValueArray, array: []expectedValue{}})
+	})
+
+	It("requires a variant type for ambiguous conditional variables", func() {
+		_, err := New().Process(wrapScriptWithOutput(`|===|
+array<string> value = false ? "configured" : [];
+|===|`))
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, "requires a variant variable type")
+	})
 })

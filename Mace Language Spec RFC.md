@@ -214,6 +214,32 @@ Arrays are homogeneous unless their element type is a permitting `variant`.
 a compatible inline record type, or an unconstrained data-output context. Empty
 schemas are valid.
 
+Conditional branch types are inferred recursively. Branches of the same type
+produce that type. Different branch types produce a flattened, deduplicated
+`variant[...]` containing every type returned by nested conditionals, and the
+receiving variable or output schema MUST accept every inferred member. A schema
+and a populated `record&lt;T&gt;` remain distinct variant members.
+
+When a conditional combines an empty array or empty record with a different
+branch type, the empty collection has no inferable member type. In a data output,
+that conditional MUST be validated by an output schema. In a variable
+initializer, the variable declaration MUST use an explicit `variant[...]` type
+that supplies the collection type. For example:
+
+```mace
+|===|
+boolean enabled = true;
+variant[string, array<string>] value = enabled ? "configured" : [];
+schema Result: { value: variant[string, array<string>], };
+|===|
+[output = data, schema = Result]
+{ value: enabled ? "configured" : [], }
+```
+
+An untyped data-output conditional such as `{ value: enabled ? "configured" : [], }`
+is a static error. A conditional between a known record and `{}` retains the
+known record type and does not require a variant.
+
 A `record_type` is valid wherever a type reference is accepted, including type
 aliases, arrays, schema fields, variants, and fusions. Schemas are closed:
 required fields must be present, optional fields may be omitted, and unknown

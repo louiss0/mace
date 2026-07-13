@@ -84,6 +84,98 @@ Scalar value = true;
 })
 
 var _ = Describe("Variant type system helpers", func() {
+	Describe("conditional type inference", func() {
+		It("widens matching primitive literals", func() {
+			result, err := inferConditionalType(ast.ConditionalExpression{
+				Condition: ast.BooleanLiteral{Value: true},
+				Then:      ast.StringLiteral{Lexeme: `"Ada"`},
+				Else:      ast.StringLiteral{Lexeme: `"Bea"`},
+			}, newVariableRegistry(), newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
+
+			tAssert.NoError(err)
+			tAssert.Equal(valueType{kind: ValueString}, result)
+		})
+
+		It("creates a variant for different branch types", func() {
+			result, err := inferConditionalType(ast.ConditionalExpression{
+				Condition: ast.BooleanLiteral{Value: true},
+				Then:      ast.StringLiteral{Lexeme: `"Ada"`},
+				Else:      ast.IntLiteral{Lexeme: "1"},
+			}, newVariableRegistry(), newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
+
+			tAssert.NoError(err)
+			tAssert.Equal(valueType{members: []valueType{{kind: ValueString}, {kind: ValueInt}}}, result)
+		})
+
+		It("flattens every type returned by nested conditional children", func() {
+			result, err := inferConditionalType(ast.ConditionalExpression{
+				Condition: ast.BooleanLiteral{Value: true},
+				Then: ast.ConditionalExpression{
+					Condition: ast.BooleanLiteral{Value: true},
+					Then:      ast.BooleanLiteral{Value: true},
+					Else:      ast.IntLiteral{Lexeme: "10"},
+				},
+				Else: ast.ConditionalExpression{
+					Condition: ast.BooleanLiteral{Value: true},
+					Then:      ast.FloatLiteral{Lexeme: "1.5"},
+					Else:      ast.StringLiteral{Lexeme: `"local"`},
+				},
+			}, newVariableRegistry(), newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
+
+			tAssert.NoError(err)
+			tAssert.Equal(valueType{members: []valueType{
+				{kind: ValueBoolean},
+				{kind: ValueInt},
+				{kind: ValueFloat},
+				{kind: ValueString},
+			}}, result)
+		})
+
+		It("creates a variant for schema and record map branches", func() {
+			schemas := newSchemaRegistry()
+			schema := ast.RecordType{Fields: []ast.SchemaField{{
+				Name: "name",
+				Type: ast.PrimitiveType{Name: "string"},
+			}}}
+			schemas.Add("User", schema)
+
+			recordElement := valueType{kind: ValueString}
+			variables := newVariableRegistry()
+			variables.Add("user", valueType{kind: ValueRecord, schemaName: "User", record: &schema})
+			variables.Add("record", valueType{kind: ValueRecord, element: &recordElement})
+
+			result, err := inferConditionalType(ast.ConditionalExpression{
+				Condition: ast.BooleanLiteral{Value: true},
+				Then:      ast.Identifier{Name: "user"},
+				Else:      ast.Identifier{Name: "record"},
+			}, variables, newSymbolTable(), newTypeRegistry(), schemas, nil)
+
+			tAssert.NoError(err)
+			tAssert.Equal(valueType{members: []valueType{
+				{kind: ValueRecord, schemaName: "User", record: &schema},
+				{kind: ValueRecord, element: &recordElement},
+			}}, result)
+		})
+
+		It("retains the schema type when its other branch is an empty record", func() {
+			schema := ast.RecordType{Fields: []ast.SchemaField{{
+				Name: "name",
+				Type: ast.PrimitiveType{Name: "string"},
+			}}}
+			variables := newVariableRegistry()
+			variables.Add("user", valueType{kind: ValueRecord, schemaName: "User", record: &schema})
+
+			result, err := inferConditionalType(ast.ConditionalExpression{
+				Condition: ast.BooleanLiteral{Value: true},
+				Then:      ast.Identifier{Name: "user"},
+				Else:      ast.RecordLiteral{},
+			}, variables, newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
+
+			tAssert.NoError(err)
+			tAssert.Equal(valueType{kind: ValueRecord, schemaName: "User", record: &schema}, result)
+		})
+	})
+
 	It("validates type resolution branches", func() {
 		workspace, err := os.MkdirTemp("", "processor-helpers-*")
 		tAssert.NoError(err)

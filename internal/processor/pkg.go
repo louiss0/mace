@@ -347,11 +347,11 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 		return Result{}, err
 	}
 
-	if err := validateDataOutputFields(outputBlock.DataFields, outputContext.variables, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
+	schemaName, hasSchema, _ := activeOutputSchemaName(outputBlock.Directives, outputContext)
+	if err := validateDataOutputFields(outputBlock.DataFields, hasSchema, outputContext.variables, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
 		return Result{}, err
 	}
 
-	schemaName, hasSchema, _ := activeOutputSchemaName(outputBlock.Directives, outputContext)
 	if hasSchema {
 		if err := validateOutputSchema(schemaName, outputBlock.DataFields, outputContext.variables, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
 			return Result{}, err
@@ -1457,6 +1457,9 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 			if err != nil {
 				return err
 			}
+			if conditionalRequiresCollectionContext(decl.Value, actualType) && len(expectedType.members) == 0 {
+				return validationErrorf("ambiguous conditional with an empty collection requires a variant variable type")
+			}
 			if err := ensureAssignable(expectedType, actualType); err != nil {
 				return err
 			}
@@ -1909,8 +1912,17 @@ func hasSchemaFile(directives []ast.OutputDirective) bool {
 	return false
 }
 
-func validateDataOutputFields(fields []ast.OutputField, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
+func validateDataOutputFields(fields []ast.OutputField, hasSchema bool, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
 	for _, field := range fields {
+		if !hasSchema && conditionalContainsEmptyCollection(field.Value) {
+			fieldType, err := inferExpressionType(field.Value, variables, symbols, types, schemas, enums)
+			if err != nil {
+				return err
+			}
+			if len(fieldType.members) > 0 {
+				return validationErrorf("ambiguous conditional with an empty collection requires an output schema")
+			}
+		}
 		if err := validateDataOutputExpression(field.Value, symbols); err != nil {
 			return err
 		}
@@ -1920,6 +1932,32 @@ func validateDataOutputFields(fields []ast.OutputField, variables *variableRegis
 	}
 
 	return nil
+}
+
+func conditionalRequiresCollectionContext(expression ast.Expression, expressionType valueType) bool {
+	return len(expressionType.members) > 0 && conditionalContainsEmptyCollection(expression)
+}
+
+func conditionalContainsEmptyCollection(expression ast.Expression) bool {
+	conditional, ok := expression.(ast.ConditionalExpression)
+	if !ok {
+		return false
+	}
+	if isEmptyCollectionExpression(conditional.Then) || isEmptyCollectionExpression(conditional.Else) {
+		return true
+	}
+	return conditionalContainsEmptyCollection(conditional.Then) || conditionalContainsEmptyCollection(conditional.Else)
+}
+
+func isEmptyCollectionExpression(expression ast.Expression) bool {
+	switch typed := expression.(type) {
+	case ast.ArrayLiteral:
+		return len(typed.Elements) == 0
+	case ast.RecordLiteral:
+		return len(typed.Fields) == 0
+	default:
+		return false
+	}
 }
 
 func validateNullableVariableAccess(expression ast.Expression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
@@ -2192,6 +2230,17 @@ func validateExpressionAgainstType(expression ast.Expression, expectedType value
 }
 
 func validateExpressionAgainstVariantMembers(expression ast.Expression, members []valueType, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
+	if conditional, ok := expression.(ast.ConditionalExpression); ok {
+		if err := validateExpressionAgainstVariantMembers(conditional.Then, members, variables, symbols, types, schemas, enums); err != nil {
+			return err
+		}
+		return validateExpressionAgainstVariantMembers(conditional.Else, members, variables, symbols, types, schemas, enums)
+	}
+
+	if isEmptyCollectionExpression(expression) {
+		return validateEmptyCollectionAgainstVariantMembers(expression, members, variables, symbols, types, schemas, enums)
+	}
+
 	actualType, err := inferExpressionType(expression, variables, symbols, types, schemas, enums)
 	if err != nil {
 		return err
@@ -2210,6 +2259,23 @@ func validateExpressionAgainstVariantMembers(expression ast.Expression, members 
 	}
 
 	return validationErrorf("type mismatch: expected exactly one variant member for %s", valueType{members: members}.name())
+}
+
+func validateEmptyCollectionAgainstVariantMembers(expression ast.Expression, members []valueType, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
+	matchCount := 0
+	for _, member := range members {
+		if err := validateExpressionAgainstType(expression, member, variables, symbols, types, schemas, enums); err == nil {
+			matchCount++
+		}
+	}
+	if matchCount == 1 {
+		return nil
+	}
+	if matchCount == 0 {
+		return typeMismatchError(valueType{members: members}.name(), "empty collection")
+	}
+
+	return validationErrorf("type mismatch: expected exactly one variant member for empty collection")
 }
 
 func countVariantChoiceMatchesForExpression(expression ast.Expression, actualType valueType, members []valueType, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) int {
@@ -4431,35 +4497,80 @@ func inferConditionalType(expr ast.ConditionalExpression, variables *variableReg
 		return valueType{}, err
 	}
 
-	if thenType.kind == ValueNull && elseType.kind != ValueUnknown {
+	if thenType.kind == ValueNull && !isUnknownValueType(elseType) {
 		elseType.nullable = true
-		return elseType, nil
+		return widenedValueType(elseType), nil
 	}
-	if elseType.kind == ValueNull && thenType.kind != ValueUnknown {
+	if elseType.kind == ValueNull && !isUnknownValueType(thenType) {
 		thenType.nullable = true
-		return thenType, nil
-	}
-	if thenType.kind != ValueUnknown && elseType.kind != ValueUnknown && thenType.kind != elseType.kind {
-		return valueType{}, validationErrorf("type mismatch: conditional branches differ")
+		return widenedValueType(thenType), nil
 	}
 
-	if thenType.kind == ValueUnknown {
+	if isUnknownValueType(thenType) {
 		return elseType, nil
 	}
-	if elseType.kind == ValueUnknown {
+	if isUnknownValueType(elseType) {
 		return thenType, nil
 	}
-	if thenType.exactValue != nil && elseType.exactValue != nil {
-		equal, err := valuesEqual(*thenType.exactValue, *elseType.exactValue)
-		if err != nil {
-			return valueType{}, err
+
+	return unifyConditionalTypes(thenType, elseType), nil
+}
+
+func isUnknownValueType(input valueType) bool {
+	return input.kind == ValueUnknown && len(input.members) == 0 && len(input.choiceValues) == 0
+}
+
+func unifyConditionalTypes(thenType, elseType valueType) valueType {
+	thenType = widenedValueType(thenType)
+	elseType = widenedValueType(elseType)
+
+	if thenType.kind == ValueRecord && elseType.kind == ValueRecord {
+		if isEmptyRecordValueType(thenType) {
+			return elseType
 		}
-		if equal {
-			return thenType, nil
+		if isEmptyRecordValueType(elseType) {
+			return thenType
 		}
 	}
 
-	return valueType{kind: thenType.kind}, nil
+	if typesEqual(thenType, elseType) {
+		thenType.nullable = thenType.nullable || elseType.nullable
+		thenType.presence = max(thenType.presence, elseType.presence)
+		return thenType
+	}
+
+	members := flattenVariantValueTypes([]valueType{thenType, elseType})
+	variantMembers := make([]valueType, 0, len(members))
+	for _, member := range members {
+		variantMembers = appendUniqueValueType(variantMembers, member)
+	}
+	if len(variantMembers) == 1 {
+		return variantMembers[0]
+	}
+
+	return valueType{members: variantMembers}
+}
+
+func isEmptyRecordValueType(input valueType) bool {
+	return input.schemaName == "" && input.record == nil && input.element == nil
+}
+
+func widenedValueType(input valueType) valueType {
+	widened := input
+	widened.exactValue = nil
+	if widened.element != nil {
+		element := widenedValueType(*widened.element)
+		widened.element = &element
+	}
+	if len(widened.members) > 0 {
+		members := make([]valueType, 0, len(widened.members))
+		for _, member := range widened.members {
+			members = append(members, widenedValueType(member))
+		}
+		widened.members = members
+	}
+
+	return widened
 }
 
 func narrowedVariables(condition ast.Expression, variables *variableRegistry) *variableRegistry {
@@ -4522,8 +4633,11 @@ func recordMapTypesMatch(expectedType valueType, actualType valueType) bool {
 	if expectedType.kind != ValueRecord || actualType.kind != ValueRecord {
 		return true
 	}
-	if expectedType.element == nil || actualType.element == nil {
+	if expectedType.element == nil {
 		return true
+	}
+	if actualType.element == nil {
+		return actualType.schemaName == "" && actualType.record == nil
 	}
 	return typesEqual(expectedType, actualType)
 }
@@ -4602,6 +4716,9 @@ func ensureAssignable(expectedType, actualType valueType) error {
 	if expectedType.kind == ValueArray {
 		if expectedType.element == nil || actualType.element == nil {
 			return typeMismatchError(expectedType.name(), actualType.name())
+		}
+		if actualType.element.kind == ValueUnknown && len(actualType.element.members) == 0 && len(actualType.element.choiceValues) == 0 {
+			return nil
 		}
 		if err := ensureAssignable(*expectedType.element, *actualType.element); err != nil {
 			return typeMismatchError(expectedType.name(), actualType.name())
