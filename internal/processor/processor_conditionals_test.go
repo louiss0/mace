@@ -316,6 +316,69 @@ schema Result: { value: %s, };
 				expectedValue{kind: ValueHexInt, string: "0xB"}),
 		)
 
+		DescribeTable("matches two to ten variant members with one branch per member",
+			func(typeReference, expression string, expected expectedValue) {
+				input := fmt.Sprintf(`|===|
+schema Result: { value: %s, };
+|===|
+[output = data, schema = Result]
+{
+  value: %s,
+}`, typeReference, expression)
+
+				result, err := New().Process(input)
+				tAssert.NoError(err)
+				assertExpectedValue(requireOutputValue(result, "value"), expected)
+			},
+			Entry("two members use one ternary", `variant[string, int]`,
+				`false ? "one" : 2`,
+				expectedValue{kind: ValueInt, int64: 2}),
+			Entry("three members use two ternaries", `variant[string, int, boolean]`,
+				`false ? "one" : false ? 2 : true`,
+				expectedValue{kind: ValueBoolean, bool: true}),
+			Entry("four members use three ternaries", `variant[string, int, boolean, float]`,
+				`false ? "one" : false ? 2 : false ? true : 4.5`,
+				expectedValue{kind: ValueFloat, float: 4.5}),
+			Entry("five members use four ternaries",
+				`variant[string, int, boolean, float, hex_int]`,
+				`false ? "one" : false ? 2 : false ? true : false ? 4.5 : 0x5`,
+				expectedValue{kind: ValueHexInt, string: "0x5"}),
+			Entry("six members use five ternaries",
+				`variant[string, int, boolean, float, hex_int, hex_float]`,
+				`false ? "one" : false ? 2 : false ? true
+					: false ? 4.5 : false ? 0x5 : 0x6.8`,
+				expectedValue{kind: ValueHexFloat, string: "0x6.8"}),
+			Entry("seven members use six ternaries",
+				`variant[string, int, boolean, float, hex_int, hex_float, array<string>]`,
+				`false ? "one" : false ? 2 : false ? true : false ? 4.5
+					: false ? 0x5 : false ? 0x6.8 : ["seven"]`,
+				expectedArrayValue(expectedValue{kind: ValueString, string: "seven"})),
+			Entry("eight members use seven ternaries",
+				`variant[string, int, boolean, float, hex_int, hex_float,
+					array<string>, array<int>]`,
+				`false ? "one" : false ? 2 : false ? true : false ? 4.5
+					: false ? 0x5 : false ? 0x6.8 : false ? ["seven"] : [8]`,
+				expectedArrayValue(expectedValue{kind: ValueInt, int64: 8})),
+			Entry("nine members use eight ternaries",
+				`variant[string, int, boolean, float, hex_int, hex_float,
+					array<string>, array<int>, record<string>]`,
+				`false ? "one" : false ? 2 : false ? true : false ? 4.5
+					: false ? 0x5 : false ? 0x6.8 : false ? ["seven"]
+					: false ? [8] : { nine: "nine", }`,
+				expectedRecordValue(map[string]expectedValue{
+					"nine": {kind: ValueString, string: "nine"},
+				})),
+			Entry("ten members use nine ternaries",
+				`variant[string, int, boolean, float, hex_int, hex_float,
+					array<string>, array<int>, record<string>, record<int>]`,
+				`false ? "one" : false ? 2 : false ? true : false ? 4.5
+					: false ? 0x5 : false ? 0x6.8 : false ? ["seven"]
+					: false ? [8] : false ? { nine: "nine", } : { ten: 10, }`,
+				expectedRecordValue(map[string]expectedValue{
+					"ten": {kind: ValueInt, int64: 10},
+				})),
+		)
+
 		DescribeTable("supports schema and record alternatives",
 			func(recordExpression string, expected expectedValue) {
 				input := fmt.Sprintf(`|===|
