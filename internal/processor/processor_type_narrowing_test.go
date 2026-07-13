@@ -5,6 +5,17 @@ import (
 )
 
 var _ = Describe("Variant type narrowing", func() {
+	It("processes all five schema members in the narrowing fixture", func() {
+		result, err := New().ProcessFile("../../fixtures/processor/type_narrowing/five_configs.mace")
+
+		tAssert.NoError(err)
+		tAssert.Equal("./mace.toml", result.Output["local"].String)
+		tAssert.Equal("https://example.com/mace", result.Output["remote"].String)
+		tAssert.Equal("MACE_CONFIG", result.Output["environment"].String)
+		tAssert.Equal("mace/config", result.Output["secret"].String)
+		tAssert.Equal("inline configuration", result.Output["inline"].String)
+	})
+
 	It("preserves narrowed members when a conditional returns the original variant", func() {
 		result, err := New().Process(`|===|
 variant[string, int] value = "Mace";
