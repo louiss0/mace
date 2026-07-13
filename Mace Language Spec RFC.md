@@ -157,7 +157,7 @@ exponent_expression = unary_expression , [ ws0 , &quot;**&quot; , ws0 , exponent
 unary_expression = ( &quot;!&quot; | &quot;~&quot; | &quot;+&quot; | &quot;-&quot; ) , ws0 , unary_expression | postfix_expression ;
 postfix_expression = primary_atom , { postfix_suffix } ;
 primary_atom = identifier | self_reference | parsed_input_reference | int_literal | float_literal | hex_int_literal | hex_float_literal | string_literal | boolean_literal | null_literal | array_literal | record_literal | grouped_expression ;
-postfix_suffix = ws0 , ( ( &quot;.&quot; | &quot;?.&quot; ) , ws0 , identifier | &quot;[&quot; , ws0 , int_literal , ws0 , &quot;]&quot; ) ;
+postfix_suffix = ws0 , ( &quot;.&quot; | &quot;?.&quot; ) , ws0 , identifier ;
 self_reference = &quot;$self&quot; , &quot;.&quot; , identifier , { &quot;.&quot; , identifier } ;
 parsed_input_reference = &quot;$&quot; , identifier ;
 grouped_expression = &quot;(&quot; , ws0 , expression , ws0 , &quot;)&quot; ;
@@ -317,7 +317,7 @@ variant[LocalConfig, RemoteConfig] config = { path: "/tmp", };
 variant[array<string>, Name] payload = ["first"];
 
 string source = config is LocalConfig ? config.path : config.url;
-string first = payload is array<string> ? payload[0] : payload;
+boolean hasStringItems = payload is array<string>;
 ```
 
 At runtime, `is` evaluates its left operand once and returns true exactly when
@@ -345,18 +345,17 @@ operand to be a compatible record or array. Record merges are deep, arrays
 concatenate, and a scalar conflict takes the right value. A merge still must
 pass its eventual schema validation.
 
-Postfix member and index access may follow any primary expression where its
-resulting type supports access. Parentheses remain syntactically available but
-are only for mathematical&#x2f;operator precedence control: they MUST NOT be a
-general expression wrapper or be used to wrap records, arrays, or other
-non-mathematical values solely to enable access. Thus
-`({ user: { name: &quot;Ada&quot; } }).user.name` and `([[1, 2]])[0][1]` are invalid.
+Postfix member access may follow any primary expression where its resulting
+type supports access. Parentheses remain syntactically available but are only
+for mathematical&#x2f;operator precedence control: they MUST NOT be a general
+expression wrapper or be used to wrap records or other non-mathematical values
+solely to enable access. Thus `({ user: { name: &quot;Ada&quot; } }).user.name` is
+invalid.
 
 `$self` is the current data-output record and can access only fields al
 ready
-evaluated. Parsed input references are separate: `$name`, `$user.name`,
-`$user.address.street`, and `$items[0]` refer to typed fields from validated
-runtime input. `$self` is available only during data-output construction.
+evaluated. Parsed input references are separate: `$name`, `$user.name`, and
+`$user.address.street` refer to typed fields from validated runtime input. `$self` is available only during data-output construction.
 
 ## Imports, paths, and processing
 

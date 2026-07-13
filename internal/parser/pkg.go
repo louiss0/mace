@@ -1337,17 +1337,6 @@ func (p *Parser) mergeInlineDescriptions(context string, leading string, trailin
 }
 
 func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token) (ast.Expression, error) {
-	if operator.Type == lexer.TokenLBracket {
-		indexToken, err := p.consume(lexer.TokenInt, "parser: expected integer index in array access")
-		if err != nil {
-			return nil, err
-		}
-		if _, err := p.consume(lexer.TokenRBracket, "parser: expected ']' after array access index"); err != nil {
-			return nil, err
-		}
-		return ast.ArrayAccess{Target: left, Index: ast.IntLiteral{Token: indexToken, Lexeme: indexToken.Lexeme}}, nil
-	}
-
 	if operator.Type == lexer.TokenDot || operator.Type == lexer.TokenOptionalDot {
 		memberToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier after member access operator")
 		if err != nil {
@@ -1500,7 +1489,7 @@ func (p *Parser) precedenceFor(tokenType lexer.TokenType) int {
 		return precedenceMultiplicative
 	case lexer.TokenDoubleStar:
 		return precedenceExponent
-	case lexer.TokenDot, lexer.TokenOptionalDot, lexer.TokenLBracket:
+	case lexer.TokenDot, lexer.TokenOptionalDot:
 		return precedenceMember
 	default:
 		return precedenceLowest

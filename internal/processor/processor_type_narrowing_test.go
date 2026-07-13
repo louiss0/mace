@@ -90,16 +90,6 @@ string source = config is LocalConfig ? config.path : config.url;
 		tAssert.Equal("/tmp", result.Output["source"].String)
 	})
 
-	It("narrows array variants and evaluates array access", func() {
-		result, err := New().Process(`|===|
-variant[array<string>, string] value = ["first"];
-string result = value is array<string> ? value[0] : value;
-|===| { result: result }`)
-
-		tAssert.NoError(err)
-		tAssert.Equal("first", result.Output["result"].String)
-	})
-
 	It("narrows nullable values to their present type", func() {
 		result, err := New().Process(`|===|
 nullable string value = "present";
@@ -148,33 +138,34 @@ string result = check ? value : "fallback";
 		tAssert.Error(err)
 	})
 
-	It("rejects member access before and in the wrong narrowing branch", func() {
-		_, err := New().Process(`|===|
+	DescribeTable("rejects member access before and in the wrong narrowing branch",
+		func(source string, expectedType string) {
+			_, err := New().Process(source)
+
+			tAssert.Error(err)
+			if expectedType != "" {
+				tAssert.Contains(err.Error(), expectedType)
+			}
+		},
+		Entry("before narrowing", `|===|
 schema LocalConfig: { path: string };
 schema RemoteConfig: { url: string };
 variant[LocalConfig, RemoteConfig] config = { path: "/tmp" };
 string source = config.path;
-|===| { source: source }`)
-		tAssert.Error(err)
-
-		_, err = New().Process(`|===|
+|===| { source: source }`, ""),
+		Entry("true branch", `|===|
 schema LocalConfig: { path: string };
 schema RemoteConfig: { url: string };
 variant[LocalConfig, RemoteConfig] config = { path: "/tmp" };
 string source = config is LocalConfig ? config.url : config.path;
-|===| { source: source }`)
-		tAssert.Error(err)
-		tAssert.Contains(err.Error(), "LocalConfig")
-
-		_, err = New().Process(`|===|
+|===| { source: source }`, "LocalConfig"),
+		Entry("false branch", `|===|
 schema LocalConfig: { path: string };
 schema RemoteConfig: { url: string };
 variant[LocalConfig, RemoteConfig] config = { path: "/tmp" };
 string source = config is LocalConfig ? config.path : config.path;
-|===| { source: source }`)
-		tAssert.Error(err)
-		tAssert.Contains(err.Error(), "RemoteConfig")
-	})
+|===| { source: source }`, "RemoteConfig"),
+	)
 
 	It("does not narrow negated type tests", func() {
 		_, err := New().Process(`|===|

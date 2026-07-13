@@ -1975,8 +1975,6 @@ func validateExpressionPresence(expression ast.Expression, variables *variableRe
 			return possiblyAbsentValueError()
 		}
 		return validateExpressionPresence(expr.Target, variables, symbols, types, schemas, enums, true)
-	case ast.ArrayAccess:
-		return validateExpressionPresence(expr.Target, variables, symbols, types, schemas, enums, false)
 	case ast.TypeTestExpression:
 		_, err := inferTypeTestType(expr, variables, symbols, types, schemas, enums)
 		if err != nil {
@@ -2032,8 +2030,6 @@ func validateDataOutputExpression(expression ast.Expression, symbols *symbolTabl
 			return diagnosticErrorf(ErrorValue, CodeOutputValueDeclaration, DiagnosticFields{Name: expr.Name}, "output value %q cannot reference type or schema declaration", expr.Name)
 		}
 	case ast.MemberAccess:
-		return validateDataOutputExpression(expr.Target, symbols)
-	case ast.ArrayAccess:
 		return validateDataOutputExpression(expr.Target, symbols)
 	case ast.TypeTestExpression:
 		return validateDataOutputExpression(expr.Expression, symbols)
@@ -2736,8 +2732,6 @@ func evaluateExpression(expression ast.Expression, environment *valueEnvironment
 		return value, nil
 	case ast.MemberAccess:
 		return evaluateMemberAccess(expr, environment, self, symbols, types, schemas, enums)
-	case ast.ArrayAccess:
-		return evaluateArrayAccess(expr, environment, self, symbols, types, schemas, enums)
 	case ast.TypeTestExpression:
 		return evaluateTypeTest(expr, environment, self, symbols, types, schemas, enums)
 	case ast.IntLiteral:
@@ -3098,21 +3092,6 @@ trim:
 		return sign + "0x" + wholeText + ".0"
 	}
 	return sign + "0x" + wholeText + "." + string(digits)
-}
-
-func evaluateArrayAccess(expr ast.ArrayAccess, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
-	target, err := evaluateExpression(expr.Target, environment, self, symbols, types, schemas, enums)
-	if err != nil {
-		return Value{}, err
-	}
-	if target.Kind != ValueArray {
-		return Value{}, validationErrorf("type mismatch: array access requires an array")
-	}
-	index, err := strconv.ParseInt(expr.Index.Lexeme, 10, 64)
-	if err != nil || index < 0 || index >= int64(len(target.Array)) {
-		return Value{}, validationErrorf("array index %q is out of bounds", expr.Index.Lexeme)
-	}
-	return target.Array[index], nil
 }
 
 func evaluateTypeTest(expr ast.TypeTestExpression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
@@ -4180,20 +4159,6 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 			return valueType{}, optionalFieldAccessError(expr.Name)
 		}
 		return inferMemberAccessType(targetType, expr, symbols, types, schemas, enums)
-	case ast.ArrayAccess:
-		if path, stable := stableExpressionPath(expr); stable {
-			if narrowedType, ok := variables.Get(path); ok {
-				return narrowedType, nil
-			}
-		}
-		targetType, err := inferExpressionType(expr.Target, variables, symbols, types, schemas, enums)
-		if err != nil {
-			return valueType{}, err
-		}
-		if targetType.kind != ValueArray || targetType.element == nil {
-			return valueType{}, validationErrorf("type mismatch: array access requires an array")
-		}
-		return *targetType.element, nil
 	case ast.TypeTestExpression:
 		return inferTypeTestType(expr, variables, symbols, types, schemas, enums)
 	case ast.IntLiteral:
@@ -4746,12 +4711,6 @@ func stableExpressionPath(expression ast.Expression) (string, bool) {
 			return "", false
 		}
 		return target + "." + expr.Name, true
-	case ast.ArrayAccess:
-		target, stable := stableExpressionPath(expr.Target)
-		if !stable {
-			return "", false
-		}
-		return target + "[" + expr.Index.Lexeme + "]", true
 	default:
 		return "", false
 	}

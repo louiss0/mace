@@ -263,14 +263,10 @@ var _ = Describe("Parser", func() {
 		tAssert.Equal(ast.SourcePosition{Line: 1, Column: 23}, typeTest.Range().End)
 	})
 
-	It("parses array-access type-test operands", func() {
-		expression, err := parseExpressionInput("values[0] is int")
-		tAssert.NoError(err)
-		typeTest := requireTypeTest(expression)
-		access, ok := typeTest.Expression.(ast.ArrayAccess)
-		tAssert.True(ok)
-		requireIdentifier(access.Target, "values")
-		tAssert.Equal("0", access.Index.Lexeme)
+	It("rejects indexing syntax", func() {
+		_, err := parseExpressionInput("values[0] is string")
+
+		tAssert.Error(err)
 	})
 
 	It("applies type-test precedence", func() {
@@ -631,7 +627,7 @@ var _ = Describe("Parser", func() {
 			lexer.TokenPercent:            precedenceMultiplicative,
 			lexer.TokenDoubleStar:         precedenceExponent,
 			lexer.TokenDot:                precedenceMember,
-			lexer.TokenLBracket:           precedenceMember,
+			lexer.TokenOptionalDot:        precedenceMember,
 			lexer.TokenEOF:                precedenceLowest,
 		}
 

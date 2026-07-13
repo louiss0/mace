@@ -62,19 +62,6 @@ func (m MemberAccess) Range() SourceRange {
 	return m.Target.Range()
 }
 
-type ArrayAccess struct {
-	Target Expression
-	Index  IntLiteral
-}
-
-func (ArrayAccess) expressionNode() {
-	_ = 0
-}
-
-func (a ArrayAccess) Range() SourceRange {
-	return a.Target.Range()
-}
-
 type StringLiteral struct {
 	Token  lexer.Token
 	Lexeme string

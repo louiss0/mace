@@ -50,8 +50,6 @@ func parserDiagnosticCode(message string) diagnostic.Code {
 		return diagnostic.Code("mace.syntax.malformed-directive-list")
 	case strings.Contains(message, "schema declaration") || strings.Contains(message, "record type") || strings.Contains(message, "schema field"):
 		return diagnostic.Code("mace.syntax.malformed-schema")
-	case strings.Contains(message, "integer index in array access") || strings.Contains(message, "after array access index"):
-		return diagnostic.Code("mace.syntax.invalid-array-access-index")
 	case strings.Contains(message, "inline descriptions are not allowed on variable declarations"):
 		return diagnostic.Code("mace.syntax.variable-inline-description-not-allowed")
 	case strings.Contains(message, "expected expression"):
