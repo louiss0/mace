@@ -62,6 +62,19 @@ func (m MemberAccess) Range() SourceRange {
 	return m.Target.Range()
 }
 
+type ArrayAccess struct {
+	Target Expression
+	Index  IntLiteral
+}
+
+func (ArrayAccess) expressionNode() {
+	_ = 0
+}
+
+func (a ArrayAccess) Range() SourceRange {
+	return a.Target.Range()
+}
+
 type StringLiteral struct {
 	Token  lexer.Token
 	Lexeme string
@@ -216,6 +229,22 @@ func (InfixExpression) expressionNode() {
 
 func (i InfixExpression) Range() SourceRange {
 	return i.Left.Range()
+}
+
+type TypeTestExpression struct {
+	Expression Expression
+	TargetType TypeReference
+	EndToken   lexer.Token
+}
+
+func (TypeTestExpression) expressionNode() {
+	_ = 0
+}
+
+func (t TypeTestExpression) Range() SourceRange {
+	sourceRange := t.Expression.Range()
+	sourceRange.End = TokenRange(t.EndToken).End
+	return sourceRange
 }
 
 type ConditionalExpression struct {

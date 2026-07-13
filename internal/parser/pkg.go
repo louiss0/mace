@@ -20,6 +20,7 @@ const (
 	precedenceBitwiseAnd
 	precedenceMerge
 	precedenceEquality
+	precedenceTypeTest
 	precedenceRelational
 	precedenceShift
 	precedenceAdditive
@@ -1021,6 +1022,8 @@ func (p *Parser) parseExpression(precedence int) (ast.Expression, error) {
 			left, err = p.parseConditionalExpression(left, operator)
 		} else if operator.Type == lexer.TokenCoalesce {
 			left, err = p.parseCoalesceExpression(left, operator)
+		} else if operator.Type == lexer.TokenIs {
+			left, err = p.parseTypeTestExpression(left, operator)
 		} else {
 			left, err = p.parseInfixExpression(left, operator)
 		}
@@ -1334,6 +1337,17 @@ func (p *Parser) mergeInlineDescriptions(context string, leading string, trailin
 }
 
 func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token) (ast.Expression, error) {
+	if operator.Type == lexer.TokenLBracket {
+		indexToken, err := p.consume(lexer.TokenInt, "parser: expected integer index in array access")
+		if err != nil {
+			return nil, err
+		}
+		if _, err := p.consume(lexer.TokenRBracket, "parser: expected ']' after array access index"); err != nil {
+			return nil, err
+		}
+		return ast.ArrayAccess{Target: left, Index: ast.IntLiteral{Token: indexToken, Lexeme: indexToken.Lexeme}}, nil
+	}
+
 	if operator.Type == lexer.TokenDot || operator.Type == lexer.TokenOptionalDot {
 		memberToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier after member access operator")
 		if err != nil {
@@ -1357,6 +1371,26 @@ func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token)
 		Left:     left,
 		Operator: operator.Type,
 		Right:    right,
+	}, nil
+}
+
+func (p *Parser) parseTypeTestExpression(left ast.Expression, operator lexer.Token) (ast.Expression, error) {
+	if _, chained := left.(ast.TypeTestExpression); chained {
+		return nil, p.diagnosticError(operator, diagnostic.Code("mace.syntax.invalid-is-type"), "parser: chained 'is' expressions are not allowed")
+	}
+	if p.current().Type == lexer.TokenEOF {
+		return nil, p.diagnosticError(p.current(), diagnostic.Code("mace.syntax.is-missing-type"), "parser: expected type reference after 'is'")
+	}
+
+	targetType, err := p.parseTypeReference()
+	if err != nil {
+		return nil, p.diagnosticError(p.current(), diagnostic.Code("mace.syntax.invalid-is-type"), "parser: expected valid type reference after 'is'")
+	}
+
+	return ast.TypeTestExpression{
+		Expression: left,
+		TargetType: targetType,
+		EndToken:   p.tokens[p.position-1],
 	}, nil
 }
 
@@ -1452,6 +1486,8 @@ func (p *Parser) precedenceFor(tokenType lexer.TokenType) int {
 		return precedenceBitwiseAnd
 	case lexer.TokenEqualEqual, lexer.TokenNotEqual:
 		return precedenceEquality
+	case lexer.TokenIs:
+		return precedenceTypeTest
 	case lexer.TokenMerge:
 		return precedenceMerge
 	case lexer.TokenLess, lexer.TokenLessEqual, lexer.TokenGreater, lexer.TokenGreaterEqual, lexer.TokenIn:

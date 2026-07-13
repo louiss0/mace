@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/louiss0/mace/internal/diagnostic"
+	"github.com/louiss0/mace/internal/parser/ast"
 )
 
 type ErrorKind string
@@ -30,6 +31,7 @@ const (
 	CodeImportFileFailedParse        ErrorCode = "mace.import.file-failed-to-parse"
 	CodeImportFileNotFound           ErrorCode = "mace.import.file-not-found"
 	CodeInternal                     ErrorCode = "mace.internal"
+	CodeImpossibleNarrowing          ErrorCode = "mace.type.impossible-narrowing"
 	CodeInvalidNullUsage             ErrorCode = "mace.type.invalid-null-usage"
 	CodeInvalidOutputSchemaField     ErrorCode = "mace.type.invalid-output-schema-field"
 	CodeMissingRequiredField         ErrorCode = "mace.type.record-does-not-match-schema"
@@ -74,6 +76,16 @@ func diagnosticErrorf(kind ErrorKind, code ErrorCode, fields DiagnosticFields, f
 		Code:    code,
 		Message: fmt.Sprintf("processor: %s", fmt.Sprintf(format, args...)),
 		Fields:  fields,
+	}
+}
+
+func impossibleNarrowingError(expression ast.TypeTestExpression, source string, target string) error {
+	return DiagnosticError{
+		Kind:    ErrorType,
+		Code:    CodeImpossibleNarrowing,
+		Message: fmt.Sprintf("processor: type %q has no member compatible with %q", source, target),
+		Range:   diagnostic.FromASTRange(expression.Range()),
+		Fields:  DiagnosticFields{Actual: source, Expected: target},
 	}
 }
 

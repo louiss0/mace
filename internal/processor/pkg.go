@@ -1975,6 +1975,14 @@ func validateExpressionPresence(expression ast.Expression, variables *variableRe
 			return possiblyAbsentValueError()
 		}
 		return validateExpressionPresence(expr.Target, variables, symbols, types, schemas, enums, true)
+	case ast.ArrayAccess:
+		return validateExpressionPresence(expr.Target, variables, symbols, types, schemas, enums, false)
+	case ast.TypeTestExpression:
+		_, err := inferTypeTestType(expr, variables, symbols, types, schemas, enums)
+		if err != nil {
+			return err
+		}
+		return validateExpressionPresence(expr.Expression, variables, symbols, types, schemas, enums, false)
 	case ast.ArrayLiteral:
 		for _, element := range expr.Elements {
 			if err := validateExpressionPresence(element, variables, symbols, types, schemas, enums, false); err != nil {
@@ -2002,10 +2010,14 @@ func validateExpressionPresence(expression ast.Expression, variables *variableRe
 		if err := validateExpressionPresence(expr.Condition, variables, symbols, types, schemas, enums, false); err != nil {
 			return err
 		}
-		if err := validateExpressionPresence(expr.Then, narrowedVariables(expr.Condition, variables), symbols, types, schemas, enums, false); err != nil {
+		thenVariables, elseVariables, err := conditionalVariables(expr.Condition, variables, symbols, types, schemas, enums)
+		if err != nil {
 			return err
 		}
-		return validateExpressionPresence(expr.Else, variables, symbols, types, schemas, enums, false)
+		if err := validateExpressionPresence(expr.Then, thenVariables, symbols, types, schemas, enums, false); err != nil {
+			return err
+		}
+		return validateExpressionPresence(expr.Else, elseVariables, symbols, types, schemas, enums, false)
 	}
 
 	return nil
@@ -2021,6 +2033,10 @@ func validateDataOutputExpression(expression ast.Expression, symbols *symbolTabl
 		}
 	case ast.MemberAccess:
 		return validateDataOutputExpression(expr.Target, symbols)
+	case ast.ArrayAccess:
+		return validateDataOutputExpression(expr.Target, symbols)
+	case ast.TypeTestExpression:
+		return validateDataOutputExpression(expr.Expression, symbols)
 	case ast.ArrayLiteral:
 		for _, element := range expr.Elements {
 			if err := validateDataOutputExpression(element, symbols); err != nil {
@@ -2147,13 +2163,7 @@ func validateExpressionAgainstType(expression ast.Expression, expectedType value
 	if len(expectedType.choiceValues) > 0 {
 		switch typed := expression.(type) {
 		case ast.ConditionalExpression:
-			if err := validateExpressionAgainstType(typed.Then, expectedType, variables, symbols, types, schemas, enums); err != nil {
-				return err
-			}
-			if err := validateExpressionAgainstType(typed.Else, expectedType, variables, symbols, types, schemas, enums); err != nil {
-				return err
-			}
-			return nil
+			return validateConditionalAgainstType(typed, expectedType, variables, symbols, types, schemas, enums)
 		default:
 			actualType, err := inferExpressionType(expression, variables, symbols, types, schemas, enums)
 			if err != nil {
@@ -2182,12 +2192,7 @@ func validateExpressionAgainstType(expression ast.Expression, expectedType value
 				}
 			}
 		case ast.ConditionalExpression:
-			if err := validateExpressionAgainstType(typed.Then, expectedType, variables, symbols, types, schemas, enums); err != nil {
-				return err
-			}
-			if err := validateExpressionAgainstType(typed.Else, expectedType, variables, symbols, types, schemas, enums); err != nil {
-				return err
-			}
+			return validateConditionalAgainstType(typed, expectedType, variables, symbols, types, schemas, enums)
 		}
 	case ValueRecord:
 		if expectedType.element != nil {
@@ -2199,12 +2204,7 @@ func validateExpressionAgainstType(expression ast.Expression, expectedType value
 					}
 				}
 			case ast.ConditionalExpression:
-				if err := validateExpressionAgainstType(typed.Then, expectedType, variables, symbols, types, schemas, enums); err != nil {
-					return err
-				}
-				if err := validateExpressionAgainstType(typed.Else, expectedType, variables, symbols, types, schemas, enums); err != nil {
-					return err
-				}
+				return validateConditionalAgainstType(typed, expectedType, variables, symbols, types, schemas, enums)
 			}
 			return nil
 		}
@@ -2218,23 +2218,33 @@ func validateExpressionAgainstType(expression ast.Expression, expectedType value
 			}
 			return nil
 		case ast.ConditionalExpression:
-			if err := validateExpressionAgainstType(typed.Then, expectedType, variables, symbols, types, schemas, enums); err != nil {
-				return err
-			}
-			if err := validateExpressionAgainstType(typed.Else, expectedType, variables, symbols, types, schemas, enums); err != nil {
-				return err
-			}
+			return validateConditionalAgainstType(typed, expectedType, variables, symbols, types, schemas, enums)
 		}
 	}
 	return nil
 }
 
+func validateConditionalAgainstType(expression ast.ConditionalExpression, expectedType valueType, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
+	thenVariables, elseVariables, err := conditionalVariables(expression.Condition, variables, symbols, types, schemas, enums)
+	if err != nil {
+		return err
+	}
+	if err := validateExpressionAgainstType(expression.Then, expectedType, thenVariables, symbols, types, schemas, enums); err != nil {
+		return err
+	}
+	return validateExpressionAgainstType(expression.Else, expectedType, elseVariables, symbols, types, schemas, enums)
+}
+
 func validateExpressionAgainstVariantMembers(expression ast.Expression, members []valueType, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
 	if conditional, ok := expression.(ast.ConditionalExpression); ok {
-		if err := validateExpressionAgainstVariantMembers(conditional.Then, members, variables, symbols, types, schemas, enums); err != nil {
+		thenVariables, elseVariables, err := conditionalVariables(conditional.Condition, variables, symbols, types, schemas, enums)
+		if err != nil {
 			return err
 		}
-		return validateExpressionAgainstVariantMembers(conditional.Else, members, variables, symbols, types, schemas, enums)
+		if err := validateExpressionAgainstVariantMembers(conditional.Then, members, thenVariables, symbols, types, schemas, enums); err != nil {
+			return err
+		}
+		return validateExpressionAgainstVariantMembers(conditional.Else, members, elseVariables, symbols, types, schemas, enums)
 	}
 
 	if isEmptyCollectionExpression(expression) {
@@ -2726,6 +2736,10 @@ func evaluateExpression(expression ast.Expression, environment *valueEnvironment
 		return value, nil
 	case ast.MemberAccess:
 		return evaluateMemberAccess(expr, environment, self, symbols, types, schemas, enums)
+	case ast.ArrayAccess:
+		return evaluateArrayAccess(expr, environment, self, symbols, types, schemas, enums)
+	case ast.TypeTestExpression:
+		return evaluateTypeTest(expr, environment, self, symbols, types, schemas, enums)
 	case ast.IntLiteral:
 		return parseInt(expr.Lexeme)
 	case ast.FloatLiteral:
@@ -3084,6 +3098,34 @@ trim:
 		return sign + "0x" + wholeText + ".0"
 	}
 	return sign + "0x" + wholeText + "." + string(digits)
+}
+
+func evaluateArrayAccess(expr ast.ArrayAccess, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
+	target, err := evaluateExpression(expr.Target, environment, self, symbols, types, schemas, enums)
+	if err != nil {
+		return Value{}, err
+	}
+	if target.Kind != ValueArray {
+		return Value{}, validationErrorf("type mismatch: array access requires an array")
+	}
+	index, err := strconv.ParseInt(expr.Index.Lexeme, 10, 64)
+	if err != nil || index < 0 || index >= int64(len(target.Array)) {
+		return Value{}, validationErrorf("array index %q is out of bounds", expr.Index.Lexeme)
+	}
+	return target.Array[index], nil
+}
+
+func evaluateTypeTest(expr ast.TypeTestExpression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
+	value, err := evaluateExpression(expr.Expression, environment, self, symbols, types, schemas, enums)
+	if err != nil {
+		return Value{}, err
+	}
+	targetType, err := resolveValueType(expr.TargetType, symbols, types, schemas, enums)
+	if err != nil {
+		return Value{}, err
+	}
+	matches := validateEvaluatedValueAgainstType(value, targetType, symbols, types, schemas, enums) == nil
+	return Value{Kind: ValueBoolean, Boolean: matches}, nil
 }
 
 func evaluateMemberAccess(expr ast.MemberAccess, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
@@ -4119,6 +4161,11 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 		}
 		return valueType{kind: ValueUnknown}, nil
 	case ast.MemberAccess:
+		if path, stable := stableExpressionPath(expr); stable {
+			if narrowedType, ok := variables.Get(path); ok {
+				return narrowedType, nil
+			}
+		}
 		targetType, err := inferExpressionType(expr.Target, variables, symbols, types, schemas, enums)
 		if err != nil {
 			return valueType{}, err
@@ -4133,6 +4180,22 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 			return valueType{}, optionalFieldAccessError(expr.Name)
 		}
 		return inferMemberAccessType(targetType, expr, symbols, types, schemas, enums)
+	case ast.ArrayAccess:
+		if path, stable := stableExpressionPath(expr); stable {
+			if narrowedType, ok := variables.Get(path); ok {
+				return narrowedType, nil
+			}
+		}
+		targetType, err := inferExpressionType(expr.Target, variables, symbols, types, schemas, enums)
+		if err != nil {
+			return valueType{}, err
+		}
+		if targetType.kind != ValueArray || targetType.element == nil {
+			return valueType{}, validationErrorf("type mismatch: array access requires an array")
+		}
+		return *targetType.element, nil
+	case ast.TypeTestExpression:
+		return inferTypeTestType(expr, variables, symbols, types, schemas, enums)
 	case ast.IntLiteral:
 		value, err := parseInt(expr.Lexeme)
 		if err != nil {
@@ -4184,6 +4247,21 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 	default:
 		return valueType{}, validationErrorf("unknown expression")
 	}
+}
+
+func inferTypeTestType(expr ast.TypeTestExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
+	sourceType, err := inferExpressionType(expr.Expression, variables, symbols, types, schemas, enums)
+	if err != nil {
+		return valueType{}, err
+	}
+	targetType, err := resolveValueType(expr.TargetType, symbols, types, schemas, enums)
+	if err != nil {
+		return valueType{}, err
+	}
+	if _, _, matched := narrowValueType(sourceType, targetType); !matched {
+		return valueType{}, impossibleNarrowingError(expr, sourceType.name(), targetType.name())
+	}
+	return valueType{kind: ValueBoolean}, nil
 }
 
 func inferMemberAccessType(targetType valueType, expr ast.MemberAccess, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
@@ -4244,7 +4322,7 @@ func inferMemberAccessType(targetType valueType, expr ast.MemberAccess, symbols 
 		}
 		return memberType, nil
 	}
-	return valueType{}, validationErrorf("unknown field %q", expr.Name)
+	return valueType{}, validationErrorf("unknown field %q on %s", expr.Name, targetType.name())
 }
 
 func inferArrayLiteralType(expr ast.ArrayLiteral, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
@@ -4488,11 +4566,15 @@ func inferConditionalType(expr ast.ConditionalExpression, variables *variableReg
 		return valueType{}, validationErrorf("type mismatch: expected boolean condition")
 	}
 
-	thenType, err := inferExpressionType(expr.Then, narrowedVariables(expr.Condition, variables), symbols, types, schemas, enums)
+	thenVariables, elseVariables, err := conditionalVariables(expr.Condition, variables, symbols, types, schemas, enums)
 	if err != nil {
 		return valueType{}, err
 	}
-	elseType, err := inferExpressionType(expr.Else, variables, symbols, types, schemas, enums)
+	thenType, err := inferExpressionType(expr.Then, thenVariables, symbols, types, schemas, enums)
+	if err != nil {
+		return valueType{}, err
+	}
+	elseType, err := inferExpressionType(expr.Else, elseVariables, symbols, types, schemas, enums)
 	if err != nil {
 		return valueType{}, err
 	}
@@ -4573,21 +4655,106 @@ func widenedValueType(input valueType) valueType {
 	return widened
 }
 
-func narrowedVariables(condition ast.Expression, variables *variableRegistry) *variableRegistry {
-	identifier, ok := condition.(ast.Identifier)
-	if !ok {
-		return variables
+func conditionalVariables(condition ast.Expression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (*variableRegistry, *variableRegistry, error) {
+	if typeTest, ok := condition.(ast.TypeTestExpression); ok {
+		path, stable := stableExpressionPath(typeTest.Expression)
+		if !stable {
+			return variables, variables, nil
+		}
+		sourceType, err := inferExpressionType(typeTest.Expression, variables, symbols, types, schemas, enums)
+		if err != nil {
+			return nil, nil, err
+		}
+		targetType, err := resolveValueType(typeTest.TargetType, symbols, types, schemas, enums)
+		if err != nil {
+			return nil, nil, err
+		}
+		matchedType, remainingType, matched := narrowValueType(sourceType, targetType)
+		if !matched {
+			return nil, nil, impossibleNarrowingError(typeTest, sourceType.name(), targetType.name())
+		}
+
+		thenVariables := variables.Clone()
+		thenVariables.Add(path, matchedType)
+		elseVariables := variables.Clone()
+		if !isUnknownValueType(remainingType) {
+			elseVariables.Add(path, remainingType)
+		}
+		return thenVariables, elseVariables, nil
 	}
 
+	identifier, ok := condition.(ast.Identifier)
+	if !ok {
+		return variables, variables, nil
+	}
 	variableType, ok := variables.Get(identifier.Name)
 	if !ok || !variableType.nullable {
-		return variables
+		return variables, variables, nil
 	}
 
 	narrowed := variables.Clone()
 	variableType.nullable = false
 	narrowed.Add(identifier.Name, variableType)
-	return narrowed
+	return narrowed, variables, nil
+}
+
+func narrowValueType(sourceType valueType, targetType valueType) (valueType, valueType, bool) {
+	sourceMembers := flattenVariantValueTypes(sourceType.members)
+	if len(sourceMembers) == 0 {
+		presentType := sourceType
+		presentType.nullable = false
+		sourceMembers = []valueType{presentType}
+	}
+
+	matchedMembers := make([]valueType, 0, len(sourceMembers))
+	remainingMembers := make([]valueType, 0, len(sourceMembers))
+	for _, member := range sourceMembers {
+		if ensureAssignable(targetType, member) == nil {
+			matchedMembers = appendUniqueValueType(matchedMembers, member)
+		} else {
+			remainingMembers = appendUniqueValueType(remainingMembers, member)
+		}
+	}
+	if len(matchedMembers) == 0 {
+		return valueType{}, valueType{}, false
+	}
+	if sourceType.nullable {
+		remainingMembers = appendUniqueValueType(remainingMembers, valueType{kind: ValueNull})
+	}
+
+	return simplifiedVariantType(matchedMembers), simplifiedVariantType(remainingMembers), true
+}
+
+func simplifiedVariantType(members []valueType) valueType {
+	switch len(members) {
+	case 0:
+		return valueType{kind: ValueUnknown}
+	case 1:
+		return members[0]
+	default:
+		return valueType{members: members}
+	}
+}
+
+func stableExpressionPath(expression ast.Expression) (string, bool) {
+	switch expr := expression.(type) {
+	case ast.Identifier:
+		return expr.Name, true
+	case ast.MemberAccess:
+		target, stable := stableExpressionPath(expr.Target)
+		if !stable {
+			return "", false
+		}
+		return target + "." + expr.Name, true
+	case ast.ArrayAccess:
+		target, stable := stableExpressionPath(expr.Target)
+		if !stable {
+			return "", false
+		}
+		return target + "[" + expr.Index.Lexeme + "]", true
+	default:
+		return "", false
+	}
 }
 
 func typesEqual(leftType, rightType valueType) bool {

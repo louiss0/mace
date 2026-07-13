@@ -485,6 +485,8 @@ func keywordToken(lexeme string) (TokenType, bool) {
 		return TokenNullable, true
 	case "in":
 		return TokenIn, true
+	case "is":
+		return TokenIs, true
 	case "null":
 		return TokenNull, true
 	case "true", "false":

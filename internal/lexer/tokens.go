@@ -32,6 +32,7 @@ const (
 	TokenData
 	TokenNullable
 	TokenIn
+	TokenIs
 	TokenNull
 
 	TokenString

@@ -18,6 +18,21 @@ func TestFormatter(t *testing.T) {
 	RunSpecs(t, "Formatter Suite")
 }
 
+func lexFormatterExpression(input string) ([]lexer.Token, error) {
+	lexerInstance := lexer.New(input)
+	tokens := []lexer.Token{}
+	for {
+		token, err := lexerInstance.NextToken()
+		if err != nil {
+			return nil, err
+		}
+		tokens = append(tokens, token)
+		if token.Type == lexer.TokenEOF {
+			return tokens, nil
+		}
+	}
+}
+
 func parseMaceFile(input string) (ast.File, error) {
 	lexerInstance := lexer.New(input)
 	tokens := []lexer.Token{}
@@ -75,6 +90,16 @@ var _ = Describe("FormatFile", func() {
 		Entry("tilde", lexer.TokenTilde, "~"),
 		Entry("unknown", lexer.TokenEOF, ""),
 	)
+
+	It("formats type tests and array access with their precedence", func() {
+		tokens, err := lexFormatterExpression("condition && values[0] is string == true")
+		tAssert.NoError(err)
+		expression, err := parser.New(tokens).ParseExpression()
+		tAssert.NoError(err)
+		formatted, err := formatExpressionWithDepth(expression, 0)
+		tAssert.NoError(err)
+		tAssert.Equal("condition && values[0] is string == true", formatted)
+	})
 
 	It("formats imports, script declarations, and output", func() {
 		file, err := parseMaceFile(`|===|
