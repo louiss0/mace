@@ -263,7 +263,7 @@ schema Result: { inferred: %s, };
 				})),
 		)
 
-		DescribeTable("infers variants through at least five nested conditional levels",
+		DescribeTable("infers variants through one to ten nested conditional levels",
 			func(typeReference, expression string, expected expectedValue) {
 				input := fmt.Sprintf(`|===|
 schema Result: { value: %s, };
@@ -292,6 +292,28 @@ schema Result: { value: %s, };
 				`false ? "one" : false ? 1 : false ? true
 					: false ? 1.5 : false ? 0xA : 0x1.8`,
 				expectedValue{kind: ValueHexFloat, string: "0x1.8"}),
+			Entry("six levels", `variant[string, int, boolean, float, hex_int, hex_float]`,
+				`false ? "one" : false ? 1 : false ? true : false ? 1.5
+					: false ? 0xA : false ? 0x1.8 : "seven"`,
+				expectedValue{kind: ValueString, string: "seven"}),
+			Entry("seven levels", `variant[string, int, boolean, float, hex_int, hex_float]`,
+				`false ? "one" : false ? 1 : false ? true : false ? 1.5
+					: false ? 0xA : false ? 0x1.8 : false ? "seven" : 8`,
+				expectedValue{kind: ValueInt, int64: 8}),
+			Entry("eight levels", `variant[string, int, boolean, float, hex_int, hex_float]`,
+				`false ? "one" : false ? 1 : false ? true : false ? 1.5
+					: false ? 0xA : false ? 0x1.8 : false ? "seven" : false ? 8 : false`,
+				expectedValue{kind: ValueBoolean, bool: false}),
+			Entry("nine levels", `variant[string, int, boolean, float, hex_int, hex_float]`,
+				`false ? "one" : false ? 1 : false ? true : false ? 1.5
+					: false ? 0xA : false ? 0x1.8 : false ? "seven"
+					: false ? 8 : false ? false : 10.5`,
+				expectedValue{kind: ValueFloat, float: 10.5}),
+			Entry("ten levels", `variant[string, int, boolean, float, hex_int, hex_float]`,
+				`false ? "one" : false ? 1 : false ? true : false ? 1.5
+					: false ? 0xA : false ? 0x1.8 : false ? "seven"
+					: false ? 8 : false ? false : false ? 10.5 : 0xB`,
+				expectedValue{kind: ValueHexInt, string: "0xB"}),
 		)
 
 		DescribeTable("supports schema and record alternatives",
