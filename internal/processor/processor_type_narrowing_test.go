@@ -90,6 +90,51 @@ type SelectedSubset: variant[%s];
 |===| { %s }`, strings.Join(allTypes, ", "), strings.Join(broadSubset, ", "), strings.Join(selectedSubset, ", "), strings.Join(declarations, "\n"), strings.Join(outputs, ", "))
 	}
 
+	buildPairedVariantFixture := func(memberCount int) string {
+		memberIndexes := lo.Range(memberCount)
+		pairIndexes := lo.Range(memberCount / 2)
+		schemas := lo.Map(memberIndexes, func(index int, _ int) string {
+			return fmt.Sprintf("schema Member%d: { field%d: { value: string } };", index, index)
+		})
+		memberTypes := lo.Map(memberIndexes, func(index int, _ int) string {
+			return fmt.Sprintf("Member%d", index)
+		})
+		pairTypes := lo.Map(pairIndexes, func(index int, _ int) string {
+			return fmt.Sprintf("type Pair%d: variant[Member%d, Member%d];", index, index*2, index*2+1)
+		})
+		declarations := lo.Map(memberIndexes, func(memberIndex int, _ int) string {
+			variableName := fmt.Sprintf("value%d", memberIndex)
+			branches := lo.Map(pairIndexes, func(pairIndex int, _ int) string {
+				return fmt.Sprintf(`%s is Pair%d ? "pair%d" :`, variableName, pairIndex, pairIndex)
+			})
+			fallback := `"unmatched"`
+			if memberCount%2 == 1 {
+				fallback = fmt.Sprintf("%s.field%d.value", variableName, memberCount-1)
+			}
+			branches = append(branches, fallback)
+
+			return fmt.Sprintf(`PairedValue %s = { field%d: { value: "member%d" } };
+string result%d = %s;`, variableName, memberIndex, memberIndex, memberIndex, strings.Join(branches, "\n  "))
+		})
+		outputs := lo.Map(memberIndexes, func(index int, _ int) string {
+			return fmt.Sprintf("result%d: result%d", index, index)
+		})
+
+		return fmt.Sprintf(`|===|
+%s
+type PairedValue: variant[%s];
+%s
+%s
+|===| { %s }`, strings.Join(schemas, "\n"), strings.Join(memberTypes, ", "), strings.Join(pairTypes, "\n"), strings.Join(declarations, "\n"), strings.Join(outputs, ", "))
+	}
+
+	buildVariantSizeEntries := func(start int) []any {
+		return lo.Map(lo.Range(10), func(index int, _ int) any {
+			memberCount := start + index*2
+			return Entry(fmt.Sprintf("%d-member source variant", memberCount), memberCount)
+		})
+	}
+
 	buildNestedArrayFixture := func(depth int) string {
 		typeReference := strings.Repeat("array<", depth) + "string" + strings.Repeat(">", depth)
 		initializer := strings.Repeat("[", depth) + `"item"` + strings.Repeat("]", depth)
@@ -163,6 +208,25 @@ string fallback = stringValue is NestedRecord ? "matched" : stringValue;
 		Entry("4-member source variant", 4),
 		Entry("3-member source variant", 3),
 	)
+
+	assertPairedVariantNarrowing := func(memberCount int) {
+		result, err := New().Process(buildPairedVariantFixture(memberCount))
+
+		tAssert.NoError(err)
+		lo.ForEach(lo.Range(memberCount), func(memberIndex int, _ int) {
+			expected := fmt.Sprintf("pair%d", memberIndex/2)
+			if memberCount%2 == 1 && memberIndex == memberCount-1 {
+				expected = fmt.Sprintf("member%d", memberIndex)
+			}
+			tAssert.Equal(expected, result.Output[fmt.Sprintf("result%d", memberIndex)].String)
+		})
+	}
+
+	evenVariantTests := append([]any{assertPairedVariantNarrowing}, buildVariantSizeEntries(4)...)
+	DescribeTable("exhausts even source variants with distinct two-member targets", evenVariantTests...)
+
+	oddVariantTests := append([]any{assertPairedVariantNarrowing}, buildVariantSizeEntries(5)...)
+	DescribeTable("leaves one concrete type after narrowing odd source variants", oddVariantTests...)
 
 	arrayTests := append([]any{
 		func(depth int) {
