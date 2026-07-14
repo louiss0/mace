@@ -72,6 +72,11 @@ string inlineSource =
   inlineConfig is SecretConfig ? inlineConfig.secret :
   inlineConfig is InlineConfig ? inlineConfig.content :
   "unknown";
+
+  LocalConfig trueLocalConfig = {path: "", };
+
+  //string parse_file = trueLocalConfig.path ;
+
 |===|
 
 [output = data]
@@ -81,4 +86,5 @@ string inlineSource =
   environment: environmentSource,
   secret: secretSource,
   inline: inlineSource,
+  foo: trueLocalConfig.path,
 }
