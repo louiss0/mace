@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
+	"github.com/samber/lo"
 )
 
 var _ = Describe("Variant type narrowing", func() {
@@ -30,30 +31,24 @@ var _ = Describe("Variant type narrowing", func() {
 
 	buildNestedTernaryFixture := func(arity int) string {
 		activeMembers := members[:arity]
-		typeReferences := make([]string, 0, arity)
-		declarations := make([]string, 0, arity*2)
-		outputs := make([]string, 0, arity)
-
-		for _, member := range activeMembers {
-			typeReferences = append(typeReferences, member.typeReference)
-		}
-
-		for index, member := range activeMembers {
+		typeReferences := lo.Map(activeMembers, func(member nestedTernaryMember, _ int) string {
+			return member.typeReference
+		})
+		declarations := lo.Map(activeMembers, func(member nestedTernaryMember, index int) string {
 			variableName := fmt.Sprintf("value%d", index)
 			resultName := fmt.Sprintf("result%d", index)
-			branches := make([]string, 0, arity+1)
-			for _, candidate := range activeMembers {
+			branches := lo.Map(activeMembers, func(candidate nestedTernaryMember, _ int) string {
 				branch := strings.ReplaceAll(candidate.branch, "$value", variableName)
-				branches = append(branches, fmt.Sprintf("%s is %s ? %s :", variableName, candidate.typeReference, branch))
-			}
+				return fmt.Sprintf("%s is %s ? %s :", variableName, candidate.typeReference, branch)
+			})
 			branches = append(branches, `"unmatched"`)
 
-			declarations = append(declarations,
-				fmt.Sprintf("NestedValue %s = %s;", variableName, member.initializer),
-				fmt.Sprintf("string %s = %s;", resultName, strings.Join(branches, "\n  ")),
-			)
-			outputs = append(outputs, fmt.Sprintf("%s: %s", resultName, resultName))
-		}
+			return fmt.Sprintf("NestedValue %s = %s;\nstring %s = %s;", variableName, member.initializer, resultName, strings.Join(branches, "\n  "))
+		})
+		outputs := lo.Map(activeMembers, func(_ nestedTernaryMember, index int) string {
+			resultName := fmt.Sprintf("result%d", index)
+			return fmt.Sprintf("%s: %s", resultName, resultName)
+		})
 
 		return fmt.Sprintf(`|===|
 schema AlphaConfig: { details: { source: string } };
@@ -64,14 +59,54 @@ type NestedValue: variant[%s];
 |===| { %s }`, strings.Join(typeReferences, ", "), strings.Join(declarations, "\n"), strings.Join(outputs, ", "))
 	}
 
+	buildDepthEntries := func(start int, count int) []any {
+		return lo.Map(lo.RangeFrom(start, count), func(depth int, _ int) any {
+			return Entry(fmt.Sprintf("%d levels", depth), depth)
+		})
+	}
+
+	buildNestedArrayFixture := func(depth int) string {
+		typeReference := strings.Repeat("array<", depth) + "string" + strings.Repeat(">", depth)
+		initializer := strings.Repeat("[", depth) + `"item"` + strings.Repeat("]", depth)
+
+		return fmt.Sprintf(`|===|
+type NestedArray: variant[%s, string];
+NestedArray arrayValue = %s;
+NestedArray stringValue = "fallback";
+string matched = arrayValue is %s ? "matched" : arrayValue;
+string fallback = stringValue is %s ? "matched" : stringValue;
+|===| { matched: matched, fallback: fallback }`, typeReference, initializer, typeReference, typeReference)
+	}
+
+	buildNestedRecordFixture := func(depth int) string {
+		fieldNames := lo.Map(lo.Range(depth-1), func(index int, _ int) string {
+			return fmt.Sprintf("level%d", index+1)
+		})
+		nestedFields := strings.Join(lo.Map(fieldNames, func(name string, _ int) string {
+			return name + ": { "
+		}), "")
+		schemaFields := nestedFields + "value: string" + strings.Repeat(" }", len(fieldNames))
+		initializer := "{ " + nestedFields + `value: "record"` + strings.Repeat(" }", len(fieldNames)) + " }"
+		valuePath := "recordValue." + strings.Join(lo.Concat(fieldNames, []string{"value"}), ".")
+
+		return fmt.Sprintf(`|===|
+schema NestedRecord: { %s };
+type NestedRecordValue: variant[NestedRecord, string];
+NestedRecordValue recordValue = %s;
+NestedRecordValue stringValue = "fallback";
+string matched = recordValue is NestedRecord ? %s : "unmatched";
+string fallback = stringValue is NestedRecord ? "matched" : stringValue;
+|===| { matched: matched, fallback: fallback }`, schemaFields, initializer, valuePath)
+	}
+
 	DescribeTable("narrows every runtime value kind through nested ternaries",
 		func(arity int) {
 			result, err := New().Process(buildNestedTernaryFixture(arity))
 
 			tAssert.NoError(err)
-			for index, member := range members[:arity] {
+			lo.ForEach(members[:arity], func(member nestedTernaryMember, index int) {
 				tAssert.Equal(member.result, result.Output[fmt.Sprintf("result%d", index)].String)
-			}
+			})
 		},
 		Entry("2 nested ternaries", 2),
 		Entry("3 nested ternaries", 3),
@@ -83,6 +118,28 @@ type NestedValue: variant[%s];
 		Entry("9 nested ternaries", 9),
 		Entry("10 nested ternaries", 10),
 	)
+
+	arrayTests := append([]any{
+		func(depth int) {
+			result, err := New().Process(buildNestedArrayFixture(depth))
+
+			tAssert.NoError(err)
+			tAssert.Equal("matched", result.Output["matched"].String)
+			tAssert.Equal("fallback", result.Output["fallback"].String)
+		},
+	}, buildDepthEntries(1, 10)...)
+	DescribeTable("narrows variants containing arrays nested up to ten levels", arrayTests...)
+
+	recordTests := append([]any{
+		func(depth int) {
+			result, err := New().Process(buildNestedRecordFixture(depth))
+
+			tAssert.NoError(err)
+			tAssert.Equal("record", result.Output["matched"].String)
+			tAssert.Equal("fallback", result.Output["fallback"].String)
+		},
+	}, buildDepthEntries(2, 9)...)
+	DescribeTable("narrows variants containing records nested up to ten levels", recordTests...)
 
 	It("processes all five schema members in the narrowing fixture", func() {
 		result, err := New().ProcessFile("../../fixtures/processor/type_narrowing/five_configs.mace")
