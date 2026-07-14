@@ -1,10 +1,89 @@
 package processor
 
 import (
+	"fmt"
+	"strings"
+
 	. "github.com/onsi/ginkgo/v2"
 )
 
 var _ = Describe("Variant type narrowing", func() {
+	type nestedTernaryMember struct {
+		typeReference string
+		initializer   string
+		result        string
+		branch        string
+	}
+
+	members := []nestedTernaryMember{
+		{typeReference: "string", initializer: `"text"`, result: "string", branch: `"string"`},
+		{typeReference: "int", initializer: "42", result: "int", branch: `"int"`},
+		{typeReference: "float", initializer: "3.5", result: "float", branch: `"float"`},
+		{typeReference: "boolean", initializer: "true", result: "boolean", branch: `"boolean"`},
+		{typeReference: "hex_int", initializer: "0xA", result: "hex_int", branch: `"hex_int"`},
+		{typeReference: "hex_float", initializer: "0x1.8", result: "hex_float", branch: `"hex_float"`},
+		{typeReference: "array<string>", initializer: `["item"]`, result: "array", branch: `"array"`},
+		{typeReference: "AlphaConfig", initializer: `{ details: { source: "alpha" } }`, result: "alpha", branch: "$value.details.source"},
+		{typeReference: "BetaConfig", initializer: `{ metadata: { source: "beta" } }`, result: "beta", branch: "$value.metadata.source"},
+		{typeReference: "GammaConfig", initializer: `{ payload: { source: "gamma" } }`, result: "gamma", branch: "$value.payload.source"},
+	}
+
+	buildNestedTernaryFixture := func(arity int) string {
+		activeMembers := members[:arity]
+		typeReferences := make([]string, 0, arity)
+		declarations := make([]string, 0, arity*2)
+		outputs := make([]string, 0, arity)
+
+		for _, member := range activeMembers {
+			typeReferences = append(typeReferences, member.typeReference)
+		}
+
+		for index, member := range activeMembers {
+			variableName := fmt.Sprintf("value%d", index)
+			resultName := fmt.Sprintf("result%d", index)
+			branches := make([]string, 0, arity+1)
+			for _, candidate := range activeMembers {
+				branch := strings.ReplaceAll(candidate.branch, "$value", variableName)
+				branches = append(branches, fmt.Sprintf("%s is %s ? %s :", variableName, candidate.typeReference, branch))
+			}
+			branches = append(branches, `"unmatched"`)
+
+			declarations = append(declarations,
+				fmt.Sprintf("NestedValue %s = %s;", variableName, member.initializer),
+				fmt.Sprintf("string %s = %s;", resultName, strings.Join(branches, "\n  ")),
+			)
+			outputs = append(outputs, fmt.Sprintf("%s: %s", resultName, resultName))
+		}
+
+		return fmt.Sprintf(`|===|
+schema AlphaConfig: { details: { source: string } };
+schema BetaConfig: { metadata: { source: string } };
+schema GammaConfig: { payload: { source: string } };
+type NestedValue: variant[%s];
+%s
+|===| { %s }`, strings.Join(typeReferences, ", "), strings.Join(declarations, "\n"), strings.Join(outputs, ", "))
+	}
+
+	DescribeTable("narrows every runtime value kind through nested ternaries",
+		func(arity int) {
+			result, err := New().Process(buildNestedTernaryFixture(arity))
+
+			tAssert.NoError(err)
+			for index, member := range members[:arity] {
+				tAssert.Equal(member.result, result.Output[fmt.Sprintf("result%d", index)].String)
+			}
+		},
+		Entry("2 nested ternaries", 2),
+		Entry("3 nested ternaries", 3),
+		Entry("4 nested ternaries", 4),
+		Entry("5 nested ternaries", 5),
+		Entry("6 nested ternaries", 6),
+		Entry("7 nested ternaries", 7),
+		Entry("8 nested ternaries", 8),
+		Entry("9 nested ternaries", 9),
+		Entry("10 nested ternaries", 10),
+	)
+
 	It("processes all five schema members in the narrowing fixture", func() {
 		result, err := New().ProcessFile("../../fixtures/processor/type_narrowing/five_configs.mace")
 
