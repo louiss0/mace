@@ -3268,7 +3268,13 @@ func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *process
 			case ast.SchemaDeclaration:
 				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindStruct, symbolOriginLocal, fmt.Sprintf("schema %s: %s;", declaration.Name, recordTypeDetail(declaration.Type)), declarationDocumentation(file, declaration.Name)), true
 			case ast.VariableDeclaration:
-				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindVariable, symbolOriginLocal, variableDeclarationDetail(declaration), declarationDocumentation(file, declaration.Name)), true
+				detail := variableDeclarationDetail(declaration)
+				if result != nil {
+					if value, ok := result.Variables[declaration.Name]; ok && !expressionContainsEmptyLiteral(declaration.Value) {
+						detail = variableDeclarationDetailWithValue(declaration, value)
+					}
+				}
+				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindVariable, symbolOriginLocal, detail, declarationDocumentation(file, declaration.Name)), true
 			case ast.DocDeclaration:
 				return semanticSymbol{}, false
 			}
@@ -3797,6 +3803,14 @@ func variableDeclarationDetail(declaration ast.VariableDeclaration) string {
 	}
 
 	return detail + " = " + expressionSummary(declaration.Value)
+}
+
+func variableDeclarationDetailWithValue(declaration ast.VariableDeclaration, value processor.Value) string {
+	detail := fmt.Sprintf("%s %s", typeReferenceDetail(declaration.Type), declaration.Name)
+	if declaration.Nullable {
+		detail = "nullable " + detail
+	}
+	return detail + " = " + summarizeValue(value)
 }
 
 func symbolHasRange(symbol semanticSymbol) bool {

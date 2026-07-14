@@ -27,9 +27,10 @@ type Processor struct {
 }
 
 type Result struct {
-	File   ast.File
-	Output map[string]Value
-	Schema map[SchemaField]SchemaType
+	File      ast.File
+	Output    map[string]Value
+	Schema    map[SchemaField]SchemaType
+	Variables map[string]Value
 }
 
 type ScriptResult struct {
@@ -340,7 +341,7 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 		}
 		schema, _ := evaluateSchemaOutput(outputBlock, outputContext.types)
 
-		return Result{File: file, Output: map[string]Value{}, Schema: schema}, nil
+		return Result{File: file, Output: map[string]Value{}, Schema: schema, Variables: outputContext.environment.Values()}, nil
 	}
 
 	if err := p.applyParsedOutputInput(outputBlock, &outputContext); err != nil {
@@ -369,7 +370,7 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 		}
 	}
 
-	return Result{File: file, Output: output, Schema: map[SchemaField]SchemaType{}}, nil
+	return Result{File: file, Output: output, Schema: map[SchemaField]SchemaType{}, Variables: outputContext.environment.Values()}, nil
 }
 
 func validateSchemaOutputScriptVariables(file ast.File) error {

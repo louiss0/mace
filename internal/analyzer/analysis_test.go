@@ -435,6 +435,30 @@ string greeting = "hello";
 		tAssert.Contains(content.Value, "{ name: string }")
 	})
 
+	It("renders evaluated interpolated values in variable hovers", func() {
+		text := `|===|
+string plain = "World";
+string greeting = "Hello $(plain)";
+|===|
+[output = 'data']
+{
+  greeting: greeting,
+}`
+		snapshot := analyzeDocument(text)
+		hover := Hover(text, snapshot, protocol.Position{Line: 2, Character: 8})
+		tAssert.NotNil(hover)
+		if hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, `string greeting = "Hello World"`)
+			tAssert.NotContains(content.Value, `$(plain)`)
+		}
+	})
+
 	It("renders record map types in schema hovers", func() {
 		text := `|===|
 schema User: {
