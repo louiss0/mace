@@ -21,7 +21,7 @@
   }, {
     名前: "sidecar",
     imagen: "mace/log_shipper:1.0",
-    puertos: [],
+    puertos: [8081],
   }],
   策略: {
     tipo: "rolling",

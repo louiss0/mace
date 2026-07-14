@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/louiss0/mace/internal/lexer"
@@ -290,26 +291,111 @@ User user = { name, };
 { user: user, }`, "null can only be assigned to nullable variables and optional schema fields"),
 	)
 
-	It("requires a schema for conditional output with an empty collection", func() {
-		_, err := New().Process(`[output = data]
+	DescribeTable("requires context for empty collection output literals",
+		func(expression string) {
+			_, err := New().Process(fmt.Sprintf(`[output = data]
 {
-  value: false ? "configured" : [],
-}`)
-		tAssert.Error(err)
-		tAssert.ErrorContains(err, "requires an output schema")
-	})
+  value: %s,
+}`, expression))
+			tAssert.Error(err)
+			tAssert.ErrorContains(err, "requires an output schema")
+		},
+		Entry("empty array", `[]`),
+		Entry("empty record", `{}`),
+		Entry("conditional empty array", `false ? "configured" : []`),
+		Entry("conditional empty record", `false ? "configured" : {}`),
+		Entry("two empty array branches", `true ? [] : []`),
+		Entry("two empty record branches", `true ? {} : {}`),
+		Entry("nested empty array", `[[1], []]`),
+		Entry("nested empty record", `{ nested: {}, }`),
+	)
 
-	It("uses schema context for conditional output with an empty collection", func() {
-		result, err := New().Process(`|===|
-schema Result: { value: variant[string, array<string>], };
+	DescribeTable("requires an output schema when a typed collection branch has an empty fallback",
+		func(input string) {
+			_, err := New().Process(input)
+			tAssert.Error(err)
+			tAssert.ErrorContains(err, "requires an output schema")
+		},
+		Entry("record map", `|===|
+boolean configured = true;
+record<string> records = { primary: "active", };
+|===|
+[output = data]
+{
+  value: configured ? records : {},
+}`),
+		Entry("array", `|===|
+boolean configured = true;
+array<string> values = ["configured"];
+|===|
+[output = data]
+{
+  value: configured ? values : [],
+}`),
+	)
+
+	DescribeTable("uses schema context for conditional output with an empty collection",
+		func(fieldType string, expression string, expected expectedValue) {
+			result, err := New().Process(fmt.Sprintf(`|===|
+schema Result: { value: %s, };
 |===|
 [output = data, schema = Result]
 {
-  value: false ? "configured" : [],
-}`)
-		tAssert.NoError(err)
-		assertExpectedValue(requireOutputValue(result, "value"), expectedValue{kind: ValueArray, array: []expectedValue{}})
-	})
+  value: %s,
+}`, fieldType, expression))
+			tAssert.NoError(err)
+			assertExpectedValue(requireOutputValue(result, "value"), expected)
+		},
+		Entry(
+			"variant with an empty array branch",
+			`variant[string, array<string>]`,
+			`false ? "configured" : []`,
+			expectedValue{kind: ValueArray, array: []expectedValue{}},
+		),
+		Entry(
+			"array with an empty array branch",
+			`array<string>`,
+			`true ? ["configured"] : []`,
+			expectedValue{kind: ValueArray, array: []expectedValue{{kind: ValueString, string: "configured"}}},
+		),
+		Entry(
+			"record with an empty record branch",
+			`{ name?: string, }`,
+			`false ? { name: "Ada", } : {}`,
+			expectedValue{kind: ValueRecord, record: map[string]expectedValue{}},
+		),
+	)
+
+	DescribeTable("uses schema_file context for conditional output with an empty collection",
+		func(fieldType string, expression string, expected expectedValue) {
+			workspace, err := os.MkdirTemp("", "mace-output-empty-schema-file-*")
+			tAssert.NoError(err)
+			defer func() { _ = os.RemoveAll(workspace) }()
+
+			writeFixtureFile(workspace, "schema.mace", fmt.Sprintf(`[output = schema]
+{
+  value: %s,
+}`, fieldType))
+			result, err := New().ProcessInDir(fmt.Sprintf(`[output = data, schema_file = "./schema.mace"]
+{
+  value: %s,
+}`, expression), workspace)
+			tAssert.NoError(err)
+			assertExpectedValue(requireOutputValue(result, "value"), expected)
+		},
+		Entry(
+			"array with an empty array branch",
+			`array<string>`,
+			`false ? ["configured"] : []`,
+			expectedValue{kind: ValueArray, array: []expectedValue{}},
+		),
+		Entry(
+			"record with an empty record branch",
+			`{ name?: string, }`,
+			`false ? { name: "Ada", } : {}`,
+			expectedValue{kind: ValueRecord, record: map[string]expectedValue{}},
+		),
+	)
 })
 
 var _ = Describe("Data output helpers", func() {

@@ -185,7 +185,9 @@ In data mode, `schema` selects the schema used to validate the produced output,
 and `parse` selects the schema used to validate host runtime input. These roles
 are distinct. `schema` and `schema_file` may be combined; `parse` and
 `parse_file` may be combined. A file directive contributes declarations from
-its file, while the corresponding named directive selects the active schema.
+its file. Without `schema`, a `schema_file` directive uses the referenced
+file's schema output body as the active output shape; when both directives are
+present, `schema` selects the named schema.
 
 In schema mode the same `{ ... }` output body is interpreted as schema fields:
 its right sides are type references and `?` is permitted. In data mode its right
@@ -213,9 +215,11 @@ returns `hex_float`; `~` accepts only decimal `int`.
 
 Arrays are homogeneous unless their element type is a permitting `variant`.
 `record&lt;T&gt;` describes a record whose values conform to `T`. `[]` requires an expected array type because it has no inferable element type.
-`{}` is an empty record and is valid only for an empty or all-optional schema,
-a compatible inline record type, or an unconstrained data-output context. Empty
-schemas are valid.
+`{}` is an empty record and requires an expected empty, all-optional, compatible
+inline, or otherwise known record type. Every empty collection literal in a
+data output requires an output shape supplied through `schema` or `schema_file`,
+even when another conditional branch has a known collection type. Empty schemas
+are valid.
 
 Conditional branch types are inferred recursively. Branches of the same type
 produce that type. Different branch types produce a flattened, deduplicated
@@ -225,9 +229,10 @@ and a populated `record&lt;T&gt;` remain distinct variant members.
 
 When a conditional combines an empty array or empty record with a different
 branch type, the empty collection has no inferable member type. In a data output,
-that conditional MUST be validated by an output schema. In a variable
-initializer, the variable declaration MUST use an explicit `variant[...]` type
-that supplies the collection type. For example:
+that conditional MUST be validated by an output shape supplied through the
+`schema` or `schema_file` directive. In a variable initializer, the variable
+declaration MUST use an explicit type that supplies the collection type. For
+example:
 
 ```mace
 |===|
@@ -240,8 +245,9 @@ schema Result: { value: variant[string, array<string>], };
 ```
 
 An untyped data-output conditional such as `{ value: enabled ? "configured" : [], }`
-is a static error. A conditional between a known record and `{}` retains the
-known record type and does not require a variant.
+is a static error. Direct and nested empty collections in schema-less data
+outputs are also static errors, including conditionals between a known
+`record&lt;T&gt;` value and `{}`.
 
 A `record_type` is valid wherever a type reference is accepted, including type
 aliases, arrays, schema fields, variants, and fusions. Schemas are closed:

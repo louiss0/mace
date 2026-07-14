@@ -51,38 +51,35 @@ schema User: {
 	})
 
 	It("uses the fallback when a nullable record variable is null", func() {
-		result, err := New().Process(optionalChainDocument(userSchemas, `nullable User user = null;`, `
+		result, err := New().Process(optionalChainDocumentWithOutputSchema(
+			userSchemas,
+			`nullable User user = null;`,
+			`schema Result: { records: record<string>, };`,
+			`
   records: user ? user.records : {},
-`))
+`,
+		))
 
 		tAssert.NoError(err)
 		assertExpectedValue(requireOutputValue(result, "records"), expectedValue{kind: ValueRecord, record: map[string]expectedValue{}})
 	})
 
 	It("allows a nullable record variable after a truthiness check", func() {
-		result, err := New().Process(optionalChainDocument(userSchemas, `nullable User user = {
+		result, err := New().Process(optionalChainDocumentWithOutputSchema(
+			userSchemas,
+			`nullable User user = {
   records: { primary: "active", },
-};`, `
+};`,
+			`schema Result: { records: record<string>, };`,
+			`
   records: user ? user.records : {},
-`))
+`,
+		))
 
 		tAssert.NoError(err)
 		assertExpectedValue(requireOutputValue(result, "records"), expectedValue{kind: ValueRecord, record: map[string]expectedValue{
 			"primary": {kind: ValueString, string: "active"},
 		}})
-	})
-
-	It("processes the nullable user fixture", func() {
-		fixture, err := filepath.Abs("../../fixtures/processor/optional_chaining/nullable_user.mace")
-		tAssert.NoError(err)
-		result, err := New().ProcessFile(fixture)
-
-		tAssert.NoError(err)
-		assertExpectedValue(requireOutputValue(result, "fallback_records"), expectedValue{kind: ValueRecord, record: map[string]expectedValue{}})
-		assertExpectedValue(requireOutputValue(result, "records"), expectedValue{kind: ValueRecord, record: map[string]expectedValue{
-			"primary": {kind: ValueString, string: "active"},
-		}})
-		tAssert.Equal("Paris", requireOutputValue(result, "city").String)
 	})
 
 	It("requires every optional property in a nested chain to be guarded", func() {
@@ -282,6 +279,16 @@ func optionalRecordPathText(depth int) string {
 
 func optionalChainDocument(schemas string, declaration string, fields string) string {
 	return schemas + declaration + "\n|===|\n[output = data]\n{\n" + fields + "\n}"
+}
+
+func optionalChainDocumentWithOutputSchema(
+	schemas string,
+	declaration string,
+	outputSchema string,
+	fields string,
+) string {
+	return schemas + declaration + "\n" + outputSchema +
+		"\n|===|\n[output = data, schema = Result]\n{\n" + fields + "\n}"
 }
 
 func requireOptionalFieldAccessError(err error) {

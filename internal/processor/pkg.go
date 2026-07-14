@@ -1922,14 +1922,8 @@ func hasSchemaFile(directives []ast.OutputDirective) bool {
 
 func validateDataOutputFields(fields []ast.OutputField, hasSchema bool, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
 	for _, field := range fields {
-		if !hasSchema && conditionalContainsEmptyCollection(field.Value) {
-			fieldType, err := inferExpressionType(field.Value, variables, symbols, types, schemas, enums)
-			if err != nil {
-				return err
-			}
-			if len(fieldType.members) > 0 {
-				return validationErrorf("ambiguous conditional with an empty collection requires an output schema")
-			}
+		if !hasSchema && expressionContainsEmptyCollection(field.Value) {
+			return validationErrorf("empty collection output requires an output schema")
 		}
 		if err := validateDataOutputExpression(field.Value, symbols); err != nil {
 			return err
@@ -1948,13 +1942,37 @@ func conditionalRequiresCollectionContext(expression ast.Expression, expressionT
 
 func conditionalContainsEmptyCollection(expression ast.Expression) bool {
 	conditional, ok := expression.(ast.ConditionalExpression)
-	if !ok {
-		return false
-	}
-	if isEmptyCollectionExpression(conditional.Then) || isEmptyCollectionExpression(conditional.Else) {
+	return ok && (expressionContainsEmptyCollection(conditional.Then) ||
+		expressionContainsEmptyCollection(conditional.Else))
+}
+
+func expressionContainsEmptyCollection(expression ast.Expression) bool {
+	if isEmptyCollectionExpression(expression) {
 		return true
 	}
-	return conditionalContainsEmptyCollection(conditional.Then) || conditionalContainsEmptyCollection(conditional.Else)
+
+	switch typed := expression.(type) {
+	case ast.ArrayLiteral:
+		return lo.ContainsBy(typed.Elements, expressionContainsEmptyCollection)
+	case ast.RecordLiteral:
+		return lo.ContainsBy(typed.Fields, func(field ast.RecordField) bool {
+			return expressionContainsEmptyCollection(field.Value)
+		})
+	case ast.MemberAccess:
+		return expressionContainsEmptyCollection(typed.Target)
+	case ast.PrefixExpression:
+		return expressionContainsEmptyCollection(typed.Right)
+	case ast.InfixExpression:
+		return expressionContainsEmptyCollection(typed.Left) || expressionContainsEmptyCollection(typed.Right)
+	case ast.TypeTestExpression:
+		return expressionContainsEmptyCollection(typed.Expression)
+	case ast.ConditionalExpression:
+		return expressionContainsEmptyCollection(typed.Condition) ||
+			expressionContainsEmptyCollection(typed.Then) ||
+			expressionContainsEmptyCollection(typed.Else)
+	default:
+		return false
+	}
 }
 
 func isEmptyCollectionExpression(expression ast.Expression) bool {
@@ -2108,13 +2126,6 @@ func validateOutputSchema(schemaName string, items []ast.OutputField, variables 
 				return validationErrorf("unknown identifier %q", item.Name)
 			}
 		}
-		actualType, err := inferExpressionType(item.Value, variables, symbols, types, schemas, enums)
-		if err != nil {
-			return err
-		}
-		if err := ensureAssignable(expectedType, actualType); err != nil {
-			return err
-		}
 		if err := validateExpressionAgainstType(item.Value, expectedType, variables, symbols, types, schemas, enums); err != nil {
 			return err
 		}
@@ -2169,6 +2180,12 @@ func validateExpressionAgainstType(expression ast.Expression, expectedType value
 			}
 		case ast.ConditionalExpression:
 			return validateConditionalAgainstType(typed, expectedType, variables, symbols, types, schemas, enums)
+		default:
+			actualType, err := inferExpressionType(expression, variables, symbols, types, schemas, enums)
+			if err != nil {
+				return err
+			}
+			return ensureAssignable(expectedType, actualType)
 		}
 	case ValueRecord:
 		if expectedType.element != nil {
@@ -2181,6 +2198,12 @@ func validateExpressionAgainstType(expression ast.Expression, expectedType value
 				}
 			case ast.ConditionalExpression:
 				return validateConditionalAgainstType(typed, expectedType, variables, symbols, types, schemas, enums)
+			default:
+				actualType, err := inferExpressionType(expression, variables, symbols, types, schemas, enums)
+				if err != nil {
+					return err
+				}
+				return ensureAssignable(expectedType, actualType)
 			}
 			return nil
 		}
@@ -2195,6 +2218,12 @@ func validateExpressionAgainstType(expression ast.Expression, expectedType value
 			return nil
 		case ast.ConditionalExpression:
 			return validateConditionalAgainstType(typed, expectedType, variables, symbols, types, schemas, enums)
+		default:
+			actualType, err := inferExpressionType(expression, variables, symbols, types, schemas, enums)
+			if err != nil {
+				return err
+			}
+			return ensureAssignable(expectedType, actualType)
 		}
 	}
 	return nil
