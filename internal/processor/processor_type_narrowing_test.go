@@ -65,6 +65,31 @@ type NestedValue: variant[%s];
 		})
 	}
 
+	buildVariantSubsetFixture := func(arity int) string {
+		activeMembers := members[:arity]
+		allTypes := lo.Map(activeMembers, func(member nestedTernaryMember, _ int) string {
+			return member.typeReference
+		})
+		broadSubset := allTypes[:arity-1]
+		selectedSubset := []string{allTypes[0], allTypes[arity-1]}
+		declarations := lo.Map(activeMembers, func(member nestedTernaryMember, index int) string {
+			return fmt.Sprintf(`AllValue value%d = %s;
+string result%d = value%d is BroadSubset
+  ? value%d is SelectedSubset ? "selected" : "broad"
+  : "outside";`, index, member.initializer, index, index, index)
+		})
+		outputs := lo.Map(activeMembers, func(_ nestedTernaryMember, index int) string {
+			return fmt.Sprintf("result%d: result%d", index, index)
+		})
+
+		return fmt.Sprintf(`|===|
+type AllValue: variant[%s];
+type BroadSubset: variant[%s];
+type SelectedSubset: variant[%s];
+%s
+|===| { %s }`, strings.Join(allTypes, ", "), strings.Join(broadSubset, ", "), strings.Join(selectedSubset, ", "), strings.Join(declarations, "\n"), strings.Join(outputs, ", "))
+	}
+
 	buildNestedArrayFixture := func(depth int) string {
 		typeReference := strings.Repeat("array<", depth) + "string" + strings.Repeat(">", depth)
 		initializer := strings.Repeat("[", depth) + `"item"` + strings.Repeat("]", depth)
@@ -117,6 +142,26 @@ string fallback = stringValue is NestedRecord ? "matched" : stringValue;
 		Entry("8 nested ternaries", 8),
 		Entry("9 nested ternaries", 9),
 		Entry("10 nested ternaries", 10),
+	)
+
+	DescribeTable("narrows a variant with nested variant subset tests",
+		func(arity int) {
+			result, err := New().Process(buildVariantSubsetFixture(arity))
+
+			tAssert.NoError(err)
+			lo.ForEach(members[:arity], func(_ nestedTernaryMember, index int) {
+				expected := "broad"
+				if index == 0 {
+					expected = "selected"
+				} else if index == arity-1 {
+					expected = "outside"
+				}
+				tAssert.Equal(expected, result.Output[fmt.Sprintf("result%d", index)].String)
+			})
+		},
+		Entry("5-member source variant", 5),
+		Entry("4-member source variant", 4),
+		Entry("3-member source variant", 3),
 	)
 
 	arrayTests := append([]any{
