@@ -14,7 +14,7 @@ schema Secret: {
 
 |======================================================|
 
-[output = schema]
+[output = "schema"]
 {
   Name: Name,
   User: User,

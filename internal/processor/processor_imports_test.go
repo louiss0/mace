@@ -23,12 +23,12 @@ from "fixtures/processor/imports/base.mace" import Name, User;
 Name name = "Ada";
 User result = { name: name, age: 30, };
 |===|
-[output = data]
+[output = "data"]
 { result: result, }`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{"name": {kind: ValueString, string: "Ada"}, "age": {kind: ValueInt, int64: 30}}}),
 		Entry("imports values surfaced through output", `|===|
 from "fixtures/processor/imports/values.mace" import count;
 |===|
-[output = data]
+[output = "data"]
 { result: count + 2, }`, expectedValue{kind: ValueInt, int64: 5}),
 	)
 
@@ -37,7 +37,7 @@ from "fixtures/processor/imports/values.mace" import count;
 		_, err := processor.ProcessInDir(`|===|
 from "fixtures/processor/imports/base.mace" import Internal;
 |===|
-[output = data] {}`, "../..")
+[output = "data"] {}`, "../..")
 		tAssert.Error(err)
 		tAssert.ErrorContains(err, "imported identifier")
 	})
@@ -46,7 +46,7 @@ from "fixtures/processor/imports/base.mace" import Internal;
 		unguardedDocument := `|===|
 from "fixtures/processor/imports/optional_profile.mace" import profile;
 |===|
-[output = data]
+[output = "data"]
 { city: profile.city, }`
 		_, err := New().ProcessInDir(unguardedDocument, "../..")
 		requireOptionalFieldAccessError(err)
@@ -54,7 +54,7 @@ from "fixtures/processor/imports/optional_profile.mace" import profile;
 		optionalChainDocument := `|===|
 from "fixtures/processor/imports/optional_profile.mace" import profile;
 |===|
-[output = data]
+[output = "data"]
 { city?: profile?.city, }`
 		_, err = New().ProcessInDir(optionalChainDocument, "../..")
 		requireOptionalFieldAccessError(err)
@@ -62,7 +62,7 @@ from "fixtures/processor/imports/optional_profile.mace" import profile;
 		guardedDocument := `|===|
 from "fixtures/processor/imports/optional_profile.mace" import profile;
 |===|
-[output = data]
+[output = "data"]
 { city: profile ? profile.city : "", }`
 		result, err := New().ProcessInDir(guardedDocument, "../..")
 		tAssert.NoError(err)
@@ -73,7 +73,7 @@ from "fixtures/processor/imports/optional_profile.mace" import profile;
 		document := `|===|
 from "fixtures/processor/imports/unguarded_optional_city.mace" import city;
 |===|
-[output = data]
+[output = "data"]
 { city: city, }`
 
 		_, err := New().ProcessInDir(document, "../..")
@@ -86,7 +86,7 @@ from "fixtures/processor/imports/unguarded_optional_city.mace" import city;
 from "fixtures/processor/imports/base.mace" import User;
 User user = { name: "Ada", age: 30, };
 |===|
-[output = data]
+[output = "data"]
 { profile: user.profile, }`
 		_, err := New().ProcessInDir(unguardedDocument, "../..")
 		requireOptionalFieldAccessError(err)
@@ -95,7 +95,7 @@ User user = { name: "Ada", age: 30, };
 from "fixtures/processor/imports/base.mace" import User;
 User user = { name: "Ada", age: 30, };
 |===|
-[output = data]
+[output = "data"]
 { bio: user?.profile?.bio ?? "unknown", }`
 		result, err := New().ProcessInDir(resolvedDocument, "../..")
 		tAssert.NoError(err)
@@ -110,10 +110,10 @@ User user = { name: "Ada", age: 30, };
 		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			switch request.URL.Path {
 			case "/schema.mace":
-				_, _ = io.WriteString(writer, `[output = schema]
+				_, _ = io.WriteString(writer, `[output = "schema"]
 { Remote: string, }`)
 			case "/nested/schema.mace":
-				_, _ = io.WriteString(writer, `[output = schema]
+				_, _ = io.WriteString(writer, `[output = "schema"]
 { Nested: string, }`)
 			default:
 				writer.WriteHeader(http.StatusNotFound)

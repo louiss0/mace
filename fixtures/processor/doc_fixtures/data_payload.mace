@@ -13,7 +13,7 @@ User user = {
 
 string greeting = "Hello $(user.name)";
 |=========================================|
-[output = data, schema = User]
+[output = "data", schema = User]
 """
 # User Payload
 """

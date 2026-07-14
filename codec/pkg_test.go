@@ -83,7 +83,7 @@ var _ = Describe("OutputMap", func() {
 		result, err := Parse(`|===|
 int age = 27;
 |===|
-[output = data]
+[output = "data"]
 {
   name: "Ada",
   profile: { age: (age), active: true, },
@@ -108,7 +108,7 @@ var _ = Describe("Parse", func() {
 		result, err := ParseWithInjections(`|===|
 schema Runtime: { name: string, enabled: boolean, };
 |===|
-[output = data, parse = Runtime]
+[output = "data", parse = Runtime]
 {
   ok: true,
 }`, map[string]any{
@@ -125,7 +125,7 @@ schema Runtime: { name: string, enabled: boolean, };
 		path := writeCodecTempFile(workspace, "input.mace", `|===|
 schema Runtime: { name: string, };
 |===|
-[output = data, parse = Runtime]
+[output = "data", parse = Runtime]
 {
   ok: true,
 }`)
@@ -145,7 +145,7 @@ schema Runtime: { name: string, };
 		err := UnmarshalWithInjections(`|===|
 schema Runtime: { name: string, };
 |===|
-[output = data, parse = Runtime]
+[output = "data", parse = Runtime]
 {
   ok: true,
 }`, map[string]any{
@@ -155,7 +155,7 @@ schema Runtime: { name: string, };
 		tAssert.Equal("", target.Name)
 	})
 	It("returns schema outputs through the public binding result", func() {
-		result, err := Parse(`[output = schema]
+		result, err := Parse(`[output = "schema"]
 {
   name: string,
   age?: int,
@@ -169,7 +169,7 @@ schema Runtime: { name: string, };
 	})
 
 	It("returns structured record schema outputs", func() {
-		result, err := Parse(`[output = schema]
+		result, err := Parse(`[output = "schema"]
 {
   profile: { name: string, age?: int, },
 }`)
@@ -183,7 +183,7 @@ schema Runtime: { name: string, };
 	})
 
 	It("returns structured variant schema outputs", func() {
-		result, err := Parse(`[output = schema]
+		result, err := Parse(`[output = "schema"]
 {
   value: variant[string, int]
 }`)
@@ -198,7 +198,7 @@ schema Runtime: { name: string, };
 schema Profile: { name: string, };
 schema Audit: { created_at: string, };
 |===|
-[output = schema]
+[output = "schema"]
 {
   value: fusion[Profile, Audit],
 }`)
@@ -216,7 +216,7 @@ schema Audit: { created_at: string, };
 		tAssert.NoError(err)
 
 		path := filepath.Join(tempDir, "config.mace")
-		err = os.WriteFile(path, []byte(`[output = data] { value: 2 + 2, }`), 0o600)
+		err = os.WriteFile(path, []byte(`[output = "data"] { value: 2 + 2, }`), 0o600)
 		tAssert.NoError(err)
 
 		result, err := ParseFile(path)
@@ -230,7 +230,7 @@ hex_int mask = 0xFF;
 hex_float ratio = 0x2.8;
 hex_float whole = 0x2.0;
 |===|
-[output = data]
+[output = "data"]
 {
   mask: (mask),
   ratio: (ratio),
@@ -248,7 +248,7 @@ hex_float whole = 0x2.0;
 		result, err := ParseWithInput(`|===|
 schema Runtime: { env: string, };
 |===|
-[output = data, parse = Runtime]
+[output = "data", parse = Runtime]
 {
   ok: true,
 }`, map[string]any{
@@ -266,7 +266,7 @@ schema User: { name: string, };
 User user = { name: "Ada", };
 string summary = "$(user.name): $(price * quantity)";
 |===|
-[output = data]
+[output = "data"]
 {
   summary: (summary),
 }`)
@@ -1033,7 +1033,7 @@ var _ = Describe("Import", func() {
   }
 }`)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = data]
+		tAssert.Equal(`[output = "data"]
 {
   enabled: true,
   name: "Ada",
@@ -1073,7 +1073,7 @@ profile:
   level: 2
 `)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = data]
+		tAssert.Equal(`[output = "data"]
 {
   enabled: true,
   name: "Ada",
@@ -1092,7 +1092,7 @@ scores = [1, 2, 3]
 level = 2
 `)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = data]
+		tAssert.Equal(`[output = "data"]
 {
   enabled: true,
   name: "Ada",
@@ -1114,7 +1114,7 @@ level = 2
   "nickname": null
 }`)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = data]
+		tAssert.Equal(`[output = "data"]
 {
   name: "Ada"
 }`, source)
@@ -1155,7 +1155,7 @@ level = 2
 
 		source, err := ImportJSONFile(jsonPath)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = schema]
+		tAssert.Equal(`[output = "schema"]
 {
   name: string
 }`, source)
@@ -1212,7 +1212,7 @@ level = 2
 
 			source, err := ImportJSONFile(jsonPath)
 			tAssert.NoError(err)
-			tAssert.Equal(`[output = schema]
+			tAssert.Equal(`[output = "schema"]
 {
   name: string
 }`, source)
@@ -1244,7 +1244,7 @@ level = 2
 
 		source, err := ImportJSONFile(jsonPath)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = schema]
+		tAssert.Equal(`[output = "schema"]
 {
   name: string
 }`, source)
@@ -1335,7 +1335,7 @@ schema Audit: {
   created_at: string
 }
 |===|
-[output = schema]
+[output = "schema"]
 {
   value: variant[Profile, Audit]
 }`),
@@ -1347,7 +1347,7 @@ schema Audit: {
   created_at: string
 }
 |===|
-[output = schema]
+[output = "schema"]
 {
   value: variant[Profile, Audit]
 }`),
@@ -1359,7 +1359,7 @@ schema Audit: {
   created_at: string
 }
 |===|
-[output = schema]
+[output = "schema"]
 {
   value: fusion[Profile, Audit]
 }`),
@@ -1382,27 +1382,27 @@ var _ = Describe("ImportSchema", func() {
 			tAssert.NoError(err)
 			tAssert.Equal(expected, source)
 		},
-		Entry("string-int", `["string", "integer"]`, `[output = schema]
+		Entry("string-int", `["string", "integer"]`, `[output = "schema"]
 {
   value: variant[string, int]
 }`),
-		Entry("string-float", `["string", "number"]`, `[output = schema]
+		Entry("string-float", `["string", "number"]`, `[output = "schema"]
 {
   value: variant[string, float]
 }`),
-		Entry("string-boolean", `["string", "boolean"]`, `[output = schema]
+		Entry("string-boolean", `["string", "boolean"]`, `[output = "schema"]
 {
   value: variant[string, boolean]
 }`),
-		Entry("int-float", `["integer", "number"]`, `[output = schema]
+		Entry("int-float", `["integer", "number"]`, `[output = "schema"]
 {
   value: variant[int, float]
 }`),
-		Entry("int-boolean", `["integer", "boolean"]`, `[output = schema]
+		Entry("int-boolean", `["integer", "boolean"]`, `[output = "schema"]
 {
   value: variant[int, boolean]
 }`),
-		Entry("float-boolean", `["number", "boolean"]`, `[output = schema]
+		Entry("float-boolean", `["number", "boolean"]`, `[output = "schema"]
 {
   value: variant[float, boolean]
 }`),
@@ -1419,7 +1419,7 @@ var _ = Describe("ImportSchema", func() {
   "required": ["name"]
 }`)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = schema]
+		tAssert.Equal(`[output = "schema"]
 {
   age?: int,
   name: string
@@ -1437,7 +1437,7 @@ var _ = Describe("ImportSchema", func() {
   }
 }`)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = schema]
+		tAssert.Equal(`[output = "schema"]
 {
   nickname?: string
 }`, source)
@@ -1455,7 +1455,7 @@ var _ = Describe("ImportSchema", func() {
   "required": ["value"]
 }`)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = schema]
+		tAssert.Equal(`[output = "schema"]
 {
   value: variant[string, int]
 }`, source)
@@ -1480,7 +1480,7 @@ var _ = Describe("ImportSchema", func() {
   "required": ["users"]
 }`)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = schema]
+		tAssert.Equal(`[output = "schema"]
 {
   users: array<{
     name: string
@@ -1500,7 +1500,7 @@ var _ = Describe("ImportSchema", func() {
   "required": ["status"]
 }`)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = schema]
+		tAssert.Equal(`[output = "schema"]
 {
   status: choice["draft", "published"]
 }`, source)
@@ -1539,7 +1539,7 @@ schema Profile: {
 }
 type Role: choice["admin", "member"];
 |===|
-[output = schema]
+[output = "schema"]
 {
   profile: Profile,
   role: Role
@@ -1558,7 +1558,7 @@ type Role: choice["admin", "member"];
   "required": ["status"]
 }`)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = schema]
+		tAssert.Equal(`[output = "schema"]
 {
   status: choice["draft"]
 }`, source)
@@ -1615,7 +1615,7 @@ type Name: string;
 type Ratio: float;
 type Tags: array<string>;
 |===|
-[output = schema]
+[output = "schema"]
 {
   count: Count,
   enabled: Enabled,
@@ -1645,7 +1645,7 @@ type Tags: array<string>;
 		tAssert.Equal(`|===|
 type Value: variant[string, int];
 |===|
-[output = schema]
+[output = "schema"]
 {
   value: Value
 }`, source)
@@ -1678,7 +1678,7 @@ type Value: variant[string, int];
 type Role: choice["admin", "member"];
 type State: choice["active", "paused"];
 |===|
-[output = schema]
+[output = "schema"]
 {
   value: variant[Role, State]
 }`, source)
@@ -1713,7 +1713,7 @@ schema Profile: {
   name: string
 }
 |===|
-[output = schema]
+[output = "schema"]
 {
   value: variant[Profile, string]
 }`, source)
@@ -1758,7 +1758,7 @@ schema Audit: {
   created_at: string
 }
 |===|
-[output = schema]
+[output = "schema"]
 {
   value: fusion[Profile, Audit]
 }`, source)
@@ -1818,7 +1818,7 @@ schema Profile: {
   name: string
 }
 |===|
-[output = schema]
+[output = "schema"]
 {
   value: variant[Profile, string]
 }`, source)
@@ -1881,7 +1881,7 @@ schema Node: {
   name: string
 }
 |===|
-[output = schema]
+[output = "schema"]
 {
   root: Node
 }`, source)
@@ -1920,7 +1920,7 @@ schema User: {
 }
 type Users: array<User>;
 |===|
-[output = schema]
+[output = "schema"]
 {
   users: Users
 }`, source)
@@ -1946,7 +1946,7 @@ type Users: array<User>;
 		tAssert.Equal(`|===|
 type Status: choice[0, 1];
 |===|
-[output = schema]
+[output = "schema"]
 {
   status: Status
 }`, source)
@@ -1966,7 +1966,7 @@ type Status: choice[0, 1];
 	It("treats TOML datetimes as strings in output values", func() {
 		source, err := ImportTOML(`created_at = 1979-05-27T07:32:00Z`)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = data]
+		tAssert.Equal(`[output = "data"]
 {
   created_at: "1979-05-27T07:32:00Z"
 }`, source)
@@ -1985,7 +1985,7 @@ var _ = Describe("Unmarshal", func() {
 			Any     any            `json:"any"`
 		}
 
-		err := Unmarshal(`[output = data]
+		err := Unmarshal(`[output = "data"]
 {
   name: "Ada",
   count: 3,
@@ -2011,7 +2011,7 @@ var _ = Describe("Unmarshal", func() {
 	})
 
 	It("unmarshals output records into structs", func() {
-		input := `[output = data]
+		input := `[output = "data"]
 {
   name: "Ada",
   enabled: true,
@@ -2036,7 +2036,7 @@ var _ = Describe("Unmarshal", func() {
 	})
 
 	It("unmarshals output records into maps", func() {
-		input := `[output = data]
+		input := `[output = "data"]
 {
   age: 27,
   name: "Ada"
@@ -2052,42 +2052,42 @@ var _ = Describe("Unmarshal", func() {
 	})
 
 	It("rejects non-pointer targets", func() {
-		err := Unmarshal(`[output = data] { value: 1, }`, map[string]any{})
+		err := Unmarshal(`[output = "data"] { value: 1, }`, map[string]any{})
 		tAssert.Error(err)
 	})
 
 	It("rejects incompatible unmarshal targets", func() {
 		var nilMap *map[string]any
-		err := Unmarshal(`[output = data] { value: 1, }`, nilMap)
+		err := Unmarshal(`[output = "data"] { value: 1, }`, nilMap)
 		tAssert.ErrorContains(err, "non-nil pointer")
 
 		var scalar string
-		err = Unmarshal(`[output = data] { value: 1, }`, &scalar)
+		err = Unmarshal(`[output = "data"] { value: 1, }`, &scalar)
 		tAssert.ErrorContains(err, "target must point")
 
 		var unsigned struct {
 			Value uint `json:"value"`
 		}
-		err = Unmarshal(`[output = data] { value: -1, }`, &unsigned)
+		err = Unmarshal(`[output = "data"] { value: -1, }`, &unsigned)
 		tAssert.ErrorContains(err, "negative int")
 
 		var fixed struct {
 			Values [1]int `json:"values"`
 		}
-		err = Unmarshal(`[output = data] { values: [1, 2], }`, &fixed)
+		err = Unmarshal(`[output = "data"] { values: [1, 2], }`, &fixed)
 		tAssert.ErrorContains(err, "array length mismatch")
 
 		var typed struct {
 			Value int `json:"value"`
 		}
-		err = Unmarshal(`[output = data] { value: "Ada", }`, &typed)
+		err = Unmarshal(`[output = "data"] { value: "Ada", }`, &typed)
 		tAssert.ErrorContains(err, "cannot assign string")
 	})
 
 	It("unmarshals into nil nested pointers", func() {
 		var target **map[string]int
 
-		err := Unmarshal(`[output = data] { value: 1, }`, &target)
+		err := Unmarshal(`[output = "data"] { value: 1, }`, &target)
 
 		tAssert.NoError(err)
 		tAssert.NotNil(target)
@@ -2099,7 +2099,7 @@ var _ = Describe("Unmarshal", func() {
 		err := UnmarshalWithInput(`|===|
 schema Runtime: { env: string, };
 |===|
-[output = data, parse = Runtime]
+[output = "data", parse = Runtime]
 {
   ok: true,
 }`, map[string]any{

@@ -16,7 +16,7 @@ Dependencies dependencies = {
   pi_prompt: "^1.0.0",
 };
 |===|
-[output = data]
+[output = "data"]
 {
   dependencies: dependencies,
   form: dependencies.pi_prompt_form,
@@ -36,14 +36,14 @@ Dependencies dependencies = {
 type Dependencies: record<string>;
 Dependencies dependencies = { pi_prompt_guard: 1, };
 |===|
-[output = data]
+[output = "data"]
 { dependencies: dependencies, }`)
 
 		tAssert.ErrorContains(err, "type mismatch")
 	})
 
 	It("evaluates inline record literals", func() {
-		result, err := New().Process(`[output = data] { result: { name: "Ada", age: 30, }, }`)
+		result, err := New().Process(`[output = "data"] { result: { name: "Ada", age: 30, }, }`)
 		tAssert.NoError(err)
 		assertExpectedValue(result.Output["result"], expectedValue{kind: ValueRecord, record: map[string]expectedValue{
 			"name": {kind: ValueString, string: "Ada"},
@@ -58,7 +58,7 @@ Dependencies dependencies = { pi_prompt_guard: 1, };
 type Packages: record<%s>;
 Packages packages = %s;
 |===|
-[output = data]
+[output = "data"]
 { packages: packages, }`, declarations, valueType, literal))
 
 			tAssert.NoError(err)
@@ -87,7 +87,7 @@ type Deployment: fusion[Service, Versioned];`, "Deployment", `{ api: { name: "ap
 type Values: record<variant[%s]>;
 Values values = %s;
 |===|
-[output = data]
+[output = "data"]
 { values: values, }`, valueType, literal))
 
 			tAssert.NoError(err)
@@ -117,7 +117,7 @@ Values values = %s;
 type Packages: %s;
 Packages packages = %s;
 |===|
-[output = data]
+[output = "data"]
 { packages: packages, }`, valueType, literal))
 
 			tAssert.NoError(err)
@@ -142,7 +142,7 @@ Packages packages = %s;
 type Packages: %s;
 Packages packages = %s;
 |===|
-[output = data]
+[output = "data"]
 { packages: packages, }`, valueType, literal))
 
 			tAssert.NoError(err)
@@ -177,7 +177,7 @@ Packages packages = %s;
 type Packages: variant[%s, %s];
 Packages packages = %s;
 |===|
-[output = data]
+[output = "data"]
 { packages: packages, }`, valueType, recordMapTypeText(depth+1, "string"), literal))
 
 			tAssert.NoError(err)

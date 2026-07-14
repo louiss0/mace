@@ -81,7 +81,7 @@ choice_member = string_literal | int_literal | float_literal | hex_int_literal |
 (* OUTPUT *)
 output_block = [ output_directive_list , ws0 , [ block_string , ws0 ] ] , "{" , ws0 , [ output_field , { ws0 , "," , ws0 , output_field } , [ ws0 , "," ] ] , ws0 , "}" ;
 output_directive_list = "[" , ws0 , directive_pair , { ws0 , "," , ws0 , directive_pair } , ws0 , "]" ;
-directive_pair = "output" , ws0 , "=" , ws0 , ( "data" | "schema" )
+directive_pair = "output" , ws0 , "=" , ws0 , ( '"data"' | '"schema"' )
                | "schema" , ws0 , "=" , ws0 , identifier
                | "schema_file" , ws0 , "=" , ws0 , path_literal
                | "parse" , ws0 , "=" , ws0 , identifier

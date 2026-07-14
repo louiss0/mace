@@ -2,7 +2,7 @@
 type Name: int;
 schema Admin: { level: int, };
 |===|
-[output = schema]
+[output = "schema"]
 {
   Name: Name,
 }

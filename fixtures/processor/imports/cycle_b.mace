@@ -4,4 +4,4 @@ from "./cycle_a.mace" import Name;
 type Name: string;
 |==================================|
 
-[output = data] {}
+[output = "data"] {}

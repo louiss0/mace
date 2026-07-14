@@ -1,5 +1,5 @@
 // Languages: Chinese, Japanese, Latin, and Greek keys are intentionally mixed in docker_services.
-[output = data]
+[output = "data"]
 {
   servicios: {
     api: {

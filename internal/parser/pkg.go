@@ -136,7 +136,7 @@ func (p *Parser) parseImportDeclaration() (ast.ImportDeclaration, error) {
 		return ast.ImportDeclaration{}, err
 	}
 
-	pathToken, err := p.consume(lexer.TokenString, "parser: expected string literal in import")
+	pathToken, err := p.consumeStaticPath("parser: expected static double-quoted path in import")
 	if err != nil {
 		return ast.ImportDeclaration{}, err
 	}
@@ -263,8 +263,11 @@ func (p *Parser) parseDeclaration() (ast.Declaration, error) {
 	switch p.current().Type {
 	case lexer.TokenTypeKeyword:
 		return p.parseTypeDeclaration()
-	case lexer.TokenSchema:
-		return p.parseSchemaDeclaration()
+	case lexer.TokenIdentifier:
+		if p.current().Lexeme == "schema" {
+			return p.parseSchemaDeclaration()
+		}
+		return p.parseVariableDeclaration()
 	case lexer.TokenGenDoc:
 		return p.parseDocDeclaration(ast.DocumentationKindGeneral, lexer.TokenGenDoc, "gen_doc")
 	case lexer.TokenSchemaDoc:
@@ -355,9 +358,10 @@ func (p *Parser) parseTypeDeclaration() (ast.Declaration, error) {
 }
 
 func (p *Parser) parseSchemaDeclaration() (ast.Declaration, error) {
-	if _, err := p.consume(lexer.TokenSchema, "parser: expected 'schema'"); err != nil {
-		return nil, err
+	if p.current().Type != lexer.TokenIdentifier || p.current().Lexeme != "schema" {
+		return nil, p.unexpectedTokenError("parser: expected 'schema'")
 	}
+	p.advance()
 
 	nameToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier in schema declaration")
 	if err != nil {
@@ -634,30 +638,29 @@ func (p *Parser) parseOutputDirective() ([]ast.OutputDirective, error) {
 }
 
 func (p *Parser) parseDirectivePair() (ast.OutputDirective, error) {
-	switch p.current().Type {
-	case lexer.TokenOutput:
+	switch p.current().Lexeme {
+	case "output":
 		p.advance()
 		if _, err := p.consume(lexer.TokenAssign, "parser: expected '=' after output directive"); err != nil {
 			return ast.OutputDirective{}, err
 		}
 
-		valueToken := p.current()
-		if valueToken.Type != lexer.TokenData && valueToken.Type != lexer.TokenSchema {
-			return ast.OutputDirective{}, p.unexpectedTokenError("parser: expected 'data' or 'schema' in output directive")
+		valueToken, err := p.consumeStaticPath("parser: expected \"data\" or \"schema\" string in output directive")
+		if err != nil {
+			return ast.OutputDirective{}, err
 		}
-		p.advance()
-
-		return ast.OutputDirective{
-			Kind:  ast.OutputDirectiveOutput,
-			Value: valueToken.Lexeme,
-		}, nil
-	case lexer.TokenSchemaFile:
+		mode := strings.Trim(valueToken.Lexeme, `"`)
+		if mode != "data" && mode != "schema" {
+			return ast.OutputDirective{}, p.unexpectedTokenError("parser: expected \"data\" or \"schema\" in output directive")
+		}
+		return ast.OutputDirective{Kind: ast.OutputDirectiveOutput, Value: mode}, nil
+	case "schema_file":
 		p.advance()
 		if _, err := p.consume(lexer.TokenAssign, "parser: expected '=' after schema_file directive"); err != nil {
 			return ast.OutputDirective{}, err
 		}
 
-		pathToken, err := p.consume(lexer.TokenString, "parser: expected string literal in schema_file directive")
+		pathToken, err := p.consumeStaticPath("parser: expected static double-quoted path in schema_file directive")
 		if err != nil {
 			return ast.OutputDirective{}, err
 		}
@@ -666,7 +669,7 @@ func (p *Parser) parseDirectivePair() (ast.OutputDirective, error) {
 			Kind:  ast.OutputDirectiveSchemaFile,
 			Value: pathToken.Lexeme,
 		}, nil
-	case lexer.TokenParse:
+	case "parse":
 		p.advance()
 		if _, err := p.consume(lexer.TokenAssign, "parser: expected '=' after parse directive"); err != nil {
 			return ast.OutputDirective{}, err
@@ -681,13 +684,13 @@ func (p *Parser) parseDirectivePair() (ast.OutputDirective, error) {
 			Kind:  ast.OutputDirectiveParse,
 			Value: nameToken.Lexeme,
 		}, nil
-	case lexer.TokenParseFile:
+	case "parse_file":
 		p.advance()
 		if _, err := p.consume(lexer.TokenAssign, "parser: expected '=' after parse_file directive"); err != nil {
 			return ast.OutputDirective{}, err
 		}
 
-		pathToken, err := p.consume(lexer.TokenString, "parser: expected string literal in parse_file directive")
+		pathToken, err := p.consumeStaticPath("parser: expected static double-quoted path in parse_file directive")
 		if err != nil {
 			return ast.OutputDirective{}, err
 		}
@@ -696,7 +699,7 @@ func (p *Parser) parseDirectivePair() (ast.OutputDirective, error) {
 			Kind:  ast.OutputDirectiveParseFile,
 			Value: pathToken.Lexeme,
 		}, nil
-	case lexer.TokenSchema:
+	case "schema":
 		p.advance()
 		if _, err := p.consume(lexer.TokenAssign, "parser: expected '=' after schema directive"); err != nil {
 			return ast.OutputDirective{}, err
@@ -714,6 +717,15 @@ func (p *Parser) parseDirectivePair() (ast.OutputDirective, error) {
 	default:
 		return ast.OutputDirective{}, p.unexpectedTokenError("parser: expected directive pair")
 	}
+}
+
+func (p *Parser) consumeStaticPath(message string) (lexer.Token, error) {
+	token := p.current()
+	if token.Type != lexer.TokenString || len(token.Lexeme) < 2 || token.Lexeme[0] != '"' || token.Lexeme[len(token.Lexeme)-1] != '"' || strings.ContainsAny(token.Lexeme, "\\\r\n") || strings.Contains(token.Lexeme, "$(") {
+		return lexer.Token{}, p.unexpectedTokenError(message)
+	}
+	p.advance()
+	return token, nil
 }
 
 func (p *Parser) parseOutputField() (ast.OutputField, error) {

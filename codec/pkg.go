@@ -234,7 +234,7 @@ func importDocument(value any) (string, error) {
 
 	output, _ := marshalImportedOutput(record)
 
-	return "[output = data]\n" + output, nil
+	return "[output = \"data\"]\n" + output, nil
 }
 
 func marshalImportedOutput(record map[string]any) (string, error) {
@@ -263,11 +263,11 @@ func importJSONSchemaDocument(value any) (string, error) {
 	}
 
 	if len(context.declarations) == 0 {
-		return "[output = schema]\n" + formatSchemaRecord(schema.fields, 0), nil
+		return "[output = \"schema\"]\n" + formatSchemaRecord(schema.fields, 0), nil
 	}
 
 	declarations := strings.Join(context.declarations, "\n")
-	return fmt.Sprintf("|===|\n%s\n|===|\n[output = schema]\n%s", declarations, formatSchemaRecord(schema.fields, 0)), nil
+	return fmt.Sprintf("|===|\n%s\n|===|\n[output = \"schema\"]\n%s", declarations, formatSchemaRecord(schema.fields, 0)), nil
 }
 
 type marshaller struct{}

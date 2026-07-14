@@ -20,7 +20,7 @@ User user = {
 };
 |===|
 
-[output = data]
+[output = "data"]
 {
   city: user?.profile?.address?.city,
 }

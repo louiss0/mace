@@ -2,4 +2,4 @@
 from "./base.mace" import Name;
 from "./other.mace" import Name;
 |===|
-[output = data] {}
+[output = "data"] {}

@@ -16,7 +16,7 @@ User value = {
   created_at: "2026-04-08",
 };
 |===|
-[output = data]
+[output = "data"]
 {
   result: value,
 }`)

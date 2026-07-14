@@ -20,7 +20,7 @@ type Alias: string;
 schema Doc: { field: string, };
 string value = "x";
 |===|
-[output = data]
+[output = "data"]
 {
   value: "x",
 }
@@ -78,7 +78,7 @@ string value = "x";
 		_, _ = identifierRangeAt("alias_name", protocol.Position{})
 		_, _ = nameRange("alias", "alias")
 		_, _ = nameRange("alias", "missing")
-		_ = isDirectivePosition("[output = data]", protocol.Position{Line: 0, Character: 1})
+		_ = isDirectivePosition("[output = \"data\"]", protocol.Position{Line: 0, Character: 1})
 		_ = isDirectivePosition("[output", protocol.Position{Line: 0, Character: 1})
 		_ = isDirectivePosition("plain text", protocol.Position{})
 		_ = utf16LineLength("🙂x")
@@ -96,7 +96,7 @@ string value = "x";
 from "./shared.mace" import User as alias;
 string value = "x";
 |===|
-[output = data]
+[output = "data"]
 {
   value: "x",
 }
@@ -122,7 +122,7 @@ schema_doc User {
   summary: "docs",
 }
 |===|
-[output = data]
+[output = "data"]
 {
   user: { name: "Ada", },
   value: "x",
@@ -167,7 +167,7 @@ schema_doc User {
 from "./shared.mace" import User:alias;
 string value = alias;
 |===|
-[output = data]
+[output = "data"]
 {
   value: alias,
 }
@@ -201,7 +201,7 @@ alias`
 		_, _ = Rename(importRenameText, importRenameSnapshot, aliasURI, protocol.Position{Line: 1, Character: 1}, "renamed_alias")
 		_, _ = identifierAt("alias_name", protocol.Position{Line: 0, Character: 5})
 		_, _ = identifierAt(" alias", protocol.Position{Line: 0, Character: 0})
-		_ = isDirectivePosition("[output = data]", protocol.Position{Line: 0, Character: 1})
+		_ = isDirectivePosition("[output = \"data\"]", protocol.Position{Line: 0, Character: 1})
 		_ = isDirectivePosition("[output", protocol.Position{Line: 0, Character: 1})
 		_ = isDirectivePosition("plain text", protocol.Position{})
 	})

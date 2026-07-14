@@ -171,7 +171,7 @@ Invalid: no directive list
 {
 }
 `, "expected output directive"),
-		Entry("output inline doc rejects interpolation", `[output = schema]
+		Entry("output inline doc rejects interpolation", `[output = "schema"]
 """$(name)"""
 {
   name: string,

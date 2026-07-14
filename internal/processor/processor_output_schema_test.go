@@ -12,12 +12,12 @@ var _ = Describe("Output schema", func() {
 			tAssert.NoError(err)
 			assertExpectedSchema(result, expected)
 		},
-		Entry("primitive and optional fields", `[output = schema]
+		Entry("primitive and optional fields", `[output = "schema"]
 {
   name: string,
   age?: int,
 }`, map[expectedSchemaField]SchemaType{{name: "name"}: schemaPrimitive("string"), {name: "age", optional: true}: schemaPrimitive("int")}),
-		Entry("nested array fields", `[output = schema]
+		Entry("nested array fields", `[output = "schema"]
 {
   names: array<string>,
   matrix: array<array<int>>,
@@ -30,7 +30,7 @@ var _ = Describe("Output schema", func() {
 schema User: { name: string, age?: int, };
 string name = "Ada";
 |===|
-[output = data, schema = User]
+[output = "data", schema = User]
 { name: name, }`)
 		tAssert.NoError(err)
 	})
@@ -40,7 +40,7 @@ string name = "Ada";
 		_, err := processor.Process(`|===|
 schema User: { name: string, age: int, };
 |===|
-[output = data, schema = User]
+[output = "data", schema = User]
 { name: "Ada", }`)
 		tAssert.Error(err)
 		tAssert.ErrorContains(err, "missing required field")

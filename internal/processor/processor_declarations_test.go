@@ -11,7 +11,7 @@ var _ = Describe("Declarations", func() {
 		result, err := processor.Process(`|===|
 nullable string env = null;
 |===|
-[output = data]
+[output = "data"]
 {
   env: env,
 }`)
@@ -26,7 +26,7 @@ nullable string env = null;
 schema User: { nickname?: string, };
 User user = { nickname: null, };
 |===|
-[output = data]
+[output = "data"]
 {
   user: user,
 }`)
@@ -39,7 +39,7 @@ User user = { nickname: null, };
 	It("rejects direct null output fields", func() {
 		processor := New()
 
-		_, err := processor.Process(`[output = data]
+		_, err := processor.Process(`[output = "data"]
 {
   env: null,
 }`)
@@ -74,7 +74,7 @@ string env = false ? null : "prod";
 schema Runtime: { env: string, };
 Runtime config = { env: false ? null : "prod", };
 |===|
-[output = data]
+[output = "data"]
 {
   config: config,
 }`)
@@ -90,7 +90,7 @@ nullable string env = false ? null : "prod";
 schema Runtime: { env: string, };
 Runtime config = { env, };
 |===|
-[output = data]
+[output = "data"]
 {
   config: config,
 }`)
@@ -102,7 +102,7 @@ Runtime config = { env, };
 		result, err := New().Process(`|===|
 variant[string, array<string>] value = false ? "configured" : [];
 |===|
-[output = data]
+[output = "data"]
 {
   value: value,
 }`)

@@ -19,12 +19,11 @@ nullable User user = {
 };
 string fallback = "";
 
-string baz = user ? user.profile.address?.city ?? "" : "";
 
 
 |===================================================|
 
-[output = data]
+[output = 'data']
 {
   fallback: missing_user ? missing_user.records?.primary ?? "" : "",
   records: user ? user.records : { primary: 'inactive' },

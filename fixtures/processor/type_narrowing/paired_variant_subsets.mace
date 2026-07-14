@@ -78,7 +78,7 @@ string oddResult4 = oddValue4 is OddPair0
   : oddValue4 is OddPair1 ? "pair-1" : oddValue4.field4.value;
 |===|
 
-[output = data]
+[output = "data"]
 {
   even0: evenResult0,
   even1: evenResult1,

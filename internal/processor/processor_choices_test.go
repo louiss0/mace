@@ -40,7 +40,7 @@ Value fallback = %s;
  type Fruit: choice["Apple", "Strawberry"];
  Fruit result = "Apple";
 |===|
-[output = data]
+[output = "data"]
 {
   result: result,
 }`, expectedValue{kind: ValueString, string: "Apple"}),
@@ -50,7 +50,7 @@ Value fallback = %s;
  type Mode: choice[Environment, Numeric, true];
  Mode result = 2;
 |===|
-[output = data]
+[output = "data"]
 {
   result: result,
 }`, expectedValue{kind: ValueInt, int64: 2}),
@@ -59,7 +59,7 @@ Value fallback = %s;
  Ratio first = 1.04;
  Ratio second = 1.0;
 |===|
-[output = data]
+[output = "data"]
 {
   result: { first: first, second: second, },
 }`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{
@@ -86,7 +86,7 @@ Value fallback = %s;
  type Fruit: choice["Apple", "Strawberry"];
  Fruit result = "Pear";
 |===|
-[output = data]
+[output = "data"]
 {
   result: result,
 }`, "type mismatch: expected choice[\"Apple\", \"Strawberry\"], got \"Pear\""),
@@ -95,7 +95,7 @@ Value fallback = %s;
  type Fruit: choice["Apple", "Strawberry"];
  Fruit result = (enabled ? "Pear" : "Apple");
 |===|
-[output = data]
+[output = "data"]
 {
   result: result,
 }`, "type mismatch: expected choice[\"Apple\", \"Strawberry\"], got \"Pear\""),

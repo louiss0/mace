@@ -27,7 +27,7 @@ type Status: choice["Active", "Disabled"];
 
 
 |=========================================================|
-[output = schema]
+[output = "schema"]
 """
 # Public User Contract
 

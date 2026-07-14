@@ -4,7 +4,7 @@ schema Member: { id: ID, role: string, };
 schema Team: { name: string, members: array<Member>, };
 |=======================================================|
 
-[output = schema]
+[output = "schema"]
 {
   ID: ID,
   Member: Member,

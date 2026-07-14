@@ -5,4 +5,4 @@ schema_doc greeting {
   summary: "Invalid target.",
 };
 |===|
-[output = data] {}
+[output = "data"] {}

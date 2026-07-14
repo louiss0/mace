@@ -17,7 +17,7 @@ Deployment deployment = {
 };
 |===================================================|
 
-[output = data]
+[output = "data"]
 {
   result: deployment,
 }

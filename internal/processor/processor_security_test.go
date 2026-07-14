@@ -22,10 +22,10 @@ var _ = Describe("Security", func() {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch r.URL.Path {
 			case "/schema.mace":
-				_, _ = io.WriteString(w, `[output = schema]
+				_, _ = io.WriteString(w, `[output = "schema"]
 { Foo: Foo, }`)
 			case "/nested/schema.mace":
-				_, _ = io.WriteString(w, `[output = schema]
+				_, _ = io.WriteString(w, `[output = "schema"]
 { Nested: Nested, }`)
 			default:
 				w.WriteHeader(http.StatusNotFound)
@@ -46,7 +46,7 @@ var _ = Describe("Security", func() {
 		result, err := processor.Process(`|===|
 nullable string path = "./schema.mace";
 |===|
-[output = data]
+[output = "data"]
 {
   path: path,
 }`)

@@ -6,7 +6,7 @@ schema User: {
   active: boolean,
 };
 
-[output = schema]
+[output = "schema"]
 {
   User: User,
 }

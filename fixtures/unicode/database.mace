@@ -1,5 +1,5 @@
 // Languages: Chinese, Japanese, Latin, and Greek keys are intentionally mixed in database.
-[output = data]
+[output = "data"]
 {
   proveedor: "postgres",
   主机: "db.internal",
