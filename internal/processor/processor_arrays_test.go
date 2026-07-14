@@ -55,6 +55,16 @@ array<array<int> > result = [[base, base + 1], [base + 2, base + 3]];
 				{kind: ValueInt, int64: 6},
 			}},
 		}}),
+		Entry("nested arrays with empty members", wrapScriptWithOutputFields(`|===|
+array<array<string>> result = [["filled"], []];
+|===|`, "result: result;"), expectedValue{kind: ValueArray, array: []expectedValue{
+			{kind: ValueArray, array: []expectedValue{{kind: ValueString, string: "filled"}}},
+			{kind: ValueArray, array: []expectedValue{}},
+		}}),
+		Entry("ternary arrays with an empty branch", wrapScriptWithOutputFields(`|===|
+boolean enabled = false;
+array<string> result = enabled ? ["filled"] : [];
+|===|`, "result: result;"), expectedValue{kind: ValueArray, array: []expectedValue{}}),
 		Entry("self reference", wrapScriptWithOutputFields(`|===|
 int base = 3 * 4;
 |===|`, "base: base;\nresult: $self.base + base;"), expectedValue{kind: ValueInt, int64: 24}),

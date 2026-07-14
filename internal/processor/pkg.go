@@ -4943,13 +4943,40 @@ func ensureAssignable(expectedType, actualType valueType) error {
 }
 
 func appendUniqueValueType(types []valueType, next valueType) []valueType {
-	for _, existing := range types {
-		if typesEqual(existing, next) {
+	for index, existing := range types {
+		if merged, ok := mergeInferredValueTypes(existing, next); ok {
+			types[index] = merged
 			return types
 		}
 	}
 
 	return append(types, next)
+}
+
+func mergeInferredValueTypes(left valueType, right valueType) (valueType, bool) {
+	if typesEqual(left, right) {
+		return left, true
+	}
+	if isUnknownInferredValueType(left) {
+		return right, true
+	}
+	if isUnknownInferredValueType(right) {
+		return left, true
+	}
+	if left.kind != ValueArray || right.kind != ValueArray || left.element == nil || right.element == nil {
+		return valueType{}, false
+	}
+
+	element, ok := mergeInferredValueTypes(*left.element, *right.element)
+	if !ok {
+		return valueType{}, false
+	}
+
+	return valueType{kind: ValueArray, element: &element}, true
+}
+
+func isUnknownInferredValueType(value valueType) bool {
+	return value.kind == ValueUnknown && len(value.members) == 0 && len(value.choiceValues) == 0
 }
 
 type symbolKind int
