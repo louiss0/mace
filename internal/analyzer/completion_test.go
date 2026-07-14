@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/louiss0/mace/internal/parser/ast"
 	"github.com/louiss0/mace/internal/processor"
@@ -1500,6 +1501,35 @@ from "../shared.mace" import base;
 				{ast.Identifier{Name: "Alias"}, "string", true},
 				{ast.Identifier{Name: "Profile"}, "{ email: string }", true},
 				{ast.Identifier{Name: "count"}, "int", true},
+				{ast.ConditionalExpression{
+					Condition: ast.BooleanLiteral{Value: true},
+					Then:      ast.StringLiteral{Lexeme: `"primary"`},
+					Else: ast.ConditionalExpression{
+						Condition: ast.BooleanLiteral{Value: false},
+						Then:      ast.IntLiteral{Lexeme: "10"},
+						Else:      ast.BooleanLiteral{Value: true},
+					},
+				}, "variant[string, int, boolean]", true},
+				{ast.ConditionalExpression{
+					Condition: ast.BooleanLiteral{Value: true},
+					Then: ast.ArrayLiteral{Elements: []ast.Expression{
+						ast.IntLiteral{Lexeme: "1"},
+					}},
+					Else: ast.StringLiteral{Lexeme: `"fallback"`},
+				}, "variant[array<int>, string]", true},
+				{ast.ConditionalExpression{
+					Condition: ast.BooleanLiteral{Value: true},
+					Then: ast.RecordLiteral{Fields: []ast.RecordField{{
+						Name:  "name",
+						Value: ast.StringLiteral{Lexeme: `"Ada"`},
+					}}},
+					Else: ast.BooleanLiteral{Value: false},
+				}, "variant[{ name: string }, boolean]", true},
+				{ast.ConditionalExpression{
+					Condition: ast.BooleanLiteral{Value: true},
+					Then:      ast.Identifier{Name: "Profile"},
+					Else:      ast.RecordLiteral{},
+				}, "{ email: string }", true},
 				{ast.ArrayLiteral{}, "", false},
 				{ast.Identifier{Name: "missing"}, "", false},
 			}
@@ -1512,6 +1542,160 @@ from "../shared.mace" import base;
 				}
 			}
 		})
+
+		DescribeTable("recursively infers conditional types through fifteen ternaries",
+			func(level int, expected string) {
+				alternatives := []ast.Expression{
+					ast.StringLiteral{Lexeme: `"one"`},
+					ast.IntLiteral{Lexeme: "2"},
+					ast.BooleanLiteral{Value: true},
+					ast.FloatLiteral{Lexeme: "4.5"},
+					ast.HexIntLiteral{Lexeme: "0x5"},
+					ast.HexFloatLiteral{Lexeme: "0x6.8"},
+				}
+				expression := alternatives[level%len(alternatives)]
+				for branch := level - 1; branch >= 0; branch-- {
+					expression = ast.ConditionalExpression{
+						Condition: ast.BooleanLiteral{Value: false},
+						Then:      alternatives[branch%len(alternatives)],
+						Else:      expression,
+					}
+				}
+
+				fieldType, ok := completionOutputFieldType(expression, completionModel{})
+				tAssert.True(ok)
+				if ok {
+					tAssert.Equal(expected, typeReferenceDetail(fieldType))
+				}
+			},
+			Entry("three ternaries", 3, "variant[string, int, boolean, float]"),
+			Entry("four ternaries", 4, "variant[string, int, boolean, float, hex_int]"),
+			Entry("five ternaries", 5, "variant[string, int, boolean, float, hex_int, hex_float]"),
+			Entry("six ternaries", 6, "variant[string, int, boolean, float, hex_int, hex_float]"),
+			Entry("seven ternaries", 7, "variant[string, int, boolean, float, hex_int, hex_float]"),
+			Entry("eight ternaries", 8, "variant[string, int, boolean, float, hex_int, hex_float]"),
+			Entry("nine ternaries", 9, "variant[string, int, boolean, float, hex_int, hex_float]"),
+			Entry("ten ternaries", 10, "variant[string, int, boolean, float, hex_int, hex_float]"),
+			Entry("eleven ternaries", 11, "variant[string, int, boolean, float, hex_int, hex_float]"),
+			Entry("twelve ternaries", 12, "variant[string, int, boolean, float, hex_int, hex_float]"),
+			Entry("thirteen ternaries", 13, "variant[string, int, boolean, float, hex_int, hex_float]"),
+			Entry("fourteen ternaries", 14, "variant[string, int, boolean, float, hex_int, hex_float]"),
+			Entry("fifteen ternaries", 15, "variant[string, int, boolean, float, hex_int, hex_float]"),
+		)
+
+		DescribeTable("recursively infers array variants through ten ternaries",
+			func(level int) {
+				arrayExpression := func(element ast.Expression) ast.Expression {
+					return ast.ArrayLiteral{Elements: []ast.Expression{element}}
+				}
+				alternatives := []ast.Expression{
+					arrayExpression(ast.StringLiteral{Lexeme: `"one"`}),
+					arrayExpression(ast.IntLiteral{Lexeme: "2"}),
+					arrayExpression(ast.BooleanLiteral{Value: true}),
+					arrayExpression(ast.FloatLiteral{Lexeme: "4.5"}),
+					arrayExpression(ast.HexIntLiteral{Lexeme: "0x5"}),
+					arrayExpression(ast.HexFloatLiteral{Lexeme: "0x6.8"}),
+					arrayExpression(arrayExpression(ast.StringLiteral{Lexeme: `"seven"`})),
+					arrayExpression(arrayExpression(ast.IntLiteral{Lexeme: "8"})),
+					arrayExpression(arrayExpression(ast.BooleanLiteral{Value: false})),
+					arrayExpression(arrayExpression(ast.FloatLiteral{Lexeme: "10.5"})),
+					arrayExpression(arrayExpression(ast.HexIntLiteral{Lexeme: "0xB"})),
+				}
+				typeNames := []string{
+					"array<string>",
+					"array<int>",
+					"array<boolean>",
+					"array<float>",
+					"array<hex_int>",
+					"array<hex_float>",
+					"array<array<string>>",
+					"array<array<int>>",
+					"array<array<boolean>>",
+					"array<array<float>>",
+					"array<array<hex_int>>",
+				}
+				expression := alternatives[level]
+				for branch := level - 1; branch >= 0; branch-- {
+					expression = ast.ConditionalExpression{
+						Condition: ast.BooleanLiteral{Value: false},
+						Then:      alternatives[branch],
+						Else:      expression,
+					}
+				}
+
+				fieldType, ok := completionOutputFieldType(expression, completionModel{})
+				tAssert.True(ok)
+				if ok {
+					expected := "variant[" + strings.Join(typeNames[:level+1], ", ") + "]"
+					tAssert.Equal(expected, typeReferenceDetail(fieldType))
+				}
+			},
+			Entry("three ternaries", 3),
+			Entry("four ternaries", 4),
+			Entry("five ternaries", 5),
+			Entry("six ternaries", 6),
+			Entry("seven ternaries", 7),
+			Entry("eight ternaries", 8),
+			Entry("nine ternaries", 9),
+			Entry("ten ternaries", 10),
+		)
+
+		DescribeTable("recursively infers record variants through ten ternaries",
+			func(level int) {
+				recordExpression := func(name string, value ast.Expression) ast.Expression {
+					return ast.RecordLiteral{Fields: []ast.RecordField{{Name: name, Value: value}}}
+				}
+				alternatives := []ast.Expression{
+					recordExpression("text", ast.StringLiteral{Lexeme: `"one"`}),
+					recordExpression("count", ast.IntLiteral{Lexeme: "2"}),
+					recordExpression("enabled", ast.BooleanLiteral{Value: true}),
+					recordExpression("ratio", ast.FloatLiteral{Lexeme: "4.5"}),
+					recordExpression("mask", ast.HexIntLiteral{Lexeme: "0x5"}),
+					recordExpression("fraction", ast.HexFloatLiteral{Lexeme: "0x6.8"}),
+					recordExpression("region", ast.StringLiteral{Lexeme: `"seven"`}),
+					recordExpression("retries", ast.IntLiteral{Lexeme: "8"}),
+					recordExpression("cached", ast.BooleanLiteral{Value: false}),
+					recordExpression("timeout", ast.FloatLiteral{Lexeme: "10.5"}),
+					recordExpression("flags", ast.HexIntLiteral{Lexeme: "0xB"}),
+				}
+				typeNames := []string{
+					"{ text: string }",
+					"{ count: int }",
+					"{ enabled: boolean }",
+					"{ ratio: float }",
+					"{ mask: hex_int }",
+					"{ fraction: hex_float }",
+					"{ region: string }",
+					"{ retries: int }",
+					"{ cached: boolean }",
+					"{ timeout: float }",
+					"{ flags: hex_int }",
+				}
+				expression := alternatives[level]
+				for branch := level - 1; branch >= 0; branch-- {
+					expression = ast.ConditionalExpression{
+						Condition: ast.BooleanLiteral{Value: false},
+						Then:      alternatives[branch],
+						Else:      expression,
+					}
+				}
+
+				fieldType, ok := completionOutputFieldType(expression, completionModel{})
+				tAssert.True(ok)
+				if ok {
+					expected := "variant[" + strings.Join(typeNames[:level+1], ", ") + "]"
+					tAssert.Equal(expected, typeReferenceDetail(fieldType))
+				}
+			},
+			Entry("three ternaries", 3),
+			Entry("four ternaries", 4),
+			Entry("five ternaries", 5),
+			Entry("six ternaries", 6),
+			Entry("seven ternaries", 7),
+			Entry("eight ternaries", 8),
+			Entry("nine ternaries", 9),
+			Entry("ten ternaries", 10),
+		)
 
 		It("resolves record map types and their member paths", func() {
 			model := completionModel{

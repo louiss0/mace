@@ -3117,6 +3117,7 @@ func declarationsFromSymbols(symbols []semanticSymbol) []declarationDefinition {
 func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *processor.Result, documentPath string) []semanticSymbol {
 	symbols := importedSemanticSymbols(file, documentPath)
 	documentURI := pathURI(documentPath)
+	outputTypes := dataOutputFieldTypes(file, documentPath)
 
 	if file.Script != nil {
 		symbols = append(symbols, lo.FilterMap(file.Script.Items, func(item ast.Declaration, _ int) (semanticSymbol, bool) {
@@ -3144,13 +3145,30 @@ func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *process
 		detail := "output " + field.Name
 		if result != nil {
 			if value, ok := result.Output[field.Name]; ok {
-				detail = fmt.Sprintf("output %s: %s = %s", field.Name, valueTypeSummary(value), summarizeValue(value))
+				typeName := valueTypeSummary(value)
+				if outputType, found := outputTypes[field.Name]; found {
+					typeName = typeReferenceDetail(outputType)
+				}
+				detail = fmt.Sprintf("output %s: %s = %s", field.Name, typeName, summarizeValue(value))
 			}
 		}
 		return newOutputSymbol(field.NameToken, documentURI, field.Name, detail, inlineDescriptionDocumentation(field.Description))
 	})...)
 
 	return dedupeSymbols(symbols)
+}
+
+func dataOutputFieldTypes(file ast.File, documentPath string) map[string]ast.TypeReference {
+	baseDir := filepath.Dir(documentPath)
+	model := buildCompletionModel(file, baseDir, baseDir, map[string]completionModel{})
+	record, ok := importAsDataRecord(file, model)
+	if !ok {
+		return map[string]ast.TypeReference{}
+	}
+
+	return lo.SliceToMap(record.Fields, func(field ast.SchemaField) (string, ast.TypeReference) {
+		return field.Name, field.Type
+	})
 }
 
 func newLocalSymbol(nameToken lexer.Token, uri protocol.DocumentUri, name string, kind protocol.CompletionItemKind, origin symbolOrigin, detail string, documentation string) semanticSymbol {
@@ -3417,11 +3435,15 @@ func importedSemanticSymbol(file ast.File, path string, name string) (semanticSy
 		return field.Name == name
 	}); ok {
 		rangeValue := tokenProtocolRange(field.NameToken)
+		detail := fmt.Sprintf("import %s", field.Name)
+		if fieldType, found := dataOutputFieldTypes(file, path)[field.Name]; found {
+			detail = fmt.Sprintf("import %s: %s", field.Name, typeReferenceDetail(fieldType))
+		}
 
 		return semanticSymbol{
 			Name:   field.Name,
 			Kind:   protocol.CompletionItemKindVariable,
-			Detail: fmt.Sprintf("import %s", field.Name),
+			Detail: detail,
 			Origin: symbolOriginImport,
 			Range:  rangeValue,
 			Definition: protocol.Location{

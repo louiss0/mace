@@ -1720,6 +1720,78 @@ schema Profile: { age: int, };
 		}
 	})
 
+	It("surfaces every conditional branch type in output hover", func() {
+		text := `|===|
+variant[string, int, boolean] selected_value = true ? "primary" : false ? 10 : true;
+|===|
+[output = data]
+{
+  selected: selected_value,
+}`
+		didOpen(server, uri, text, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 5, Character: 4},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, `output selected: variant[string, int, boolean] = "primary"`)
+		}
+	})
+
+	It("surfaces conditional variants imported from Mace files", func() {
+		workspace, err := os.MkdirTemp("", "mace-lsp-hover-import-conditional-*")
+		tAssert.NoError(err)
+
+		writeWorkspaceFile(workspace, "shared.mace", `[output = data]
+{
+  selected: true ? "primary" : false ? 10 : true,
+}`)
+		text := `|===|
+from "./shared.mace" import selected;
+variant[string, int, boolean] current = selected;
+|===|
+[output = data] { result: current, }`
+		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", text))
+		didOpen(server, uri, text, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 2, Character: 43},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, `import selected: variant[string, int, boolean]`)
+		}
+	})
+
 	It("returns hover details for user declarations", func() {
 		didOpen(server, uri, `|===|
 string env = "dev";

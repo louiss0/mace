@@ -1848,6 +1848,8 @@ func buildCompletionModel(file ast.File, importBaseDir string, importRootDir str
 			model.aliases[declaration.Name] = declaration.Type
 		case ast.SchemaDeclaration:
 			model.schemas[declaration.Name] = declaration.Type
+		case ast.VariableDeclaration:
+			model.variables[declaration.Name] = declaration.Type
 		}
 	}
 
@@ -2274,6 +2276,13 @@ func completionOutputFieldType(expression ast.Expression, model completionModel)
 			return ast.SchemaField{Name: field.Name, Optional: field.Optional, Type: fieldType}
 		})
 		return ast.RecordType{Fields: fields}, true
+	case ast.ConditionalExpression:
+		thenType, thenFound := completionOutputFieldType(typed.Then, model)
+		elseType, elseFound := completionOutputFieldType(typed.Else, model)
+		if !thenFound || !elseFound {
+			return nil, false
+		}
+		return mergedConditionalCompletionType(thenType, elseType, model), true
 	case ast.Identifier:
 		if record, ok := model.schemas[typed.Name]; ok {
 			return record, true
@@ -2287,6 +2296,51 @@ func completionOutputFieldType(expression ast.Expression, model completionModel)
 	}
 
 	return nil, false
+}
+
+func mergedConditionalCompletionType(thenType, elseType ast.TypeReference, model completionModel) ast.TypeReference {
+	if typeReferenceDetail(thenType) == typeReferenceDetail(elseType) {
+		return thenType
+	}
+
+	if isEmptyCompletionRecord(thenType, model) && isCompletionRecord(elseType, model) {
+		return elseType
+	}
+	if isEmptyCompletionRecord(elseType, model) && isCompletionRecord(thenType, model) {
+		return thenType
+	}
+
+	members := lo.UniqBy(
+		lo.FlatMap([]ast.TypeReference{thenType, elseType}, func(branchType ast.TypeReference, _ int) []ast.TypeReference {
+			return flattenedCompletionVariantMembers(branchType)
+		}),
+		typeReferenceDetail,
+	)
+
+	if len(members) == 1 {
+		return members[0]
+	}
+	return ast.VariantType{Members: members}
+}
+
+func flattenedCompletionVariantMembers(typeReference ast.TypeReference) []ast.TypeReference {
+	variant, ok := typeReference.(ast.VariantType)
+	if !ok {
+		return []ast.TypeReference{typeReference}
+	}
+
+	return lo.FlatMap(variant.Members, func(member ast.TypeReference, _ int) []ast.TypeReference {
+		return flattenedCompletionVariantMembers(member)
+	})
+}
+
+func isEmptyCompletionRecord(typeReference ast.TypeReference, model completionModel) bool {
+	resolved := resolveCompletionType(typeReference, model, map[string]struct{}{})
+	return resolved.kind == completionTypeSchema && len(resolved.record.Fields) == 0
+}
+
+func isCompletionRecord(typeReference ast.TypeReference, model completionModel) bool {
+	return resolveCompletionType(typeReference, model, map[string]struct{}{}).kind == completionTypeSchema
 }
 
 func outputDirectiveValue(directives []ast.OutputDirective, kind ast.OutputDirectiveKind) (string, bool) {
