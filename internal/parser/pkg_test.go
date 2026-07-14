@@ -720,27 +720,27 @@ var _ = Describe("Parser", func() {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindGeneral, lexer.TokenGenDoc, "gen_doc")
 				return err
 			}},
-			{`schema_doc User { props: { name "Name", }, };`, func(p *Parser) error {
+			{`schema_doc User { fields: { name "Name", }, };`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 				return err
 			}},
-			{`schema_doc User { props: "Name", };`, func(p *Parser) error {
+			{`schema_doc User { fields: "Name", };`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 				return err
 			}},
-			{`schema_doc User { props: { name: "Name" }, };`, func(p *Parser) error {
+			{`schema_doc User { fields: { name: "Name" }, };`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 				return err
 			}},
-			{`schema_doc User { props: { name: "Name", ,`, func(p *Parser) error {
+			{`schema_doc User { fields: { name: "Name", ,`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 				return err
 			}},
-			{`schema_doc User { props: { name: "Name",`, func(p *Parser) error {
+			{`schema_doc User { fields: { name: "Name",`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 				return err
 			}},
-			{`schema_doc User { props: { name: "Name", }, }`, func(p *Parser) error {
+			{`schema_doc User { fields: { name: "Name", }, }`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 				return err
 			}},
@@ -748,11 +748,11 @@ var _ = Describe("Parser", func() {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindGeneral, lexer.TokenGenDoc, "gen_doc")
 				return err
 			}},
-			{`schema_doc User { props: { , }, };`, func(p *Parser) error {
+			{`schema_doc User { fields: { , }, };`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 				return err
 			}},
-			{`schema_doc User { props: { name: "Name", },`, func(p *Parser) error {
+			{`schema_doc User { fields: { name: "Name", },`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 				return err
 			}},
@@ -1330,13 +1330,19 @@ schema_doc User {
 			}
 		})
 
-		It("rejects inline descriptions on variable declarations", func() {
-			_, err := parseFileInput(`|===|
-string greeting = "Hello $(name)" /# Rendered greeting;
+		It("parses inline descriptions on variable declarations before the semicolon", func() {
+			file, err := parseFileInput(`|===|
+string greeting = "Hello" /# Rendered greeting;
 |===|
 [output = data] {}`)
-			tAssert.Error(err)
-			tAssert.ErrorContains(err, "inline descriptions are not allowed on variable declarations")
+			tAssert.NoError(err)
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 1) {
+				varDecl, ok := file.Script.Items[0].(ast.VariableDeclaration)
+				tAssert.True(ok)
+				if ok {
+					tAssert.Equal("Rendered greeting", varDecl.Description)
+				}
+			}
 		})
 
 		It("parses nullable declarations with null initializers", func() {
@@ -1651,7 +1657,7 @@ schema_doc User {
 [output = data] {}`,
 				`|===|
 schema_doc User {
-  props: {
+  fields: {
     name: "One",
     name: "Two",
   },
@@ -1705,7 +1711,7 @@ schema_doc User {
 [output = data] {}`,
 				`|===|
 schema_doc User {
-  props: {
+  fields: {
     name: 1,
   },
 };
@@ -1713,7 +1719,7 @@ schema_doc User {
 [output = data] {}`,
 				`|===|
 schema_doc User {
-  props: {
+  fields: {
     name: "Name",
   }
 };
@@ -1969,12 +1975,12 @@ gen_doc Status {
 			}
 		})
 
-		It("rejects props entries in gen_doc declarations", func() {
+		It("rejects fields entries in gen_doc declarations", func() {
 			input := `|===|
 type Name: string;
 
 gen_doc Name {
-  props: {
+  fields: {
     value: "Nope",
   },
 };
@@ -1984,10 +1990,10 @@ gen_doc Name {
 
 			_, err := parseFileInput(input)
 			tAssert.Error(err)
-			tAssert.ErrorContains(err, "props entry is only allowed in schema_doc")
+			tAssert.ErrorContains(err, "fields entry is only allowed in schema_doc")
 		})
 
-		It("parses documentation fixtures with props and inline descriptions", func() {
+		It("parses documentation fixtures with fields and inline descriptions", func() {
 			file, err := parseFileInput(`|===|
 schema User: {
   name: string,
@@ -2006,7 +2012,7 @@ schema_doc User {
 
 Hover should surface this documentation.
 """,
-  props: {
+  fields: {
     name: "The user's display name",
   },
 };

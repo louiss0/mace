@@ -18,7 +18,7 @@ schema_doc User {
 
 A reusable schema exposed to imports.
 """,
-  props: {
+  fields: {
     id: "Stable user identifier",
     name: "The user's display name",
     age: "Optional age in years",

@@ -1469,6 +1469,11 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 		} else {
 			return validationErrorf("variable %q requires an initializer", decl.Name)
 		}
+		if decl.Description != "" {
+			if _, ok := docsByTarget[decl.Name]; ok {
+				return validationErrorf("variable %q is already documented by a documentation declaration", decl.Name)
+			}
+		}
 		variables.Add(decl.Name, expectedType)
 		return nil
 	case ast.TypeDeclaration:
@@ -1491,7 +1496,7 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 					continue
 				}
 				if _, documented := docDeclaration.Documentation.Props[field.Name]; documented {
-					return validationErrorf("schema field %q in %q is already documented by schema_doc props", field.Name, decl.Name)
+					return validationErrorf("schema field %q in %q is already documented by schema_doc fields", field.Name, decl.Name)
 				}
 			}
 		}
@@ -1613,7 +1618,7 @@ func validateDocDeclaration(declaration ast.DocDeclaration, symbols *symbolTable
 
 	if len(declaration.Documentation.Props) > 0 {
 		if declaration.Kind != ast.DocumentationKindSchema {
-			return validationErrorf("%s props for %q require a schema-style target", keyword, declaration.Target)
+			return validationErrorf("%s fields for %q require a schema-style target", keyword, declaration.Target)
 		}
 
 		fieldNames := map[string]struct{}{}
@@ -1621,28 +1626,28 @@ func validateDocDeclaration(declaration ast.DocDeclaration, symbols *symbolTable
 		case symbolKindSchema:
 			record, ok := schemas.Get(declaration.Target)
 			if !ok {
-				return validationErrorf("unknown schema %q for %s props", declaration.Target, keyword)
+				return validationErrorf("unknown schema %q for %s fields", declaration.Target, keyword)
 			}
 			for _, field := range record.Fields {
 				fieldNames[field.Name] = struct{}{}
 			}
 		case symbolKindVariable:
 			if !isObjectVariable {
-				return validationErrorf("%s props for %q require a schema-style target", keyword, declaration.Target)
+				return validationErrorf("%s fields for %q require a schema-style target", keyword, declaration.Target)
 			}
 			if variableType.record == nil {
-				return validationErrorf("unknown object shape for %q %s props", declaration.Target, keyword)
+				return validationErrorf("unknown object shape for %q %s fields", declaration.Target, keyword)
 			}
 			for _, field := range variableType.record.Fields {
 				fieldNames[field.Name] = struct{}{}
 			}
 		default:
-			return validationErrorf("%s props for %q require a schema-style target", keyword, declaration.Target)
+			return validationErrorf("%s fields for %q require a schema-style target", keyword, declaration.Target)
 		}
 
 		for name, value := range declaration.Documentation.Props {
 			if _, exists := fieldNames[name]; !exists {
-				return validationErrorf("%s props field %q does not exist on %q", keyword, name, declaration.Target)
+				return validationErrorf("%s fields entry %q does not exist on %q", keyword, name, declaration.Target)
 			}
 			if _, err := parseStaticString(value.Lexeme); err != nil {
 				return err

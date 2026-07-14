@@ -305,20 +305,19 @@ func (p *Parser) parseVariableDeclaration() (ast.Declaration, error) {
 		return nil, p.unexpectedTokenError("parser: expected '=' in variable declaration")
 	}
 
-	if p.current().Type == lexer.TokenInlineDescription {
-		return nil, p.diagnosticError(p.current(), diagnostic.Code("mace.syntax.variable-inline-description-not-allowed"), fmt.Sprintf("parser: inline descriptions are not allowed on variable declarations at %d:%d", p.current().Line, p.current().Column))
-	}
+	description := p.parseOptionalInlineDescription()
 	if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after variable declaration"); err != nil {
 		return nil, err
 	}
 
 	return ast.VariableDeclaration{
-		Nullable:  nullable,
-		HasValue:  hasValue,
-		Type:      typeRef,
-		NameToken: nameToken,
-		Name:      nameToken.Lexeme,
-		Value:     value,
+		Nullable:    nullable,
+		HasValue:    hasValue,
+		Type:        typeRef,
+		NameToken:   nameToken,
+		Name:        nameToken.Lexeme,
+		Value:       value,
+		Description: description,
 	}, nil
 }
 
@@ -405,10 +404,14 @@ func (p *Parser) parseDocDeclaration(kind ast.DocumentationKind, keywordType lex
 		if err != nil {
 			return nil, err
 		}
-		if _, exists := seenEntries[entryToken.Lexeme]; exists {
+		entryName := entryToken.Lexeme
+		if entryName == "props" {
+			entryName = "fields"
+		}
+		if _, exists := seenEntries[entryName]; exists {
 			return nil, p.diagnosticError(entryToken, diagnostic.Code("mace.doc.duplicate-entry"), fmt.Sprintf("parser: duplicate %s entry %q at %d:%d", keyword, entryToken.Lexeme, entryToken.Line, entryToken.Column))
 		}
-		seenEntries[entryToken.Lexeme] = struct{}{}
+		seenEntries[entryName] = struct{}{}
 
 		if _, err := p.consume(lexer.TokenColon, fmt.Sprintf("parser: expected ':' after %s entry name", keyword)); err != nil {
 			return nil, err
@@ -431,39 +434,39 @@ func (p *Parser) parseDocDeclaration(kind ast.DocumentationKind, keywordType lex
 			} else {
 				documentation.Description = &value
 			}
-		case "props":
+		case "props", "fields":
 			if kind != ast.DocumentationKindSchema {
-				return nil, p.diagnosticError(entryToken, diagnostic.Code("mace.doc.unknown-entry"), fmt.Sprintf("parser: props entry is only allowed in schema_doc at %d:%d", entryToken.Line, entryToken.Column))
+				return nil, p.diagnosticError(entryToken, diagnostic.Code("mace.doc.unknown-entry"), fmt.Sprintf("parser: %s entry is only allowed in schema_doc at %d:%d", entryToken.Lexeme, entryToken.Line, entryToken.Column))
 			}
-			if _, err := p.consume(lexer.TokenLBrace, "parser: expected '{' to start props entry"); err != nil {
+			if _, err := p.consume(lexer.TokenLBrace, fmt.Sprintf("parser: expected '{' to start %s entry", entryToken.Lexeme)); err != nil {
 				return nil, err
 			}
 
 			for !p.isAtEnd() && p.current().Type != lexer.TokenRBrace {
-				nameToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier in props entry")
+				nameToken, err := p.consume(lexer.TokenIdentifier, fmt.Sprintf("parser: expected identifier in %s entry", entryToken.Lexeme))
 				if err != nil {
 					return nil, err
 				}
 				if _, exists := documentation.Props[nameToken.Lexeme]; exists {
-					return nil, p.diagnosticError(nameToken, diagnostic.Code("mace.doc.duplicate-entry"), fmt.Sprintf("parser: duplicate props entry %q at %d:%d", nameToken.Lexeme, nameToken.Line, nameToken.Column))
+					return nil, p.diagnosticError(nameToken, diagnostic.Code("mace.doc.duplicate-entry"), fmt.Sprintf("parser: duplicate %s entry %q at %d:%d", entryToken.Lexeme, nameToken.Lexeme, nameToken.Line, nameToken.Column))
 				}
-				if _, err := p.consume(lexer.TokenColon, "parser: expected ':' after props entry name"); err != nil {
+				if _, err := p.consume(lexer.TokenColon, fmt.Sprintf("parser: expected ':' after %s entry name", entryToken.Lexeme)); err != nil {
 					return nil, err
 				}
-				valueToken, err := p.consume(lexer.TokenString, "parser: expected string literal in props entry")
+				valueToken, err := p.consume(lexer.TokenString, fmt.Sprintf("parser: expected string literal in %s entry", entryToken.Lexeme))
 				if err != nil {
 					return nil, err
 				}
-				if err := p.consumePairSeparator("props entry"); err != nil {
+				if err := p.consumePairSeparator(fmt.Sprintf("%s entry", entryToken.Lexeme)); err != nil {
 					return nil, err
 				}
 				documentation.Props[nameToken.Lexeme] = ast.StringLiteral{Token: valueToken, Lexeme: valueToken.Lexeme}
 			}
 
-			if _, err := p.consume(lexer.TokenRBrace, "parser: expected '}' to close props entry"); err != nil {
+			if _, err := p.consume(lexer.TokenRBrace, fmt.Sprintf("parser: expected '}' to close %s entry", entryToken.Lexeme)); err != nil {
 				return nil, err
 			}
-			if err := p.consumePairSeparator("props entry"); err != nil {
+			if err := p.consumePairSeparator(fmt.Sprintf("%s entry", entryToken.Lexeme)); err != nil {
 				return nil, err
 			}
 		default:

@@ -176,7 +176,8 @@ func formatDeclaration(declaration ast.Declaration) (string, error) {
 			return "", err
 		}
 
-		return fmt.Sprintf("%s%s %s = %s;", prefix, typeReference, typedDeclaration.Name, value), nil
+		description := formatInlineDescription(typedDeclaration.Description)
+		return fmt.Sprintf("%s%s %s = %s%s;", prefix, typeReference, typedDeclaration.Name, value, description), nil
 	case ast.TypeDeclaration:
 		typeReference, err := formatTypeReference(typedDeclaration.Type)
 		if err != nil {
@@ -299,7 +300,7 @@ func formatDocDeclaration(declaration ast.DocDeclaration) (string, error) {
 		lines = append(lines, fmt.Sprintf("  description: %s,", declaration.Documentation.Description.Lexeme))
 	}
 	if len(declaration.Documentation.Props) > 0 {
-		lines = append(lines, "  props: {")
+		lines = append(lines, "  fields: {")
 		keys := lo.Keys(declaration.Documentation.Props)
 		slices.Sort(keys)
 		for _, key := range keys {

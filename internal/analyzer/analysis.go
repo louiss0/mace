@@ -1523,7 +1523,7 @@ func addDocumentationRefactorActions(file ast.File, addWholeFileAction func(stri
 		items := append([]ast.Declaration{}, file.Script.Items...)
 		items = append(items, ast.DocDeclaration{Kind: ast.DocumentationKindSchema, Target: schema.Name, Documentation: ast.Documentation{Summary: &ast.StringLiteral{Lexeme: `""`}, Props: schemaDocProps(schema)}})
 		updated.Script = &ast.ScriptBlock{Imports: file.Script.Imports, Items: items}
-		addWholeFileAction("Add missing props docs", targetRange, updated)
+		addWholeFileAction("Add missing fields docs", targetRange, updated)
 		addWholeFileAction("Move inline /# docs to structured docs", targetRange, updated)
 
 		if hasSchemaDoc(file, schema.Name) && hasInlineSchemaDocs(schema) {
@@ -3213,7 +3213,7 @@ func declarationDocumentation(file ast.File, name string) string {
 					props := lo.Map(keys, func(key string, _ int) string {
 						return fmt.Sprintf("- `%s`: %s", key, stringLiteralMarkdown(declaration.Documentation.Props[key]))
 					})
-					parts = append(parts, "Props:\n"+strings.Join(props, "\n"))
+					parts = append(parts, "Fields:\n"+strings.Join(props, "\n"))
 				}
 			}
 		}

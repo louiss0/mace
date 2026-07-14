@@ -1920,7 +1920,7 @@ schema_doc User {
 # User
 Reusable schema.
 """,
-  props: {
+  fields: {
     name: "The user's display name",
   },
 };
@@ -1950,7 +1950,7 @@ Reusable schema.
 			tAssert.Contains(content.Value, `schema User: { name: string };`)
 			tAssert.Contains(content.Value, `Represents a user.`)
 			tAssert.Contains(content.Value, `# User`)
-			tAssert.Contains(content.Value, `Props:`)
+			tAssert.Contains(content.Value, `Fields:`)
 			tAssert.Contains(content.Value, "`name`: The user's display name")
 		}
 	})
@@ -1974,7 +1974,7 @@ schema_doc User {
 
 Hover should surface this documentation.
 """,
-  props: {
+  fields: {
     name: "The user's display name",
   },
 };
@@ -2010,7 +2010,7 @@ Hover should surface this documentation.
 			tAssert.Contains(content.Value, `schema User: { name: string };`)
 			tAssert.Contains(content.Value, `Represents a user`)
 			tAssert.Contains(content.Value, `Hover should surface this documentation.`)
-			tAssert.Contains(content.Value, `Props:`)
+			tAssert.Contains(content.Value, `Fields:`)
 			tAssert.Contains(content.Value, "`name`: The user's display name")
 		}
 	})

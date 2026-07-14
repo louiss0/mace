@@ -164,6 +164,19 @@ from "./base.mace" import User:Person, Config;
 		tAssert.Equal("nullable string nickname;", line)
 	})
 
+	It("formats variable inline descriptions before semicolons", func() {
+		line, err := formatDeclaration(ast.VariableDeclaration{
+			HasValue:    true,
+			Type:        ast.PrimitiveType{Name: "int"},
+			Name:        "count",
+			Value:       ast.IntLiteral{Lexeme: "1"},
+			Description: "Item count",
+		})
+
+		tAssert.NoError(err)
+		tAssert.Equal("int count = 1 /# Item count;", line)
+	})
+
 	It("formats import-as declarations", func() {
 		file, err := parseMaceFile(`|===|
 from "./base.mace" import-as Base;
@@ -258,11 +271,11 @@ type Mode: choice[Environment, 1, true];
 }`, output)
 	})
 
-	It("formats documentation declarations with props", func() {
+	It("formats documentation declarations with fields", func() {
 		file, err := parseMaceFile(`|===|
 schema_doc User {
   summary: "User summary",
-  props: {
+  fields: {
     name: "Display name",
     age: "Age in years",
   },
@@ -276,7 +289,7 @@ schema_doc User {
 		tAssert.Equal(`|==========================|
 schema_doc User {
   summary: "User summary",
-  props: {
+  fields: {
     age: "Age in years",
     name: "Display name",
   },

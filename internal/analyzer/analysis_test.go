@@ -1395,8 +1395,8 @@ schema_doc User {
 
 		rangeValue := protocol.Range{Start: protocol.Position{Line: 1, Character: 0}, End: protocol.Position{Line: 1, Character: 60}}
 		uri := protocol.DocumentUri(fileURI(documentPath))
-		propsAction := requireCodeAction(snapshot, uri, rangeValue, "Add missing props docs")
-		tAssert.Contains(propsAction.Edit.Changes[uri][0].NewText, `props: {`)
+		propsAction := requireCodeAction(snapshot, uri, rangeValue, "Add missing fields docs")
+		tAssert.Contains(propsAction.Edit.Changes[uri][0].NewText, `fields: {`)
 		moveAction := requireCodeAction(snapshot, uri, rangeValue, "Move inline /# docs to structured docs")
 		tAssert.Contains(moveAction.Edit.Changes[uri][0].NewText, `name: ""`)
 		removeAction := requireCodeAction(snapshot, uri, rangeValue, "Remove conflicting docs")
