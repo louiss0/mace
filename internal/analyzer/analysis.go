@@ -165,7 +165,7 @@ func (snapshot analysisSnapshot) selfReferenceSymbolAt(position protocol.Positio
 	}
 
 	name := "$self." + strings.Join(path, ".")
-	includesValue := !snapshot.outputExpressionContainsEmptyLiteral(path)
+	includesValue := !snapshot.outputExpressionSuppressesValue(path)
 	return outputValueSymbolWithValue(name, path, rangeValue, value, includesValue), true
 }
 
@@ -185,7 +185,7 @@ func (snapshot analysisSnapshot) nestedOutputFieldSymbolAt(position protocol.Pos
 	}
 
 	name := strings.Join(path, ".")
-	includesValue := !snapshot.outputExpressionContainsEmptyLiteral(path)
+	includesValue := !snapshot.outputExpressionSuppressesValue(path)
 	return outputValueSymbolWithValue(name, path, rangeValue, value, includesValue), true
 }
 
@@ -253,7 +253,7 @@ func isMemberAccessOperator(tokenType lexer.TokenType) bool {
 	return tokenType == lexer.TokenDot || tokenType == lexer.TokenOptionalDot
 }
 
-func (snapshot analysisSnapshot) outputExpressionContainsEmptyLiteral(path []string) bool {
+func (snapshot analysisSnapshot) outputExpressionSuppressesValue(path []string) bool {
 	if snapshot.file == nil || len(path) == 0 {
 		return false
 	}
@@ -261,7 +261,7 @@ func (snapshot analysisSnapshot) outputExpressionContainsEmptyLiteral(path []str
 	field, found := lo.Find(snapshot.file.Output.DataFields, func(field ast.OutputField) bool {
 		return field.Name == path[0]
 	})
-	return found && expressionContainsEmptyLiteral(field.Value)
+	return found && expressionSuppressesHoverValue(field.Value)
 }
 
 func outputValueSymbol(name string, path []string, rangeValue protocol.Range, value processor.Value) semanticSymbol {
@@ -3269,8 +3269,11 @@ func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *process
 				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindStruct, symbolOriginLocal, fmt.Sprintf("schema %s: %s;", declaration.Name, recordTypeDetail(declaration.Type)), declarationDocumentation(file, declaration.Name)), true
 			case ast.VariableDeclaration:
 				detail := variableDeclarationDetail(declaration)
+				if expressionSuppressesHoverValue(declaration.Value) {
+					detail = variableDeclarationDetailWithoutValue(declaration)
+				}
 				if result != nil {
-					if value, ok := result.Variables[declaration.Name]; ok && !expressionContainsEmptyLiteral(declaration.Value) {
+					if value, ok := result.Variables[declaration.Name]; ok && !expressionSuppressesHoverValue(declaration.Value) {
 						detail = variableDeclarationDetailWithValue(declaration, value)
 					}
 				}
@@ -3297,7 +3300,7 @@ func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *process
 					typeName = typeReferenceDetail(outputType)
 				}
 				detail = fmt.Sprintf("output %s: %s", field.Name, typeName)
-				if !expressionContainsEmptyLiteral(field.Value) {
+				if !expressionSuppressesHoverValue(field.Value) {
 					detail += " = " + summarizeValue(value)
 				}
 			}
@@ -3331,6 +3334,33 @@ func expressionContainsEmptyLiteral(expression ast.Expression) bool {
 		return expressionContainsEmptyLiteral(typed.Condition) ||
 			expressionContainsEmptyLiteral(typed.Then) ||
 			expressionContainsEmptyLiteral(typed.Else)
+	default:
+		return false
+	}
+}
+
+func expressionSuppressesHoverValue(expression ast.Expression) bool {
+	return expressionContainsConditional(expression) || expressionContainsEmptyLiteral(expression)
+}
+
+func expressionContainsConditional(expression ast.Expression) bool {
+	switch typed := expression.(type) {
+	case ast.ArrayLiteral:
+		return lo.ContainsBy(typed.Elements, expressionContainsConditional)
+	case ast.RecordLiteral:
+		return lo.ContainsBy(typed.Fields, func(field ast.RecordField) bool {
+			return expressionContainsConditional(field.Value)
+		})
+	case ast.MemberAccess:
+		return expressionContainsConditional(typed.Target)
+	case ast.PrefixExpression:
+		return expressionContainsConditional(typed.Right)
+	case ast.InfixExpression:
+		return expressionContainsConditional(typed.Left) || expressionContainsConditional(typed.Right)
+	case ast.TypeTestExpression:
+		return expressionContainsConditional(typed.Expression)
+	case ast.ConditionalExpression:
+		return true
 	default:
 		return false
 	}
@@ -3806,11 +3836,15 @@ func variableDeclarationDetail(declaration ast.VariableDeclaration) string {
 }
 
 func variableDeclarationDetailWithValue(declaration ast.VariableDeclaration, value processor.Value) string {
+	return variableDeclarationDetailWithoutValue(declaration) + " = " + summarizeValue(value)
+}
+
+func variableDeclarationDetailWithoutValue(declaration ast.VariableDeclaration) string {
 	detail := fmt.Sprintf("%s %s", typeReferenceDetail(declaration.Type), declaration.Name)
 	if declaration.Nullable {
-		detail = "nullable " + detail
+		return "nullable " + detail
 	}
-	return detail + " = " + summarizeValue(value)
+	return detail
 }
 
 func symbolHasRange(symbol semanticSymbol) bool {

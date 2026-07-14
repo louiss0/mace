@@ -459,6 +459,32 @@ string greeting = "Hello $(plain)";
 		}
 	})
 
+	It("omits values from hovers for ternary variables and output fields", func() {
+		text := `|===|
+boolean enabled = true;
+string greeting = enabled ? "Hello" : "Goodbye";
+|===|
+[output = 'data']
+{
+  greeting: enabled ? "Hello" : "Goodbye",
+}`
+		snapshot := analyzeDocument(text)
+
+		for _, position := range []protocol.Position{{Line: 2, Character: 8}, {Line: 6, Character: 4}} {
+			hover := Hover(text, snapshot, position)
+			tAssert.NotNil(hover)
+			if hover == nil {
+				continue
+			}
+
+			content, ok := hover.Contents.(protocol.MarkupContent)
+			tAssert.True(ok)
+			if ok {
+				tAssert.NotContains(content.Value, ` = `)
+			}
+		}
+	})
+
 	It("renders record map types in schema hovers", func() {
 		text := `|===|
 schema User: {
