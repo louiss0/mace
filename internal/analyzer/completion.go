@@ -84,6 +84,9 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 	}
 
 	if scope == completionScopeScript {
+		if items, handled := variableMemberCompletionItems(document, uri, position); handled {
+			return items
+		}
 		if items, handled := initializerCompletionItems(document, uri, position); handled {
 			return items
 		}
@@ -130,6 +133,10 @@ func completionItems(document document, uri protocol.DocumentUri, position proto
 			return items
 		}
 
+	}
+
+	if trailingMemberAccess(linePrefix) {
+		return []protocol.CompletionItem{}
 	}
 
 	items := []protocol.CompletionItem{}
@@ -220,6 +227,9 @@ func outputInitializerCompletionItems(document document, uri protocol.DocumentUr
 			items := completionItemsForMemberTarget(expectedType, importedModel)
 			return sortCompletionItems(items), true
 		}
+	}
+	if trailingMemberAccess(currentLinePrefix(document.text, position)) {
+		return []protocol.CompletionItem{}, true
 	}
 	expectedType, path, ok := placeholderOutputCompletionType(*file, model)
 	if !ok {
@@ -425,6 +435,33 @@ func outputGuardedNames(linePrefix string) map[string]struct{} {
 	return guarded
 }
 
+func outputTruthyNames(linePrefix string) map[string]struct{} {
+	truthy := map[string]struct{}{}
+	questionIndex := lastUnquotedByteInPrefix(linePrefix, '?')
+	if questionIndex < 0 {
+		return truthy
+	}
+
+	conditionPrefix := linePrefix[:questionIndex]
+	conditionStart := max(
+		strings.LastIndex(conditionPrefix, ":"),
+		strings.LastIndex(conditionPrefix, "="),
+		lastUnquotedByteInPrefix(conditionPrefix, '?'),
+	)
+	condition := strings.TrimSpace(conditionPrefix[conditionStart+1:])
+	if condition == "" || !isIdentifierStartCharacter(condition[0]) {
+		return truthy
+	}
+	for index := 1; index < len(condition); index++ {
+		if !isIdentifierCharacter(condition[index]) {
+			return truthy
+		}
+	}
+
+	truthy[condition] = struct{}{}
+	return truthy
+}
+
 // lastUnquotedByteInPrefix returns the index of the last occurrence of target
 // that is not inside a single- or double-quoted string literal.
 func lastUnquotedByteInPrefix(text string, target byte) int {
@@ -488,6 +525,32 @@ func outputMemberAccessContext(linePrefix string) ([]string, bool) {
 	return segments, true
 }
 
+func variableMemberCompletionItems(document document, uri protocol.DocumentUri, position protocol.Position) ([]protocol.CompletionItem, bool) {
+	linePrefix := currentLinePrefix(document.text, position)
+	path, ok := outputMemberAccessContext(linePrefix)
+	if !ok {
+		return nil, false
+	}
+
+	file, ok := memberAccessCompletionFile(document.text, position)
+	if !ok {
+		return nil, false
+	}
+
+	importBaseDir := filepath.Dir(documentPath(uri))
+	importRootDir := completionRoot(document.analysis, uri)
+	model := buildCompletionModel(*file, importBaseDir, importRootDir, map[string]completionModel{})
+	rootType, ok, guarded := variableMemberCompletionRootType(model, path, outputGuardedNames(linePrefix), outputTruthyNames(linePrefix))
+	if guarded {
+		return []protocol.CompletionItem{}, true
+	}
+	if !ok {
+		return nil, false
+	}
+
+	return sortCompletionItems(completionItemsForMemberTarget(rootType, model)), true
+}
+
 func parsedVariableMemberCompletionItems(document document, uri protocol.DocumentUri, linePrefix string, position protocol.Position) ([]protocol.CompletionItem, bool) {
 	chain, ok := outputMemberAccessContext(linePrefix)
 	if !ok {
@@ -521,8 +584,12 @@ func parsedVariableMemberCompletionItems(document document, uri protocol.Documen
 	importRootDir := completionRoot(document.analysis, uri)
 	cache := map[string]completionModel{}
 	model := buildCompletionModel(file, importBaseDir, importRootDir, cache)
+	guardedNames := outputGuardedNames(linePrefix)
 
-	rootType, ok, guarded := parseInputMemberCompletionRootType(file, model, chain, importBaseDir, importRootDir, cache, outputGuardedNames(linePrefix))
+	rootType, ok, guarded := parseInputMemberCompletionRootType(file, model, chain, importBaseDir, importRootDir, cache, guardedNames)
+	if !ok && !guarded {
+		rootType, ok, guarded = variableMemberCompletionRootType(model, chain, guardedNames, outputTruthyNames(linePrefix))
+	}
 	if guarded {
 		return []protocol.CompletionItem{}, true
 	}
@@ -1353,6 +1420,25 @@ func stringLiteralValue(literal ast.StringLiteral) (string, bool) {
 	return value, true
 }
 
+func memberAccessCompletionFile(text string, position protocol.Position) (*ast.File, bool) {
+	if file, ok := completionFileWithPlaceholder(text, position); ok {
+		return file, true
+	}
+
+	index := positionIndex(text, position)
+	suffix := text[index:]
+	afterLine := ""
+	if lineEnd := strings.IndexByte(suffix, '\n'); lineEnd >= 0 {
+		afterLine = suffix[lineEnd:]
+	}
+
+	file, err := parseFile(text[:index] + completionPlaceholderIdentifier + ` : "";` + afterLine)
+	if err != nil {
+		return nil, false
+	}
+	return &file, true
+}
+
 func completionFileWithPlaceholder(text string, position protocol.Position) (*ast.File, bool) {
 	index := positionIndex(text, position)
 
@@ -1622,6 +1708,10 @@ func expressionPath(expression ast.Expression) ([]string, bool) {
 	return nil, false
 }
 
+func trailingMemberAccess(linePrefix string) bool {
+	return strings.HasSuffix(strings.TrimRight(linePrefix, " \t"), ".")
+}
+
 func trailingMemberAccessPath(linePrefix string) ([]string, bool) {
 	trimmed := strings.TrimRight(linePrefix, " \t")
 	if !strings.HasSuffix(trimmed, ".") {
@@ -1837,9 +1927,10 @@ func outputSchemaDirective(file ast.File) (string, bool) {
 
 func buildCompletionModel(file ast.File, importBaseDir string, importRootDir string, cache map[string]completionModel) completionModel {
 	model := completionModel{
-		aliases:   map[string]ast.TypeReference{},
-		schemas:   map[string]ast.RecordType{},
-		variables: map[string]ast.TypeReference{},
+		aliases:           map[string]ast.TypeReference{},
+		schemas:           map[string]ast.RecordType{},
+		variables:         map[string]ast.TypeReference{},
+		nullableVariables: map[string]bool{},
 	}
 
 	for _, item := range fileScriptItems(file) {
@@ -1850,6 +1941,7 @@ func buildCompletionModel(file ast.File, importBaseDir string, importRootDir str
 			model.schemas[declaration.Name] = declaration.Type
 		case ast.VariableDeclaration:
 			model.variables[declaration.Name] = declaration.Type
+			model.nullableVariables[declaration.Name] = declaration.Nullable
 		}
 	}
 
@@ -1981,6 +2073,27 @@ func parseInputMemberCompletionRootType(file ast.File, model completionModel, pa
 	}
 
 	return parseMemberCompletionType(field.Type, path[1:], model, guardedNames)
+}
+
+func variableMemberCompletionRootType(model completionModel, path []string, guardedNames map[string]struct{}, truthyNames map[string]struct{}) (ast.TypeReference, bool, bool) {
+	if len(path) == 0 || strings.HasPrefix(path[0], "$") {
+		return nil, false, false
+	}
+
+	rootType, ok := model.variables[path[0]]
+	if !ok {
+		return nil, false, false
+	}
+	if model.nullableVariables[path[0]] {
+		if _, truthy := truthyNames[path[0]]; !truthy {
+			return nil, false, true
+		}
+	}
+	if len(path) == 1 {
+		return rootType, true, false
+	}
+
+	return parseMemberCompletionType(rootType, path[1:], model, guardedNames)
 }
 
 func parseMemberCompletionType(typeReference ast.TypeReference, path []string, model completionModel, guardedNames map[string]struct{}) (ast.TypeReference, bool, bool) {
@@ -2380,9 +2493,10 @@ func importedCompletionModel(path string, importRootDir string, cache map[string
 	}
 
 	cache[path] = completionModel{
-		aliases:   map[string]ast.TypeReference{},
-		schemas:   map[string]ast.RecordType{},
-		variables: map[string]ast.TypeReference{},
+		aliases:           map[string]ast.TypeReference{},
+		schemas:           map[string]ast.RecordType{},
+		variables:         map[string]ast.TypeReference{},
+		nullableVariables: map[string]bool{},
 	}
 	model := buildCompletionModel(file, filepath.Dir(path), importRootDir, cache)
 	cache[path] = model
@@ -2749,9 +2863,10 @@ type directiveState struct {
 }
 
 type completionModel struct {
-	aliases   map[string]ast.TypeReference
-	schemas   map[string]ast.RecordType
-	variables map[string]ast.TypeReference
+	aliases           map[string]ast.TypeReference
+	schemas           map[string]ast.RecordType
+	variables         map[string]ast.TypeReference
+	nullableVariables map[string]bool
 }
 
 type completionChoice struct {
