@@ -27,7 +27,7 @@ PackagesAtDepth10 packages_at_depth_10 = {foo: {foo: {foo: {foo: {foo: {foo: {fo
 string fallback = "missing";
 |===================================================|
 
-[output = "data"]
+[output = 'data']
 {
   present: packages?.codefixer?.cn_efs ?? fallback,
   missing: packages?.codefixer?.missing ?? fallback,

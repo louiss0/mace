@@ -1,5 +1,5 @@
 // Languages: Chinese, Japanese, Latin, and Greek keys are intentionally mixed in kubernetes_deployment.
-[output = "data"]
+[output = 'data']
 {
   despliegue: {
     名前: "mace_api",

@@ -1,7 +1,7 @@
 |=================================================|
-from "./docker-schema.mace" import DockerCompose;
+from './docker-schema.mace' import DockerCompose;
 |=================================================|
-[output = "data", schema = DockerCompose]
+[output = 'data', schema = DockerCompose]
 {
   version: "3.9",
   name: "mern-stack",

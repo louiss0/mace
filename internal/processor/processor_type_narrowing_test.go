@@ -197,7 +197,7 @@ string fallback = stringValue is NestedRecord ? "matched" : stringValue;
 	  ? "prod"
 	  : value is string ? value : "$(value)";
 	|===|
-	[output = "data"]
+	[output = 'data']
 	{ result: result, }`)
 
 		tAssert.NoError(err)

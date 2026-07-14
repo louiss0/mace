@@ -1,6 +1,6 @@
 
 |===============================|
-from "./base.mace" import User;
+from './base.mace' import User;
 
 string name = "Ada";
 
@@ -10,5 +10,5 @@ User result = {
 };
 |===============================|
 
-[output = "data"]
+[output = 'data']
 { result: result, }

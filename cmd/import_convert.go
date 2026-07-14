@@ -645,9 +645,9 @@ func schemaPathToMace(path string, separator string) string {
 }
 
 func formatImportedOutput(schemaPath string, root recordExpression) (string, error) {
-	directive := `[output = "data"]`
+	directive := `[output = 'data']`
 	if schemaPath != "" {
-		directive = fmt.Sprintf(`[output = "data", schema_file = %q]`, schemaPath)
+		directive = fmt.Sprintf(`[output = 'data', schema_file = %q]`, schemaPath)
 	}
 
 	source := directive + "\n" + root.render(0)

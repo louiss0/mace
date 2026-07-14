@@ -31,7 +31,7 @@ schema User: { name: string, age: int, };
 int base = 20 + 10;
 User result = { name: "Ada", age: base, };
 |===|
-[output = "data"]
+[output = 'data']
 { result: result, }`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{
 			"name": {kind: ValueString, string: "Ada"},
 			"age":  {kind: ValueInt, int64: 30},
@@ -42,7 +42,7 @@ schema Outer: { inner: Inner, };
 int base = 8 + 2;
 Outer result = { inner: { value: base, }, };
 |===|
-[output = "data"]
+[output = 'data']
 { result: result, }`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{
 			"inner": {kind: ValueRecord, record: map[string]expectedValue{
 				"value": {kind: ValueInt, int64: 10},
@@ -56,7 +56,7 @@ array<Point> result = [
   { x: base + 2, y: base + 3, }
 ];
 |===|
-[output = "data"]
+[output = 'data']
 { result: result, }`, expectedValue{kind: ValueArray, array: []expectedValue{
 			{kind: ValueRecord, record: map[string]expectedValue{
 				"x": {kind: ValueInt, int64: 2},
@@ -153,7 +153,7 @@ User user = {
   name: "Ada",
 };
 |===|
-[output = "data", schema = User]
+[output = 'data', schema = User]
 {
   id: user.id,
   name: user.name,
@@ -169,7 +169,7 @@ User user = {
 		_, err := processor.Process(`|===|
 schema Runtime: { env: string, };
 |===|
-[output = "data", parse = Runtime]
+[output = 'data', parse = Runtime]
 {
   env: env,
 }`)
@@ -182,7 +182,7 @@ schema Runtime: { env: string, };
 		_, err := processor.Process(`|===|
 schema Runtime: { env: string, };
 |===|
-[output = "data", parse = Runtime]
+[output = 'data', parse = Runtime]
 {
   env: $env,
 }`)
@@ -195,7 +195,7 @@ schema Runtime: { env: string, };
 			"env": {Kind: ValueString, String: "prod"},
 		})
 
-		_, err := processor.Process(`[output = "data", parse = MissingSchema] {}`)
+		_, err := processor.Process(`[output = 'data', parse = MissingSchema] {}`)
 		tAssert.Error(err)
 		tAssert.ErrorContains(err, "unknown schema")
 	})
@@ -203,7 +203,7 @@ schema Runtime: { env: string, };
 	It("rejects parse_file with a missing schema file", func() {
 		processor := New()
 
-		_, err := processor.ProcessInDir(`[output = "data", parse_file = "./missing.mace"] {}`, ".")
+		_, err := processor.ProcessInDir(`[output = 'data', parse_file = './missing.mace'] {}`, ".")
 		tAssert.Error(err)
 		tAssert.ErrorContains(err, "unable to read import file")
 	})
@@ -219,7 +219,7 @@ schema Runtime: { env: string, };
 schema Runtime: { env: string, };
 schema Meta: { source: string, };
 |===|
-[output = "schema"]
+[output = 'schema']
 {
   Runtime: Runtime,
 }`)
@@ -228,7 +228,7 @@ schema Meta: { source: string, };
 			"env": {Kind: ValueString, String: "prod"},
 		})
 
-		_, err = processor.ProcessInDir(`[output = "data", parse_file = "./runtime.mace"]
+		_, err = processor.ProcessInDir(`[output = 'data', parse_file = './runtime.mace']
 {
   env: env,
 }`, workspace)
@@ -257,7 +257,7 @@ schema Meta: { source: string, };
 		_, err := processor.Process(`|===|
 schema Input: { record: string, };
 |===|
-[output = "data", parse = Input]
+[output = 'data', parse = Input]
 {
   record: record,
 }`)
@@ -268,14 +268,14 @@ schema Input: { record: string, };
 		dir, err := os.MkdirTemp("", "mace-parse-file-*")
 		tAssert.NoError(err)
 		defer func() { _ = os.RemoveAll(dir) }()
-		tAssert.NoError(os.WriteFile(filepath.Join(dir, "shared.mace"), []byte(`[output = "schema"]
+		tAssert.NoError(os.WriteFile(filepath.Join(dir, "shared.mace"), []byte(`[output = 'schema']
 {
   User: { name: string, },
 }`), 0o644))
 		tAssert.NoError(os.WriteFile(filepath.Join(dir, "schema.mace"), []byte(`|===|
-from "./shared.mace" import User;
+from './shared.mace' import User;
 |===|
-[output = "schema"]
+[output = 'schema']
 {
   user: User,
 }`), 0o644))
@@ -285,7 +285,7 @@ from "./shared.mace" import User;
 				"name": {Kind: ValueString, String: "Ada"},
 			}},
 		})
-		_, err = processor.ProcessInDir(`[output = "data", parse_file = "./schema.mace"]
+		_, err = processor.ProcessInDir(`[output = 'data', parse_file = './schema.mace']
 {
   name: user.name,
 }`, dir)
@@ -306,7 +306,7 @@ schema User: {
 				"name":    {Kind: ValueString, String: "Ada"},
 				"manager": {Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Bob"}}},
 			})
-			_, err := processor.Process(guardSchema + `[output = "data", parse = User]
+			_, err := processor.Process(guardSchema + `[output = 'data', parse = User]
 {
   has_manager: "manager" in input,
 }`)
@@ -317,7 +317,7 @@ schema User: {
 			processor := NewWithInput(map[string]Value{
 				"name": {Kind: ValueString, String: "Ada"},
 			})
-			_, err := processor.Process(guardSchema + `[output = "data", parse = User]
+			_, err := processor.Process(guardSchema + `[output = 'data', parse = User]
 {
   has_manager: "manager" in input,
 }`)
@@ -329,7 +329,7 @@ schema User: {
 				"name":    {Kind: ValueString, String: "Ada"},
 				"manager": {Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Bob"}}},
 			})
-			_, err := processor.Process(guardSchema + `[output = "data", parse = User]
+			_, err := processor.Process(guardSchema + `[output = 'data', parse = User]
 {
   result: manager.name,
 }`)
@@ -343,7 +343,7 @@ schema User: {
 				"name":    {Kind: ValueString, String: "Ada"},
 				"manager": {Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Bob"}}},
 			})
-			_, err := processor.Process(guardSchema + `[output = "data", parse = User]
+			_, err := processor.Process(guardSchema + `[output = 'data', parse = User]
 {
   result: "manager" in input ? manager.name : "none",
 }`)
@@ -354,7 +354,7 @@ schema User: {
 			processor := NewWithInput(map[string]Value{
 				"name": {Kind: ValueString, String: "Ada"},
 			})
-			_, err := processor.Process(guardSchema + `[output = "data", parse = User]
+			_, err := processor.Process(guardSchema + `[output = 'data', parse = User]
 {
   result: "manager" in input ? manager.name : "none",
 }`)
@@ -366,7 +366,7 @@ schema User: {
 				"name":    {Kind: ValueString, String: "Ada"},
 				"manager": {Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Bob"}}},
 			})
-			_, err := processor.Process(guardSchema + `[output = "data", parse = User]
+			_, err := processor.Process(guardSchema + `[output = 'data', parse = User]
 {
   result: "manager" in user ? manager.name : "none",
 }`)
@@ -381,7 +381,7 @@ schema User: {
 					"manager": {Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Carol"}}},
 				}},
 			})
-			_, err := processor.Process(guardSchema + `[output = "data", parse = User]
+			_, err := processor.Process(guardSchema + `[output = 'data', parse = User]
 {
   result: "manager" in input && "manager" in manager ? manager.manager.name : "none",
 }`)
@@ -426,11 +426,11 @@ var _ = Describe("Schema and processor helpers", func() {
 		badPath := filepath.Join(workspace, "bad.mace")
 		dataPath := filepath.Join(workspace, "data.mace")
 		missingPath := filepath.Join(workspace, "missing.mace")
-		tAssert.NoError(os.WriteFile(schemaPath, []byte("[output = "schema"]\n{ User: { name: string, }, }\n"), 0o600))
-		tAssert.NoError(os.WriteFile(badPath, []byte("[output = "data"]\n{ name: \"Ada\", }\n"), 0o600))
+		tAssert.NoError(os.WriteFile(schemaPath, []byte("[output = 'schema']\n{ User: { name: string, }, }\n"), 0o600))
+		tAssert.NoError(os.WriteFile(badPath, []byte("[output = 'data']\n{ name: \"Ada\", }\n"), 0o600))
 		tAssert.NoError(os.WriteFile(dataPath, []byte("not valid"), 0o600))
 		circularPath := filepath.Join(workspace, "circular.mace")
-		tAssert.NoError(os.WriteFile(circularPath, []byte("from \"./circular.mace\" import User;\n[output = "schema"]\n{ User: string, }"), 0o600))
+		tAssert.NoError(os.WriteFile(circularPath, []byte("from \"./circular.mace\" import User;\n[output = 'schema']\n{ User: string, }"), 0o600))
 
 		_, err = loadOutputSchemaRecord(schemaPath, workspace, "schema_file")
 		tAssert.NoError(err)

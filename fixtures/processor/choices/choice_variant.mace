@@ -15,7 +15,7 @@ Review review = {
 };
 |=======================================================|
 
-[output = "data"]
+[output = 'data']
 {
   result: review,
 }

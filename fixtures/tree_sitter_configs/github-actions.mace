@@ -44,7 +44,7 @@ Job ci_job = {
   steps: setup_steps,
 };
 |==========================================|
-[output = "data", schema = Workflow]
+[output = 'data', schema = Workflow]
 {
   name: "ci",
   on: ["push", "pull_request"],

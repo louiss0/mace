@@ -28,7 +28,7 @@ Search search = {
   follow_symlinks: false,
 };
 |==============================================|
-[output = "data", schema = VscodeConfig]
+[output = 'data', schema = VscodeConfig]
 {
   theme: "Default Dark Modern",
   format_on_save: true,

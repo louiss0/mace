@@ -18,7 +18,7 @@ schema SessionInput: {
 
 
 |=======================|
-[output = "schema"]
+[output = 'schema']
 {
   SessionInput: SessionInput,
 }

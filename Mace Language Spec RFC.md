@@ -178,8 +178,8 @@ directives are errors.
 
 | Output mode | `schema` | `schema_file` | `parse` | `parse_file` |
 | --- | --- | --- | --- | --- |
-| omitted &#x2f; `output = "data"` | allowed | allowed | allowed | allowed |
-| `output = "schema"` | forbidden | forbidden | forbidden | forbidden |
+| omitted &#x2f; `output = 'data'` | allowed | allowed | allowed | allowed |
+| `output = 'schema'` | forbidden | forbidden | forbidden | forbidden |
 
 In data mode, `schema` selects the schema used to validate the produced output,
 and `parse` selects the schema used to validate host runtime input. These roles
@@ -240,7 +240,7 @@ boolean enabled = true;
 variant[string, array<string>] value = enabled ? "configured" : [];
 schema Result: { value: variant[string, array<string>], };
 |===|
-[output = "data", schema = Result]
+[output = 'data', schema = Result]
 { value: enabled ? "configured" : [], }
 ```
 

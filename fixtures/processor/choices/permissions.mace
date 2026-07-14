@@ -17,7 +17,7 @@ AccessGrant grant = {
 };
 |==================================================|
 
-[output = "data"]
+[output = 'data']
 {
   result: grant,
 }

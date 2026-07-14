@@ -18,7 +18,7 @@ schema DeploymentInput: {
 };
 
 |=========================|
-[output = "schema"]
+[output = 'schema']
 {
   DeploymentInput: DeploymentInput,
 }

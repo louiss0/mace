@@ -180,7 +180,7 @@ var _ = Describe("Variant type system helpers", func() {
 		workspace, err := os.MkdirTemp("", "processor-helpers-*")
 		tAssert.NoError(err)
 		defer func() { _ = os.RemoveAll(workspace) }()
-		_ = os.WriteFile(filepath.Join(workspace, "schema.mace"), []byte("[output = "schema"]\n{ User: User, }\n"), 0o600)
+		_ = os.WriteFile(filepath.Join(workspace, "schema.mace"), []byte("[output = 'schema']\n{ User: User, }\n"), 0o600)
 
 		schema := ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}, {Name: "opt", Optional: true, Type: ast.PrimitiveType{Name: "int"}}}}
 		schemas := newSchemaRegistry()

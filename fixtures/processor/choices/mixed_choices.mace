@@ -16,7 +16,7 @@ ContactPreference preference = {
 };
 |==================================================|
 
-[output = "data"]
+[output = 'data']
 {
   result: preference,
 }

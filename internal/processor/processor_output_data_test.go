@@ -17,12 +17,12 @@ var _ = Describe("Output data", func() {
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, message)
 		},
-		Entry("duplicate output directive", "[output = "data", output = "schema"] {}", "duplicate output directive"),
-		Entry("unknown schema in directive", "[output = "data", schema = Missing] {}", "unknown schema"),
-		Entry("schema directive is invalid in schema mode", "[output = "schema", schema = User] {}", "schema directive"),
-		Entry("schema_file directive is invalid in schema mode", `[output = "schema", schema_file = "./user.mace"] {}`, "schema_file"),
-		Entry("parse directive is invalid in schema mode", `[output = "schema", parse = User] {}`, "parse directive is invalid when output mode is schema"),
-		Entry("parse_file directive is invalid in schema mode", `[output = "schema", parse_file = "./user.mace"] {}`, "parse_file directive is invalid when output mode is schema"),
+		Entry("duplicate output directive", "[output = 'data', output = 'schema'] {}", "duplicate output directive"),
+		Entry("unknown schema in directive", "[output = 'data', schema = Missing] {}", "unknown schema"),
+		Entry("schema directive is invalid in schema mode", "[output = 'schema', schema = User] {}", "schema directive"),
+		Entry("schema_file directive is invalid in schema mode", `[output = 'schema', schema_file = './user.mace'] {}`, "schema_file"),
+		Entry("parse directive is invalid in schema mode", `[output = 'schema', parse = User] {}`, "parse directive is invalid when output mode is schema"),
+		Entry("parse_file directive is invalid in schema mode", `[output = 'schema', parse_file = './user.mace'] {}`, "parse_file directive is invalid when output mode is schema"),
 	)
 
 	DescribeTable("returns schema output fields",
@@ -33,7 +33,7 @@ var _ = Describe("Output data", func() {
 
 			assertExpectedSchema(result, expected)
 		},
-		Entry("primitive and optional fields", `[output = "schema"]
+		Entry("primitive and optional fields", `[output = 'schema']
 {
   name: string,
   age?: int,
@@ -41,7 +41,7 @@ var _ = Describe("Output data", func() {
 			{name: "name"}:                schemaPrimitive("string"),
 			{name: "age", optional: true}: schemaPrimitive("int"),
 		}),
-		Entry("nested array fields", `[output = "schema"]
+		Entry("nested array fields", `[output = 'schema']
 {
   names: array<string>,
   matrix: array<array<int>>,
@@ -52,7 +52,7 @@ var _ = Describe("Output data", func() {
 		Entry("record fields", `|===|
 schema User: { name: string, };
 |===|
-[output = "schema"]
+[output = 'schema']
 {
   profile: { name: string, age?: int, },
   user: User,
@@ -63,7 +63,7 @@ schema User: { name: string, };
 			}),
 			{name: "user"}: schemaNamed("User"),
 		}),
-		Entry("variant fields", `[output = "schema"]
+		Entry("variant fields", `[output = 'schema']
 {
   value: variant[string, int],
 }`, map[expectedSchemaField]SchemaType{
@@ -73,7 +73,7 @@ schema User: { name: string, };
  type Environment: choice["dev", "prod"];
  type Numeric: choice[1, 2];
 |===|
-[output = "schema"]
+[output = 'schema']
 {
   mode: choice[Environment, Numeric],
 }`, map[expectedSchemaField]SchemaType{
@@ -91,25 +91,25 @@ schema User: { name: string, };
 schema User: { name: string, age?: int, };
 string name = "Ada";
 |===|
-[output = "data", schema = User]
+[output = 'data', schema = User]
 { name: name, }`),
 		Entry("nested record literal", `|===|
 schema Profile: { age: int, };
 schema User: { profile: Profile, };
 |===|
-[output = "data", schema = User]
+[output = 'data', schema = User]
 { profile: { age: 30, }, }`),
 		Entry("variant array field", `|===|
 schema Team: { values: array<variant[string, int]>, };
 |===|
-[output = "data", schema = Team]
+[output = 'data', schema = Team]
 { values: ["Ada", 1], }`),
 		Entry("bare output block defaults to data", `{ result: 1 + 2, }`),
 		Entry("output shorthand satisfies schema", `|===|
 schema User: { name: string, };
 string name = "Ada";
 |===|
-[output = "data", schema = User]
+[output = 'data', schema = User]
 { name, }`),
 		Entry("record shorthand satisfies schema", `|===|
 string name = "Ada";
@@ -117,7 +117,7 @@ schema User: { name: string, };
 schema Wrapper: { user: User, };
 User user = { name, };
 |===|
-[output = "data", schema = Wrapper]
+[output = 'data', schema = Wrapper]
 { user: user, }`),
 	)
 
@@ -134,28 +134,28 @@ User user = { name, };
 		Entry("string shorthand", `|===|
 string name = "Mary";
 |===|
-[output = "data"]
+[output = 'data']
 { name, }`, map[string]expectedValue{
 			"name": {kind: ValueString, string: "Mary"},
 		}),
 		Entry("number shorthand", `|===|
 int age = 42;
 |===|
-[output = "data"]
+[output = 'data']
 { age, }`, map[string]expectedValue{
 			"age": {kind: ValueInt, int64: 42},
 		}),
 		Entry("array shorthand", `|===|
 array<string> names = ["Ada", "Linus"];
 |===|
-[output = "data"]
+[output = 'data']
 { names, }`, map[string]expectedValue{
 			"names": {kind: ValueArray, array: []expectedValue{{kind: ValueString, string: "Ada"}, {kind: ValueString, string: "Linus"}}},
 		}),
 		Entry("array with records shorthand", `|===|
 array<{ name: string, }> users = [{ name: "Ada", }, { name: "Linus", }];
 |===|
-[output = "data"]
+[output = 'data']
 { users, }`, map[string]expectedValue{
 			"users": {kind: ValueArray, array: []expectedValue{{kind: ValueRecord, record: map[string]expectedValue{"name": {kind: ValueString, string: "Ada"}}}, {kind: ValueRecord, record: map[string]expectedValue{"name": {kind: ValueString, string: "Linus"}}}}},
 		}),
@@ -163,7 +163,7 @@ array<{ name: string, }> users = [{ name: "Ada", }, { name: "Linus", }];
 string city = "Paris";
 { city: string, } wrapper = { city, };
 |===|
-[output = "data"]
+[output = 'data']
 { wrapper, }`, map[string]expectedValue{
 			"wrapper": {kind: ValueRecord, record: map[string]expectedValue{"city": {kind: ValueString, string: "Paris"}}},
 		}),
@@ -171,7 +171,7 @@ string city = "Paris";
 string city = "Paris";
 { location: { city: string, }, } wrapper = { location: { city, }, };
 |===|
-[output = "data"]
+[output = 'data']
 { wrapper, }`, map[string]expectedValue{
 			"wrapper": {kind: ValueRecord, record: map[string]expectedValue{"location": {kind: ValueRecord, record: map[string]expectedValue{"city": {kind: ValueString, string: "Paris"}}}}},
 		}),
@@ -179,7 +179,7 @@ string city = "Paris";
 string city = "Paris";
 { a: { b: { city: string, }, }, } wrapper = { a: { b: { city, }, }, };
 |===|
-[output = "data"]
+[output = 'data']
 { wrapper, }`, map[string]expectedValue{
 			"wrapper": {kind: ValueRecord, record: map[string]expectedValue{"a": {kind: ValueRecord, record: map[string]expectedValue{"b": {kind: ValueRecord, record: map[string]expectedValue{"city": {kind: ValueString, string: "Paris"}}}}}}},
 		}),
@@ -187,7 +187,7 @@ string city = "Paris";
 string city = "Paris";
 { a: { b: { c: { city: string, }, }, }, } wrapper = { a: { b: { c: { city, }, }, }, };
 |===|
-[output = "data"]
+[output = 'data']
 { wrapper, }`, map[string]expectedValue{
 			"wrapper": {kind: ValueRecord, record: map[string]expectedValue{"a": {kind: ValueRecord, record: map[string]expectedValue{"b": {kind: ValueRecord, record: map[string]expectedValue{"c": {kind: ValueRecord, record: map[string]expectedValue{"city": {kind: ValueString, string: "Paris"}}}}}}}}},
 		}),
@@ -195,7 +195,7 @@ string city = "Paris";
 string city = "Paris";
 { a: { b: { c: { d: { city: string, }, }, }, }, } wrapper = { a: { b: { c: { d: { city, }, }, }, }, };
 |===|
-[output = "data"]
+[output = 'data']
 { wrapper, }`, map[string]expectedValue{
 			"wrapper": {kind: ValueRecord, record: map[string]expectedValue{"a": {kind: ValueRecord, record: map[string]expectedValue{"b": {kind: ValueRecord, record: map[string]expectedValue{"c": {kind: ValueRecord, record: map[string]expectedValue{"d": {kind: ValueRecord, record: map[string]expectedValue{"city": {kind: ValueString, string: "Paris"}}}}}}}}}}},
 		}),
@@ -204,7 +204,7 @@ string first = "Ada";
 int count = 2;
 array<string> tags = ["math", "logic"];
 |===|
-[output = "data"]
+[output = 'data']
 { first, count, tags, }`, map[string]expectedValue{
 			"first": {kind: ValueString, string: "Ada"},
 			"count": {kind: ValueInt, int64: 2},
@@ -216,7 +216,7 @@ int age = 30;
 { name: string, } profile = { name, };
 { age: int, } stats = { age, };
 |===|
-[output = "data"]
+[output = 'data']
 { profile, stats, }`, map[string]expectedValue{
 			"profile": {kind: ValueRecord, record: map[string]expectedValue{"name": {kind: ValueString, string: "Ada"}}},
 			"stats":   {kind: ValueRecord, record: map[string]expectedValue{"age": {kind: ValueInt, int64: 30}}},
@@ -228,7 +228,7 @@ string name = "Ada";
 { layer1: { profile: { name: string, }, }, } layer2 = { layer1, };
 { layer2: { layer1: { profile: { name: string, }, }, }, } layer3 = { layer2, };
 |===|
-[output = "data"]
+[output = 'data']
 { layer3, }`, map[string]expectedValue{
 			"layer3": {kind: ValueRecord, record: map[string]expectedValue{"layer2": {kind: ValueRecord, record: map[string]expectedValue{"layer1": {kind: ValueRecord, record: map[string]expectedValue{"profile": {kind: ValueRecord, record: map[string]expectedValue{"name": {kind: ValueString, string: "Ada"}}}}}}}}},
 		}),
@@ -244,56 +244,56 @@ string name = "Ada";
 		Entry("missing required field", `|===|
 schema User: { name: string, age: int, };
 |===|
-[output = "data", schema = User]
+[output = 'data', schema = User]
 { name: "Ada", }`, "missing required field"),
 		Entry("unknown output field", `|===|
 schema User: { name: string, };
 |===|
-[output = "data", schema = User]
+[output = 'data', schema = User]
 { name: "Ada", extra: 1, }`, "unknown output field"),
 		Entry("optional output mismatch", `|===|
 schema User: { name: string, age: int, };
 |===|
-[output = "data", schema = User]
+[output = 'data', schema = User]
 { name: "Ada", age?: 30, }`, "not optional"),
 		Entry("nested record mismatch", `|===|
 schema Profile: { age: int, };
 schema User: { profile: Profile, };
 |===|
-[output = "data", schema = User]
+[output = 'data', schema = User]
 { profile: { }, }`, "missing required field"),
 		Entry("array element mismatch", `|===|
 schema Point: { x: int, y: int, };
 schema Plot: { points: array<Point>, };
 |===|
-[output = "data", schema = Plot]
+[output = 'data', schema = Plot]
 { points: [ { x: 1, y: 2, }, { x: 3, } ], }`, "missing required field"),
 		Entry("choice field rejects values outside the domain", `|===|
  type Fruit: choice["Apple", "Strawberry"];
  schema Basket: { favorite: Fruit, };
 |===|
-[output = "data", schema = Basket]
+[output = 'data', schema = Basket]
 { favorite: "Pear", }`, "type mismatch: expected choice[\"Apple\", \"Strawberry\"], got \"Pear\""),
-		Entry("output shorthand rejects unknown variables", `[output = "data"]
+		Entry("output shorthand rejects unknown variables", `[output = 'data']
 { missing, }`, "unknown identifier \"missing\""),
 		Entry("record shorthand rejects missing required fields", `|===|
 schema User: { name: string, };
 User user = { missing, };
 |===|
-[output = "data"]
+[output = 'data']
 { user: user, }`, "missing required field \"name\""),
 		Entry("record shorthand rejects nullable values for required fields", `|===|
 nullable string name = null;
 schema User: { name: string, };
 User user = { name, };
 |===|
-[output = "data"]
+[output = 'data']
 { user: user, }`, "null can only be assigned to nullable variables and optional schema fields"),
 	)
 
 	DescribeTable("requires context for empty collection output literals",
 		func(expression string) {
-			_, err := New().Process(fmt.Sprintf(`[output = "data"]
+			_, err := New().Process(fmt.Sprintf(`[output = 'data']
 {
   value: %s,
 }`, expression))
@@ -320,7 +320,7 @@ User user = { name, };
 boolean configured = true;
 record<string> records = { primary: "active", };
 |===|
-[output = "data"]
+[output = 'data']
 {
   value: configured ? records : {},
 }`),
@@ -328,7 +328,7 @@ record<string> records = { primary: "active", };
 boolean configured = true;
 array<string> values = ["configured"];
 |===|
-[output = "data"]
+[output = 'data']
 {
   value: configured ? values : [],
 }`),
@@ -339,7 +339,7 @@ array<string> values = ["configured"];
 			result, err := New().Process(fmt.Sprintf(`|===|
 schema Result: { value: %s, };
 |===|
-[output = "data", schema = Result]
+[output = 'data', schema = Result]
 {
   value: %s,
 }`, fieldType, expression))
@@ -372,11 +372,11 @@ schema Result: { value: %s, };
 			tAssert.NoError(err)
 			defer func() { _ = os.RemoveAll(workspace) }()
 
-			writeFixtureFile(workspace, "schema.mace", fmt.Sprintf(`[output = "schema"]
+			writeFixtureFile(workspace, "schema.mace", fmt.Sprintf(`[output = 'schema']
 {
   value: %s,
 }`, fieldType))
-			result, err := New().ProcessInDir(fmt.Sprintf(`[output = "data", schema_file = "./schema.mace"]
+			result, err := New().ProcessInDir(fmt.Sprintf(`[output = 'data', schema_file = './schema.mace']
 {
   value: %s,
 }`, expression), workspace)
@@ -404,15 +404,15 @@ var _ = Describe("Data output helpers", func() {
 		tAssert.NoError(err)
 		defer func() { _ = os.RemoveAll(workspace) }()
 
-		writeFixtureFile(workspace, "schema-names.mace", `[output = "schema"]
+		writeFixtureFile(workspace, "schema-names.mace", `[output = 'schema']
 { User: User, Other: Other, }`)
-		writeFixtureFile(workspace, "schema-empty.mace", `[output = "schema"]
+		writeFixtureFile(workspace, "schema-empty.mace", `[output = 'schema']
 { title: string, }`)
-		writeFixtureFile(workspace, "parse-names.mace", `[output = "schema"]
+		writeFixtureFile(workspace, "parse-names.mace", `[output = 'schema']
 { User: User, Other: Other, }`)
-		writeFixtureFile(workspace, "parse-one.mace", `[output = "schema"]
+		writeFixtureFile(workspace, "parse-one.mace", `[output = 'schema']
 { User: User, }`)
-		writeFixtureFile(workspace, "parse-empty.mace", `[output = "schema"]
+		writeFixtureFile(workspace, "parse-empty.mace", `[output = 'schema']
 { title: string, }`)
 
 		context := newProcessContext(workspace, workspace)

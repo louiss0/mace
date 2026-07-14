@@ -17,7 +17,7 @@ int retries = 3;
 string branch = "main";
 boolean release_tag = true;
 |===========================|
-[output = "data", schema = BuildPlan]
+[output = 'data', schema = BuildPlan]
 {
   base_jobs: base_jobs,
   retries: retries,

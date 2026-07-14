@@ -1,5 +1,5 @@
 |===|
-from "./docker-schema.mace" import DockerCompose, DockerService, DockerNetwork, DockerVolume, DockerConfig, DockerSecret;
+from './docker-schema.mace' import DockerCompose, DockerService, DockerNetwork, DockerVolume, DockerConfig, DockerSecret;
 
 DockerService app = {
   build: "./docker/app",
@@ -125,7 +125,7 @@ DockerSecret db_password = {
   file: "./docker/secrets/db_password",
 };
 |===|
-[output = "data", schema = DockerCompose]
+[output = 'data', schema = DockerCompose]
 {
   version: "3.9",
   name: "laravel-inertia",

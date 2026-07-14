@@ -4,7 +4,7 @@ boolean enabled = true;
 schema Hidden: { total: int, };
 |===|
 
-[output = "data"]
+[output = 'data']
 {
   count: count,
   enabled: enabled,

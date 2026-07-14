@@ -14,7 +14,7 @@ User user = {
 Greeting message = "Hello $(user.name)";
 
 |=============================================|
-[output = "data", schema = User]
+[output = 'data', schema = User]
 """
 # User Payload
 

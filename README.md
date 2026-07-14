@@ -56,7 +56,7 @@ ProfileUser current = {
 };
 |===|
 
-[output = "data"]
+[output = 'data']
 {
   env: env,
   current: current
@@ -97,7 +97,7 @@ fields use the right-hand value, and colliding nested records or arrays merge
 recursively. Arrays concatenate in left-to-right order.
 
 ```mace
-[output = "data"]
+[output = 'data']
 {
   result: { profile: { name: &quot;Ada&quot; }; tags: [&quot;base&quot;]; }
     &lt;&gt; { profile: { active: true }; tags: [&quot;override&quot;]; }
@@ -116,7 +116,7 @@ Identity primary = &quot;Ada&quot;;
 Identity fallback = 42;
 Values tags = [&quot;api&quot;, &quot;web&quot;];
 |===|
-[output = "data"]
+[output = 'data']
 {
   primary: primary,
   fallback: fallback,
@@ -137,7 +137,7 @@ User value = {
   created_at: &quot;2026-04-08&quot;
 };
 |===|
-[output = "data"]
+[output = 'data']
 {
   value: value
 }
@@ -153,7 +153,7 @@ type Feature: choice[&quot;write&quot;, &quot;execute&quot;];
 type Permission: choice[Access, Feature];
 Permission value = &quot;execute&quot;;
 |===|
-[output = "data"]
+[output = 'data']
 {
   value: value
 }
@@ -222,7 +222,7 @@ Example input:
 schema Runtime: { env: string; };
 int base = 2 + 2;
 |===|
-[output = "data", parse = Runtime]
+[output = 'data', parse = Runtime]
 {
   env: $env,
   base: base
@@ -367,7 +367,7 @@ import (
 )
 
 func main() {
-	result, err := codec.Parse(`[output = "data"]
+	result, err := codec.Parse(`[output = 'data']
 {
   name: &quot;Ada&quot;,
   enabled: true
@@ -386,7 +386,7 @@ func main() {
 result, err := codec.ParseWithInput(`|===|
 schema Runtime: { env: string; };
 |===|
-[output = "data", parse = Runtime]
+[output = 'data', parse = Runtime]
 {
   env: $env
 }`, map[string]any{
@@ -403,7 +403,7 @@ type Config struct {
 }
 
 var config Config
-err := codec.Unmarshal(`[output = "data"]
+err := codec.Unmarshal(`[output = 'data']
 {
   name: &quot;Ada&quot;;
   enabled: true;

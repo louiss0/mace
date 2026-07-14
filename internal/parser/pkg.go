@@ -136,7 +136,7 @@ func (p *Parser) parseImportDeclaration() (ast.ImportDeclaration, error) {
 		return ast.ImportDeclaration{}, err
 	}
 
-	pathToken, err := p.consumeStaticPath("parser: expected static double-quoted path in import")
+	pathToken, err := p.consumeStaticPath("parser: expected static single-quoted path in import")
 	if err != nil {
 		return ast.ImportDeclaration{}, err
 	}
@@ -641,11 +641,11 @@ func (p *Parser) parseDirectivePair() (ast.OutputDirective, error) {
 			return ast.OutputDirective{}, err
 		}
 
-		valueToken, err := p.consumeStaticPath("parser: expected \"data\" or \"schema\" string in output directive")
+		valueToken, err := p.consumeStaticPath("parser: expected 'data' or 'schema' string in output directive")
 		if err != nil {
 			return ast.OutputDirective{}, err
 		}
-		mode := strings.Trim(valueToken.Lexeme, `"`)
+		mode := strings.Trim(valueToken.Lexeme, `'`)
 		if mode != "data" && mode != "schema" {
 			return ast.OutputDirective{}, p.unexpectedTokenError("parser: expected \"data\" or \"schema\" in output directive")
 		}
@@ -656,7 +656,7 @@ func (p *Parser) parseDirectivePair() (ast.OutputDirective, error) {
 			return ast.OutputDirective{}, err
 		}
 
-		pathToken, err := p.consumeStaticPath("parser: expected static double-quoted path in schema_file directive")
+		pathToken, err := p.consumeStaticPath("parser: expected static single-quoted path in schema_file directive")
 		if err != nil {
 			return ast.OutputDirective{}, err
 		}
@@ -686,7 +686,7 @@ func (p *Parser) parseDirectivePair() (ast.OutputDirective, error) {
 			return ast.OutputDirective{}, err
 		}
 
-		pathToken, err := p.consumeStaticPath("parser: expected static double-quoted path in parse_file directive")
+		pathToken, err := p.consumeStaticPath("parser: expected static single-quoted path in parse_file directive")
 		if err != nil {
 			return ast.OutputDirective{}, err
 		}
@@ -717,7 +717,7 @@ func (p *Parser) parseDirectivePair() (ast.OutputDirective, error) {
 
 func (p *Parser) consumeStaticPath(message string) (lexer.Token, error) {
 	token := p.current()
-	if token.Type != lexer.TokenString || len(token.Lexeme) < 2 || token.Lexeme[0] != '"' || token.Lexeme[len(token.Lexeme)-1] != '"' || strings.ContainsAny(token.Lexeme, "\\\r\n") || strings.Contains(token.Lexeme, "$(") {
+	if token.Type != lexer.TokenString || len(token.Lexeme) < 2 || token.Lexeme[0] != '\'' || token.Lexeme[len(token.Lexeme)-1] != '\'' || strings.ContainsAny(token.Lexeme, "\\\r\n") || strings.Contains(token.Lexeme, "$(") {
 		return lexer.Token{}, p.unexpectedTokenError(message)
 	}
 	p.advance()

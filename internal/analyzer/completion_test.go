@@ -15,7 +15,7 @@ import (
 
 var _ = Describe("completion analysis", func() {
 	It("suggests $self in an empty output expression", func() {
-		text := `[output = "data"]
+		text := `[output = 'data']
 {
   base: 1,
   result:
@@ -37,7 +37,7 @@ var _ = Describe("completion analysis", func() {
 	})
 
 	It("suggests $self after typing a dollar in the output block", func() {
-		text := `[output = "data"]
+		text := `[output = 'data']
 {
   result: $
 }`
@@ -58,7 +58,7 @@ var _ = Describe("completion analysis", func() {
 	})
 
 	It("replaces the typed dollar when completing $self", func() {
-		text := `[output = "data"]
+		text := `[output = 'data']
 {
   result: $
 }`
@@ -87,7 +87,7 @@ var _ = Describe("completion analysis", func() {
 	})
 
 	It("suggests $self after earlier self references on the same line", func() {
-		text := `[output = "data"]
+		text := `[output = 'data']
 {
   foo: 1,
   result: true ? $self.foo : $
@@ -113,7 +113,7 @@ var _ = Describe("completion analysis", func() {
 schema User: { name: string, email: string, };
 User user = { name: "Ada", email: "ada@example.com", };
 |===|
-[output = "data"]
+[output = 'data']
 {
   result: user.
 }`
@@ -148,7 +148,7 @@ User user = { name: "Ada", email: "ada@example.com", };
 %s
 Level1 root = %s;
 |===|
-[output = "data"]
+[output = 'data']
 {
   result: root.%s
 }`,
@@ -201,7 +201,7 @@ Level1 root = %s;
 Level1 root = %s;
 string result = root.%s
 |===|
-[output = "data"]
+[output = 'data']
 { value: result, }`,
 				strings.Join(schemaDeclarations, "\n"), rootValue, memberPath)
 
@@ -253,7 +253,7 @@ schema Other: { other: string, };
 variant[Level1, Other] root = %s;
 string result = root is Level1 ? root.%s
 |===|
-[output = "data"]
+[output = 'data']
 { value: result, }`,
 				strings.Join(schemaDeclarations, "\n"), rootValue, memberPath)
 
@@ -294,7 +294,7 @@ schema User: { name: string, email: string, };
 nullable User user = null;
 string result = user ? user.
 |===|
-[output = "data"]
+[output = 'data']
 { value: result, }`
 
 		position := protocol.Position{
@@ -317,7 +317,7 @@ string result = user ? user.
 schema User: { name: string, email: string, };
 nullable User user = null;
 |===|
-[output = "data"]
+[output = 'data']
 {
   result: user ? user.
 }`
@@ -342,7 +342,7 @@ nullable User user = null;
 schema User: { name: string, email: string, };
 nullable User user = null;
 |===|
-[output = "data"]
+[output = 'data']
 {
   result: user.
 }`
@@ -364,7 +364,7 @@ nullable User user = null;
 schema User: { name: string, };
 User.
 |===|
-[output = "data"] {}`
+[output = 'data'] {}`
 
 		position := protocol.Position{
 			Line:      2,
@@ -383,7 +383,7 @@ User.
  type Fruit: choice["Apple", "Strawberry"];
  schema Basket: { favorite_fruit: Fruit, };
 |===|
-[output = "data", schema = Basket]
+[output = 'data', schema = Basket]
 {
   favorite_fruit:
 }`
@@ -413,7 +413,7 @@ schema Runtime: {
   profile: { name: string, email: string, },
 };
 |===|
-[output = "data", parse = Runtime]
+[output = 'data', parse = Runtime]
 {
   result:
 }`
@@ -450,12 +450,12 @@ schema Runtime: {
 			}()
 
 			runtimePath := filepath.Join(workspace, "runtime.mace")
-			tAssert.NoError(os.WriteFile(runtimePath, []byte(`[output = "schema"]
+			tAssert.NoError(os.WriteFile(runtimePath, []byte(`[output = 'schema']
 {
   Runtime: { env: string, region: string, },
 }`), 0o644))
 			documentPath := filepath.Join(workspace, "document.mace")
-			text := `[output = "data", parse_file = "./runtime.mace"]
+			text := `[output = 'data', parse_file = './runtime.mace']
 {
   result:
 }`
@@ -483,7 +483,7 @@ schema Runtime: {
   profile: { name: string, email: string, },
 };
 |===|
-[output = "data", parse = Runtime]
+[output = 'data', parse = Runtime]
 {
   result:
 }`
@@ -520,7 +520,7 @@ schema Runtime: {
 			}()
 
 			runtimePath := filepath.Join(workspace, "runtime.mace")
-			tAssert.NoError(os.WriteFile(runtimePath, []byte(`[output = "schema"]
+			tAssert.NoError(os.WriteFile(runtimePath, []byte(`[output = 'schema']
 {
   Runtime: {
     env: string,
@@ -528,7 +528,7 @@ schema Runtime: {
   },
 }`), 0o644))
 			documentPath := filepath.Join(workspace, "document.mace")
-			text := `[output = "data", parse_file = "./runtime.mace"]
+			text := `[output = 'data', parse_file = './runtime.mace']
 {
   result:
 }`
@@ -560,12 +560,12 @@ schema Runtime: {
 			}()
 
 			runtimePath := filepath.Join(workspace, "runtime.mace")
-			tAssert.NoError(os.WriteFile(runtimePath, []byte(`[output = "schema"]
+			tAssert.NoError(os.WriteFile(runtimePath, []byte(`[output = 'schema']
 {
   Runtime: { user: { name: string, home: { street: string, city: string, }, }, },
 }`), 0o644))
 			documentPath := filepath.Join(workspace, "document.mace")
-			text := `[output = "data", parse_file = "./runtime.mace"]
+			text := `[output = 'data', parse_file = './runtime.mace']
 {
   result: $user.
 }`
@@ -589,7 +589,7 @@ schema Runtime: {
 			text := `|===|
 schema Runtime: { env: string, };
 |===|
-[output = "data"]
+[output = 'data']
 {
   result:
 }`
@@ -615,15 +615,15 @@ schema Runtime: { env: string, };
 			defer func() { _ = os.RemoveAll(workspace) }()
 
 			sharedPath := filepath.Join(workspace, "shared.mace")
-			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = "schema"]
+			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = 'schema']
 {
   Runtime: { env: string, },
 }`), 0o644))
 			documentPath := filepath.Join(workspace, "document.mace")
 			text := `|===|
-from "./shared.mace" import Runtime;
+from './shared.mace' import Runtime;
 |===|
-[output = "data"]
+[output = 'data']
 {
   result:
 }`
@@ -649,7 +649,7 @@ from "./shared.mace" import Runtime;
 			defer func() { _ = os.RemoveAll(workspace) }()
 
 			sharedPath := filepath.Join(workspace, "shared.mace")
-			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = "data"]
+			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = 'data']
 {
   project: {
     name: "pi-prompt-form",
@@ -658,9 +658,9 @@ from "./shared.mace" import Runtime;
 }`), 0o644))
 			documentPath := filepath.Join(workspace, "document.mace")
 			text := `|===|
-from "./shared.mace" import-as Shared;
+from './shared.mace' import-as Shared;
 |===|
-[output = "data"]
+[output = 'data']
 {
   result:
 }`
@@ -687,7 +687,7 @@ from "./shared.mace" import-as Shared;
 			defer func() { _ = os.RemoveAll(workspace) }()
 
 			sharedPath := filepath.Join(workspace, "shared.mace")
-			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = "data"]
+			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = 'data']
 {
   project: {
     name: "pi-prompt-form",
@@ -696,9 +696,9 @@ from "./shared.mace" import-as Shared;
 }`), 0o644))
 			documentPath := filepath.Join(workspace, "document.mace")
 			text := `|===|
-from "./shared.mace" import-as Shared;
+from './shared.mace' import-as Shared;
 |===|
-[output = "data"]
+[output = 'data']
 {
   result: Shared.project.
 }`
@@ -727,7 +727,7 @@ from "./shared.mace" import-as Shared;
 				defer func() { _ = os.RemoveAll(workspace) }()
 
 				sharedPath := filepath.Join(workspace, "shared.mace")
-				tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = "data"]
+				tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = 'data']
 {
   level1: {
     value: "one",
@@ -747,9 +747,9 @@ from "./shared.mace" import-as Shared;
 }`), 0o644))
 				documentPath := filepath.Join(workspace, "document.mace")
 				text := fmt.Sprintf(`|===|
-from "./shared.mace" import-as Shared;
+from './shared.mace' import-as Shared;
 |===|
-[output = "data"]
+[output = 'data']
 {
   result: %s
 }`, cursorExpr)
@@ -784,7 +784,7 @@ from "./shared.mace" import-as Shared;
 				defer func() { _ = os.RemoveAll(workspace) }()
 
 				sharedPath := filepath.Join(workspace, "shared.mace")
-				tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = "schema"]
+				tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = 'schema']
 {
   level1: {
     value: string,
@@ -804,9 +804,9 @@ from "./shared.mace" import-as Shared;
 }`), 0o644))
 				documentPath := filepath.Join(workspace, "document.mace")
 				text := fmt.Sprintf(`|===|
-from "./shared.mace" import-as Shared;
+from './shared.mace' import-as Shared;
 |===|
-[output = "data", parse = Shared]
+[output = 'data', parse = Shared]
 {
   result: %s
 }`, cursorExpr)
@@ -840,7 +840,7 @@ from "./shared.mace" import-as Shared;
 			defer func() { _ = os.RemoveAll(workspace) }()
 
 			sharedPath := filepath.Join(workspace, "shared.mace")
-			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = "schema"]
+			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = 'schema']
 {
   Package: {
     name: string,
@@ -849,16 +849,16 @@ from "./shared.mace" import-as Shared;
 }`), 0o644))
 			documentPath := filepath.Join(workspace, "document.mace")
 			text := `|===|
-from "./shared.mace" import-as Shared;
+from './shared.mace' import-as Shared;
 |===|
-[output = "data", parse = ]
+[output = 'data', parse = ]
 {
 }`
 			tAssert.NoError(os.WriteFile(documentPath, []byte(text), 0o644))
 
 			position := protocol.Position{
 				Line:      3,
-				Character: uint32(len(`[output = "data", parse = `)),
+				Character: uint32(len(`[output = 'data', parse = `)),
 			}
 			snapshot := AnalyzeCompletionContext(text, documentPath, position)
 
@@ -877,7 +877,7 @@ schema Runtime: {
   region: string,
 };
 |===|
-[output = "data", parse = Runtime]
+[output = 'data', parse = Runtime]
 {
   name: "mace",
   result:
@@ -905,12 +905,12 @@ schema Runtime: {
 			defer func() { _ = os.RemoveAll(workspace) }()
 
 			runtimePath := filepath.Join(workspace, "runtime.mace")
-			tAssert.NoError(os.WriteFile(runtimePath, []byte(`[output = "schema"]
+			tAssert.NoError(os.WriteFile(runtimePath, []byte(`[output = 'schema']
 {
   Runtime: { env: string, region: string, },
 }`), 0o644))
 			documentPath := filepath.Join(workspace, "document.mace")
-			text := `[output = "data", parse_file = "./runtime.mace"]
+			text := `[output = 'data', parse_file = './runtime.mace']
 {
   name: "mace",
   result:
@@ -950,7 +950,7 @@ schema User: {
 };
 |===|
 
-[output = "data", parse = User]
+[output = 'data', parse = User]
 {
   result: %s
 }`, cursorExpr)
@@ -990,7 +990,7 @@ schema User: {
 };
 |===|
 
-[output = "data", parse = User]
+[output = 'data', parse = User]
 {
   result: $home.
 }`
@@ -1029,7 +1029,7 @@ schema User: {
 };
 |===|
 
-[output = "data", parse = User]
+[output = 'data', parse = User]
 {
   result: $home.location.
 }`
@@ -1060,7 +1060,7 @@ schema User: {
 };
 |===|
 
-[output = "data", parse = User]
+[output = 'data', parse = User]
 {
   result: $name.
 }`
@@ -1078,7 +1078,7 @@ schema User: {
 		})
 
 		It("returns no completions for member access on an unknown output value", func() {
-			text := `[output = "data"]
+			text := `[output = 'data']
 {
   result: unknown.
 }`
@@ -1103,7 +1103,7 @@ schema User: {
 };
 |===|
 
-[output = "data", parse = User]
+[output = 'data', parse = User]
 {
   result: $tags.
 }`
@@ -1125,12 +1125,12 @@ schema User: {
 			tAssert.NoError(err)
 			defer func() { _ = os.RemoveAll(workspace) }()
 
-			tAssert.NoError(os.WriteFile(filepath.Join(workspace, "schema.mace"), []byte(`[output = "schema"]
+			tAssert.NoError(os.WriteFile(filepath.Join(workspace, "schema.mace"), []byte(`[output = 'schema']
 {
   User: { name: string, home: { street: string, city: string, }, },
 }`), 0o644))
 			documentPath := filepath.Join(workspace, "document.mace")
-			text := `[output = "data", parse_file = "./schema.mace"]
+			text := `[output = 'data', parse_file = './schema.mace']
 {
   result: $home.
 }`
@@ -1166,13 +1166,13 @@ schema Workspace: {
   root: string,
 };
 |===|
-[output = "schema"]
+[output = 'schema']
 {
   project: Project,
   workspace: Workspace,
 }`), 0o644))
 			documentPath := filepath.Join(workspace, "document.mace")
-			text := `[output = "data", parse_file = "./schema.mace"]
+			text := `[output = 'data', parse_file = './schema.mace']
 {
   result: $project.
 }`
@@ -1203,7 +1203,7 @@ schema User: {
 };
 |===|
 
-[output = "data", parse = User]
+[output = 'data', parse = User]
 {
   result: $manager.
 }`
@@ -1226,7 +1226,7 @@ schema User: {
 };
 |===|
 
-[output = "data", parse = User]
+[output = 'data', parse = User]
 {
   result: "manager" in $manager ? $manager.manager.
 }`
@@ -1251,7 +1251,7 @@ schema User: {
  type Fruit: choice["Apple", "Strawberry"];
  schema Basket: { favorite_fruit: Fruit, };
 |===|
-[output = "data", schema = Basket]
+[output = 'data', schema = Basket]
 {
   favorite_fruit:
 }`
@@ -1278,7 +1278,7 @@ schema User: {
  type Fruit: choice["Apple", "Strawberry"];
  schema Basket: { previous: Fruit, favorite_fruit: Fruit, };
 |===|
-[output = "data", schema = Basket]
+[output = 'data', schema = Basket]
 {
   favorite_fruit: true ? $self.previous :
 }`
@@ -1304,7 +1304,7 @@ schema User: {
  type Fruit: choice["Apple", "Strawberry"];
  Fruit favorite =
 |===|
-[output = "data"] {}`
+[output = 'data'] {}`
 
 		position := protocol.Position{
 			Line:      2,
@@ -1327,7 +1327,7 @@ schema User: {
  type Fruit: choice["Apple", "Strawberry"];
  Fruit favorite = "A
 |===|
-[output = "data"] {}`
+[output = 'data'] {}`
 
 		position := protocol.Position{
 			Line:      2,
@@ -1352,7 +1352,7 @@ schema User: {
  type Label: variant[Status, string];
  Label label =
 |===|
-[output = "data"] {}`
+[output = 'data'] {}`
 
 		position := protocol.Position{
 			Line:      3,
@@ -1378,7 +1378,7 @@ schema User: {
    favorite_fruit:
  };
 |===|
-[output = "data"] {}`
+[output = 'data'] {}`
 
 		position := protocol.Position{
 			Line:      4,
@@ -1404,7 +1404,7 @@ schema User: {
    favorite_fruit: "Str
  };
 |===|
-[output = "data"] {}`
+[output = 'data'] {}`
 
 		position := protocol.Position{
 			Line:      4,
@@ -1426,7 +1426,7 @@ schema User: {
  type Fruit: choice["Apple", "Strawberry"];
  array<Fruit> favorites = ["A
 |===|
-[output = "data"] {}`
+[output = 'data'] {}`
 
 		position := protocol.Position{
 			Line:      2,
@@ -1453,7 +1453,7 @@ schema User: {
  schema Envelope: { value: Identity, };
  schema Response: { payload: Envelope, };
 |===|
-[output = "data", schema = Response]
+[output = 'data', schema = Response]
 {
   payload: {
     value:
@@ -1487,7 +1487,7 @@ schema User: {
  schema User: { name: string };
  type Alias: string;
 |===|
-[output = "schema"]
+[output = 'schema']
 {
   user: User,
   role: Role,
@@ -1518,7 +1518,7 @@ schema User: {
 		writeAnalysisFile(workspace, "shared.mace", `|===|
  type Flavor: choice["Vanilla", "Chocolate"];
 |===|
-[output = "schema"]
+[output = 'schema']
 {
   flavor: Flavor,
 }`)
@@ -1539,7 +1539,7 @@ schema User: {
 		workspace, err := os.MkdirTemp("", "mace-completion-importable-data-*")
 		tAssert.NoError(err)
 
-		writeAnalysisFile(workspace, "shared.mace", `[output = "data"]
+		writeAnalysisFile(workspace, "shared.mace", `[output = 'data']
 {
   name: "Ada",
   age: 30,
@@ -1561,7 +1561,7 @@ schema User: {
 		workspace, err := os.MkdirTemp("", "mace-completion-import-identifiers-*")
 		tAssert.NoError(err)
 
-		writeAnalysisFile(workspace, "shared.mace", `[output = "data"]
+		writeAnalysisFile(workspace, "shared.mace", `[output = 'data']
 {
   name: "Ada",
   age: 30,
@@ -1569,8 +1569,8 @@ schema User: {
 
 		documentPath := filepath.Join(workspace, "consumer.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))
-		line := `from "./shared.mace" import `
-		text := "|===|\n" + line + "\n|===|\n[output = "data"]\n{}"
+		line := `from './shared.mace' import `
+		text := "|===|\n" + line + "\n|===|\n[output = 'data']\n{}"
 		position := protocol.Position{Line: 1, Character: protocol.UInteger(len(line))}
 		snapshot := AnalyzeCompletionContext(text, documentPath, position)
 
@@ -1584,7 +1584,7 @@ schema User: {
 		workspace, err := os.MkdirTemp("", "mace-completion-import-comma-*")
 		tAssert.NoError(err)
 
-		writeAnalysisFile(workspace, "shared.mace", `[output = "data"]
+		writeAnalysisFile(workspace, "shared.mace", `[output = 'data']
 {
   name: "Ada",
   age: 30,
@@ -1592,8 +1592,8 @@ schema User: {
 
 		documentPath := filepath.Join(workspace, "consumer.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))
-		line := `from "./shared.mace" import name, `
-		text := "|===|\n" + line + "\n|===|\n[output = "data"]\n{}"
+		line := `from './shared.mace' import name, `
+		text := "|===|\n" + line + "\n|===|\n[output = 'data']\n{}"
 		position := protocol.Position{Line: 1, Character: protocol.UInteger(len(line))}
 		snapshot := AnalyzeCompletionContext(text, documentPath, position)
 
@@ -1607,7 +1607,7 @@ schema User: {
 		workspace, err := os.MkdirTemp("", "mace-completion-script-import-identifiers-*")
 		tAssert.NoError(err)
 
-		writeAnalysisFile(workspace, "shared.mace", `[output = "data"]
+		writeAnalysisFile(workspace, "shared.mace", `[output = 'data']
 {
   name: "Ada",
   age: 30,
@@ -1616,11 +1616,11 @@ schema User: {
 		documentPath := filepath.Join(workspace, "consumer.mace")
 		uri := protocol.DocumentUri(fileURI(documentPath))
 		text := `|===|
-from "./shared.mace" import
+from './shared.mace' import
 |===|
-[output = "data"]
+[output = 'data']
 {}`
-		position := protocol.Position{Line: 1, Character: protocol.UInteger(len(`from "./shared.mace" import `))}
+		position := protocol.Position{Line: 1, Character: protocol.UInteger(len(`from './shared.mace' import `))}
 		snapshot := AnalyzeCompletionContext(text, documentPath, position)
 
 		items := CompletionItems(text, snapshot, uri, position)
@@ -1633,7 +1633,7 @@ from "./shared.mace" import
 		workspace, err := os.MkdirTemp("", "mace-completion-parent-import-self-*")
 		tAssert.NoError(err)
 
-		writeAnalysisFile(workspace, "shared.mace", `[output = "data"]
+		writeAnalysisFile(workspace, "shared.mace", `[output = 'data']
 {
   base: {
     name: "Ada",
@@ -1644,9 +1644,9 @@ from "./shared.mace" import
 		tAssert.NoError(os.MkdirAll(documentDir, 0o755))
 		documentPath := filepath.Join(documentDir, "consumer.mace")
 		text := `|===|
-from "../shared.mace" import base;
+from '../shared.mace' import base;
 |===|
-[output = "data"]
+[output = 'data']
 {
   base: base,
   result: $self.base.
@@ -1664,7 +1664,7 @@ from "../shared.mace" import base;
 		workspace, err := os.MkdirTemp("", "mace-completion-schema-file-root-*")
 		tAssert.NoError(err)
 
-		writeAnalysisFile(workspace, "shared.mace", `[output = "schema"]
+		writeAnalysisFile(workspace, "shared.mace", `[output = 'schema']
 {
   User: string,
 }`)
@@ -1672,7 +1672,7 @@ from "../shared.mace" import base;
 		documentDir := filepath.Join(workspace, "nested")
 		tAssert.NoError(os.MkdirAll(documentDir, 0o755))
 		documentPath := filepath.Join(documentDir, "consumer.mace")
-		line := `[output = "data", schema_file = "../`
+		line := `[output = 'data', schema_file = "../`
 		position := protocol.Position{Line: 0, Character: protocol.UInteger(len(line))}
 		snapshot := AnalyzeCompletionContext(line, documentPath, position)
 
@@ -2029,11 +2029,11 @@ from "../shared.mace" import base;
 			empty := nextDirectiveDefinitions(nil)
 			tAssert.Empty(empty)
 
-			options := nextDirectiveDefinitions([]string{"output = "data""})
+			options := nextDirectiveDefinitions([]string{"output = 'data'"})
 			labels := lo.Map(options, func(item completionDefinition, _ int) string { return item.Label })
 			tAssert.Equal([]string{"schema", "schema_file", "parse", "parse_file"}, labels)
 
-			options = nextDirectiveDefinitions([]string{"output = "data"", "schema = User"})
+			options = nextDirectiveDefinitions([]string{"output = 'data'", "schema = User"})
 			labels = lo.Map(options, func(item completionDefinition, _ int) string { return item.Label })
 			tAssert.Equal([]string{"parse", "parse_file"}, labels)
 		})
@@ -2046,9 +2046,9 @@ from "../shared.mace" import base;
 			}()
 
 			documentPath := filepath.Join(workspace, "document.mace")
-			tAssert.NoError(os.WriteFile(documentPath, []byte(`[output = "data"] {}`), 0o644))
+			tAssert.NoError(os.WriteFile(documentPath, []byte(`[output = 'data'] {}`), 0o644))
 			sharedPath := filepath.Join(workspace, "shared.mace")
-			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = "data"]
+			tAssert.NoError(os.WriteFile(sharedPath, []byte(`[output = 'data']
 {
   name: "Ada",
 }`), 0o644))
@@ -2056,13 +2056,13 @@ from "../shared.mace" import base;
 			variables := processVariablesInDocument(`|===|
 int count = 1;
 |===|
-[output = "data"] {}`, protocol.DocumentUri(fileURI(documentPath)))
+[output = 'data'] {}`, protocol.DocumentUri(fileURI(documentPath)))
 			tAssert.Equal(processor.ValueInt, variables["count"].Kind)
 
-			partial := partialScriptVariables("|===|\nint count = 1;\n|===|\n[output = "data"] {}", protocol.DocumentUri(fileURI(documentPath)), protocol.Position{Line: 1, Character: 3})
+			partial := partialScriptVariables("|===|\nint count = 1;\n|===|\n[output = 'data'] {}", protocol.DocumentUri(fileURI(documentPath)), protocol.Position{Line: 1, Character: 3})
 			_ = partial
 
-			scriptVariables := scriptVariablesForOutput("|===|\nint count = 1;\n|===|\n[output = "data"] {}", protocol.DocumentUri(fileURI(documentPath)))
+			scriptVariables := scriptVariablesForOutput("|===|\nint count = 1;\n|===|\n[output = 'data'] {}", protocol.DocumentUri(fileURI(documentPath)))
 			_ = scriptVariables
 
 			names, ok := importableIdentifiers(protocol.DocumentUri(fileURI(documentPath)), workspace, "./shared.mace")
@@ -2190,10 +2190,10 @@ var _ = Describe("completion coverage helpers", func() {
 		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = ", protocol.Position{})
 		tAssert.True(handled)
 		tAssert.Len(items, 2)
-		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = "schema", schema = ", protocol.Position{})
+		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = 'schema', schema = ", protocol.Position{})
 		tAssert.True(handled)
 		tAssert.Empty(items)
-		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = "data",", protocol.Position{})
+		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = 'data',", protocol.Position{})
 		tAssert.True(handled)
 		tAssert.NotEmpty(items)
 		_, handled = directiveCompletionItems(document{}, "file:///doc.mace", "not a directive", protocol.Position{})
@@ -2206,13 +2206,13 @@ var _ = Describe("completion coverage helpers", func() {
 		tAssert.False(ok)
 		_, ok = directivePrefix("  [schema]")
 		tAssert.False(ok)
-		state := parseDirectiveState([]string{"output = "data"", "schema = User", "schema_file = \"s", "parse = Input", "parse_file = \"p"})
+		state := parseDirectiveState([]string{"output = 'data'", "schema = User", "schema_file = \"s", "parse = Input", "parse_file = \"p"})
 		tAssert.Equal("data", state.outputMode)
 		tAssert.True(state.seenSchema)
 		tAssert.True(state.seenSchemaFile)
 		tAssert.True(state.seenParse)
 		tAssert.True(state.seenParseFile)
-		tAssert.Empty(nextDirectiveDefinitions([]string{"output = "schema""}))
+		tAssert.Empty(nextDirectiveDefinitions([]string{"output = 'schema'"}))
 		tAssert.NotEmpty(nextDirectiveDefinitions([]string{"output"}))
 
 		tAssert.Equal("])", completionExpressionClosers("value: call([{}", len("value: call([{}")))
@@ -2236,7 +2236,7 @@ var _ = Describe("completion coverage helpers", func() {
 		tAssert.NoError(err)
 		defer func() { tAssert.NoError(os.RemoveAll(workspace)) }()
 		shared := filepath.Join(workspace, "shared.mace")
-		tAssert.NoError(os.WriteFile(shared, []byte("|===|\nschema User: { name: string, };\n|===|\n[output = "schema"] { User: User, }\n"), 0o600))
+		tAssert.NoError(os.WriteFile(shared, []byte("|===|\nschema User: { name: string, };\n|===|\n[output = 'schema'] { User: User, }\n"), 0o600))
 		tAssert.NoError(os.Mkdir(filepath.Join(workspace, "nested"), 0o700))
 		docPath := filepath.Join(workspace, "doc.mace")
 		doc := document{text: "", analysis: analyzeDocumentAtInRoot("", docPath, workspace)}
@@ -2245,13 +2245,13 @@ var _ = Describe("completion coverage helpers", func() {
 		items, handled := importCompletionItems(doc, `from "./`, uri, protocol.Position{})
 		tAssert.True(handled)
 		tAssert.NotEmpty(items)
-		items, handled = importCompletionItems(doc, `from "./shared.mace" import U`, uri, protocol.Position{})
+		items, handled = importCompletionItems(doc, `from './shared.mace' import U`, uri, protocol.Position{})
 		tAssert.True(handled)
 		tAssert.NotEmpty(items)
-		items, handled = importCompletionItems(doc, `from "./shared.mace" imp`, uri, protocol.Position{})
+		items, handled = importCompletionItems(doc, `from './shared.mace' imp`, uri, protocol.Position{})
 		tAssert.True(handled)
 		tAssert.NotEmpty(items)
-		items, handled = importCompletionItems(doc, `from "./shared.mace" nope`, uri, protocol.Position{})
+		items, handled = importCompletionItems(doc, `from './shared.mace' nope`, uri, protocol.Position{})
 		tAssert.True(handled)
 		tAssert.Empty(items)
 		_, handled = importCompletionItems(doc, `let x`, uri, protocol.Position{})
@@ -2286,16 +2286,16 @@ var _ = Describe("completion remaining low-coverage helpers", func() {
 		items, handled := directiveCompletionItems(document{}, "file:///doc.mace", "  [output", protocol.Position{})
 		tAssert.True(handled)
 		tAssert.NotEmpty(items)
-		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = "data", schema = ", protocol.Position{})
+		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = 'data', schema = ", protocol.Position{})
 		tAssert.True(handled)
 		tAssert.Empty(items)
-		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = "data", schema_file = \"", protocol.Position{})
+		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = 'data', schema_file = \"", protocol.Position{})
 		tAssert.True(handled)
 		_ = items
-		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = "data", parse = ", protocol.Position{})
+		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = 'data', parse = ", protocol.Position{})
 		tAssert.True(handled)
 		tAssert.Empty(items)
-		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = "data", parse_file = \"", protocol.Position{})
+		items, handled = directiveCompletionItems(document{}, "file:///doc.mace", "  [output = 'data', parse_file = \"", protocol.Position{})
 		tAssert.True(handled)
 		_ = items
 	})
@@ -2432,7 +2432,7 @@ var _ = Describe("completion parse-file helper coverage", func() {
 		_ = writeCompletionFile("schema.mace", `|===|
 schema User: { name: string, };
 |===|
-[output = "schema"]
+[output = 'schema']
 {
   User: User,
 }`)

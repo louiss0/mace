@@ -47,7 +47,7 @@ schema SecondaryUser: {
 type Status: choice["Active", "Disabled"];
 |============================================================================================================|
 
-[output = "schema"]
+[output = 'schema']
 {
   string_value: StringValue,
   int_value: IntValue,

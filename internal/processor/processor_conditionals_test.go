@@ -29,7 +29,7 @@ string deployment_setting = true ? "local" : 10;
 			result, err := New().Process(`|===|
 variant[string, int] deployment_setting = true ? "primary" : "fallback";
 |===|
-[output = "data"]
+[output = 'data']
 {
   deployment_setting,
 }`)
@@ -49,7 +49,7 @@ variant[string, int, boolean] deployment_setting = false
     ? 10
     : "local";
 |===|
-[output = "data"]
+[output = 'data']
 {
   deployment_setting,
 }`)
@@ -66,7 +66,7 @@ variant[string, int, boolean] deployment_setting = false
 				input := fmt.Sprintf(`|===|
 %s inferred = %s;
 |===|
-[output = "data"]
+[output = 'data']
 {
   inferred,
 }`, typeReference, expression)
@@ -130,7 +130,7 @@ schema Deployment: { name: string, };
 Deployment deployment = { name: "api", };
 variant[Deployment, record<string>] selected = false ? deployment : %s;
 |===|
-[output = "data"]
+[output = 'data']
 {
   selected,
 }`, recordExpression)
@@ -158,7 +158,7 @@ Environment environment = false
     ? "testing"
     : "local";
 |===|
-[output = "data"]
+[output = 'data']
 {
   environment,
 }`)
@@ -176,7 +176,7 @@ Environment environment = false
 			_, err := New().Process(`|===|
 schema Result: { deployment_setting: string, };
 |===|
-[output = "data", schema = Result]
+[output = 'data', schema = Result]
 {
   deployment_setting: true ? "local" : 10,
 }`)
@@ -189,7 +189,7 @@ schema Result: { deployment_setting: string, };
 			result, err := New().Process(`|===|
 schema Result: { deployment_setting: variant[string, int], };
 |===|
-[output = "data", schema = Result]
+[output = 'data', schema = Result]
 {
   deployment_setting: true ? "primary" : "fallback",
 }`)
@@ -206,7 +206,7 @@ schema Result: { deployment_setting: variant[string, int], };
 				input := fmt.Sprintf(`|===|
 schema Result: { inferred: %s, };
 |===|
-[output = "data", schema = Result]
+[output = 'data', schema = Result]
 {
   inferred: %s,
 }`, typeReference, expression)
@@ -268,7 +268,7 @@ schema Result: { inferred: %s, };
 				input := fmt.Sprintf(`|===|
 schema Result: { value: %s, };
 |===|
-[output = "data", schema = Result]
+[output = 'data', schema = Result]
 {
   value: %s,
 }`, typeReference, expression)
@@ -321,7 +321,7 @@ schema Result: { value: %s, };
 				input := fmt.Sprintf(`|===|
 schema Result: { value: %s, };
 |===|
-[output = "data", schema = Result]
+[output = 'data', schema = Result]
 {
   value: %s,
 }`, typeReference, expression)
@@ -386,7 +386,7 @@ schema Deployment: { name: string, };
 schema Result: { selected: variant[Deployment, record<string>], };
 Deployment deployment = { name: "api", };
 |===|
-[output = "data", schema = Result]
+[output = 'data', schema = Result]
 {
   selected: false ? deployment : %s,
 }`, recordExpression)
@@ -410,7 +410,7 @@ Deployment deployment = { name: "api", };
 type Environment: choice["production", "testing", "local"];
 schema Result: { environment: Environment, };
 |===|
-[output = "data", schema = Result]
+[output = 'data', schema = Result]
 {
   environment: false
     ? "production"

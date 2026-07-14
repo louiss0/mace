@@ -50,7 +50,7 @@ func dataFixtures() []importFixture {
 	return []importFixture{
 		{
 			name: "app_release",
-			mace: `[output = "data"]
+			mace: `[output = 'data']
 {
   app: "MaceBoard",
   version: "1.8.3",
@@ -79,7 +79,7 @@ func dataFixtures() []importFixture {
 		},
 		{
 			name: "bookstore_order",
-			mace: `[output = "data"]
+			mace: `[output = 'data']
 {
   order_id: "ord-2026-0508-001",
   paid: true,
@@ -117,7 +117,7 @@ func dataFixtures() []importFixture {
 		},
 		{
 			name: "deep_observatory_network",
-			mace: `[output = "data"]
+			mace: `[output = 'data']
 {
   network: {
     id: "obs-net-east",
@@ -172,7 +172,7 @@ func dataFixtures() []importFixture {
 		},
 		{
 			name: "game_character",
-			mace: `[output = "data"]
+			mace: `[output = 'data']
 {
   name: "Nyra",
   class: "Spellblade",
@@ -208,7 +208,7 @@ func dataFixtures() []importFixture {
 		},
 		{
 			name: "smart_home",
-			mace: `[output = "data"]
+			mace: `[output = 'data']
 {
   home: "Cedar Loft",
   occupied: true,
@@ -379,7 +379,7 @@ production:
 
 		source, err := importYAMLSource(filepath.Join("workspace", "01_basic_alias.yaml"), input)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = "data"]
+		tAssert.Equal(`[output = 'data']
 {
   defaults: {
     retry_count: 3,
@@ -394,7 +394,7 @@ production:
   }
 }`, source)
 
-		expected := expectedOutput(`[output = "data"]
+		expected := expectedOutput(`[output = 'data']
 {
   defaults: {
     retry_count: 3,
@@ -438,7 +438,7 @@ api_service:
 
 		source, err := importYAMLSource(filepath.Join("workspace", "02_merge_key_override.yaml"), input)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = "data"]
+		tAssert.Equal(`[output = 'data']
 {
   base_service: {
     image: "mace/api",
@@ -458,7 +458,7 @@ api_service:
   }
 }`, source)
 
-		expected := expectedOutput(`[output = "data"]
+		expected := expectedOutput(`[output = 'data']
 {
   base_service: {
     image: "mace/api",
@@ -505,7 +505,7 @@ services:
 
 		source, err := importYAMLSource(filepath.Join("workspace", "03_nested_anchor_alias.yaml"), input)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = "data"]
+		tAssert.Equal(`[output = 'data']
 {
   database_credentials: {
     username: "mace_app",
@@ -532,7 +532,7 @@ services:
   }
 }`, source)
 
-		expected := expectedOutput(`[output = "data"]
+		expected := expectedOutput(`[output = 'data']
 {
   database_credentials: {
     username: "mace_app",
@@ -580,7 +580,7 @@ worker:
 
 		source, err := importYAMLSource(filepath.Join("workspace", "04_merge_multiple_sources.yaml"), input)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = "data"]
+		tAssert.Equal(`[output = 'data']
 {
   runtime_defaults: {
     restart: "always",
@@ -596,7 +596,7 @@ worker:
   }
 }`, source)
 
-		expected := expectedOutput(`[output = "data"]
+		expected := expectedOutput(`[output = 'data']
 {
   runtime_defaults: {
     restart: "always",
@@ -795,7 +795,7 @@ profile:
 
 		source, err := importYAMLSource(filepath.Join("workspace", "merge_expression.yaml"), input)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = "data"]
+		tAssert.Equal(`[output = 'data']
 {
   defaults: {
     enabled: true,
@@ -846,7 +846,7 @@ copy_a: *a
 
 		source, err := importYAMLSource(filepath.Join("workspace", "anchor_dependency.yaml"), input)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = "data"]
+		tAssert.Equal(`[output = 'data']
 {
   z: {
     host: "db.internal"
@@ -935,10 +935,10 @@ updated_at = 2026-05-08T09:00:00Z
 
 		source, err := importTOMLSource(filepath.Join("workspace", "config.toml"), input)
 		tAssert.NoError(err)
-		tAssert.Contains(source, `[output = "data", schema_file = "./schemas/vehicle_telemetry.schema.mace"]`)
+		tAssert.Contains(source, `[output = 'data', schema_file = './schemas/vehicle_telemetry.schema.mace']`)
 		tAssert.Contains(source, "description: \"\"\"")
 
-		output := importedOutput(strings.Replace(source, `, schema_file = "./schemas/vehicle_telemetry.schema.mace"`, "", 1))
+		output := importedOutput(strings.Replace(source, `, schema_file = './schemas/vehicle_telemetry.schema.mace'`, "", 1))
 		tAssert.Equal("orbital-array", output["name"])
 		tAssert.Equal(true, output["enabled"])
 		tAssert.Equal(42.5, output["score"])
@@ -966,7 +966,7 @@ name = "orbital-array"
 			input,
 		)
 		tAssert.NoError(err)
-		tAssert.Contains(source, `[output = "data", schema_file = "../workspace/schemas/vehicle_telemetry.schema.mace"]`)
+		tAssert.Contains(source, `[output = 'data', schema_file = '../workspace/schemas/vehicle_telemetry.schema.mace']`)
 	})
 
 	It("covers import conversion edge cases", func() {
@@ -1295,10 +1295,10 @@ name = "orbital-array"
 		_, err = formatImportedSource("$x")
 		tAssert.Error(err)
 
-		_, err = formatImportedSource("[output = "data"]\n{")
+		_, err = formatImportedSource("[output = 'data']\n{")
 		tAssert.Error(err)
 
-		_, err = formatImportedSource("[output = "data"]\n$")
+		_, err = formatImportedSource("[output = 'data']\n$")
 		tAssert.Error(err)
 
 		previous := formatMaceFile
@@ -1307,7 +1307,7 @@ name = "orbital-array"
 			return "", errors.New("format failed")
 		}
 
-		_, err = formatImportedSource("[output = "data"]\n{ name: \"Ada\", }")
+		_, err = formatImportedSource("[output = 'data']\n{ name: \"Ada\", }")
 		tAssert.ErrorContains(err, "format generated source")
 		tAssert.Error(err)
 

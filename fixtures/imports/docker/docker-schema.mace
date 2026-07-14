@@ -51,7 +51,7 @@ schema DockerCompose: {
   secrets?: record<DockerSecret>,
 };
 |===========================================================================|
-[output = "schema"]
+[output = 'schema']
 {
   DockerService: DockerService,
   DockerNetwork: DockerNetwork,

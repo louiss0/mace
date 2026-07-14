@@ -20,7 +20,7 @@ type Alias: string;
 schema Doc: { field: string, };
 string value = "x";
 |===|
-[output = "data"]
+[output = 'data']
 {
   value: "x",
 }
@@ -93,10 +93,10 @@ string value = "x";
 		workspace := GinkgoT().TempDir()
 		documentPath := filepath.Join(workspace, "document.mace")
 		text := `|===|
-from "./shared.mace" import User as alias;
+from './shared.mace' import User as alias;
 string value = "x";
 |===|
-[output = "data"]
+[output = 'data']
 {
   value: "x",
 }
@@ -122,7 +122,7 @@ schema_doc User {
   summary: "docs",
 }
 |===|
-[output = "data"]
+[output = 'data']
 {
   user: { name: "Ada", },
   value: "x",
@@ -164,10 +164,10 @@ schema_doc User {
 		renameSnapshot.symbolIndex = indexSymbols(renameSnapshot.symbols)
 		_, _ = Rename(renameText, renameSnapshot, uri, protocol.Position{Line: 0, Character: 1}, "renamed")
 		aliasText := `|===|
-from "./shared.mace" import User:alias;
+from './shared.mace' import User:alias;
 string value = alias;
 |===|
-[output = "data"]
+[output = 'data']
 {
   value: alias,
 }
@@ -188,7 +188,7 @@ string value = alias;
 		manualAliasSnapshot.symbolIndex = indexSymbols(manualAliasSnapshot.symbols)
 		_, _ = Rename(aliasText, manualAliasSnapshot, aliasURI, usageStart, "renamed_alias")
 		foreignURI := protocol.DocumentUri(fileURI(filepath.Join(workspace, "shared.mace")))
-		importRenameText := `from "./shared.mace" import User:alias;
+		importRenameText := `from './shared.mace' import User:alias;
 alias`
 		importRenameSnapshot := analysisSnapshot{
 			text:        importRenameText,

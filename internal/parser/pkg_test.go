@@ -645,27 +645,27 @@ var _ = Describe("Parser", func() {
 				_, err := p.parseImportDeclaration()
 				return err
 			}},
-			{`from "./base.mace" name`, func(p *Parser) error {
+			{`from './base.mace' name`, func(p *Parser) error {
 				_, err := p.parseImportDeclaration()
 				return err
 			}},
-			{`from "./base.mace" import-`, func(p *Parser) error {
+			{`from './base.mace' import-`, func(p *Parser) error {
 				_, err := p.parseImportDeclaration()
 				return err
 			}},
-			{`from "./base.mace" import-as Base`, func(p *Parser) error {
+			{`from './base.mace' import-as Base`, func(p *Parser) error {
 				_, err := p.parseImportDeclaration()
 				return err
 			}},
-			{`from "./base.mace" import User:`, func(p *Parser) error {
+			{`from './base.mace' import User:`, func(p *Parser) error {
 				_, err := p.parseImportDeclaration()
 				return err
 			}},
-			{`from "./base.mace" import User, Config:`, func(p *Parser) error {
+			{`from './base.mace' import User, Config:`, func(p *Parser) error {
 				_, err := p.parseImportDeclaration()
 				return err
 			}},
-			{`from "./base.mace" import ;`, func(p *Parser) error {
+			{`from './base.mace' import ;`, func(p *Parser) error {
 				_, err := p.parseImportDeclaration()
 				return err
 			}},
@@ -677,7 +677,7 @@ var _ = Describe("Parser", func() {
 			tAssert.Error(item.call(New(tokens)))
 		}
 
-		tokens, err := lexInput(`from "./base.mace" import User |===|`)
+		tokens, err := lexInput(`from './base.mace' import User |===|`)
 		tAssert.NoError(err)
 		_, err = New(tokens).parseImportDeclaration()
 		tAssert.NoError(err)
@@ -793,8 +793,8 @@ var _ = Describe("Parser", func() {
 			`parse Runtime`,
 			`parse_file "./runtime.mace"`,
 			`schema User`,
-			`[output = "data", ]`,
-			`[output = "data"`,
+			`[output = 'data', ]`,
+			`[output = 'data'`,
 		}
 
 		for _, input := range cases {
@@ -892,13 +892,13 @@ extra`)
 			_, err = New(scriptTokens).ParseScriptBlock()
 			tAssert.ErrorContains(err, "unexpected token after script block")
 
-			outputTokens, err := lexInput(`[output = "data"] {} extra`)
+			outputTokens, err := lexInput(`[output = 'data'] {} extra`)
 			tAssert.NoError(err)
 
 			_, err = New(outputTokens).ParseOutputBlock()
 			tAssert.ErrorContains(err, "unexpected token after output block")
 
-			_, err = parseFileInput(`[output = "data"] {} extra`)
+			_, err = parseFileInput(`[output = 'data'] {} extra`)
 			tAssert.ErrorContains(err, "unexpected token after output block")
 		})
 
@@ -914,7 +914,7 @@ string name = "Ada";`)
 			_, err = New(scriptTokens).ParseScriptBlock()
 			tAssert.ErrorContains(err, "expected closing script delimiter")
 
-			outputTokens, err := lexInput(`[output = "data"]`)
+			outputTokens, err := lexInput(`[output = 'data']`)
 			tAssert.NoError(err)
 			_, err = New(outputTokens).ParseOutputBlock()
 			tAssert.ErrorContains(err, "expected '{' to start output block")
@@ -942,7 +942,7 @@ string name = "Ada";
 			tAssert.NoError(err)
 			tAssert.Len(script.Items, 1)
 
-			outputTokens, err := lexInput(`[output = "data"]
+			outputTokens, err := lexInput(`[output = 'data']
 { name: "Ada", }`)
 			tAssert.NoError(err)
 			output, err := New(outputTokens).ParseOutputBlock()
@@ -952,10 +952,10 @@ string name = "Ada";
 
 		It("parses import-as declarations and import aliases", func() {
 			input := `|===|
-from "./base.mace" import-as Base;
-from "./shared.mace" import User:Person, Config:Settings;
+from './base.mace' import-as Base;
+from './shared.mace' import User:Person, Config:Settings;
 |===|
-[output = "data"] {}`
+[output = 'data'] {}`
 
 			file, err := parseFileInput(input)
 			tAssert.NoError(err)
@@ -973,7 +973,7 @@ from "./shared.mace" import User:Person, Config:Settings;
 		})
 
 		It("parses all output directive kinds", func() {
-			file, err := parseFileInput(`[output = "data", schema = User, schema_file = "./schema.mace", parse = Runtime, parse_file = "./runtime.mace"] {}`)
+			file, err := parseFileInput(`[output = 'data', schema = User, schema_file = './schema.mace', parse = Runtime, parse_file = './runtime.mace'] {}`)
 			tAssert.NoError(err)
 
 			if tAssert.Len(file.Output.Directives, 5) {
@@ -990,32 +990,32 @@ from "./shared.mace" import User:Person, Config:Settings;
 				`|===|
 import "./base.mace" User;
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
 from import User;
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
-from "./base.mace" import- nope Base;
+from './base.mace' import- nope Base;
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
-from "./base.mace" import-as;
+from './base.mace' import-as;
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
-from "./base.mace" import User:
+from './base.mace' import User:
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
-from "./base.mace" import User,;
+from './base.mace' import User,;
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
-from "./base.mace" import User
+from './base.mace' import User
 string name = "Ada";
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 			}
 
 			for _, input := range cases {
@@ -1027,33 +1027,33 @@ string name = "Ada";
 		It("rejects imports after declarations and missing script closers", func() {
 			_, err := parseFileInput(`|===|
 string name = "Ada";
-from "./base.mace" import User;
+from './base.mace' import User;
 |===|
-[output = "data"] {}`)
+[output = 'data'] {}`)
 			tAssert.ErrorContains(err, "import declarations must appear at top")
 
 			_, err = parseFileInput(`|===|
 string name = "Ada";
-[output = "data"] {}`)
+[output = 'data'] {}`)
 			tAssert.Error(err)
 		})
 
 		It("returns an error for an empty script block", func() {
 			_, err := parseFileInput(`|===|
 |===|
-[output = "data"]
+[output = 'data']
 {}`)
 			tAssert.Error(err)
 			tAssert.Contains(err.Error(), "empty script block")
 		})
 		It("parses script imports, declarations, and output block", func() {
 			input := `|===|
-from "base.mace" import User, Config;
+from 'base.mace' import User, Config;
 type Name: string;
 schema User: { name: string, age?: int, };
 string user = "Ada";
 |===|
-[output = "data", schema = User]
+[output = 'data', schema = User]
 { name: user, }`
 
 			file, err := parseFileInput(input)
@@ -1127,7 +1127,7 @@ string user = "Ada";
 
 		It("ignores line and block comment content while parsing", func() {
 			input := `|===|
-from "base.mace" import User; // trailing import comment
+from 'base.mace' import User; // trailing import comment
 // line comment before declarations
 schema Profile: {
   // line comment before field
@@ -1143,7 +1143,7 @@ Profile current = {
   age?: 30, // trailing field comment
 };
 |===|
-[output = "data"]
+[output = 'data']
 {
   // line comment before output field
   result: current.name, // trailing output comment
@@ -1188,7 +1188,7 @@ Profile current = {
 |===|
 type Hidden: string;
 |===|
-[output = "data"]
+[output = 'data']
 {
   hidden: "ignore me",
 }
@@ -1196,7 +1196,7 @@ type Hidden: string;
 |===|
 string visible = "ok";
 |===|
-[output = "data"]
+[output = 'data']
 {
   result: visible,
 }`
@@ -1217,15 +1217,15 @@ string visible = "ok";
 
 		It("ignores block comments that wrap script imports", func() {
 			input := `/*
-from "./ignored.mace" import Ignored;
+from './ignored.mace' import Ignored;
 */
 |===|
-from "./base.mace" import User;
+from './base.mace' import User;
 /*
-from "./also_ignored.mace" import AlsoIgnored;
+from './also_ignored.mace' import AlsoIgnored;
 */
 |===|
-[output = "data"]
+[output = 'data']
 {
   result: 1,
 }`
@@ -1239,8 +1239,8 @@ from "./also_ignored.mace" import AlsoIgnored;
 		})
 
 		It("rejects top-level imports", func() {
-			_, err := parseFileInput(`from "./base.mace" import User;
-[output = "data"]
+			_, err := parseFileInput(`from './base.mace' import User;
+[output = 'data']
 { result: 1, }`)
 
 			tAssert.Error(err)
@@ -1260,7 +1260,7 @@ schema User: {
   name: Name,
 };
 |===|
-[output = "data"]
+[output = 'data']
 {
   result: "ok",
 }`
@@ -1296,7 +1296,7 @@ schema_doc User {
   summary: "Visible doc",
 };
 |===|
-[output = "schema"]
+[output = 'schema']
 {
   user: User,
 }`
@@ -1313,7 +1313,7 @@ schema_doc User {
 		})
 
 		It("ignores block comments inside output fields", func() {
-			input := `[output = "data"]
+			input := `[output = 'data']
 {
   subtotal: 129.99 * 3,
 /*
@@ -1334,7 +1334,7 @@ schema_doc User {
 			file, err := parseFileInput(`|===|
 string greeting = "Hello" /# Rendered greeting;
 |===|
-[output = "data"] {}`)
+[output = 'data'] {}`)
 			tAssert.NoError(err)
 			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 1) {
 				varDecl, ok := file.Script.Items[0].(ast.VariableDeclaration)
@@ -1349,7 +1349,7 @@ string greeting = "Hello" /# Rendered greeting;
 			input := `|===|
 nullable string env = null;
 |===|
-[output = "data"] {}`
+[output = 'data'] {}`
 
 			file, err := parseFileInput(input)
 			tAssert.NoError(err)
@@ -1372,7 +1372,7 @@ nullable string env = null;
 hex_int mask = 0xFF;
 hex_float ratio = 0x2.8;
 |===|
-[output = "schema"]
+[output = 'schema']
 {
   mask: hex_int,
   ratio: hex_float,
@@ -1424,7 +1424,7 @@ hex_float ratio = 0x2.8;
 			input := `|===|
 type Value: variant[string, int];
 |===|
-[output = "data"] {}`
+[output = 'data'] {}`
 
 			file, err := parseFileInput(input)
 			tAssert.NoError(err)
@@ -1449,7 +1449,7 @@ type Value: variant[string, int];
 			input := `|===|
 type Value: variant[array<string>, array<int>];
 |===|
-[output = "data"] {}`
+[output = 'data'] {}`
 
 			file, err := parseFileInput(input)
 			tAssert.NoError(err)
@@ -1474,7 +1474,7 @@ type Value: variant[array<string>, array<int>];
 			input := `|===|
 type Value: fusion[Profile, Audit];
 |===|
-[output = "data"] {}`
+[output = 'data'] {}`
 
 			file, err := parseFileInput(input)
 			tAssert.NoError(err)
@@ -1499,7 +1499,7 @@ type Value: fusion[Profile, Audit];
 			input := `|===|
 type Matrix: array<array<int>>;
 |===|
-[output = "data"] {}`
+[output = 'data'] {}`
 
 			file, err := parseFileInput(input)
 			tAssert.NoError(err)
@@ -1530,7 +1530,7 @@ type Matrix: array<array<int>>;
  type Environment: choice["dev", "prod"];
  type Mode: choice[Environment, 1, true, 1.5, 0xFF, 0x2.8, record];
 |===|
-[output = "data"] {}`
+[output = 'data'] {}`
 
 			file, err := parseFileInput(input)
 			tAssert.NoError(err)
@@ -1568,7 +1568,7 @@ type Matrix: array<array<int>>;
 type Lookup: record<string>;
 type Inline: { name: string, };
 |===|
-[output = "schema"]
+[output = 'schema']
 {
   values: record<int>,
   inline: { enabled: boolean, },
@@ -1603,58 +1603,58 @@ type Inline: { name: string, };
 				`|===|
 string = "Ada";
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
 type : string;
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
 type Name string;
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
 type Name: ;
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema : {};
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema User {};
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema User: { name string, };
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema User: { name: string,
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema_doc {
 };
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema_doc User
 };
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema_doc User {
   summary: "One",
   summary: "Two",
 };
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema_doc User {
   unknown: "Nope",
 };
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema_doc User {
   fields: {
@@ -1663,52 +1663,52 @@ schema_doc User {
   },
 };
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`[output data] {}`,
 				`[output = nope] {}`,
 				`[schema_file = User] {}`,
 				`[parse = "Runtime"] {}`,
 				`[parse_file = Runtime] {}`,
 				`[schema = "User"] {}`,
-				`[output = "data"] "single line doc" {}`,
-				`[output = "data"] { name "Ada", }`,
-				`[output = "schema"] { name string, }`,
-				`[output = "schema"] { name: , }`,
-				`[output = "schema"] { name: string /# first, /# second }`,
+				`[output = 'data'] "single line doc" {}`,
+				`[output = 'data'] { name "Ada", }`,
+				`[output = 'schema'] { name string, }`,
+				`[output = 'schema'] { name: , }`,
+				`[output = 'schema'] { name: string /# first, /# second }`,
 				`|===|
 type Names: array;
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
 type Names: array<string;
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
 type Names: record;
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
 type Names: fusion;
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
 type Names: variant[string,];
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
 type Names: choice;
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
 type Names: choice[null];
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema_doc User {
   summary: 1,
 };
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema_doc User {
   fields: {
@@ -1716,7 +1716,7 @@ schema_doc User {
   },
 };
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema_doc User {
   fields: {
@@ -1724,19 +1724,19 @@ schema_doc User {
   }
 };
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema_doc User {
   summary: "User",
 }
 |===|
-[output = "data"] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema_doc User {
   summary: "User",
 };
 |===|
-[output = "data"]`,
+[output = 'data']`,
 			}
 
 			for _, input := range cases {
@@ -1762,7 +1762,7 @@ schema_doc User {
 string name = "Ada";
 { name: string, } user = { name, };
 |===|
-[output = "data"]
+[output = 'data']
 { name, user, }`)
 			tAssert.NoError(err)
 
@@ -1795,7 +1795,7 @@ string name = "Ada";
 		})
 
 		It("parses schema-mode output blocks as schema fields", func() {
-			file, err := parseFileInput(`[output = "schema"]
+			file, err := parseFileInput(`[output = 'schema']
 {
   name: string,
   age?: int,
@@ -1836,7 +1836,7 @@ schema User: {
   age?: int, /# Age after separator
 };
 |===|
-[output = "data"]
+[output = 'data']
 {
   user: {
     name: "Ada" /# Record name before separator,
@@ -1869,7 +1869,7 @@ schema User: {
 		})
 
 		It("parses output schema field descriptions before and after separators", func() {
-			file, err := parseFileInput(`[output = "schema"]
+			file, err := parseFileInput(`[output = 'schema']
 {
   name: string /# Name before separator,
   age?: int, /# Age after separator
@@ -1883,7 +1883,7 @@ schema User: {
 		})
 
 		It("rejects duplicate inline descriptions on the same field", func() {
-			_, err := parseFileInput(`[output = "schema"]
+			_, err := parseFileInput(`[output = 'schema']
 {
   name: string /# First description, /# Second description
 }`)
@@ -1893,7 +1893,7 @@ schema User: {
 
 		It("parses comma separators across declarations", func() {
 			file, err := parseFileInput(`|===|
-from "./shared.mace" import Name, User;
+from './shared.mace' import Name, User;
 type Alias: string;
 nullable string env = null;
 schema User: {
@@ -1903,7 +1903,7 @@ gen_doc Alias {
   summary: "Alias docs.",
 };
 |===|
-[output = "data"] {
+[output = 'data'] {
   result: env,
 }`)
 			tAssert.NoError(err)
@@ -1913,7 +1913,7 @@ gen_doc Alias {
 		})
 
 		It("parses output inline doc blocks", func() {
-			input := `[output = "schema"]
+			input := `[output = 'schema']
 """
 # Public User Output
 """
@@ -1947,7 +1947,7 @@ gen_doc Status {
   summary: "Represents a status choice.",
 };
 |===|
-[output = "schema"]
+[output = 'schema']
 { user: User, status: Status }`
 
 			file, err := parseFileInput(input)
@@ -1985,7 +1985,7 @@ gen_doc Name {
   },
 };
 |===|
-[output = "data"]
+[output = 'data']
 {}`
 
 			_, err := parseFileInput(input)
@@ -2017,7 +2017,7 @@ Hover should surface this documentation.
   },
 };
 |===|
-[output = "schema"]
+[output = 'schema']
 """
 # User Output
 """

@@ -1,5 +1,5 @@
 // Languages: Chinese, Japanese, Latin, and Greek keys are intentionally mixed in web_server.
-[output = "data"]
+[output = 'data']
 {
   主机: "0.0.0.0",
   ポート: 8443,

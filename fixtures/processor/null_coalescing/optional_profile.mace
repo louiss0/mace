@@ -15,7 +15,7 @@ User user = { profile: {}, };
 string fallback_city = "unknown";
 |===================================================|
 
-[output = "data"]
+[output = 'data']
 {
   city: user?.profile?.address?.city ?? fallback_city,
   literal_city: user?.profile?.address?.city ?? "unknown",

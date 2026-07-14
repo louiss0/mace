@@ -33,7 +33,7 @@ schema Runtime: {
   profile: { name: string, },
 };
 |===|
-[output = "data", parse = Runtime]
+[output = 'data', parse = Runtime]
 {
   env: $env,
   profile_name: $profile.name,
@@ -56,7 +56,7 @@ schema Runtime: {
   profile: { name: string, },
 };
 |===|
-[output = "schema"]
+[output = 'schema']
 {
   Runtime: Runtime,
 }`)
@@ -68,7 +68,7 @@ schema Runtime: {
 			}},
 		})
 
-		result, err := processor.ProcessInDir(`[output = "data", parse_file = "./runtime.mace"]
+		result, err := processor.ProcessInDir(`[output = 'data', parse_file = './runtime.mace']
 {
   env: $env,
   profile_name: $profile.name,
@@ -85,7 +85,7 @@ schema Runtime: {
 		_, err := processor.Process(`|===|
 schema Runtime: { env: string, };
 |===|
-[output = "data", parse = Runtime]
+[output = 'data', parse = Runtime]
 {
   env: $env,
 }`)

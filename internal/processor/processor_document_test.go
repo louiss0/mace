@@ -53,10 +53,10 @@ World""";
 nullable string env = null;
 |===|`)),
 		Entry("imports and script block", `|===|
-from "fixtures/processor/imports/base.mace" import Name;
+from 'fixtures/processor/imports/base.mace' import Name;
 Name user = "Ada";
 |===|
-[output = "data"]
+[output = 'data']
 { user: user, }`),
 		Entry("unicode web server fixture", "../../fixtures/unicode/web_server.mace"),
 		Entry("unicode database fixture", "../../fixtures/unicode/database.mace"),
@@ -70,7 +70,7 @@ type Scalar: variant[string, int];
 Scalar value = "Ada";
 |===|`)),
 		Entry("line and block comments are ignored", `|===|
-from "fixtures/processor/imports/base.mace" import Name; // trailing import comment
+from 'fixtures/processor/imports/base.mace' import Name; // trailing import comment
 // line comment before declaration
 schema Profile: {
   // line comment before field
@@ -85,7 +85,7 @@ Profile user = {
   age?: 30, // trailing field comment
 };
 |===|
-[output = "data"]
+[output = 'data']
 {
   result: user.name, // trailing output comment
 }`),
@@ -100,12 +100,12 @@ User user = {
 };
 int fallback_age = 0;
 |===|
-[output = "data"]
+[output = 'data']
 {
   user_name: user.name, /# Output value after separator
   user_age: user?.age ?? fallback_age /# Output value before separator
 }`),
-		Entry("schema output fields with inline descriptions before and after separators", `[output = "schema"]
+		Entry("schema output fields with inline descriptions before and after separators", `[output = 'schema']
 {
   name: string /# Name before separator,
   age?: int, /# Age after separator
@@ -130,9 +130,9 @@ type User: string;
 schema User: { name: string, };
 |===|`), "duplicate declaration"),
 		Entry("duplicate imports", `|===|
-from "fixtures/processor/imports/base.mace" import User, User;
+from 'fixtures/processor/imports/base.mace' import User, User;
 |===|
-[output = "data"] {}`, "duplicate import"),
+[output = 'data'] {}`, "duplicate import"),
 	)
 
 	It("rejects interpolation of non-primitives in diagnostic fixtures", func() {
@@ -174,7 +174,7 @@ var _ = Describe("Processor entrypoints", func() {
 		file := writeFixtureFile(workspace, "input.mace", `|===|
 int value = 1;
 |===|
-[output = "data"]
+[output = 'data']
 { result: value, }`)
 
 		_, err = processor.Process(`{ result: 1, }`)
@@ -196,9 +196,9 @@ int value = 1;
 int value = 1;
 |===|`), "", "")
 		tAssert.NoError(err)
-		_, err = processor.ProcessOutputBlock(`[output = "data"] { result: 1, }`, ScriptResult{})
+		_, err = processor.ProcessOutputBlock(`[output = 'data'] { result: 1, }`, ScriptResult{})
 		tAssert.NoError(err)
-		_, err = processor.ProcessOutputBlock(`[output = "data"] { result: 1, }`, ScriptResult{context: newProcessContext("", "")})
+		_, err = processor.ProcessOutputBlock(`[output = 'data'] { result: 1, }`, ScriptResult{context: newProcessContext("", "")})
 		tAssert.NoError(err)
 		_, err = processor.ProcessFile(filepath.Join(".", "does-not-exist.mace"))
 		tAssert.Error(err)
@@ -212,7 +212,7 @@ int value = 1;
 int value = 1;
 |===|`, ".")
 		tAssert.NoError(err)
-		_, err = processor.processOutputInput(`[output = "data"] { result: 1, }`, scriptResult, ".")
+		_, err = processor.processOutputInput(`[output = 'data'] { result: 1, }`, scriptResult, ".")
 		tAssert.NoError(err)
 		_, err = processor.processInput(`{ result: 1, } garbage`, ".", ".", false)
 		tAssert.Error(err)
@@ -220,7 +220,7 @@ int value = 1;
 int value = 1;
 |===| garbage`, ".")
 		tAssert.Error(err)
-		_, err = processor.processOutputInput(`[output = "data"] { result: 1, } garbage`, scriptResult, ".")
+		_, err = processor.processOutputInput(`[output = 'data'] { result: 1, } garbage`, scriptResult, ".")
 		tAssert.Error(err)
 		_, err = processor.processParsedOutput(ast.OutputBlock{}, ast.File{}, newProcessContext(".", "."))
 		tAssert.NoError(err)
@@ -267,7 +267,7 @@ var _ = Describe("Block processing", func() {
 int base = 4;
 int doubled = base * 2;
 |===|
-[output = "data"]
+[output = 'data']
 { result: doubled, }`, "../..")
 		tAssert.NoError(err)
 		assertExpectedValue(variables["doubled"], expectedValue{kind: ValueInt, int64: 8})
@@ -276,7 +276,7 @@ int doubled = base * 2;
 int base = 4;
 int tripled = base * 3;
 |===|
-[output = "data"]
+[output = 'data']
 { result: tripled, }`, "../..", "../..")
 		tAssert.NoError(err)
 		assertExpectedValue(variables["tripled"], expectedValue{kind: ValueInt, int64: 12})
@@ -301,7 +301,7 @@ string name = "Ada";
 
 	It("decodes unicode string escapes", func() {
 		processor := New()
-		result, err := processor.ProcessOutputBlock(`[output = "data"]
+		result, err := processor.ProcessOutputBlock(`[output = 'data']
 {
   accent: "\u00E9",
   rocket: "\U0001F680",
@@ -314,7 +314,7 @@ string name = "Ada";
 
 	It("rejects invalid unicode string escapes", func() {
 		processor := New()
-		_, err := processor.ProcessOutputBlock(`[output = "data"]
+		_, err := processor.ProcessOutputBlock(`[output = 'data']
 {
   invalid: "\U00110000",
 }`, ScriptResult{})
@@ -323,7 +323,7 @@ string name = "Ada";
 
 	It("processes output blocks independently", func() {
 		processor := New()
-		result, err := processor.ProcessOutputBlock(`[output = "schema"]
+		result, err := processor.ProcessOutputBlock(`[output = 'schema']
 """
 # Output Schema
 """
@@ -346,7 +346,7 @@ int base = 2 + 2;
 |===|`)
 		tAssert.NoError(err)
 
-		result, err := processor.ProcessOutputBlock(`[output = "data"]
+		result, err := processor.ProcessOutputBlock(`[output = 'data']
 {
   result: base * 3,
 }`, scriptResult)
@@ -366,7 +366,7 @@ var _ = Describe("Processor entrypoints", func() {
 		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			switch request.URL.Path {
 			case "/remote.mace":
-				_, _ = io.WriteString(writer, `[output = "schema"]
+				_, _ = io.WriteString(writer, `[output = 'schema']
 { remote: string, }`)
 			case "/broken.mace":
 				writer.WriteHeader(http.StatusInternalServerError)
@@ -377,7 +377,7 @@ var _ = Describe("Processor entrypoints", func() {
 		defer server.Close()
 
 		proc := NewWithInput(map[string]Value{"seed": {Kind: ValueInt, Int: 1}})
-		inputPath := writeFixtureFile(workspace, "input.mace", `[output = "data"]
+		inputPath := writeFixtureFile(workspace, "input.mace", `[output = 'data']
 { result: seed, }`)
 		_, err = proc.Process(`{ result: 1, }`)
 		tAssert.NoError(err)
@@ -400,11 +400,11 @@ int value = 1;
 int value = 1;
 |===|`)
 		tAssert.NoError(err)
-		_, err = proc.ProcessOutputBlock(`[output = "data"] { result: 1, }`, scriptResult)
+		_, err = proc.ProcessOutputBlock(`[output = 'data'] { result: 1, }`, scriptResult)
 		tAssert.NoError(err)
-		_, err = proc.ProcessOutputBlock(`[output = "data"] { result: 1, }`, ScriptResult{})
+		_, err = proc.ProcessOutputBlock(`[output = 'data'] { result: 1, }`, ScriptResult{})
 		tAssert.NoError(err)
-		_, err = proc.processOutputInput(`[output = "data"] { result: 1, }`, ScriptResult{}, workspace)
+		_, err = proc.processOutputInput(`[output = 'data'] { result: 1, }`, ScriptResult{}, workspace)
 		tAssert.NoError(err)
 
 		_, err = ParseInputRecord(`{ name: "Ada", }`)
@@ -455,9 +455,9 @@ int value = 1;
 int value = 1;
 |===|`)
 		tAssert.NoError(err)
-		_, err = processor.ProcessOutputBlock(`[output = "data"] { result: 1, }`, ScriptResult{})
+		_, err = processor.ProcessOutputBlock(`[output = 'data'] { result: 1, }`, ScriptResult{})
 		tAssert.NoError(err)
-		_, err = processor.ProcessOutputBlock(`[output = "data"] { result: 1, }`, ScriptResult{context: newProcessContext("", "")})
+		_, err = processor.ProcessOutputBlock(`[output = 'data'] { result: 1, }`, ScriptResult{context: newProcessContext("", "")})
 		tAssert.NoError(err)
 	})
 
@@ -486,9 +486,9 @@ int value = 1;
 		tAssert.NoError(err)
 		defer func() { _ = os.RemoveAll(workspace) }()
 
-		writeFixtureFile(workspace, "base.mace", `[output = "data"]
+		writeFixtureFile(workspace, "base.mace", `[output = 'data']
 { User: "Ada", }`)
-		writeFixtureFile(workspace, "duplicate-import.mace", `from "./base.mace" import User, User; [output = "data"] {}`)
+		writeFixtureFile(workspace, "duplicate-import.mace", `from './base.mace' import User, User; [output = 'data'] {}`)
 		writeFixtureFile(workspace, "script-dupe.mace", `|===|
 int value = 1;
 int value = 2;
@@ -496,13 +496,13 @@ int value = 2;
 		writeFixtureFile(workspace, "schema-variable.mace", `|===|
 int value = 1;
 |===|
-[output = "schema"]
+[output = 'schema']
 { User: User, }`)
 
 		processor := New()
 		_, err = processor.ProcessVariablesInScope("`", workspace, workspace)
 		tAssert.Error(err)
-		_, err = processor.ProcessVariablesInScope(`from "./base.mace" import User, User;`, workspace, workspace)
+		_, err = processor.ProcessVariablesInScope(`from './base.mace' import User, User;`, workspace, workspace)
 		tAssert.Error(err)
 		_, err = ParseInputRecord("`")
 		tAssert.Error(err)
@@ -529,8 +529,8 @@ int value = 2;
 	It("covers ProcessVariablesInScope build context errors", func() {
 		processor := New()
 		_, err := processor.ProcessVariablesInScope(`|===|
-from "./schema.mace" import User;
-from "./schema.mace" import User;
+from './schema.mace' import User;
+from './schema.mace' import User;
 |===|`, "", "")
 		tAssert.Error(err)
 		_, err = buildProcessContext([]ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./schema.mace"`}, ImportAs: &ast.ImportedIdentifier{Name: "User"}}, {Path: ast.StringLiteral{Lexeme: `"./schema.mace"`}, ImportAs: &ast.ImportedIdentifier{Name: "User"}}}, nil, ".", ".", true, map[string]Value{})
@@ -544,8 +544,8 @@ from "./schema.mace" import User;
 		_, err = buildProcessContext([]ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `""`}}}, nil, ".", ".", true, map[string]Value{})
 		tAssert.Error(err)
 		_, err = processor.ProcessVariablesInScope(`|===============================|
-from "./base.mace" import User;
-from "./base.mace" import User;
+from './base.mace' import User;
+from './base.mace' import User;
 
 string name = "Ada";
 
@@ -555,7 +555,7 @@ User result = {
 };
 |===============================|
 
-[output = "data"]
+[output = 'data']
 { result: result, }`, "../../fixtures/processor/imports", "")
 		tAssert.Error(err)
 		consumer, err := os.ReadFile("../../fixtures/processor/imports/consumer.mace")

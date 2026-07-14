@@ -1,5 +1,5 @@
 |======================================================|
-from "./profile.mace" import Profile:UserProfile, Age;
+from './profile.mace' import Profile:UserProfile, Age;
 type Name: string;
 
 schema User: {
@@ -14,7 +14,7 @@ schema Secret: {
 
 |======================================================|
 
-[output = "schema"]
+[output = 'schema']
 {
   Name: Name,
   User: User,

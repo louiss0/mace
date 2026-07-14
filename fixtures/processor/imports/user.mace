@@ -1,5 +1,5 @@
 |=====================================================|
-from "./profile.mace" import Profile, Age;
+from './profile.mace' import Profile, Age;
 
 type Name: string;
 
@@ -23,7 +23,7 @@ int num = 1 + 45;
 
 |=====================================================|
 
-[output = "data"]
+[output = 'data']
 {
   User: {
     name: default_name,

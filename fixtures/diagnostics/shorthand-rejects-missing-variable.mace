@@ -2,7 +2,7 @@
 schema User: { name: string, };
 User user = { missing, };
 |===|
-[output = "data"]
+[output = 'data']
 {
   user,
 }

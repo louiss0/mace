@@ -9,7 +9,7 @@ User user = {
 
 string message = "Hello $(user)";
 |===|
-[output = "data"]
+[output = 'data']
 {
   result: "unreachable",
 }

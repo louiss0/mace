@@ -136,7 +136,7 @@ string fallback = "";`, `
 		_, err := New().Process(`|===|
 record<string> packages = {};
 |===|
-[output = "data"]
+[output = 'data']
 { value: packages.codefixer.cn_efs, }`)
 
 		tAssert.ErrorContains(err, `member "cn_efs" cannot be accessed because its target is not a record`)
@@ -147,7 +147,7 @@ record<string> packages = {};
 record<record<string>> packages = {};
 string fallback = "missing";
 |===|
-[output = "data"]
+[output = 'data']
 { value: packages?.codefixer.cn_efs ?? fallback, }`)
 
 		requireOptionalFieldAccessError(err)
@@ -160,7 +160,7 @@ record<record<string>> packages = {
 };
 string fallback = "missing";
 |===|
-[output = "data"]
+[output = 'data']
 {
   present: packages?.codefixer?.cn_efs ?? fallback,
   missing: packages?.codefixer?.missing ?? fallback,
@@ -185,7 +185,7 @@ string fallback = "missing";
 record<` + valueType + `> packages = {};
 string fallback = "missing";
 |===|
-[output = "data"]
+[output = 'data']
 { value: packages?.codefixer?.cn_efs ?? fallback, }`)
 
 			tAssert.ErrorContains(err, "cannot be accessed because its target is not a record")
@@ -227,7 +227,7 @@ type Packages: variant[` + nestedRecordMapTypeText(depth) + `, ` + nestedRecordM
 nullable Packages packages = null;
 string fallback = "missing";
 |===|
-[output = "data"]
+[output = 'data']
 { value: packages ? ` + optionalRecordPathText(depth+1) + ` ?? fallback : fallback, }`)
 			tAssert.ErrorContains(err, "cannot be accessed because its target is not a record")
 		},
@@ -278,7 +278,7 @@ func optionalRecordPathText(depth int) string {
 }
 
 func optionalChainDocument(schemas string, declaration string, fields string) string {
-	return schemas + declaration + "\n|===|\n[output = "data"]\n{\n" + fields + "\n}"
+	return schemas + declaration + "\n|===|\n[output = 'data']\n{\n" + fields + "\n}"
 }
 
 func optionalChainDocumentWithOutputSchema(
@@ -288,7 +288,7 @@ func optionalChainDocumentWithOutputSchema(
 	fields string,
 ) string {
 	return schemas + declaration + "\n" + outputSchema +
-		"\n|===|\n[output = "data", schema = Result]\n{\n" + fields + "\n}"
+		"\n|===|\n[output = 'data', schema = Result]\n{\n" + fields + "\n}"
 }
 
 func requireOptionalFieldAccessError(err error) {

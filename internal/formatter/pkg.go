@@ -43,7 +43,7 @@ func (f *formatter) writeFile(file ast.File) error {
 
 func formatImportDeclaration(importDeclaration ast.ImportDeclaration) string {
 	if importDeclaration.ImportAs != nil {
-		return "from " + importDeclaration.Path.Lexeme + " import-as " + importDeclaration.ImportAs.LocalName() + ";"
+		return "from ' + importDeclaration.Path.Lexeme + ' import-as " + importDeclaration.ImportAs.LocalName() + ";"
 	}
 
 	parts := make([]string, 0, len(importDeclaration.Identifiers))
@@ -54,7 +54,7 @@ func formatImportDeclaration(importDeclaration ast.ImportDeclaration) string {
 			parts = append(parts, id.Name)
 		}
 	}
-	return "from " + importDeclaration.Path.Lexeme + " import " + strings.Join(parts, ", ") + ";"
+	return "from ' + importDeclaration.Path.Lexeme + ' import " + strings.Join(parts, ", ") + ";"
 }
 
 func normalizedScriptBlock(file ast.File) (ast.ScriptBlock, bool) {
