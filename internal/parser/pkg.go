@@ -1021,13 +1021,14 @@ func (p *Parser) parseExpression(precedence int) (ast.Expression, error) {
 		operator := p.current()
 		p.advance()
 
-		if operator.Type == lexer.TokenQuestion {
+		switch operator.Type {
+		case lexer.TokenQuestion:
 			left, err = p.parseConditionalExpression(left, operator)
-		} else if operator.Type == lexer.TokenCoalesce {
+		case lexer.TokenCoalesce:
 			left, err = p.parseCoalesceExpression(left, operator)
-		} else if operator.Type == lexer.TokenIs {
+		case lexer.TokenIs:
 			left, err = p.parseTypeTestExpression(left, operator)
-		} else {
+		default:
 			left, err = p.parseInfixExpression(left, operator)
 		}
 

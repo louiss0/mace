@@ -2070,34 +2070,6 @@ func validateDataOutputExpression(expression ast.Expression, symbols *symbolTabl
 	return nil
 }
 
-// extractGuardedNames collects field names narrowed by "field" in expr guards.
-// "field" in X → adds "field" to the guarded set.
-// cond1 && cond2 → merges guards from both.
-func extractGuardedNames(condition ast.Expression, existing map[string]struct{}) map[string]struct{} {
-	switch expr := condition.(type) {
-	case ast.InfixExpression:
-		if expr.Operator == lexer.TokenIn {
-			if field, ok := expr.Left.(ast.StringLiteral); ok {
-				fieldValue, err := parseStaticString(field.Lexeme)
-				if err != nil {
-					return existing
-				}
-				extended := make(map[string]struct{}, len(existing)+1)
-				for k := range existing {
-					extended[k] = struct{}{}
-				}
-				extended[fieldValue.String] = struct{}{}
-				return extended
-			}
-		}
-		if expr.Operator == lexer.TokenAndAnd {
-			left := extractGuardedNames(expr.Left, existing)
-			return extractGuardedNames(expr.Right, left)
-		}
-	}
-	return existing
-}
-
 func validateOutputSchema(schemaName string, items []ast.OutputField, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
 	schema, ok := schemas.Get(schemaName)
 	if !ok {
@@ -4532,7 +4504,7 @@ func inferConditionalType(expr ast.ConditionalExpression, variables *variableReg
 	if err != nil {
 		return valueType{}, err
 	}
-	if conditionType.kind != ValueBoolean && !(conditionType.nullable && conditionType.kind == ValueRecord) {
+	if conditionType.kind != ValueBoolean && (!conditionType.nullable || conditionType.kind != ValueRecord) {
 		return valueType{}, validationErrorf("type mismatch: expected boolean condition")
 	}
 

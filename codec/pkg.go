@@ -1314,14 +1314,6 @@ func jsonSchemaDefinitionName(path string) string {
 	return jsonSchemaIdentifier(segments[1])
 }
 
-func jsonSchemaPathName(path []string) string {
-	parts := make([]string, 0, len(path))
-	for _, segment := range path {
-		parts = append(parts, jsonSchemaIdentifier(segment))
-	}
-	return strings.Join(parts, "")
-}
-
 func jsonSchemaIdentifier(value string) string {
 	parts := strings.FieldsFunc(value, func(r rune) bool {
 		return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9')

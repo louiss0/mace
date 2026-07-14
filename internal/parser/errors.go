@@ -19,10 +19,6 @@ func (p *Parser) diagnosticError(token lexer.Token, code diagnostic.Code, messag
 	}
 }
 
-func (p *Parser) diagnosticErrorf(token lexer.Token, code diagnostic.Code, format string, args ...any) error {
-	return p.diagnosticError(token, code, fmt.Sprintf(format, args...))
-}
-
 func (p *Parser) unexpectedTokenError(message string) error {
 	token := p.current()
 	if token.Type == lexer.TokenEOF {

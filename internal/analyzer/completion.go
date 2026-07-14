@@ -2,7 +2,6 @@ package analyzer
 
 import (
 	"fmt"
-	"maps"
 	"net/url"
 	"os"
 	"path"
@@ -566,53 +565,6 @@ func selfCompletionContext(linePrefix string) ([]string, string, bool) {
 	return segments[:len(segments)-1], segments[len(segments)-1], true
 }
 
-func resolveLocalCompletionValue(expression ast.Expression, declarations map[string]ast.Expression, seen map[string]struct{}) (processor.Value, bool) {
-	switch typed := expression.(type) {
-	case ast.Identifier:
-		declaration, ok := declarations[typed.Name]
-		if !ok {
-			return processor.Value{}, false
-		}
-		if _, recursive := seen[typed.Name]; recursive {
-			return processor.Value{}, false
-		}
-		nextSeen := maps.Clone(seen)
-		nextSeen[typed.Name] = struct{}{}
-		return resolveLocalCompletionValue(declaration, declarations, nextSeen)
-	case ast.MemberAccess:
-		target, ok := resolveLocalCompletionValue(typed.Target, declarations, seen)
-		if !ok || target.Kind != processor.ValueRecord {
-			return processor.Value{}, false
-		}
-		value, ok := target.Record[typed.Name]
-		return value, ok
-	case ast.ArrayLiteral:
-		values := make([]processor.Value, 0, len(typed.Elements))
-		for _, element := range typed.Elements {
-			value, ok := resolveLocalCompletionValue(element, declarations, seen)
-			if !ok {
-				return processor.Value{}, false
-			}
-			values = append(values, value)
-		}
-		return processor.Value{Kind: processor.ValueArray, Array: values}, true
-	case ast.RecordLiteral:
-		fields := map[string]processor.Value{}
-		for _, field := range typed.Fields {
-			value, ok := resolveLocalCompletionValue(field.Value, declarations, seen)
-			if !ok {
-				return processor.Value{}, false
-			}
-			fields[field.Name] = value
-		}
-		return processor.Value{Kind: processor.ValueRecord, Record: fields}, true
-	case ast.StringLiteral, ast.IntLiteral, ast.FloatLiteral, ast.BooleanLiteral:
-		return resolveCompletionValue(expression, nil, processor.Value{})
-	default:
-		return processor.Value{}, false
-	}
-}
-
 func partialScriptVariables(text string, uri protocol.DocumentUri, position protocol.Position) map[string]processor.Value {
 	index := positionIndex(text, position)
 
@@ -669,85 +621,6 @@ func processVariablesInDocument(text string, uri protocol.DocumentUri) map[strin
 		return nil
 	}
 	return variables
-}
-
-func resolveCompletionValue(expression ast.Expression, variables map[string]processor.Value, self processor.Value) (processor.Value, bool) {
-	switch typed := expression.(type) {
-	case ast.Identifier:
-		value, ok := variables[typed.Name]
-		return value, ok
-	case ast.SelfReference:
-		return outputValueAtSegments(self, typed.Path)
-	case ast.MemberAccess:
-		target, ok := resolveCompletionValue(typed.Target, variables, self)
-		if !ok || target.Kind != processor.ValueRecord {
-			return processor.Value{}, false
-		}
-		value, ok := target.Record[typed.Name]
-		return value, ok
-	case ast.ArrayLiteral:
-		values := make([]processor.Value, 0, len(typed.Elements))
-		for _, element := range typed.Elements {
-			value, ok := resolveCompletionValue(element, variables, self)
-			if !ok {
-				return processor.Value{}, false
-			}
-			values = append(values, value)
-		}
-		return processor.Value{Kind: processor.ValueArray, Array: values}, true
-	case ast.RecordLiteral:
-		fields := map[string]processor.Value{}
-		for _, field := range typed.Fields {
-			value, ok := resolveCompletionValue(field.Value, variables, self)
-			if !ok {
-				return processor.Value{}, false
-			}
-			fields[field.Name] = value
-		}
-		return processor.Value{Kind: processor.ValueRecord, Record: fields}, true
-	case ast.StringLiteral:
-		return processor.Value{Kind: processor.ValueString, String: strings.Trim(typed.Lexeme, "\"'")}, true
-	case ast.IntLiteral:
-		value, err := strconv.ParseInt(typed.Lexeme, 10, 64)
-		if err != nil {
-			return processor.Value{}, false
-		}
-		return processor.Value{Kind: processor.ValueInt, Int: value}, true
-	case ast.FloatLiteral:
-		value, err := strconv.ParseFloat(typed.Lexeme, 64)
-		if err != nil {
-			return processor.Value{}, false
-		}
-		return processor.Value{Kind: processor.ValueFloat, Float: value}, true
-	case ast.BooleanLiteral:
-		return processor.Value{Kind: processor.ValueBoolean, Boolean: typed.Value}, true
-	default:
-		return processor.Value{}, false
-	}
-}
-
-func outputValueAtSegments(value processor.Value, path []string) (processor.Value, bool) {
-	current := value
-	for _, segment := range path {
-		if current.Kind != processor.ValueRecord {
-			return processor.Value{}, false
-		}
-		child, ok := current.Record[segment]
-		if !ok {
-			return processor.Value{}, false
-		}
-		current = child
-	}
-	return current, true
-}
-
-func isDigits(value string) bool {
-	for _, character := range value {
-		if character < '0' || character > '9' {
-			return false
-		}
-	}
-	return true
 }
 
 func partialScriptFile(text string, position protocol.Position) (ast.File, bool) {
@@ -1679,34 +1552,6 @@ func placeholderOutputCompletionType(file ast.File, model completionModel) (ast.
 		}
 
 		return expectedType, fullPath, true
-	}
-
-	return nil, nil, false
-}
-
-func placeholderParseInputCompletionType(file ast.File, model completionModel, importBaseDir string, importRootDir string) (ast.TypeReference, []string, bool) {
-	if file.Output.Mode != ast.OutputModeData {
-		return nil, nil, false
-	}
-
-	record, ok := parseInputCompletionRecord(file, model, importBaseDir, importRootDir, map[string]completionModel{})
-	if !ok {
-		return nil, nil, false
-	}
-
-	rootType := ast.RecordType{Fields: record.Fields}
-	for _, field := range file.Output.DataFields {
-		path, ok := placeholderPath(field.Value)
-		if !ok || len(path) == 0 {
-			continue
-		}
-
-		expectedType, ok := completionTypeAtPath(rootType, path, model)
-		if !ok {
-			return nil, nil, false
-		}
-
-		return expectedType, path, true
 	}
 
 	return nil, nil, false
