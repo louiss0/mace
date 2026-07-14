@@ -1,0 +1,26 @@
+|===|
+schema Address: {
+  city: string,
+};
+
+schema Profile: {
+  address?: Address,
+};
+
+schema User: {
+  profile?: Profile,
+};
+
+User user = {
+  profile: {
+    address: {
+      city: "Paris",
+    },
+  },
+};
+|===|
+
+[output = data]
+{
+  city: user?.profile?.address?.city,
+}

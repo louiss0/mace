@@ -1127,6 +1127,9 @@ func collectImportExports(output ast.OutputBlock, context processContext) (map[s
 	if err != nil {
 		return nil, err
 	}
+	if err := validateDataOutputFields(output.DataFields, hasSchema, outputContext.variables, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
+		return nil, err
+	}
 	if hasSchema {
 		if err := validateOutputSchema(schemaName, output.DataFields, outputContext.variables, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
 			return nil, err
@@ -4651,6 +4654,15 @@ func narrowValueType(sourceType valueType, targetType valueType) (valueType, val
 	matchedMembers := make([]valueType, 0, len(sourceMembers))
 	remainingMembers := make([]valueType, 0, len(sourceMembers))
 	for _, member := range sourceMembers {
+		matchingChoiceValues := lo.Filter(targetType.choiceValues, func(value Value, _ int) bool {
+			return len(member.choiceValues) == 0 && member.exactValue == nil && value.Kind == member.kind
+		})
+		if len(matchingChoiceValues) > 0 {
+			matchedMembers = appendUniqueValueType(matchedMembers, valueType{choiceValues: matchingChoiceValues})
+			remainingMembers = appendUniqueValueType(remainingMembers, member)
+			continue
+		}
+
 		if ensureAssignable(targetType, member) == nil {
 			matchedMembers = appendUniqueValueType(matchedMembers, member)
 		} else {

@@ -189,6 +189,21 @@ string fallback = stringValue is NestedRecord ? "matched" : stringValue;
 		Entry("10 nested ternaries", 10),
 	)
 
+	It("keeps broad primitive members in the false branch of choice tests", func() {
+		result, err := New().Process(`|===|
+	type Environment: choice["prod"];
+	variant[string, int] value = "dev";
+	string result = value is Environment
+	  ? "prod"
+	  : value is string ? value : "$(value)";
+	|===|
+	[output = data]
+	{ result: result, }`)
+
+		tAssert.NoError(err)
+		tAssert.Equal("dev", requireOutputValue(result, "result").String)
+	})
+
 	DescribeTable("narrows a variant with nested variant subset tests",
 		func(arity int) {
 			result, err := New().Process(buildVariantSubsetFixture(arity))

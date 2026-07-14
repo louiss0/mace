@@ -69,6 +69,18 @@ from "fixtures/processor/imports/optional_profile.mace" import profile;
 		tAssert.Equal("Paris", requireOutputValue(result, "city").String)
 	})
 
+	It("validates possibly absent expressions in imported data outputs", func() {
+		document := `|===|
+from "fixtures/processor/imports/unguarded_optional_city.mace" import city;
+|===|
+[output = data]
+{ city: city, }`
+
+		_, err := New().ProcessInDir(document, "../..")
+
+		requireOptionalFieldAccessError(err)
+	})
+
 	It("tracks optional properties from imported schemas as possibly absent", func() {
 		unguardedDocument := `|===|
 from "fixtures/processor/imports/base.mace" import User;
