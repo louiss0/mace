@@ -1,0 +1,84 @@
+|===|
+schema LocalConfig: {
+  path: string,
+};
+
+schema RemoteConfig: {
+  url: string,
+};
+
+schema EnvironmentConfig: {
+  variable: string,
+};
+
+schema SecretConfig: {
+  secret: string,
+};
+
+schema InlineConfig: {
+  content: string,
+};
+
+type Config: variant[
+  LocalConfig,
+  RemoteConfig,
+  EnvironmentConfig,
+  SecretConfig,
+  InlineConfig
+];
+
+Config localConfig = { path: "./mace.toml" };
+Config remoteConfig = { url: "https://example.com/mace" };
+Config environmentConfig = { variable: "MACE_CONFIG" };
+Config secretConfig = { secret: "mace/config" };
+Config inlineConfig = { content: "inline configuration" };
+
+string localSource =
+  localConfig is LocalConfig ? localConfig.path :
+  localConfig is RemoteConfig ? localConfig.url :
+  localConfig is EnvironmentConfig ? localConfig.variable :
+  localConfig is SecretConfig ? localConfig.secret :
+  localConfig is InlineConfig ? localConfig.content :
+  "unknown";
+
+string remoteSource =
+  remoteConfig is LocalConfig ? remoteConfig.path :
+  remoteConfig is RemoteConfig ? remoteConfig.url :
+  remoteConfig is EnvironmentConfig ? remoteConfig.variable :
+  remoteConfig is SecretConfig ? remoteConfig.secret :
+  remoteConfig is InlineConfig ? remoteConfig.content :
+  "unknown";
+
+string environmentSource =
+  environmentConfig is LocalConfig ? environmentConfig.path :
+  environmentConfig is RemoteConfig ? environmentConfig.url :
+  environmentConfig is EnvironmentConfig ? environmentConfig.variable :
+  environmentConfig is SecretConfig ? environmentConfig.secret :
+  environmentConfig is InlineConfig ? environmentConfig.content :
+  "unknown";
+
+string secretSource =
+  secretConfig is LocalConfig ? secretConfig.path :
+  secretConfig is RemoteConfig ? secretConfig.url :
+  secretConfig is EnvironmentConfig ? secretConfig.variable :
+  secretConfig is SecretConfig ? secretConfig.secret :
+  secretConfig is InlineConfig ? secretConfig.content :
+  "unknown";
+
+string inlineSource =
+  inlineConfig is LocalConfig ? inlineConfig.path :
+  inlineConfig is RemoteConfig ? inlineConfig.url :
+  inlineConfig is EnvironmentConfig ? inlineConfig.variable :
+  inlineConfig is SecretConfig ? inlineConfig.secret :
+  inlineConfig is InlineConfig ? inlineConfig.content :
+  "unknown";
+|===|
+
+[output = data]
+{
+  local: localSource,
+  remote: remoteSource,
+  environment: environmentSource,
+  secret: secretSource,
+  inline: inlineSource,
+}

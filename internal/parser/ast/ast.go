@@ -49,8 +49,9 @@ func (i Identifier) Range() SourceRange {
 }
 
 type MemberAccess struct {
-	Target Expression
-	Name   string
+	Target   Expression
+	Name     string
+	Optional bool
 }
 
 func (MemberAccess) expressionNode() {
@@ -59,19 +60,6 @@ func (MemberAccess) expressionNode() {
 
 func (m MemberAccess) Range() SourceRange {
 	return m.Target.Range()
-}
-
-type ArrayAccess struct {
-	Target Expression
-	Index  IntLiteral
-}
-
-func (ArrayAccess) expressionNode() {
-	_ = 0
-}
-
-func (a ArrayAccess) Range() SourceRange {
-	return a.Target.Range()
 }
 
 type StringLiteral struct {
@@ -230,6 +218,22 @@ func (i InfixExpression) Range() SourceRange {
 	return i.Left.Range()
 }
 
+type TypeTestExpression struct {
+	Expression Expression
+	TargetType TypeReference
+	EndToken   lexer.Token
+}
+
+func (TypeTestExpression) expressionNode() {
+	_ = 0
+}
+
+func (t TypeTestExpression) Range() SourceRange {
+	sourceRange := t.Expression.Range()
+	sourceRange.End = TokenRange(t.EndToken).End
+	return sourceRange
+}
+
 type ConditionalExpression struct {
 	Condition Expression
 	Then      Expression
@@ -305,12 +309,13 @@ type Declaration interface {
 }
 
 type VariableDeclaration struct {
-	Nullable  bool
-	HasValue  bool
-	Type      TypeReference
-	NameToken lexer.Token
-	Name      string
-	Value     Expression
+	Nullable    bool
+	HasValue    bool
+	Type        TypeReference
+	NameToken   lexer.Token
+	Name        string
+	Value       Expression
+	Description string
 }
 
 func (VariableDeclaration) declarationNode() {

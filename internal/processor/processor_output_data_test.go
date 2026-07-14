@@ -289,6 +289,27 @@ User user = { name, };
 [output = data]
 { user: user, }`, "null can only be assigned to nullable variables and optional schema fields"),
 	)
+
+	It("requires a schema for conditional output with an empty collection", func() {
+		_, err := New().Process(`[output = data]
+{
+  value: false ? "configured" : [],
+}`)
+		tAssert.Error(err)
+		tAssert.ErrorContains(err, "requires an output schema")
+	})
+
+	It("uses schema context for conditional output with an empty collection", func() {
+		result, err := New().Process(`|===|
+schema Result: { value: variant[string, array<string>], };
+|===|
+[output = data, schema = Result]
+{
+  value: false ? "configured" : [],
+}`)
+		tAssert.NoError(err)
+		assertExpectedValue(requireOutputValue(result, "value"), expectedValue{kind: ValueArray, array: []expectedValue{}})
+	})
 })
 
 var _ = Describe("Data output helpers", func() {
@@ -380,8 +401,6 @@ var _ = Describe("Data output helpers", func() {
 		_, err = inferExpressionType(ast.MemberAccess{Target: ast.Identifier{Name: "record"}, Name: "name"}, variables, symbols, types, schemas, nil)
 		tAssert.NoError(err)
 		_, err = inferExpressionType(ast.MemberAccess{Target: ast.Identifier{Name: "name"}, Name: "name"}, variables, symbols, types, schemas, nil)
-		tAssert.Error(err)
-		_, err = inferExpressionType(ast.ArrayAccess{Target: ast.Identifier{Name: "name"}, Index: ast.IntLiteral{Lexeme: "0"}}, variables, symbols, types, schemas, nil)
 		tAssert.Error(err)
 		_, err = inferExpressionType(ast.ArrayLiteral{Elements: []ast.Expression{ast.StringLiteral{Lexeme: `"Ada"`}, ast.StringLiteral{Lexeme: `"Bob"`}}}, variables, symbols, types, schemas, nil)
 		tAssert.NoError(err)

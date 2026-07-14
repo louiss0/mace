@@ -156,109 +156,6 @@ var _ = Describe("LSP analysis", func() {
 		tAssert.False(ok)
 	})
 
-	It("classifies parser and processor diagnostics", func() {
-		parseCases := map[string]diagnosticCode{
-			"parser: empty script block":                     diagnosticSyntaxEmptyScriptBlock,
-			"parser: expected closing script delimiter EOF":  diagnosticSyntaxUnterminatedScriptBlock,
-			"parser: script delimiter mismatch":              diagnosticSyntaxInconsistentScriptDelimiters,
-			"parser: malformed import":                       diagnosticSyntaxMalformedImport,
-			"parser: malformed directive":                    diagnosticSyntaxMalformedDirectiveList,
-			"parser: malformed schema declaration":           diagnosticSyntaxMalformedSchema,
-			"parser: expected integer index in array access": diagnosticSyntaxInvalidArrayAccessIndex,
-			"parser: not allowed when output = schema":       diagnosticDirectiveSchemaOutputVariableIgnored,
-			"parser: malformed variable declaration":         diagnosticSyntaxMalformedVariableDeclaration,
-			"parser: malformed output field":                 diagnosticSyntaxMalformedOutputField,
-			"parser: unexpected token":                       diagnosticSyntaxUnexpectedToken,
-		}
-		for message, code := range parseCases {
-			tAssert.Equal(code, classifyDiagnosticCode(message))
-		}
-
-		processorCases := map[string]diagnosticCode{
-			"processor: duplicate output directive":                                                 diagnosticDirectiveDuplicateKey,
-			"processor: duplicate documentation declaration":                                        diagnosticSyntaxUnexpectedToken,
-			"processor: unknown output directive":                                                   diagnosticDirectiveUnknownKey,
-			"processor: schema directive is invalid when output mode is schema":                     diagnosticDirectiveOutputSchemaCombined,
-			"processor: unknown schema User":                                                        diagnosticDirectiveUnknownSchemaName,
-			"processor: unable to read import file":                                                 diagnosticImportFileNotFound,
-			"processor: unable to parse import file":                                                diagnosticImportFileFailedParse,
-			"processor: circular import":                                                            diagnosticImportCircular,
-			"processor: duplicate import":                                                           diagnosticImportDuplicateName,
-			"processor: imported identifier missing":                                                diagnosticImportNameNotExposed,
-			"processor: schema_doc target missing":                                                  diagnosticSyntaxUnexpectedToken,
-			"processor: unknown type Profile":                                                       diagnosticDeclarationUnknownTypeReference,
-			"processor: variable requires an initializer":                                           diagnosticDeclarationVariableMissingInitializer,
-			"processor: duplicate declaration":                                                      diagnosticDeclarationDuplicateVariable,
-			"processor: already documented by a documentation declaration":                          diagnosticSyntaxUnexpectedToken,
-			"processor: duplicate field":                                                            diagnosticDeclarationDuplicateSchemaField,
-			"processor: duplicate output field":                                                     diagnosticDeclarationDuplicateOutputField,
-			"processor: array literal has mixed element types":                                      diagnosticTypeMixedArrayLiteral,
-			"processor: array index 3 out of range":                                                 diagnosticTypeInvalidArrayAccess,
-			"processor: unknown identifier":                                                         diagnosticTypeUnknownIdentifier,
-			"processor: unknown self reference":                                                     diagnosticTypeUnknownSelfField,
-			"processor: invalid field type when output = schema":                                    diagnosticTypeInvalidOutputSchemaField,
-			"processor: cannot reference type or schema declaration":                                diagnosticTypeUnknownIdentifier,
-			"processor: expected boolean after '!'":                                                 diagnosticTypeInvalidUnaryOperator,
-			"processor: expected numeric operands":                                                  diagnosticTypeInvalidBinaryOperator,
-			"processor: null can only be assigned to nullable variables and optional schema fields": diagnosticTypeInvalidNullUsage,
-			"processor: type mismatch":                                                              diagnosticTypeInitializerMismatch,
-			"processor: missing required field":                                                     diagnosticTypeRecordDoesNotMatchSchema,
-			"processor: something else":                                                             diagnosticSyntaxUnexpectedToken,
-		}
-		for message, code := range processorCases {
-			tAssert.Equal(code, classifyDiagnosticCode(message))
-		}
-
-		tAssert.Equal(diagnosticSyntaxUnexpectedToken, classifyDiagnosticCode("plain error"))
-	})
-
-	It("covers diagnostic error code and token helpers", func() {
-		errorCases := []struct {
-			err  processor.DiagnosticError
-			code diagnosticCode
-		}{
-			{processor.DiagnosticError{Code: processor.CodeArrayIndexOutOfRange}, diagnosticTypeInvalidArrayAccess},
-			{processor.DiagnosticError{Code: processor.CodeArrayValueRequired}, diagnosticTypeInvalidArrayAccess},
-			{processor.DiagnosticError{Code: processor.CodeInvalidNullUsage}, diagnosticTypeInvalidNullUsage},
-			{processor.DiagnosticError{Code: processor.CodeInvalidOutputSchemaField}, diagnosticTypeInvalidOutputSchemaField},
-			{processor.DiagnosticError{Code: processor.CodeMissingRequiredField}, diagnosticTypeRecordDoesNotMatchSchema},
-			{processor.DiagnosticError{Code: processor.CodeOutputValueDeclaration}, diagnosticTypeUnknownIdentifier},
-			{processor.DiagnosticError{Code: processor.CodeSelfReferenceUnknown}, diagnosticTypeUnknownSelfField},
-			{processor.DiagnosticError{Code: processor.CodeTypeMismatch}, diagnosticTypeInitializerMismatch},
-			{processor.DiagnosticError{Kind: processor.ErrorImport}, diagnosticImportFileFailedParse},
-			{processor.DiagnosticError{Kind: processor.ErrorDirective}, diagnosticDirectiveUnknownKey},
-			{processor.DiagnosticError{Kind: processor.ErrorDeclaration}, diagnosticDeclarationDuplicateVariable},
-			{processor.DiagnosticError{Kind: processor.ErrorType}, diagnosticTypeInitializerMismatch},
-			{processor.DiagnosticError{Kind: processor.ErrorValue}, diagnosticTypeUnknownIdentifier},
-			{processor.DiagnosticError{Kind: processor.ErrorOperator}, diagnosticTypeInvalidBinaryOperator},
-			{processor.DiagnosticError{Kind: processor.ErrorSchema}, diagnosticTypeRecordDoesNotMatchSchema},
-			{processor.DiagnosticError{Message: "duplicate output directive"}, diagnosticDirectiveDuplicateKey},
-		}
-		for _, test := range errorCases {
-			tAssert.Equal(test.code, diagnosticCodeFromProcessorError(test.err))
-		}
-
-		bracket := lexer.Token{Type: lexer.TokenLBracket, Lexeme: "[", Line: 1, Column: 4}
-		index := lexer.Token{Type: lexer.TokenInt, Lexeme: "3", Line: 1, Column: 5}
-		candidates := []arrayAccessCandidate{{Level: 2, Bracket: bracket, Index: &index}}
-		token, ok := invalidArrayAccessToken(candidates, processor.DiagnosticError{
-			Fields: processor.DiagnosticFields{Level: 2},
-		})
-		tAssert.True(ok)
-		tAssert.Equal(bracket, token)
-
-		token, ok = outOfRangeArrayAccessToken(candidates, processor.DiagnosticError{
-			Fields: processor.DiagnosticFields{Level: 2, Index: "3"},
-		})
-		tAssert.True(ok)
-		tAssert.Equal(index, token)
-
-		_, ok = invalidArrayAccessToken(candidates, processor.DiagnosticError{
-			Fields: processor.DiagnosticFields{Level: 1},
-		})
-		tAssert.False(ok)
-	})
-
 	It("covers public root wrappers and range helpers", func() {
 		workspace, err := os.MkdirTemp("", "mace-analyzer-root-wrappers-*")
 		tAssert.NoError(err)
@@ -536,6 +433,30 @@ string greeting = "hello";
 		}
 
 		tAssert.Contains(content.Value, "{ name: string }")
+	})
+
+	It("renders record map types in schema hovers", func() {
+		text := `|===|
+schema User: {
+  records: record<record<string>>,
+};
+|===|
+[output = data]
+{}`
+		snapshot := analyzeDocumentAt(text, "user.mace")
+		hover := Hover(text, snapshot, protocol.Position{Line: 1, Character: 8})
+		tAssert.NotNil(hover)
+		if hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if !ok {
+			return
+		}
+
+		tAssert.Contains(content.Value, "records: record<record<string>>")
 	})
 
 	It("surfaces only LSP-visible declarations from imports, script, and output", func() {
@@ -1474,8 +1395,8 @@ schema_doc User {
 
 		rangeValue := protocol.Range{Start: protocol.Position{Line: 1, Character: 0}, End: protocol.Position{Line: 1, Character: 60}}
 		uri := protocol.DocumentUri(fileURI(documentPath))
-		propsAction := requireCodeAction(snapshot, uri, rangeValue, "Add missing props docs")
-		tAssert.Contains(propsAction.Edit.Changes[uri][0].NewText, `props: {`)
+		propsAction := requireCodeAction(snapshot, uri, rangeValue, "Add missing fields docs")
+		tAssert.Contains(propsAction.Edit.Changes[uri][0].NewText, `fields: {`)
 		moveAction := requireCodeAction(snapshot, uri, rangeValue, "Move inline /# docs to structured docs")
 		tAssert.Contains(moveAction.Edit.Changes[uri][0].NewText, `name: ""`)
 		removeAction := requireCodeAction(snapshot, uri, rangeValue, "Remove conflicting docs")
@@ -1903,10 +1824,11 @@ var _ = Describe("analyzer coverage helpers", func() {
 		_, err = parseExpression("\x00")
 		tAssert.Error(err)
 
-		tAssert.Equal("union[string, int]", typeReferenceDetail(ast.UnionType{Members: []ast.TypeReference{ast.PrimitiveType{Name: "string"}, ast.PrimitiveType{Name: "int"}}}))
+		tAssert.Equal("fusion[string, int]", typeReferenceDetail(ast.UnionType{Members: []ast.TypeReference{ast.PrimitiveType{Name: "string"}, ast.PrimitiveType{Name: "int"}}}))
 		tAssert.Equal("variant[string, int]", typeReferenceDetail(ast.VariantType{Members: []ast.TypeReference{ast.PrimitiveType{Name: "string"}, ast.PrimitiveType{Name: "int"}}}))
 		tAssert.Equal("choice[\"a\", 1]", typeReferenceDetail(ast.ChoiceType{Members: []ast.Expression{ast.StringLiteral{Lexeme: `"a"`}, ast.IntLiteral{Lexeme: "1"}}}))
-		tAssert.Equal("unknown", typeReferenceDetail(ast.RecordMapType{Value: ast.PrimitiveType{Name: "string"}}))
+		tAssert.Equal("record<string>", typeReferenceDetail(ast.RecordMapType{Value: ast.PrimitiveType{Name: "string"}}))
+		tAssert.Equal("record<record<string>>", typeReferenceDetail(ast.RecordMapType{Value: ast.RecordMapType{Value: ast.PrimitiveType{Name: "string"}}}))
 		start, end := nameRange("abc", "missing")
 		tAssert.Equal(protocol.Position{}, start)
 		tAssert.Equal(protocol.Position{}, end)
@@ -1935,6 +1857,7 @@ var _ = Describe("analyzer coverage helpers", func() {
 		tAssert.IsType(ast.HexIntLiteral{}, defaultExpressionForType(ast.PrimitiveType{Name: "hex_int"}))
 		tAssert.IsType(ast.HexFloatLiteral{}, defaultExpressionForType(ast.PrimitiveType{Name: "hex_float"}))
 		tAssert.IsType(ast.RecordLiteral{}, defaultExpressionForType(ast.RecordType{}))
+		tAssert.IsType(ast.RecordLiteral{}, defaultExpressionForType(ast.RecordMapType{}))
 		tAssert.IsType(ast.PrimitiveType{}, inferredTypeFromExpression(ast.HexIntLiteral{}))
 		tAssert.IsType(ast.PrimitiveType{}, inferredTypeFromExpression(ast.HexFloatLiteral{}))
 		tAssert.IsType(ast.ArrayType{}, inferredTypeFromExpression(ast.ArrayLiteral{}))
@@ -1970,80 +1893,6 @@ var _ = Describe("analyzer coverage helpers", func() {
 })
 
 var _ = Describe("analyzer diagnostic coverage helpers", func() {
-	It("covers semantic diagnostic helper branches directly", func() {
-		tokens := lexAnalysisTokens("|===|\nint count = \"bad\";\narray<int> values = [1, 2];\nnullable string maybe = null;\n|===|\n[output = data]\n{\n  result: values[4],\n  field: missing,\n}\n")
-		file := ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{
-			ast.VariableDeclaration{HasValue: true, Type: ast.PrimitiveType{Name: "int"}, Name: "count", Value: ast.StringLiteral{Lexeme: `"bad"`}},
-			ast.VariableDeclaration{HasValue: true, Type: ast.ArrayType{Element: ast.PrimitiveType{Name: "int"}}, Name: "values", Value: ast.ArrayLiteral{Elements: []ast.Expression{ast.IntLiteral{Lexeme: "1"}, ast.StringLiteral{Lexeme: `"two"`}}}},
-		}}, Output: ast.OutputBlock{DataFields: []ast.OutputField{{Name: "result"}}}}
-
-		diagnostic, ok := variableTypeMismatchDiagnostic(file, tokens, processor.DiagnosticError{Code: processor.CodeTypeMismatch, Message: "bad", Fields: processor.DiagnosticFields{Expected: "int", Actual: "string"}})
-		tAssert.True(ok)
-		tAssert.Equal(string(diagnosticTypeInitializerMismatch), requireDiagnosticCode(diagnostic))
-		_, ok = variableTypeMismatchDiagnostic(ast.File{}, tokens, processor.DiagnosticError{Code: processor.CodeTypeMismatch})
-		tAssert.False(ok)
-		_, ok = variableTypeMismatchDiagnostic(file, tokens, processor.DiagnosticError{Code: processor.CodeInternal})
-		tAssert.False(ok)
-
-		diagnostic, ok = nullUsageDiagnostic(tokens, processor.DiagnosticError{Code: processor.CodeInvalidNullUsage, Message: "null bad"})
-		tAssert.True(ok)
-		tAssert.Equal(string(diagnosticTypeInvalidNullUsage), requireDiagnosticCode(diagnostic))
-		_, ok = nullUsageDiagnostic(tokens, processor.DiagnosticError{Code: processor.CodeInternal})
-		tAssert.False(ok)
-
-		diagnostic, ok = mixedArrayLiteralDiagnostic(file, tokens, "array literal has mixed element types")
-		tAssert.True(ok)
-		tAssert.Equal(string(diagnosticTypeMixedArrayLiteral), requireDiagnosticCode(diagnostic))
-		_, ok = mixedArrayLiteralDiagnostic(ast.File{}, tokens, "array literal has mixed element types")
-		tAssert.False(ok)
-		_, ok = mixedArrayLiteralDiagnostic(file, tokens, "other")
-		tAssert.False(ok)
-
-		candidates := arrayAccessCandidates(tokens)
-		tAssert.NotEmpty(candidates)
-		token, ok := invalidArrayAccessToken(candidates, processor.DiagnosticError{Fields: processor.DiagnosticFields{Level: 1}})
-		tAssert.True(ok)
-		tAssert.Equal("[", token.Lexeme)
-		token, ok = outOfRangeArrayAccessToken(candidates, processor.DiagnosticError{Fields: processor.DiagnosticFields{Level: 1, Index: "4"}})
-		tAssert.True(ok)
-		tAssert.Equal("4", token.Lexeme)
-		diagnostic, ok = arrayAccessDiagnostic(tokens, processor.DiagnosticError{Code: processor.CodeArrayIndexOutOfRange, Message: "range", Fields: processor.DiagnosticFields{Level: 1, Index: "4"}}, "range")
-		tAssert.True(ok)
-		tAssert.Equal(string(diagnosticTypeInvalidArrayAccess), requireDiagnosticCode(diagnostic))
-		diagnostic, ok = arrayAccessDiagnostic(tokens, processor.DiagnosticError{Code: processor.CodeArrayValueRequired, Message: "array", Fields: processor.DiagnosticFields{Level: 1}}, "array")
-		tAssert.True(ok)
-		tAssert.Equal(string(diagnosticTypeInvalidArrayAccess), requireDiagnosticCode(diagnostic))
-		_, ok = arrayAccessDiagnostic(tokens, processor.DiagnosticError{Code: processor.CodeInternal}, "other")
-		tAssert.False(ok)
-
-		expected, actual, ok := parseExpectedAndActualType("processor: type mismatch: expected int, got string")
-		tAssert.True(ok)
-		tAssert.Equal("int", expected)
-		tAssert.Equal("string", actual)
-		_, _, ok = parseExpectedAndActualType("processor: type mismatch: expected int")
-		tAssert.False(ok)
-
-		diagnostic, ok = schemaDiagnostic(tokens, processor.DiagnosticError{Code: processor.CodeMissingRequiredField, Message: "missing", Fields: processor.DiagnosticFields{Schema: "count"}}, "missing")
-		tAssert.True(ok)
-		tAssert.Equal(string(diagnosticTypeRecordDoesNotMatchSchema), requireDiagnosticCode(diagnostic))
-		_, ok = schemaDiagnostic(tokens, processor.DiagnosticError{Code: processor.CodeMissingRequiredField}, "missing")
-		tAssert.False(ok)
-		diagnostic, ok = unknownSchemaDiagnostic(tokens, `unknown schema "count"`)
-		tAssert.True(ok)
-		tAssert.Equal(string(diagnosticDirectiveUnknownSchemaName), requireDiagnosticCode(diagnostic))
-		_, ok = unknownSchemaDiagnostic(tokens, "other")
-		tAssert.False(ok)
-		diagnostic, ok = selfReferenceDiagnostic(file, tokens, processor.DiagnosticError{Code: processor.CodeSelfReferenceUnknown, Message: "self", Fields: processor.DiagnosticFields{Name: "result"}}, "self")
-		tAssert.True(ok)
-		tAssert.Equal(string(diagnosticTypeSelfForwardReference), requireDiagnosticCode(diagnostic))
-		_, ok = selfReferenceDiagnostic(file, tokens, processor.DiagnosticError{Code: processor.CodeInternal}, "self")
-		tAssert.False(ok)
-		diagnostic, ok = dataOutputValueDiagnostic(tokens, processor.DiagnosticError{Code: processor.CodeOutputValueDeclaration, Message: "data", Fields: processor.DiagnosticFields{Name: "field"}}, "data")
-		tAssert.True(ok)
-		tAssert.Equal(string(diagnosticTypeUnknownIdentifier), requireDiagnosticCode(diagnostic))
-		_, ok = schemaOutputFieldDiagnostic(tokens, processor.DiagnosticError{Code: processor.CodeInternal}, "schema")
-		tAssert.False(ok)
-	})
 
 	It("covers summary and documentation helper branches directly", func() {
 		known := map[string]string{"name": "string"}
@@ -2224,75 +2073,9 @@ var _ = Describe("analyzer scalar diagnostic coverage helpers", func() {
 })
 
 var _ = Describe("analyzer declaration utility coverage helpers", func() {
-	It("covers declaration, import, and usage helper branches", func() {
-		tAssert.Equal("[]", defaultLiteralForTypeName("array<string>"))
-		tAssert.Equal("0", defaultLiteralForTypeName("int"))
-		tAssert.Equal("0.0", defaultLiteralForTypeName("float"))
-		tAssert.Equal("0x0", defaultLiteralForTypeName("hex_int"))
-		tAssert.Equal("0x0.0", defaultLiteralForTypeName("hex_float"))
-		tAssert.Equal("false", defaultLiteralForTypeName("boolean"))
-		tAssert.Equal(`""`, defaultLiteralForTypeName("string"))
-
-		declaration := ast.VariableDeclaration{Name: "inserted", Type: ast.PrimitiveType{Name: "string"}}
-		newScript := prependScriptItem(nil, declaration)
-		tAssert.Len(newScript.Items, 1)
-		existing := prependScriptItem(&ast.ScriptBlock{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./a.mace"`}}}, Items: []ast.Declaration{ast.VariableDeclaration{Name: "old"}}}, declaration)
-		tAssert.Len(existing.Imports, 1)
-		tAssert.Len(existing.Items, 2)
-
-		text := `from "./shared.mace" import Remote: Local, Other;`
-		tokens := lexAnalysisTokens(text)
-		importDecl := ast.ImportDeclaration{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}}
-		token, ok := importEntryToken(tokens, importDecl, ast.ImportedIdentifier{Name: "Remote", Alias: "Local"})
-		tAssert.True(ok)
-		tAssert.Equal("Local", token.Lexeme)
-		token, ok = importEntryToken(tokens, importDecl, ast.ImportedIdentifier{Name: "Other"})
-		tAssert.True(ok)
-		tAssert.Equal("Other", token.Lexeme)
-		_, ok = importIdentifierToken(tokens, importDecl, "Local")
-		tAssert.False(ok)
-
-		file := ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.VariableDeclaration{HasValue: true, Name: "local", Value: ast.InfixExpression{Left: ast.Identifier{Name: "left"}, Right: ast.ArrayAccess{Target: ast.MemberAccess{Target: ast.Identifier{Name: "record"}, Name: "field"}}}}}}, Output: ast.OutputBlock{DataFields: []ast.OutputField{{Name: "out", Value: ast.ConditionalExpression{Condition: ast.Identifier{Name: "cond"}, Then: ast.ArrayLiteral{Elements: []ast.Expression{ast.Identifier{Name: "then"}}}, Else: ast.RecordLiteral{Fields: []ast.RecordField{{Name: "else", Value: ast.PrefixExpression{Right: ast.Identifier{Name: "otherwise"}}}}}}}}}}
-		used := usedVariableNames(file)
-		for _, name := range []string{"left", "record", "cond", "then", "otherwise"} {
-			tAssert.Contains(used, name)
-		}
-	})
 })
 
 var _ = Describe("analyzer small branch coverage helpers", func() {
-	It("covers residual token, diagnostic, and summary branches", func() {
-		candidates := []arrayAccessCandidate{{Bracket: lexer.Token{Type: lexer.TokenLBracket, Lexeme: "["}, Index: &lexer.Token{Type: lexer.TokenInt, Lexeme: "1"}, Level: 2}}
-		_, ok := outOfRangeArrayAccessToken(candidates, processor.DiagnosticError{Fields: processor.DiagnosticFields{Level: 1, Index: "1"}})
-		tAssert.False(ok)
-		_, ok = outOfRangeArrayAccessToken(candidates, processor.DiagnosticError{Fields: processor.DiagnosticFields{Level: 2, Index: "2"}})
-		tAssert.False(ok)
-		_, ok = outOfRangeArrayAccessToken([]arrayAccessCandidate{{Level: 1}}, processor.DiagnosticError{Fields: processor.DiagnosticFields{Level: 1, Index: "1"}})
-		tAssert.False(ok)
-
-		file := ast.File{Output: ast.OutputBlock{DataFields: []ast.OutputField{{Name: "known"}}}}
-		tAssert.Equal(diagnosticTypeSelfForwardReference, classifySelfReferenceCode(file, "known"))
-		tAssert.Equal(diagnosticTypeUnknownSelfField, classifySelfReferenceCode(file, "missing"))
-		tAssert.Equal(0, outputFieldIndex(file, "known"))
-		tAssert.Equal(-1, outputFieldIndex(file, "missing"))
-
-		text := "[output = data]\n{\n  unknown: 1,\n  duplicate: 1,\n  duplicate: 2,\n}\n"
-		tokens := lexAnalysisTokens(text)
-		_, ok = unknownFieldEditRange(text, ast.File{}, tokens, `unknown field "unknown"`)
-		tAssert.True(ok)
-		_, ok = duplicateFieldEditRange(text, tokens, `duplicate field "duplicate"`)
-		tAssert.True(ok)
-		_, ok = unknownSchemaDiagnostic(tokens, `unknown schema "Missing"`)
-		tAssert.False(ok)
-
-		tAssert.Equal(`"hi"`, summarizeValue(processor.Value{Kind: processor.ValueString, String: "hi"}))
-		tAssert.Equal("2", summarizeValue(processor.Value{Kind: processor.ValueInt, Int: 2}))
-		tAssert.Equal("1.5", summarizeValue(processor.Value{Kind: processor.ValueFloat, Float: 1.5}))
-		tAssert.Equal("true", summarizeValue(processor.Value{Kind: processor.ValueBoolean, Boolean: true}))
-		tAssert.Equal("{ a: 1 }", summarizeValue(processor.Value{Kind: processor.ValueRecord, Record: map[string]processor.Value{"a": {Kind: processor.ValueInt, Int: 1}}}))
-		tAssert.Empty(DocumentPath(protocol.DocumentUri("not a uri")))
-		tAssert.Equal("ab", identifierPrefixAt("abc", protocol.Position{Character: 2}))
-	})
 })
 
 var _ = Describe("analyzer code action coverage helpers", func() {

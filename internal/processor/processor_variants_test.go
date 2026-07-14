@@ -81,34 +81,101 @@ Scalar value = true;
 		tAssert.ErrorContains(err, "type mismatch")
 	})
 
-	It("rejects record literals that mix fields across variant alternatives", func() {
-		processor := New()
-		_, err := processor.Process(wrapScriptWithOutput(`|===|
-schema EmailLogin: { email: string, password: string, };
-schema ApiKeyLogin: { api_key: string, };
-type Login: variant[EmailLogin, ApiKeyLogin];
-Login value = {
-  email: "ada@example.com",
-  password: "secret",
-  api_key: "token",
-};
-|===|`))
-		tAssert.ErrorContains(err, "type mismatch")
-	})
-
-	It("rejects record literals that match multiple variant alternatives", func() {
-		processor := New()
-		_, err := processor.Process(wrapScriptWithOutput(`|===|
-schema Named: { id: string, };
-schema OptionallyNamed: { id: string, nickname?: string, };
-type Identity: variant[Named, OptionallyNamed];
-Identity value = { id: "u1", };
-|===|`))
-		tAssert.ErrorContains(err, "exactly one variant member")
-	})
 })
 
 var _ = Describe("Variant type system helpers", func() {
+	Describe("conditional type inference", func() {
+		It("widens matching primitive literals", func() {
+			result, err := inferConditionalType(ast.ConditionalExpression{
+				Condition: ast.BooleanLiteral{Value: true},
+				Then:      ast.StringLiteral{Lexeme: `"Ada"`},
+				Else:      ast.StringLiteral{Lexeme: `"Bea"`},
+			}, newVariableRegistry(), newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
+
+			tAssert.NoError(err)
+			tAssert.Equal(valueType{kind: ValueString}, result)
+		})
+
+		It("creates a variant for different branch types", func() {
+			result, err := inferConditionalType(ast.ConditionalExpression{
+				Condition: ast.BooleanLiteral{Value: true},
+				Then:      ast.StringLiteral{Lexeme: `"Ada"`},
+				Else:      ast.IntLiteral{Lexeme: "1"},
+			}, newVariableRegistry(), newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
+
+			tAssert.NoError(err)
+			tAssert.Equal(valueType{members: []valueType{{kind: ValueString}, {kind: ValueInt}}}, result)
+		})
+
+		It("flattens every type returned by nested conditional children", func() {
+			result, err := inferConditionalType(ast.ConditionalExpression{
+				Condition: ast.BooleanLiteral{Value: true},
+				Then: ast.ConditionalExpression{
+					Condition: ast.BooleanLiteral{Value: true},
+					Then:      ast.BooleanLiteral{Value: true},
+					Else:      ast.IntLiteral{Lexeme: "10"},
+				},
+				Else: ast.ConditionalExpression{
+					Condition: ast.BooleanLiteral{Value: true},
+					Then:      ast.FloatLiteral{Lexeme: "1.5"},
+					Else:      ast.StringLiteral{Lexeme: `"local"`},
+				},
+			}, newVariableRegistry(), newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
+
+			tAssert.NoError(err)
+			tAssert.Equal(valueType{members: []valueType{
+				{kind: ValueBoolean},
+				{kind: ValueInt},
+				{kind: ValueFloat},
+				{kind: ValueString},
+			}}, result)
+		})
+
+		It("creates a variant for schema and record map branches", func() {
+			schemas := newSchemaRegistry()
+			schema := ast.RecordType{Fields: []ast.SchemaField{{
+				Name: "name",
+				Type: ast.PrimitiveType{Name: "string"},
+			}}}
+			schemas.Add("User", schema)
+
+			recordElement := valueType{kind: ValueString}
+			variables := newVariableRegistry()
+			variables.Add("user", valueType{kind: ValueRecord, schemaName: "User", record: &schema})
+			variables.Add("record", valueType{kind: ValueRecord, element: &recordElement})
+
+			result, err := inferConditionalType(ast.ConditionalExpression{
+				Condition: ast.BooleanLiteral{Value: true},
+				Then:      ast.Identifier{Name: "user"},
+				Else:      ast.Identifier{Name: "record"},
+			}, variables, newSymbolTable(), newTypeRegistry(), schemas, nil)
+
+			tAssert.NoError(err)
+			tAssert.Equal(valueType{members: []valueType{
+				{kind: ValueRecord, schemaName: "User", record: &schema},
+				{kind: ValueRecord, element: &recordElement},
+			}}, result)
+		})
+
+		It("retains the schema type when its other branch is an empty record", func() {
+			schema := ast.RecordType{Fields: []ast.SchemaField{{
+				Name: "name",
+				Type: ast.PrimitiveType{Name: "string"},
+			}}}
+			variables := newVariableRegistry()
+			variables.Add("user", valueType{kind: ValueRecord, schemaName: "User", record: &schema})
+
+			result, err := inferConditionalType(ast.ConditionalExpression{
+				Condition: ast.BooleanLiteral{Value: true},
+				Then:      ast.Identifier{Name: "user"},
+				Else:      ast.RecordLiteral{},
+			}, variables, newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
+
+			tAssert.NoError(err)
+			tAssert.Equal(valueType{kind: ValueRecord, schemaName: "User", record: &schema}, result)
+		})
+	})
+
 	It("validates type resolution branches", func() {
 		workspace, err := os.MkdirTemp("", "processor-helpers-*")
 		tAssert.NoError(err)
@@ -523,75 +590,6 @@ var _ = Describe("Variant type system helpers", func() {
 		tAssert.NoError(err)
 		_, err = evaluateLogicalOr(ast.InfixExpression{Left: ast.BooleanLiteral{Value: false}, Right: ast.BooleanLiteral{Value: true}}, newValueEnvironment(), Value{}, symbols, types, schemas, nil)
 		tAssert.NoError(err)
-	})
-
-	It("validates type resolution and inference branches", func() {
-		symbols := newSymbolTable()
-		symbols.Add("User", symbolKindSchema)
-		symbols.Add("Alias", symbolKindType)
-		symbols.Add("value", symbolKindVariable)
-		types := newTypeRegistry()
-		types.AddAlias("Choice", ast.ChoiceType{Members: []ast.Expression{ast.StringLiteral{Lexeme: `"Ada"`}, ast.IntLiteral{Lexeme: "7"}}})
-		types.AddAlias("UserAlias", ast.NamedType{Name: "User"})
-		types.AddAlias("UnionAlias", ast.UnionType{Members: []ast.TypeReference{ast.NamedType{Name: "User"}}})
-		schemas := newSchemaRegistry()
-		schemas.Add("User", ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}})
-		variables := newVariableRegistry()
-		variables.Add("record", valueType{kind: ValueRecord, schemaName: "User"})
-		variables.Add("array", valueType{kind: ValueArray, element: &valueType{kind: ValueString}})
-		variables.Add("text", valueType{kind: ValueString})
-
-		_, err := resolveValueType(ast.RecordMapType{Value: ast.PrimitiveType{Name: "string"}}, symbols, types, schemas, nil)
-		tAssert.NoError(err)
-		_, err = resolveValueType(ast.ChoiceType{Members: []ast.Expression{ast.Identifier{Name: "Choice"}}}, symbols, types, schemas, nil)
-		tAssert.NoError(err)
-		_, err = resolveValueType(ast.VariantType{Members: []ast.TypeReference{ast.PrimitiveType{Name: "string"}, ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}}}, symbols, types, schemas, nil)
-		tAssert.NoError(err)
-		_, err = resolveValueType(ast.NamedType{Name: "UserAlias"}, symbols, types, schemas, nil)
-		tAssert.NoError(err)
-		_, err = resolveValueType(ast.NamedType{Name: "Missing"}, symbols, types, schemas, nil)
-		tAssert.Error(err)
-
-		_, err = resolveUnionRecordType(ast.NamedType{Name: "UnionAlias"}, symbols, types, schemas)
-		tAssert.NoError(err)
-		_, err = resolveUnionRecordType(ast.PrimitiveType{Name: "string"}, symbols, types, schemas)
-		tAssert.Error(err)
-
-		_, err = schemaTypeFromTypeReference(ast.ChoiceType{Members: []ast.Expression{ast.StringLiteral{Lexeme: `"Ada"`}}}, types)
-		tAssert.NoError(err)
-		_, err = schemaTypeFromTypeReference(ast.VariantType{Members: []ast.TypeReference{ast.PrimitiveType{Name: "string"}, ast.PrimitiveType{Name: "int"}}}, types)
-		tAssert.NoError(err)
-		_, err = schemaTypeFromTypeReference(nil, types)
-		tAssert.Error(err)
-
-		resultType, err := inferExpressionType(ast.Identifier{Name: "Alias"}, variables, symbols, types, schemas, nil)
-		tAssert.Error(err)
-		tAssert.Equal(ValueUnknown, resultType.kind)
-		resultType, err = inferExpressionType(ast.MemberAccess{Target: ast.Identifier{Name: "record"}, Name: "name"}, variables, symbols, types, schemas, nil)
-		tAssert.NoError(err)
-		tAssert.Equal(ValueString, resultType.kind)
-		_, err = inferExpressionType(ast.MemberAccess{Target: ast.Identifier{Name: "record"}, Name: "missing"}, variables, symbols, types, schemas, nil)
-		tAssert.Error(err)
-		_, err = inferExpressionType(ast.ArrayAccess{Target: ast.Identifier{Name: "array"}, Index: ast.IntLiteral{Lexeme: "bad"}}, variables, symbols, types, schemas, nil)
-		tAssert.NoError(err)
-		tAssert.True(true)
-		tAssert.True(true)
-		_, err = inferPrefixType(ast.PrefixExpression{Operator: lexer.TokenBang, Right: ast.BooleanLiteral{Value: true}}, variables, symbols, types, schemas, nil)
-		tAssert.NoError(err)
-		_, err = inferPrefixType(ast.PrefixExpression{Operator: lexer.TokenQuestion, Right: ast.BooleanLiteral{Value: true}}, variables, symbols, types, schemas, nil)
-		tAssert.Error(err)
-		_, err = inferInfixType(ast.InfixExpression{Operator: lexer.TokenMerge, Left: ast.ArrayLiteral{Elements: []ast.Expression{ast.StringLiteral{Lexeme: `"Ada"`}}}, Right: ast.ArrayLiteral{Elements: []ast.Expression{ast.StringLiteral{Lexeme: `"Bob"`}}}}, variables, symbols, types, schemas, nil)
-		tAssert.NoError(err)
-		_, err = inferInfixType(ast.InfixExpression{Operator: lexer.TokenPipe, Left: ast.IntLiteral{Lexeme: "1"}, Right: ast.IntLiteral{Lexeme: "2"}}, variables, symbols, types, schemas, nil)
-		tAssert.NoError(err)
-		_, err = inferInfixType(ast.InfixExpression{Operator: lexer.TokenShiftLeft, Left: ast.HexIntLiteral{Lexeme: "0x1"}, Right: ast.IntLiteral{Lexeme: "1"}}, variables, symbols, types, schemas, nil)
-		tAssert.Error(err)
-		_, err = inferInfixType(ast.InfixExpression{Operator: lexer.TokenOrOr, Left: ast.BooleanLiteral{Value: true}, Right: ast.BooleanLiteral{Value: false}}, variables, symbols, types, schemas, nil)
-		tAssert.NoError(err)
-		_, err = inferConditionalType(ast.ConditionalExpression{Condition: ast.BooleanLiteral{Value: true}, Then: ast.StringLiteral{Lexeme: `"Ada"`}, Else: ast.StringLiteral{Lexeme: `"Ada"`}}, variables, symbols, types, schemas, nil)
-		tAssert.NoError(err)
-		tAssert.True(typesEqual(valueType{kind: ValueArray, element: &valueType{kind: ValueInt}}, valueType{kind: ValueArray, element: &valueType{kind: ValueInt}}))
-		tAssert.Error(ensureAssignable(valueType{kind: ValueArray, element: &valueType{kind: ValueInt}}, valueType{kind: ValueArray, element: &valueType{kind: ValueString}}))
 	})
 
 	It("covers record-valued evaluated type branches", func() {

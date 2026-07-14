@@ -94,7 +94,7 @@ array<Scalar> right = ["x"];
 			tAssert.Contains(err.Error(), expected)
 		},
 		Entry("different kinds", `[output = data] { result: { name: "Ada", } <> [1], }`, "merge operands must have the same type"),
-		Entry("primitive operands", `[output = data] { result: 1 <> 2, }`, "expected identifier, array literal, or record literal before '<>'"),
+		Entry("primitive operands", `[output = data] { result: 1 <> 2, }`, "merge operands must be records or arrays"),
 		Entry("different array element types", `|===|
 array<int> left = [1];
 array<string> right = ["two"];
@@ -510,7 +510,7 @@ var _ = Describe("Operator helpers", func() {
 		tAssert.False(arrayMergeTypesMatch(Value{Kind: ValueArray, Array: []Value{{Kind: ValueInt, Int: 1}}}, Value{Kind: ValueArray, Array: []Value{{Kind: ValueString, String: "a"}}}))
 
 		_, err = resolveUnionRecordType(ast.UnionType{Members: []ast.TypeReference{ast.PrimitiveType{Name: "string"}}}, newSymbolTable(), newTypeRegistry(), newSchemaRegistry())
-		tAssert.ErrorContains(err, "union members must be schemas")
+		tAssert.ErrorContains(err, "fusion members must be schemas")
 	})
 
 	It("covers numeric and boolean evaluation helpers", func() {

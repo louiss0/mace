@@ -42,6 +42,66 @@ from "fixtures/processor/imports/base.mace" import Internal;
 		tAssert.ErrorContains(err, "imported identifier")
 	})
 
+	It("treats destructured optional imports as nullable variables", func() {
+		unguardedDocument := `|===|
+from "fixtures/processor/imports/optional_profile.mace" import profile;
+|===|
+[output = data]
+{ city: profile.city, }`
+		_, err := New().ProcessInDir(unguardedDocument, "../..")
+		requireOptionalFieldAccessError(err)
+
+		optionalChainDocument := `|===|
+from "fixtures/processor/imports/optional_profile.mace" import profile;
+|===|
+[output = data]
+{ city?: profile?.city, }`
+		_, err = New().ProcessInDir(optionalChainDocument, "../..")
+		requireOptionalFieldAccessError(err)
+
+		guardedDocument := `|===|
+from "fixtures/processor/imports/optional_profile.mace" import profile;
+|===|
+[output = data]
+{ city: profile ? profile.city : "", }`
+		result, err := New().ProcessInDir(guardedDocument, "../..")
+		tAssert.NoError(err)
+		tAssert.Equal("Paris", requireOutputValue(result, "city").String)
+	})
+
+	It("validates possibly absent expressions in imported data outputs", func() {
+		document := `|===|
+from "fixtures/processor/imports/unguarded_optional_city.mace" import city;
+|===|
+[output = data]
+{ city: city, }`
+
+		_, err := New().ProcessInDir(document, "../..")
+
+		requireOptionalFieldAccessError(err)
+	})
+
+	It("tracks optional properties from imported schemas as possibly absent", func() {
+		unguardedDocument := `|===|
+from "fixtures/processor/imports/base.mace" import User;
+User user = { name: "Ada", age: 30, };
+|===|
+[output = data]
+{ profile: user.profile, }`
+		_, err := New().ProcessInDir(unguardedDocument, "../..")
+		requireOptionalFieldAccessError(err)
+
+		resolvedDocument := `|===|
+from "fixtures/processor/imports/base.mace" import User;
+User user = { name: "Ada", age: 30, };
+|===|
+[output = data]
+{ bio: user?.profile?.bio ?? "unknown", }`
+		result, err := New().ProcessInDir(resolvedDocument, "../..")
+		tAssert.NoError(err)
+		tAssert.Equal("unknown", requireOutputValue(result, "bio").String)
+	})
+
 	It("covers remote import helper branches", func() {
 		workspace, err := os.MkdirTemp("", "processor-imports-*")
 		tAssert.NoError(err)

@@ -28,7 +28,7 @@ var keywordDocs = map[string]string{
 	"choice":   "Declares a finite literal choice type like `choice[\"dev\", 1, true]`.",
 	"nullable": "Marks a variable as able to evaluate to `null`.",
 	"type":     "Declares a reusable type alias.",
-	"union":    "Declares schema composition like `union[Profile, Audit]`.",
+	"fusion":   "Declares schema composition like `fusion[Profile, Audit]`.",
 	"variant":  "Declares a closed variant type like `variant[string, int]` or `variant[array<string>, array<int>]`.",
 }
 
@@ -508,11 +508,13 @@ func typeReferenceDetail(typeReference ast.TypeReference) string {
 		return value.Name
 	case ast.ArrayType:
 		return fmt.Sprintf("array<%s>", typeReferenceDetail(value.Element))
+	case ast.RecordMapType:
+		return fmt.Sprintf("record<%s>", typeReferenceDetail(value.Value))
 	case ast.UnionType:
 		parts := lo.Map(value.Members, func(member ast.TypeReference, _ int) string {
 			return typeReferenceDetail(member)
 		})
-		return fmt.Sprintf("union[%s]", strings.Join(parts, ", "))
+		return fmt.Sprintf("fusion[%s]", strings.Join(parts, ", "))
 	case ast.VariantType:
 		parts := lo.Map(value.Members, func(member ast.TypeReference, _ int) string {
 			return typeReferenceDetail(member)

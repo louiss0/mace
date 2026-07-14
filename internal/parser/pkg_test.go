@@ -1,12 +1,13 @@
 package parser
 
 import (
-	"fmt"
+	"errors"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/louiss0/mace/internal/diagnostic"
 	"github.com/louiss0/mace/internal/lexer"
 	"github.com/louiss0/mace/internal/parser/ast"
 )
@@ -74,16 +75,6 @@ func requireMemberAccess(expression ast.Expression, targetName string, memberNam
 	return access
 }
 
-func requireArrayAccess(expression ast.Expression, expectedIndex string) ast.ArrayAccess {
-	access, ok := expression.(ast.ArrayAccess)
-	tAssert.True(ok)
-	if !ok {
-		return ast.ArrayAccess{}
-	}
-	tAssert.Equal(expectedIndex, access.Index.Lexeme)
-	return access
-}
-
 func requireIntLiteral(expression ast.Expression, lexeme string) ast.IntLiteral {
 	literal, ok := expression.(ast.IntLiteral)
 	tAssert.True(ok)
@@ -144,6 +135,15 @@ func requireInfix(expression ast.Expression, operator lexer.TokenType) ast.Infix
 	return infix
 }
 
+func requireTypeTest(expression ast.Expression) ast.TypeTestExpression {
+	typeTest, ok := expression.(ast.TypeTestExpression)
+	tAssert.True(ok)
+	if !ok {
+		return ast.TypeTestExpression{}
+	}
+	return typeTest
+}
+
 func requireConditional(expression ast.Expression) ast.ConditionalExpression {
 	conditional, ok := expression.(ast.ConditionalExpression)
 	tAssert.True(ok)
@@ -196,10 +196,6 @@ var _ = Describe("Parser", func() {
 		Entry("member access", "Fruit.Apple", func(expression ast.Expression) {
 			requireMemberAccess(expression, "Fruit", "Apple")
 		}),
-		Entry("array access", "names[0]", func(expression ast.Expression) {
-			access := requireArrayAccess(expression, "0")
-			requireIdentifier(access.Target, "names")
-		}),
 		Entry("int literal", "42", func(expression ast.Expression) {
 			requireIntLiteral(expression, "42")
 		}),
@@ -230,6 +226,80 @@ var _ = Describe("Parser", func() {
 		Entry("record keyword identifier", "record", func(expression ast.Expression) {
 			requireIdentifier(expression, "record")
 		}),
+	)
+
+	DescribeTable("parses type-test targets as type references",
+		func(input string, assertTarget func(ast.TypeReference)) {
+			expression, err := parseExpressionInput(input)
+			tAssert.NoError(err)
+			typeTest := requireTypeTest(expression)
+			requireIdentifier(typeTest.Expression, "value")
+			assertTarget(typeTest.TargetType)
+		},
+		Entry("primitive", "value is string", func(target ast.TypeReference) {
+			primitive, ok := target.(ast.PrimitiveType)
+			tAssert.True(ok)
+			tAssert.Equal("string", primitive.Name)
+		}),
+		Entry("schema", "value is LocalConfig", func(target ast.TypeReference) {
+			named, ok := target.(ast.NamedType)
+			tAssert.True(ok)
+			tAssert.Equal("LocalConfig", named.Name)
+		}),
+		Entry("array", "value is array<string>", func(target ast.TypeReference) {
+			array, ok := target.(ast.ArrayType)
+			tAssert.True(ok)
+			_, primitive := array.Element.(ast.PrimitiveType)
+			tAssert.True(primitive)
+		}),
+	)
+
+	It("preserves type-test operands and source range", func() {
+		expression, err := parseExpressionInput("record.value is string")
+		tAssert.NoError(err)
+		typeTest := requireTypeTest(expression)
+		requireMemberAccess(typeTest.Expression, "record", "value")
+		tAssert.Equal(ast.SourcePosition{Line: 1, Column: 1}, typeTest.Range().Start)
+		tAssert.Equal(ast.SourcePosition{Line: 1, Column: 23}, typeTest.Range().End)
+	})
+
+	It("rejects indexing syntax", func() {
+		_, err := parseExpressionInput("values[0] is string")
+
+		tAssert.Error(err)
+	})
+
+	It("applies type-test precedence", func() {
+		expression, err := parseExpressionInput("condition && value is string == true")
+		tAssert.NoError(err)
+		logical := requireInfix(expression, lexer.TokenAndAnd)
+		requireIdentifier(logical.Left, "condition")
+		equality := requireInfix(logical.Right, lexer.TokenEqualEqual)
+		requireTypeTest(equality.Left)
+	})
+
+	It("binds relational expressions before type tests", func() {
+		expression, err := parseExpressionInput("1 < 2 is boolean")
+		tAssert.NoError(err)
+		typeTest := requireTypeTest(expression)
+		requireInfix(typeTest.Expression, lexer.TokenLess)
+	})
+
+	DescribeTable("rejects invalid type-test targets",
+		func(input string, expectedCode diagnostic.Code) {
+			_, err := parseExpressionInput(input)
+			tAssert.Error(err)
+			var syntaxError diagnostic.Error
+			tAssert.True(errors.As(err, &syntaxError))
+			tAssert.Equal(expectedCode, syntaxError.Code)
+		},
+		Entry("missing target", "value is", diagnostic.Code("mace.syntax.is-missing-type")),
+		Entry("string target", "value is \"string\"", diagnostic.Code("mace.syntax.invalid-is-type")),
+		Entry("numeric target", "value is 42", diagnostic.Code("mace.syntax.invalid-is-type")),
+		Entry("missing operand", "is string", diagnostic.Code("mace.syntax.missing-expression")),
+		Entry("malformed array", "value is array<string", diagnostic.Code("mace.syntax.invalid-is-type")),
+		Entry("malformed variant", "value is variant[string, int", diagnostic.Code("mace.syntax.invalid-is-type")),
+		Entry("chained test", "value is string is boolean", diagnostic.Code("mace.syntax.invalid-is-type")),
 	)
 
 	It("rejects trailing tokens after an expression", func() {
@@ -284,36 +354,6 @@ var _ = Describe("Parser", func() {
 			tAssert.Equal("profile", inner.Name)
 			requireIdentifier(inner.Target, "user")
 		}),
-		Entry("array access with member access", "users[0].name", func(expression ast.Expression) {
-			outer, ok := expression.(ast.MemberAccess)
-			tAssert.True(ok)
-			if !ok {
-				return
-			}
-			tAssert.Equal("name", outer.Name)
-			inner := requireArrayAccess(outer.Target, "0")
-			requireIdentifier(inner.Target, "users")
-		}),
-	)
-
-	DescribeTable("parses nested variable array access by depth",
-		func(input string, expectedDepth int) {
-			expression, err := parseExpressionInput(input)
-			tAssert.NoError(err)
-
-			current := expression
-			for depth := expectedDepth; depth >= 1; depth-- {
-				access := requireArrayAccess(current, "0")
-				current = access.Target
-			}
-
-			requireIdentifier(current, "matrix")
-		},
-		Entry("level 1", "matrix[0]", 1),
-		Entry("level 2", "matrix[0][0]", 2),
-		Entry("level 3", "matrix[0][0][0]", 3),
-		Entry("level 4", "matrix[0][0][0][0]", 4),
-		Entry("level 5", "matrix[0][0][0][0][0]", 5),
 	)
 
 	DescribeTable("parses self references",
@@ -421,17 +461,30 @@ var _ = Describe("Parser", func() {
 		Entry("nested ternary", "a ? b : c ? d : e"),
 	)
 
+	It("parses coalescing inside a conditional branch", func() {
+		expression, err := parseExpressionInput("user ? user.profile.address?.city ?? fallback : fallback")
+		tAssert.NoError(err)
+
+		conditional := requireConditional(expression)
+		requireIdentifier(conditional.Condition, "user")
+
+		coalesce := requireInfix(conditional.Then, lexer.TokenCoalesce)
+		city, ok := coalesce.Left.(ast.MemberAccess)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Equal("city", city.Name)
+			tAssert.True(city.Optional)
+		}
+		requireIdentifier(coalesce.Right, "fallback")
+		requireIdentifier(conditional.Else, "fallback")
+	})
+
 	DescribeTable("returns an error when expressions are malformed",
 		func(input string) {
 			_, err := parseExpressionInput(input)
 			tAssert.Error(err)
 		},
 		Entry("unterminated group", "(1 + 2"),
-		Entry("array access requires integer index", "names[value]"),
-		Entry("array access requires closing bracket", "names[0"),
-		Entry("merge rejects scalar left operand", "1 <> right"),
-		Entry("merge rejects scalar right operand", "left <> 2"),
-		Entry("merge rejects member access operand", "base.value <> override"),
 		Entry("self reference requires dot", "$self"),
 		Entry("self reference requires first identifier", "$self."),
 		Entry("self reference requires later identifier", "$self.user."),
@@ -448,6 +501,15 @@ var _ = Describe("Parser", func() {
 		Entry("infix expression requires right operand", "1 +"),
 		Entry("grouped expression rejects missing expression", "()"),
 	)
+
+	It("parses normal expressions as merge operands", func() {
+		expression, err := parseExpressionInput("base.value <> overrides")
+		tAssert.NoError(err)
+
+		root := requireInfix(expression, lexer.TokenMerge)
+		requireMemberAccess(root.Left, "base", "value")
+		requireIdentifier(root.Right, "overrides")
+	})
 
 	It("parses chained merge expressions", func() {
 		expression, err := parseExpressionInput("base <> middle <> override")
@@ -565,7 +627,7 @@ var _ = Describe("Parser", func() {
 			lexer.TokenPercent:            precedenceMultiplicative,
 			lexer.TokenDoubleStar:         precedenceExponent,
 			lexer.TokenDot:                precedenceMember,
-			lexer.TokenLBracket:           precedenceMember,
+			lexer.TokenOptionalDot:        precedenceMember,
 			lexer.TokenEOF:                precedenceLowest,
 		}
 
@@ -658,27 +720,27 @@ var _ = Describe("Parser", func() {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindGeneral, lexer.TokenGenDoc, "gen_doc")
 				return err
 			}},
-			{`schema_doc User { props: { name "Name", }, };`, func(p *Parser) error {
+			{`schema_doc User { fields: { name "Name", }, };`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 				return err
 			}},
-			{`schema_doc User { props: "Name", };`, func(p *Parser) error {
+			{`schema_doc User { fields: "Name", };`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 				return err
 			}},
-			{`schema_doc User { props: { name: "Name" }, };`, func(p *Parser) error {
+			{`schema_doc User { fields: { name: "Name" }, };`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 				return err
 			}},
-			{`schema_doc User { props: { name: "Name", ,`, func(p *Parser) error {
+			{`schema_doc User { fields: { name: "Name", ,`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 				return err
 			}},
-			{`schema_doc User { props: { name: "Name",`, func(p *Parser) error {
+			{`schema_doc User { fields: { name: "Name",`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 				return err
 			}},
-			{`schema_doc User { props: { name: "Name", }, }`, func(p *Parser) error {
+			{`schema_doc User { fields: { name: "Name", }, }`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 				return err
 			}},
@@ -686,11 +748,11 @@ var _ = Describe("Parser", func() {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindGeneral, lexer.TokenGenDoc, "gen_doc")
 				return err
 			}},
-			{`schema_doc User { props: { , }, };`, func(p *Parser) error {
+			{`schema_doc User { fields: { , }, };`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 				return err
 			}},
-			{`schema_doc User { props: { name: "Name", },`, func(p *Parser) error {
+			{`schema_doc User { fields: { name: "Name", },`, func(p *Parser) error {
 				_, err := p.parseDocDeclaration(ast.DocumentationKindSchema, lexer.TokenSchemaDoc, "schema_doc")
 				return err
 			}},
@@ -708,8 +770,8 @@ var _ = Describe("Parser", func() {
 			`array<`,
 			`record<`,
 			`record<string`,
-			`union[`,
-			`union[string`,
+			`fusion[`,
+			`fusion[string`,
 			`variant`,
 			`variant[string`,
 			`choice[string`,
@@ -1268,13 +1330,19 @@ schema_doc User {
 			}
 		})
 
-		It("rejects inline descriptions on variable declarations", func() {
-			_, err := parseFileInput(`|===|
-string greeting = "Hello $(name)" /# Rendered greeting;
+		It("parses inline descriptions on variable declarations before the semicolon", func() {
+			file, err := parseFileInput(`|===|
+string greeting = "Hello" /# Rendered greeting;
 |===|
 [output = data] {}`)
-			tAssert.Error(err)
-			tAssert.ErrorContains(err, "inline descriptions are not allowed on variable declarations")
+			tAssert.NoError(err)
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 1) {
+				varDecl, ok := file.Script.Items[0].(ast.VariableDeclaration)
+				tAssert.True(ok)
+				if ok {
+					tAssert.Equal("Rendered greeting", varDecl.Description)
+				}
+			}
 		})
 
 		It("parses nullable declarations with null initializers", func() {
@@ -1402,9 +1470,9 @@ type Value: variant[array<string>, array<int>];
 			}
 		})
 
-		It("parses union type references", func() {
+		It("parses fusion type references", func() {
 			input := `|===|
-type Value: union[Profile, Audit];
+type Value: fusion[Profile, Audit];
 |===|
 [output = data] {}`
 
@@ -1589,7 +1657,7 @@ schema_doc User {
 [output = data] {}`,
 				`|===|
 schema_doc User {
-  props: {
+  fields: {
     name: "One",
     name: "Two",
   },
@@ -1620,7 +1688,7 @@ type Names: record;
 |===|
 [output = data] {}`,
 				`|===|
-type Names: union;
+type Names: fusion;
 |===|
 [output = data] {}`,
 				`|===|
@@ -1643,7 +1711,7 @@ schema_doc User {
 [output = data] {}`,
 				`|===|
 schema_doc User {
-  props: {
+  fields: {
     name: 1,
   },
 };
@@ -1651,7 +1719,7 @@ schema_doc User {
 [output = data] {}`,
 				`|===|
 schema_doc User {
-  props: {
+  fields: {
     name: "Name",
   }
 };
@@ -1907,12 +1975,12 @@ gen_doc Status {
 			}
 		})
 
-		It("rejects props entries in gen_doc declarations", func() {
+		It("rejects fields entries in gen_doc declarations", func() {
 			input := `|===|
 type Name: string;
 
 gen_doc Name {
-  props: {
+  fields: {
     value: "Nope",
   },
 };
@@ -1922,10 +1990,10 @@ gen_doc Name {
 
 			_, err := parseFileInput(input)
 			tAssert.Error(err)
-			tAssert.ErrorContains(err, "props entry is only allowed in schema_doc")
+			tAssert.ErrorContains(err, "fields entry is only allowed in schema_doc")
 		})
 
-		It("parses documentation fixtures with props and inline descriptions", func() {
+		It("parses documentation fixtures with fields and inline descriptions", func() {
 			file, err := parseFileInput(`|===|
 schema User: {
   name: string,
@@ -1944,7 +2012,7 @@ schema_doc User {
 
 Hover should surface this documentation.
 """,
-  props: {
+  fields: {
     name: "The user's display name",
   },
 };
@@ -1989,39 +2057,5 @@ Hover should surface this documentation.
 			}
 		})
 
-		It("parses nested variable array access fixtures", func() {
-			file, err := parseFileInput(`|============================================================|
-array<int> level1 = [1];
-array<array<int>> level2 = [[2]];
-array<array<array<int>>> level3 = [[[3]]];
-array<array<array<array<int>>>> level4 = [[[[4]]]];
-array<array<array<array<array<int>>>>> level5 = [[[[[5]]]]];
-|============================================================|
-[output = data]
-{
-  level1: level1[0],
-  level2: level2[0][0],
-  level3: level3[0][0][0],
-  level4: level4[0][0][0][0],
-  level5: level5[0][0][0][0][0],
-}
-`)
-			tAssert.NoError(err)
-			if !tAssert.NotNil(file.Script) {
-				return
-			}
-			if !tAssert.Len(file.Output.DataFields, 5) {
-				return
-			}
-
-			for depth, field := range file.Output.DataFields {
-				current := field.Value
-				for level := depth + 1; level >= 1; level-- {
-					access := requireArrayAccess(current, "0")
-					current = access.Target
-				}
-				requireIdentifier(current, fmt.Sprintf("level%d", depth+1))
-			}
-		})
 	})
 })

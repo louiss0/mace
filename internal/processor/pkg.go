@@ -347,11 +347,11 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 		return Result{}, err
 	}
 
-	if err := validateDataOutputFields(outputBlock.DataFields, outputContext.symbols); err != nil {
+	schemaName, hasSchema, _ := activeOutputSchemaName(outputBlock.Directives, outputContext)
+	if err := validateDataOutputFields(outputBlock.DataFields, hasSchema, outputContext.variables, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
 		return Result{}, err
 	}
 
-	schemaName, hasSchema, _ := activeOutputSchemaName(outputBlock.Directives, outputContext)
 	if hasSchema {
 		if err := validateOutputSchema(schemaName, outputBlock.DataFields, outputContext.variables, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
 			return Result{}, err
@@ -1127,6 +1127,9 @@ func collectImportExports(output ast.OutputBlock, context processContext) (map[s
 	if err != nil {
 		return nil, err
 	}
+	if err := validateDataOutputFields(output.DataFields, hasSchema, outputContext.variables, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
+		return nil, err
+	}
 	if hasSchema {
 		if err := validateOutputSchema(schemaName, output.DataFields, outputContext.variables, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
 			return nil, err
@@ -1144,11 +1147,18 @@ func collectImportExports(output ast.OutputBlock, context processContext) (map[s
 		if err != nil {
 			return nil, err
 		}
+		exportedType.nullable = field.Optional
+
+		value, exists := values[field.Name]
+		if !exists {
+			value = Value{Kind: ValueNull}
+		}
+		value.Type = &exportedType
 
 		exports[field.Name] = importedDeclaration{
 			name:  field.Name,
 			kind:  symbolKindVariable,
-			value: values[field.Name],
+			value: value,
 			vtype: exportedType,
 		}
 	}
@@ -1450,6 +1460,9 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 			if err != nil {
 				return err
 			}
+			if conditionalRequiresCollectionContext(decl.Value, actualType) && len(expectedType.members) == 0 {
+				return validationErrorf("ambiguous conditional with an empty collection requires a variant variable type")
+			}
 			if err := ensureAssignable(expectedType, actualType); err != nil {
 				return err
 			}
@@ -1458,6 +1471,11 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 			}
 		} else {
 			return validationErrorf("variable %q requires an initializer", decl.Name)
+		}
+		if decl.Description != "" {
+			if _, ok := docsByTarget[decl.Name]; ok {
+				return validationErrorf("variable %q is already documented by a documentation declaration", decl.Name)
+			}
 		}
 		variables.Add(decl.Name, expectedType)
 		return nil
@@ -1481,7 +1499,7 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 					continue
 				}
 				if _, documented := docDeclaration.Documentation.Props[field.Name]; documented {
-					return validationErrorf("schema field %q in %q is already documented by schema_doc props", field.Name, decl.Name)
+					return validationErrorf("schema field %q in %q is already documented by schema_doc fields", field.Name, decl.Name)
 				}
 			}
 		}
@@ -1503,8 +1521,8 @@ func validateTypeReference(typeRef ast.TypeReference, symbols *symbolTable, type
 		return validateTypeReference(ref.Value, symbols, types, schemas, enums)
 	case ast.UnionType:
 		_, err := resolveUnionRecordType(ref, symbols, types, schemas)
-		if err != nil && strings.Contains(err.Error(), "union members must be schemas") {
-			return validationErrorf("union members must be schemas")
+		if err != nil && strings.Contains(err.Error(), "fusion members must be schemas") {
+			return validationErrorf("fusion members must be schemas")
 		}
 		return err
 	case ast.VariantType:
@@ -1603,7 +1621,7 @@ func validateDocDeclaration(declaration ast.DocDeclaration, symbols *symbolTable
 
 	if len(declaration.Documentation.Props) > 0 {
 		if declaration.Kind != ast.DocumentationKindSchema {
-			return validationErrorf("%s props for %q require a schema-style target", keyword, declaration.Target)
+			return validationErrorf("%s fields for %q require a schema-style target", keyword, declaration.Target)
 		}
 
 		fieldNames := map[string]struct{}{}
@@ -1611,28 +1629,28 @@ func validateDocDeclaration(declaration ast.DocDeclaration, symbols *symbolTable
 		case symbolKindSchema:
 			record, ok := schemas.Get(declaration.Target)
 			if !ok {
-				return validationErrorf("unknown schema %q for %s props", declaration.Target, keyword)
+				return validationErrorf("unknown schema %q for %s fields", declaration.Target, keyword)
 			}
 			for _, field := range record.Fields {
 				fieldNames[field.Name] = struct{}{}
 			}
 		case symbolKindVariable:
 			if !isObjectVariable {
-				return validationErrorf("%s props for %q require a schema-style target", keyword, declaration.Target)
+				return validationErrorf("%s fields for %q require a schema-style target", keyword, declaration.Target)
 			}
 			if variableType.record == nil {
-				return validationErrorf("unknown object shape for %q %s props", declaration.Target, keyword)
+				return validationErrorf("unknown object shape for %q %s fields", declaration.Target, keyword)
 			}
 			for _, field := range variableType.record.Fields {
 				fieldNames[field.Name] = struct{}{}
 			}
 		default:
-			return validationErrorf("%s props for %q require a schema-style target", keyword, declaration.Target)
+			return validationErrorf("%s fields for %q require a schema-style target", keyword, declaration.Target)
 		}
 
 		for name, value := range declaration.Documentation.Props {
 			if _, exists := fieldNames[name]; !exists {
-				return validationErrorf("%s props field %q does not exist on %q", keyword, name, declaration.Target)
+				return validationErrorf("%s fields entry %q does not exist on %q", keyword, name, declaration.Target)
 			}
 			if _, err := parseStaticString(value.Lexeme); err != nil {
 				return err
@@ -1902,11 +1920,110 @@ func hasSchemaFile(directives []ast.OutputDirective) bool {
 	return false
 }
 
-func validateDataOutputFields(fields []ast.OutputField, symbols *symbolTable) error {
+func validateDataOutputFields(fields []ast.OutputField, hasSchema bool, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
 	for _, field := range fields {
+		if !hasSchema && conditionalContainsEmptyCollection(field.Value) {
+			fieldType, err := inferExpressionType(field.Value, variables, symbols, types, schemas, enums)
+			if err != nil {
+				return err
+			}
+			if len(fieldType.members) > 0 {
+				return validationErrorf("ambiguous conditional with an empty collection requires an output schema")
+			}
+		}
 		if err := validateDataOutputExpression(field.Value, symbols); err != nil {
 			return err
 		}
+		if err := validateNullableVariableAccess(field.Value, variables, symbols, types, schemas, enums); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func conditionalRequiresCollectionContext(expression ast.Expression, expressionType valueType) bool {
+	return len(expressionType.members) > 0 && conditionalContainsEmptyCollection(expression)
+}
+
+func conditionalContainsEmptyCollection(expression ast.Expression) bool {
+	conditional, ok := expression.(ast.ConditionalExpression)
+	if !ok {
+		return false
+	}
+	if isEmptyCollectionExpression(conditional.Then) || isEmptyCollectionExpression(conditional.Else) {
+		return true
+	}
+	return conditionalContainsEmptyCollection(conditional.Then) || conditionalContainsEmptyCollection(conditional.Else)
+}
+
+func isEmptyCollectionExpression(expression ast.Expression) bool {
+	switch typed := expression.(type) {
+	case ast.ArrayLiteral:
+		return len(typed.Elements) == 0
+	case ast.RecordLiteral:
+		return len(typed.Fields) == 0
+	default:
+		return false
+	}
+}
+
+func validateNullableVariableAccess(expression ast.Expression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
+	return validateExpressionPresence(expression, variables, symbols, types, schemas, enums, false)
+}
+
+func validateExpressionPresence(expression ast.Expression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any, allowAbsent bool) error {
+	switch expr := expression.(type) {
+	case ast.MemberAccess:
+		expressionType, err := inferExpressionType(expr, variables, symbols, types, schemas, enums)
+		if err != nil {
+			return err
+		}
+		if expressionType.presence == presencePossiblyAbsent && !allowAbsent {
+			return possiblyAbsentValueError()
+		}
+		return validateExpressionPresence(expr.Target, variables, symbols, types, schemas, enums, true)
+	case ast.TypeTestExpression:
+		_, err := inferTypeTestType(expr, variables, symbols, types, schemas, enums)
+		if err != nil {
+			return err
+		}
+		return validateExpressionPresence(expr.Expression, variables, symbols, types, schemas, enums, false)
+	case ast.ArrayLiteral:
+		for _, element := range expr.Elements {
+			if err := validateExpressionPresence(element, variables, symbols, types, schemas, enums, false); err != nil {
+				return err
+			}
+		}
+	case ast.RecordLiteral:
+		for _, field := range expr.Fields {
+			if err := validateExpressionPresence(field.Value, variables, symbols, types, schemas, enums, false); err != nil {
+				return err
+			}
+		}
+	case ast.PrefixExpression:
+		return validateExpressionPresence(expr.Right, variables, symbols, types, schemas, enums, false)
+	case ast.InfixExpression:
+		if expr.Operator == lexer.TokenCoalesce {
+			_, err := inferCoalesceType(expr, variables, symbols, types, schemas, enums)
+			return err
+		}
+		if err := validateExpressionPresence(expr.Left, variables, symbols, types, schemas, enums, false); err != nil {
+			return err
+		}
+		return validateExpressionPresence(expr.Right, variables, symbols, types, schemas, enums, false)
+	case ast.ConditionalExpression:
+		if err := validateExpressionPresence(expr.Condition, variables, symbols, types, schemas, enums, false); err != nil {
+			return err
+		}
+		thenVariables, elseVariables, err := conditionalVariables(expr.Condition, variables, symbols, types, schemas, enums)
+		if err != nil {
+			return err
+		}
+		if err := validateExpressionPresence(expr.Then, thenVariables, symbols, types, schemas, enums, false); err != nil {
+			return err
+		}
+		return validateExpressionPresence(expr.Else, elseVariables, symbols, types, schemas, enums, false)
 	}
 
 	return nil
@@ -1922,6 +2039,8 @@ func validateDataOutputExpression(expression ast.Expression, symbols *symbolTabl
 		}
 	case ast.MemberAccess:
 		return validateDataOutputExpression(expr.Target, symbols)
+	case ast.TypeTestExpression:
+		return validateDataOutputExpression(expr.Expression, symbols)
 	case ast.ArrayLiteral:
 		for _, element := range expr.Elements {
 			if err := validateDataOutputExpression(element, symbols); err != nil {
@@ -1952,34 +2071,6 @@ func validateDataOutputExpression(expression ast.Expression, symbols *symbolTabl
 	}
 
 	return nil
-}
-
-// extractGuardedNames collects field names narrowed by "field" in expr guards.
-// "field" in X → adds "field" to the guarded set.
-// cond1 && cond2 → merges guards from both.
-func extractGuardedNames(condition ast.Expression, existing map[string]struct{}) map[string]struct{} {
-	switch expr := condition.(type) {
-	case ast.InfixExpression:
-		if expr.Operator == lexer.TokenIn {
-			if field, ok := expr.Left.(ast.StringLiteral); ok {
-				fieldValue, err := parseStaticString(field.Lexeme)
-				if err != nil {
-					return existing
-				}
-				extended := make(map[string]struct{}, len(existing)+1)
-				for k := range existing {
-					extended[k] = struct{}{}
-				}
-				extended[fieldValue.String] = struct{}{}
-				return extended
-			}
-		}
-		if expr.Operator == lexer.TokenAndAnd {
-			left := extractGuardedNames(expr.Left, existing)
-			return extractGuardedNames(expr.Right, left)
-		}
-	}
-	return existing
 }
 
 func validateOutputSchema(schemaName string, items []ast.OutputField, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
@@ -2039,19 +2130,16 @@ func validateOutputSchema(schemaName string, items []ast.OutputField, variables 
 }
 
 func validateExpressionAgainstType(expression ast.Expression, expectedType valueType, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
+	if _, ok := expression.(ast.NullLiteral); ok && expectedType.nullable {
+		return nil
+	}
 	if len(expectedType.members) > 0 {
 		return validateExpressionAgainstVariantMembers(expression, expectedType.members, variables, symbols, types, schemas, enums)
 	}
 	if len(expectedType.choiceValues) > 0 {
 		switch typed := expression.(type) {
 		case ast.ConditionalExpression:
-			if err := validateExpressionAgainstType(typed.Then, expectedType, variables, symbols, types, schemas, enums); err != nil {
-				return err
-			}
-			if err := validateExpressionAgainstType(typed.Else, expectedType, variables, symbols, types, schemas, enums); err != nil {
-				return err
-			}
-			return nil
+			return validateConditionalAgainstType(typed, expectedType, variables, symbols, types, schemas, enums)
 		default:
 			actualType, err := inferExpressionType(expression, variables, symbols, types, schemas, enums)
 			if err != nil {
@@ -2080,12 +2168,7 @@ func validateExpressionAgainstType(expression ast.Expression, expectedType value
 				}
 			}
 		case ast.ConditionalExpression:
-			if err := validateExpressionAgainstType(typed.Then, expectedType, variables, symbols, types, schemas, enums); err != nil {
-				return err
-			}
-			if err := validateExpressionAgainstType(typed.Else, expectedType, variables, symbols, types, schemas, enums); err != nil {
-				return err
-			}
+			return validateConditionalAgainstType(typed, expectedType, variables, symbols, types, schemas, enums)
 		}
 	case ValueRecord:
 		if expectedType.element != nil {
@@ -2097,12 +2180,7 @@ func validateExpressionAgainstType(expression ast.Expression, expectedType value
 					}
 				}
 			case ast.ConditionalExpression:
-				if err := validateExpressionAgainstType(typed.Then, expectedType, variables, symbols, types, schemas, enums); err != nil {
-					return err
-				}
-				if err := validateExpressionAgainstType(typed.Else, expectedType, variables, symbols, types, schemas, enums); err != nil {
-					return err
-				}
+				return validateConditionalAgainstType(typed, expectedType, variables, symbols, types, schemas, enums)
 			}
 			return nil
 		}
@@ -2116,18 +2194,39 @@ func validateExpressionAgainstType(expression ast.Expression, expectedType value
 			}
 			return nil
 		case ast.ConditionalExpression:
-			if err := validateExpressionAgainstType(typed.Then, expectedType, variables, symbols, types, schemas, enums); err != nil {
-				return err
-			}
-			if err := validateExpressionAgainstType(typed.Else, expectedType, variables, symbols, types, schemas, enums); err != nil {
-				return err
-			}
+			return validateConditionalAgainstType(typed, expectedType, variables, symbols, types, schemas, enums)
 		}
 	}
 	return nil
 }
 
+func validateConditionalAgainstType(expression ast.ConditionalExpression, expectedType valueType, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
+	thenVariables, elseVariables, err := conditionalVariables(expression.Condition, variables, symbols, types, schemas, enums)
+	if err != nil {
+		return err
+	}
+	if err := validateExpressionAgainstType(expression.Then, expectedType, thenVariables, symbols, types, schemas, enums); err != nil {
+		return err
+	}
+	return validateExpressionAgainstType(expression.Else, expectedType, elseVariables, symbols, types, schemas, enums)
+}
+
 func validateExpressionAgainstVariantMembers(expression ast.Expression, members []valueType, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
+	if conditional, ok := expression.(ast.ConditionalExpression); ok {
+		thenVariables, elseVariables, err := conditionalVariables(conditional.Condition, variables, symbols, types, schemas, enums)
+		if err != nil {
+			return err
+		}
+		if err := validateExpressionAgainstVariantMembers(conditional.Then, members, thenVariables, symbols, types, schemas, enums); err != nil {
+			return err
+		}
+		return validateExpressionAgainstVariantMembers(conditional.Else, members, elseVariables, symbols, types, schemas, enums)
+	}
+
+	if isEmptyCollectionExpression(expression) {
+		return validateEmptyCollectionAgainstVariantMembers(expression, members, variables, symbols, types, schemas, enums)
+	}
+
 	actualType, err := inferExpressionType(expression, variables, symbols, types, schemas, enums)
 	if err != nil {
 		return err
@@ -2146,6 +2245,23 @@ func validateExpressionAgainstVariantMembers(expression ast.Expression, members 
 	}
 
 	return validationErrorf("type mismatch: expected exactly one variant member for %s", valueType{members: members}.name())
+}
+
+func validateEmptyCollectionAgainstVariantMembers(expression ast.Expression, members []valueType, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
+	matchCount := 0
+	for _, member := range members {
+		if err := validateExpressionAgainstType(expression, member, variables, symbols, types, schemas, enums); err == nil {
+			matchCount++
+		}
+	}
+	if matchCount == 1 {
+		return nil
+	}
+	if matchCount == 0 {
+		return typeMismatchError(valueType{members: members}.name(), "empty collection")
+	}
+
+	return validationErrorf("type mismatch: expected exactly one variant member for empty collection")
 }
 
 func countVariantChoiceMatchesForExpression(expression ast.Expression, actualType valueType, members []valueType, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) int {
@@ -2167,6 +2283,9 @@ func countVariantChoiceMatchesForExpression(expression ast.Expression, actualTyp
 func countVariantMatchesForExpression(expression ast.Expression, actualType valueType, members []valueType, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) int {
 	matchCount := 0
 	for _, member := range members {
+		if !recordMapTypesMatch(member, actualType) {
+			continue
+		}
 		if err := ensureAssignable(member, actualType); err != nil {
 			continue
 		}
@@ -2283,6 +2402,9 @@ func validateEvaluatedOutputSchema(schemaName string, fields map[string]Value, s
 }
 
 func validateEvaluatedValueAgainstType(value Value, expectedType valueType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
+	if value.Absent {
+		return possiblyAbsentValueError()
+	}
 	if value.Kind == ValueNull {
 		if expectedType.nullable {
 			return nil
@@ -2434,6 +2556,7 @@ func directiveKindName(kind ast.OutputDirectiveKind) string {
 }
 
 type Value struct {
+	Absent  bool
 	Kind    ValueKind
 	Int     int64
 	Float   float64
@@ -2538,6 +2661,9 @@ func evaluateOutputFields(items []ast.OutputField, environment *valueEnvironment
 		if err != nil {
 			return nil, err
 		}
+		if value.Absent {
+			return nil, possiblyAbsentValueError()
+		}
 		if value.Kind == ValueNull {
 			continue
 		}
@@ -2586,8 +2712,8 @@ func evaluateExpression(expression ast.Expression, environment *valueEnvironment
 		return value, nil
 	case ast.MemberAccess:
 		return evaluateMemberAccess(expr, environment, self, symbols, types, schemas, enums)
-	case ast.ArrayAccess:
-		return evaluateArrayAccess(expr, environment, self, symbols, types, schemas, enums)
+	case ast.TypeTestExpression:
+		return evaluateTypeTest(expr, environment, self, symbols, types, schemas, enums)
 	case ast.IntLiteral:
 		return parseInt(expr.Lexeme)
 	case ast.FloatLiteral:
@@ -2948,40 +3074,70 @@ trim:
 	return sign + "0x" + wholeText + "." + string(digits)
 }
 
+func evaluateTypeTest(expr ast.TypeTestExpression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
+	value, err := evaluateExpression(expr.Expression, environment, self, symbols, types, schemas, enums)
+	if err != nil {
+		return Value{}, err
+	}
+	targetType, err := resolveValueType(expr.TargetType, symbols, types, schemas, enums)
+	if err != nil {
+		return Value{}, err
+	}
+	matches := validateEvaluatedValueAgainstType(value, targetType, symbols, types, schemas, enums) == nil
+	return Value{Kind: ValueBoolean, Boolean: matches}, nil
+}
+
 func evaluateMemberAccess(expr ast.MemberAccess, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
 	target, err := evaluateExpression(expr.Target, environment, self, symbols, types, schemas, enums)
 	if err != nil {
 		return Value{}, err
 	}
+	if target.Absent {
+		if expr.Optional {
+			return Value{Absent: true}, nil
+		}
+		return Value{}, optionalFieldAccessError(expr.Name)
+	}
+	if target.Kind == ValueNull {
+		return Value{}, nullableVariableAccessError(expr.Name)
+	}
 	if target.Kind != ValueRecord {
-		return Value{}, validationErrorf("member access requires a record value")
+		return Value{}, nonRecordMemberAccessError(expr.Name)
+	}
+	var memberType *valueType
+	if target.Type != nil {
+		record := target.Type.record
+		if record == nil && target.Type.schemaName != "" {
+			if schema, ok := schemas.Get(target.Type.schemaName); ok {
+				record = &schema
+			}
+		}
+		if record != nil {
+			for _, field := range record.Fields {
+				if field.Name != expr.Name {
+					continue
+				}
+				if field.Optional && !expr.Optional {
+					return Value{}, optionalFieldAccessError(expr.Name)
+				}
+				resolved, resolveErr := resolveValueType(field.Type, symbols, types, schemas, enums)
+				if resolveErr != nil {
+					return Value{}, resolveErr
+				}
+				memberType = &resolved
+				break
+			}
+		}
 	}
 	member, ok := target.Record[expr.Name]
 	if !ok {
+		if expr.Optional {
+			return Value{Absent: true}, nil
+		}
 		return Value{}, validationErrorf("unknown member %q", expr.Name)
 	}
+	member.Type = memberType
 	return member, nil
-}
-
-func evaluateArrayAccess(expr ast.ArrayAccess, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
-	target, err := evaluateExpression(expr.Target, environment, self, symbols, types, schemas, enums)
-	if err != nil {
-		return Value{}, err
-	}
-	if target.Kind != ValueArray {
-		level := arrayAccessLevel(expr)
-		return Value{}, diagnosticErrorf(ErrorValue, CodeArrayValueRequired, DiagnosticFields{Level: level}, "array access requires an array value at level %d", level)
-	}
-
-	index, err := strconv.Atoi(expr.Index.Lexeme)
-	if err != nil {
-		return Value{}, validationErrorf("array access requires a valid integer index")
-	}
-	if index < 0 || index >= len(target.Array) {
-		level := arrayAccessLevel(expr)
-		return Value{}, diagnosticErrorf(ErrorValue, CodeArrayIndexOutOfRange, DiagnosticFields{Index: strconv.Itoa(index), Level: level}, "array index %d is out of range at level %d", index, level)
-	}
-	return target.Array[index], nil
 }
 
 func evaluatePrefix(expr ast.PrefixExpression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
@@ -3021,6 +3177,9 @@ func evaluatePrefix(expr ast.PrefixExpression, environment *valueEnvironment, se
 }
 
 func evaluateInfix(expr ast.InfixExpression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
+	if expr.Operator == lexer.TokenCoalesce {
+		return evaluateCoalesce(expr, environment, self, symbols, types, schemas, enums)
+	}
 	if expr.Operator == lexer.TokenAndAnd {
 		return evaluateLogicalAnd(expr, environment, self, symbols, types, schemas, enums)
 	}
@@ -3057,6 +3216,18 @@ func evaluateInfix(expr ast.InfixExpression, environment *valueEnvironment, self
 	default:
 		return Value{}, validationErrorf("unknown infix operator")
 	}
+}
+
+func evaluateCoalesce(expr ast.InfixExpression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
+	left, err := evaluateExpression(expr.Left, environment, self, symbols, types, schemas, enums)
+	if err != nil {
+		return Value{}, err
+	}
+	if !left.Absent {
+		return left, nil
+	}
+
+	return evaluateExpression(expr.Right, environment, self, symbols, types, schemas, enums)
 }
 
 func evaluateContains(left, right Value) (Value, error) {
@@ -3490,15 +3661,19 @@ func evaluateConditional(expr ast.ConditionalExpression, environment *valueEnvir
 	if err != nil {
 		return Value{}, err
 	}
-	if condition.Kind != ValueBoolean {
-		return Value{}, validationErrorf("type mismatch: expected boolean condition")
+	if condition.Kind != ValueBoolean && condition.Kind != ValueNull && condition.Kind != ValueRecord {
+		return Value{}, validationErrorf("type mismatch: expected boolean or record condition")
 	}
 
-	if condition.Boolean {
+	if isTruthy(condition) {
 		return evaluateExpression(expr.Then, environment, self, symbols, types, schemas, enums)
 	}
 
 	return evaluateExpression(expr.Else, environment, self, symbols, types, schemas, enums)
+}
+
+func isTruthy(value Value) bool {
+	return value.Kind != ValueNull && (value.Kind != ValueBoolean || value.Boolean)
 }
 
 func evaluateArrayLiteral(expr ast.ArrayLiteral, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
@@ -3507,6 +3682,9 @@ func evaluateArrayLiteral(expr ast.ArrayLiteral, environment *valueEnvironment, 
 		value, err := evaluateExpression(element, environment, self, symbols, types, schemas, enums)
 		if err != nil {
 			return Value{}, err
+		}
+		if value.Absent {
+			return Value{}, possiblyAbsentValueError()
 		}
 		values = append(values, value)
 	}
@@ -3522,6 +3700,9 @@ func evaluateRecordLiteral(expr ast.RecordLiteral, environment *valueEnvironment
 		value, err := evaluateExpression(field.Value, environment, self, symbols, types, schemas, enums)
 		if err != nil {
 			return Value{}, err
+		}
+		if value.Absent {
+			return Value{}, possiblyAbsentValueError()
 		}
 		if value.Kind == ValueNull {
 			continue
@@ -3606,9 +3787,17 @@ const (
 	ValueRecord
 )
 
+type valuePresence int
+
+const (
+	presenceGuaranteed valuePresence = iota
+	presencePossiblyAbsent
+)
+
 type valueType struct {
 	kind         ValueKind
 	nullable     bool
+	presence     valuePresence
 	element      *valueType
 	schemaName   string
 	record       *ast.RecordType
@@ -3803,9 +3992,9 @@ func resolveUnionRecordType(typeRef ast.TypeReference, symbols *symbolTable, typ
 			return resolveUnionRecordType(resolved, symbols, types, schemas)
 		}
 
-		return ast.RecordType{}, validationErrorf("union members must be schemas")
+		return ast.RecordType{}, validationErrorf("fusion members must be schemas")
 	default:
-		return ast.RecordType{}, validationErrorf("union members must be schemas")
+		return ast.RecordType{}, validationErrorf("fusion members must be schemas")
 	}
 }
 
@@ -3833,7 +4022,7 @@ func mergeRecordTypes(left, right ast.RecordType) (ast.RecordType, error) {
 
 		existing := merged.Fields[index]
 		if !reflect.DeepEqual(existing.Type, field.Type) {
-			return ast.RecordType{}, validationErrorf("conflicting field %q in union schema composition", field.Name)
+			return ast.RecordType{}, validationErrorf("conflicting field %q in fusion schema composition", field.Name)
 		}
 		merged.Fields[index].Optional = existing.Optional && field.Optional
 	}
@@ -3931,52 +4120,27 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 		}
 		return valueType{kind: ValueUnknown}, nil
 	case ast.MemberAccess:
+		if path, stable := stableExpressionPath(expr); stable {
+			if narrowedType, ok := variables.Get(path); ok {
+				return narrowedType, nil
+			}
+		}
 		targetType, err := inferExpressionType(expr.Target, variables, symbols, types, schemas, enums)
 		if err != nil {
 			return valueType{}, err
 		}
-		if targetType.kind == ValueUnknown {
+		if targetType.kind == ValueUnknown && len(targetType.members) == 0 && len(targetType.choiceValues) == 0 {
 			return valueType{kind: ValueUnknown}, nil
 		}
-		if targetType.kind != ValueRecord {
-			return valueType{}, validationErrorf("member access requires a record value")
+		if targetType.nullable {
+			return valueType{}, nullableVariableAccessError(expr.Name)
 		}
-		if targetType.element != nil {
-			return *targetType.element, nil
+		if targetType.presence == presencePossiblyAbsent && !expr.Optional {
+			return valueType{}, optionalFieldAccessError(expr.Name)
 		}
-		if targetType.record == nil {
-			if targetType.schemaName == "" {
-				return valueType{kind: ValueUnknown}, nil
-			}
-			record, ok := schemas.Get(targetType.schemaName)
-			if !ok {
-				return valueType{kind: ValueUnknown}, nil
-			}
-			targetType.record = &record
-		}
-		for _, field := range targetType.record.Fields {
-			if field.Name != expr.Name {
-				continue
-			}
-			return resolveValueType(field.Type, symbols, types, schemas, enums)
-		}
-		return valueType{}, validationErrorf("unknown field %q", expr.Name)
-	case ast.ArrayAccess:
-		targetType, err := inferExpressionType(expr.Target, variables, symbols, types, schemas, enums)
-		if err != nil {
-			return valueType{}, err
-		}
-		if targetType.kind == ValueUnknown {
-			return valueType{kind: ValueUnknown}, nil
-		}
-		if targetType.kind != ValueArray {
-			level := arrayAccessLevel(expr)
-			return valueType{}, diagnosticErrorf(ErrorValue, CodeArrayValueRequired, DiagnosticFields{Level: level}, "array access requires an array value at level %d", level)
-		}
-		if targetType.element == nil {
-			return valueType{kind: ValueUnknown}, nil
-		}
-		return *targetType.element, nil
+		return inferMemberAccessType(targetType, expr, symbols, types, schemas, enums)
+	case ast.TypeTestExpression:
+		return inferTypeTestType(expr, variables, symbols, types, schemas, enums)
 	case ast.IntLiteral:
 		value, err := parseInt(expr.Lexeme)
 		if err != nil {
@@ -4016,7 +4180,7 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 	case ast.ArrayLiteral:
 		return inferArrayLiteralType(expr, variables, symbols, types, schemas, enums)
 	case ast.RecordLiteral:
-		return valueType{kind: ValueRecord}, nil
+		return inferRecordLiteralType(expr, variables, symbols, types, schemas, enums)
 	case ast.SelfReference:
 		return valueType{kind: ValueUnknown}, nil
 	case ast.PrefixExpression:
@@ -4030,17 +4194,80 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 	}
 }
 
-func arrayAccessLevel(expression ast.Expression) int {
-	access, ok := expression.(ast.ArrayAccess)
-	if !ok {
-		return 0
+func inferTypeTestType(expr ast.TypeTestExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
+	sourceType, err := inferExpressionType(expr.Expression, variables, symbols, types, schemas, enums)
+	if err != nil {
+		return valueType{}, err
 	}
-
-	if parent, ok := access.Target.(ast.ArrayAccess); ok {
-		return arrayAccessLevel(parent) + 1
+	targetType, err := resolveValueType(expr.TargetType, symbols, types, schemas, enums)
+	if err != nil {
+		return valueType{}, err
 	}
+	if _, _, matched := narrowValueType(sourceType, targetType); !matched {
+		return valueType{}, impossibleNarrowingError(expr, sourceType.name(), targetType.name())
+	}
+	return valueType{kind: ValueBoolean}, nil
+}
 
-	return 1
+func inferMemberAccessType(targetType valueType, expr ast.MemberAccess, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
+	if len(targetType.members) > 0 {
+		memberTypes := make([]valueType, 0, len(targetType.members))
+		for _, variantMember := range targetType.members {
+			memberType, err := inferMemberAccessType(variantMember, expr, symbols, types, schemas, enums)
+			if err != nil {
+				return valueType{}, err
+			}
+			memberTypes = append(memberTypes, memberType)
+		}
+
+		presence := presenceGuaranteed
+		if expr.Optional || targetType.presence == presencePossiblyAbsent {
+			presence = presencePossiblyAbsent
+		}
+		return valueType{members: memberTypes, presence: presence}, nil
+	}
+	if targetType.kind == ValueUnknown && len(targetType.choiceValues) == 0 {
+		return valueType{kind: ValueUnknown}, nil
+	}
+	if targetType.kind != ValueRecord {
+		return valueType{}, nonRecordMemberAccessError(expr.Name)
+	}
+	if targetType.element != nil {
+		memberType := *targetType.element
+		memberType.presence = presenceGuaranteed
+		if expr.Optional || targetType.presence == presencePossiblyAbsent {
+			memberType.presence = presencePossiblyAbsent
+		}
+		return memberType, nil
+	}
+	if targetType.record == nil {
+		if targetType.schemaName == "" {
+			return valueType{kind: ValueUnknown}, nil
+		}
+		record, ok := schemas.Get(targetType.schemaName)
+		if !ok {
+			return valueType{kind: ValueUnknown}, nil
+		}
+		targetType.record = &record
+	}
+	for _, field := range targetType.record.Fields {
+		if field.Name != expr.Name {
+			continue
+		}
+		if field.Optional && !expr.Optional {
+			return valueType{}, optionalFieldAccessError(expr.Name)
+		}
+		memberType, err := resolveValueType(field.Type, symbols, types, schemas, enums)
+		if err != nil {
+			return valueType{}, err
+		}
+		memberType.presence = presenceGuaranteed
+		if field.Optional || targetType.presence == presencePossiblyAbsent {
+			memberType.presence = presencePossiblyAbsent
+		}
+		return memberType, nil
+	}
+	return valueType{}, validationErrorf("unknown field %q on %s", expr.Name, targetType.name())
 }
 
 func inferArrayLiteralType(expr ast.ArrayLiteral, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
@@ -4063,6 +4290,28 @@ func inferArrayLiteralType(expr ast.ArrayLiteral, variables *variableRegistry, s
 
 	elementType := valueType{members: elementTypes}
 	return valueType{kind: ValueArray, element: &elementType}, nil
+}
+
+func inferRecordLiteralType(expr ast.RecordLiteral, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
+	if len(expr.Fields) == 0 {
+		return valueType{kind: ValueRecord}, nil
+	}
+
+	valueTypes := []valueType{}
+	for _, field := range expr.Fields {
+		fieldType, err := inferExpressionType(field.Value, variables, symbols, types, schemas, enums)
+		if err != nil {
+			return valueType{}, err
+		}
+		valueTypes = appendUniqueValueType(valueTypes, fieldType)
+	}
+
+	if len(valueTypes) == 1 {
+		return valueType{kind: ValueRecord, element: &valueTypes[0]}, nil
+	}
+
+	variantType := valueType{members: valueTypes}
+	return valueType{kind: ValueRecord, element: &variantType}, nil
 }
 
 func inferPrefixType(expr ast.PrefixExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
@@ -4093,6 +4342,10 @@ func inferPrefixType(expr ast.PrefixExpression, variables *variableRegistry, sym
 }
 
 func inferInfixType(expr ast.InfixExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
+	if expr.Operator == lexer.TokenCoalesce {
+		return inferCoalesceType(expr, variables, symbols, types, schemas, enums)
+	}
+
 	leftType, err := inferExpressionType(expr.Left, variables, symbols, types, schemas, enums)
 	if err != nil {
 		return valueType{}, err
@@ -4173,6 +4426,50 @@ func inferInfixType(expr ast.InfixExpression, variables *variableRegistry, symbo
 	}
 }
 
+func inferCoalesceType(expr ast.InfixExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
+	operands := coalesceOperands(expr)
+	var result valueType
+
+	for index, operand := range operands {
+		operandType, err := inferExpressionType(operand, variables, symbols, types, schemas, enums)
+		if err != nil {
+			return valueType{}, err
+		}
+		if index == len(operands)-1 {
+			if operandType.nullable || operandType.presence != presenceGuaranteed {
+				return valueType{}, validationErrorf("coalescing fallback must be guaranteed present")
+			}
+			if !typesEqual(result, operandType) {
+				return valueType{}, typeMismatchError(result.name(), operandType.name())
+			}
+			result.presence = presenceGuaranteed
+			return result, nil
+		}
+		if operandType.presence != presencePossiblyAbsent {
+			return valueType{}, validationErrorf("coalescing operands before the fallback must be possibly absent")
+		}
+		if index == 0 {
+			result = operandType
+			continue
+		}
+		if !typesEqual(result, operandType) {
+			return valueType{}, typeMismatchError(result.name(), operandType.name())
+		}
+	}
+
+	return valueType{}, validationErrorf("coalescing requires a fallback")
+}
+
+func coalesceOperands(expression ast.Expression) []ast.Expression {
+	infix, ok := expression.(ast.InfixExpression)
+	if !ok || infix.Operator != lexer.TokenCoalesce {
+		return []ast.Expression{expression}
+	}
+
+	operands := []ast.Expression{infix.Left}
+	return append(operands, coalesceOperands(infix.Right)...)
+}
+
 func inferMergeType(leftType, rightType valueType) (valueType, error) {
 	if leftType.kind != ValueRecord && leftType.kind != ValueArray {
 		return valueType{}, validationErrorf("type mismatch: merge operands must be records or arrays")
@@ -4210,48 +4507,202 @@ func inferConditionalType(expr ast.ConditionalExpression, variables *variableReg
 	if err != nil {
 		return valueType{}, err
 	}
-	if conditionType.kind != ValueBoolean {
+	if conditionType.kind != ValueBoolean && (!conditionType.nullable || conditionType.kind != ValueRecord) {
 		return valueType{}, validationErrorf("type mismatch: expected boolean condition")
 	}
 
-	thenType, err := inferExpressionType(expr.Then, variables, symbols, types, schemas, enums)
+	thenVariables, elseVariables, err := conditionalVariables(expr.Condition, variables, symbols, types, schemas, enums)
 	if err != nil {
 		return valueType{}, err
 	}
-	elseType, err := inferExpressionType(expr.Else, variables, symbols, types, schemas, enums)
+	thenType, err := inferExpressionType(expr.Then, thenVariables, symbols, types, schemas, enums)
+	if err != nil {
+		return valueType{}, err
+	}
+	elseType, err := inferExpressionType(expr.Else, elseVariables, symbols, types, schemas, enums)
 	if err != nil {
 		return valueType{}, err
 	}
 
-	if thenType.kind == ValueNull && elseType.kind != ValueUnknown {
+	if thenType.kind == ValueNull && !isUnknownValueType(elseType) {
 		elseType.nullable = true
-		return elseType, nil
+		return widenedValueType(elseType), nil
 	}
-	if elseType.kind == ValueNull && thenType.kind != ValueUnknown {
+	if elseType.kind == ValueNull && !isUnknownValueType(thenType) {
 		thenType.nullable = true
-		return thenType, nil
-	}
-	if thenType.kind != ValueUnknown && elseType.kind != ValueUnknown && thenType.kind != elseType.kind {
-		return valueType{}, validationErrorf("type mismatch: conditional branches differ")
+		return widenedValueType(thenType), nil
 	}
 
-	if thenType.kind == ValueUnknown {
+	if isUnknownValueType(thenType) {
 		return elseType, nil
 	}
-	if elseType.kind == ValueUnknown {
+	if isUnknownValueType(elseType) {
 		return thenType, nil
 	}
-	if thenType.exactValue != nil && elseType.exactValue != nil {
-		equal, err := valuesEqual(*thenType.exactValue, *elseType.exactValue)
-		if err != nil {
-			return valueType{}, err
+
+	return unifyConditionalTypes(thenType, elseType), nil
+}
+
+func isUnknownValueType(input valueType) bool {
+	return input.kind == ValueUnknown && len(input.members) == 0 && len(input.choiceValues) == 0
+}
+
+func unifyConditionalTypes(thenType, elseType valueType) valueType {
+	thenType = widenedValueType(thenType)
+	elseType = widenedValueType(elseType)
+
+	if thenType.kind == ValueRecord && elseType.kind == ValueRecord {
+		if isEmptyRecordValueType(thenType) {
+			return elseType
 		}
-		if equal {
-			return thenType, nil
+		if isEmptyRecordValueType(elseType) {
+			return thenType
 		}
 	}
 
-	return valueType{kind: thenType.kind}, nil
+	if typesEqual(thenType, elseType) {
+		thenType.nullable = thenType.nullable || elseType.nullable
+		thenType.presence = max(thenType.presence, elseType.presence)
+		return thenType
+	}
+
+	members := flattenVariantValueTypes([]valueType{thenType, elseType})
+	variantMembers := make([]valueType, 0, len(members))
+	for _, member := range members {
+		variantMembers = appendUniqueValueType(variantMembers, member)
+	}
+	if len(variantMembers) == 1 {
+		return variantMembers[0]
+	}
+
+	return valueType{members: variantMembers}
+}
+
+func isEmptyRecordValueType(input valueType) bool {
+	return input.schemaName == "" && input.record == nil && input.element == nil
+}
+
+func widenedValueType(input valueType) valueType {
+	widened := input
+	widened.exactValue = nil
+	if widened.element != nil {
+		element := widenedValueType(*widened.element)
+		widened.element = &element
+	}
+	if len(widened.members) > 0 {
+		members := make([]valueType, 0, len(widened.members))
+		for _, member := range widened.members {
+			members = append(members, widenedValueType(member))
+		}
+		widened.members = members
+	}
+
+	return widened
+}
+
+func conditionalVariables(condition ast.Expression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (*variableRegistry, *variableRegistry, error) {
+	if typeTest, ok := condition.(ast.TypeTestExpression); ok {
+		path, stable := stableExpressionPath(typeTest.Expression)
+		if !stable {
+			return variables, variables, nil
+		}
+		sourceType, err := inferExpressionType(typeTest.Expression, variables, symbols, types, schemas, enums)
+		if err != nil {
+			return nil, nil, err
+		}
+		targetType, err := resolveValueType(typeTest.TargetType, symbols, types, schemas, enums)
+		if err != nil {
+			return nil, nil, err
+		}
+		matchedType, remainingType, matched := narrowValueType(sourceType, targetType)
+		if !matched {
+			return nil, nil, impossibleNarrowingError(typeTest, sourceType.name(), targetType.name())
+		}
+
+		thenVariables := variables.Clone()
+		thenVariables.Add(path, matchedType)
+		elseVariables := variables.Clone()
+		if !isUnknownValueType(remainingType) {
+			elseVariables.Add(path, remainingType)
+		}
+		return thenVariables, elseVariables, nil
+	}
+
+	identifier, ok := condition.(ast.Identifier)
+	if !ok {
+		return variables, variables, nil
+	}
+	variableType, ok := variables.Get(identifier.Name)
+	if !ok || !variableType.nullable {
+		return variables, variables, nil
+	}
+
+	narrowed := variables.Clone()
+	variableType.nullable = false
+	narrowed.Add(identifier.Name, variableType)
+	return narrowed, variables, nil
+}
+
+func narrowValueType(sourceType valueType, targetType valueType) (valueType, valueType, bool) {
+	sourceMembers := flattenVariantValueTypes(sourceType.members)
+	if len(sourceMembers) == 0 {
+		presentType := sourceType
+		presentType.nullable = false
+		sourceMembers = []valueType{presentType}
+	}
+
+	matchedMembers := make([]valueType, 0, len(sourceMembers))
+	remainingMembers := make([]valueType, 0, len(sourceMembers))
+	for _, member := range sourceMembers {
+		matchingChoiceValues := lo.Filter(targetType.choiceValues, func(value Value, _ int) bool {
+			return len(member.choiceValues) == 0 && member.exactValue == nil && value.Kind == member.kind
+		})
+		if len(matchingChoiceValues) > 0 {
+			matchedMembers = appendUniqueValueType(matchedMembers, valueType{choiceValues: matchingChoiceValues})
+			remainingMembers = appendUniqueValueType(remainingMembers, member)
+			continue
+		}
+
+		if ensureAssignable(targetType, member) == nil {
+			matchedMembers = appendUniqueValueType(matchedMembers, member)
+		} else {
+			remainingMembers = appendUniqueValueType(remainingMembers, member)
+		}
+	}
+	if len(matchedMembers) == 0 {
+		return valueType{}, valueType{}, false
+	}
+	if sourceType.nullable {
+		remainingMembers = appendUniqueValueType(remainingMembers, valueType{kind: ValueNull})
+	}
+
+	return simplifiedVariantType(matchedMembers), simplifiedVariantType(remainingMembers), true
+}
+
+func simplifiedVariantType(members []valueType) valueType {
+	switch len(members) {
+	case 0:
+		return valueType{kind: ValueUnknown}
+	case 1:
+		return members[0]
+	default:
+		return valueType{members: members}
+	}
+}
+
+func stableExpressionPath(expression ast.Expression) (string, bool) {
+	switch expr := expression.(type) {
+	case ast.Identifier:
+		return expr.Name, true
+	case ast.MemberAccess:
+		target, stable := stableExpressionPath(expr.Target)
+		if !stable {
+			return "", false
+		}
+		return target + "." + expr.Name, true
+	default:
+		return "", false
+	}
 }
 
 func typesEqual(leftType, rightType valueType) bool {
@@ -4279,6 +4730,12 @@ func typesEqual(leftType, rightType valueType) bool {
 		return typesEqual(*leftType.element, *rightType.element)
 	}
 	if leftType.kind == ValueRecord {
+		if leftType.element != nil || rightType.element != nil {
+			if leftType.element == nil || rightType.element == nil {
+				return false
+			}
+			return typesEqual(*leftType.element, *rightType.element)
+		}
 		if leftType.schemaName == "" || rightType.schemaName == "" {
 			return true
 		}
@@ -4287,7 +4744,23 @@ func typesEqual(leftType, rightType valueType) bool {
 	return true
 }
 
+func recordMapTypesMatch(expectedType valueType, actualType valueType) bool {
+	if expectedType.kind != ValueRecord || actualType.kind != ValueRecord {
+		return true
+	}
+	if expectedType.element == nil {
+		return true
+	}
+	if actualType.element == nil {
+		return actualType.schemaName == "" && actualType.record == nil
+	}
+	return typesEqual(expectedType, actualType)
+}
+
 func ensureAssignable(expectedType, actualType valueType) error {
+	if actualType.presence == presencePossiblyAbsent {
+		return possiblyAbsentValueError()
+	}
 	if actualType.nullable && !expectedType.nullable {
 		return invalidNullUsageError()
 	}
@@ -4358,6 +4831,9 @@ func ensureAssignable(expectedType, actualType valueType) error {
 	if expectedType.kind == ValueArray {
 		if expectedType.element == nil || actualType.element == nil {
 			return typeMismatchError(expectedType.name(), actualType.name())
+		}
+		if actualType.element.kind == ValueUnknown && len(actualType.element.members) == 0 && len(actualType.element.choiceValues) == 0 {
+			return nil
 		}
 		if err := ensureAssignable(*expectedType.element, *actualType.element); err != nil {
 			return typeMismatchError(expectedType.name(), actualType.name())

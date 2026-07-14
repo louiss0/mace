@@ -13,7 +13,7 @@ Aligned to `Mace Language Spec RFC.md`.
 - `array` -> `processor_array_test.go`
 - `record` / schema / imports / path / validation / input records -> `processor_record_test.go`
 - `variant` / type resolution helpers -> `processor_variant_test.go`
-- `union` -> `processor_union_test.go`
+- `fusion` -> `processor_fusions_test.go`
 - `choice` -> `processor_choice_test.go`
 - `$self` -> `processor_self_test.go`
 - `output_block` -> `processor_output_block_test.go`

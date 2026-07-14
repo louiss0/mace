@@ -19,10 +19,6 @@ func (p *Parser) diagnosticError(token lexer.Token, code diagnostic.Code, messag
 	}
 }
 
-func (p *Parser) diagnosticErrorf(token lexer.Token, code diagnostic.Code, format string, args ...any) error {
-	return p.diagnosticError(token, code, fmt.Sprintf(format, args...))
-}
-
 func (p *Parser) unexpectedTokenError(message string) error {
 	token := p.current()
 	if token.Type == lexer.TokenEOF {
@@ -50,10 +46,6 @@ func parserDiagnosticCode(message string) diagnostic.Code {
 		return diagnostic.Code("mace.syntax.malformed-directive-list")
 	case strings.Contains(message, "schema declaration") || strings.Contains(message, "record type") || strings.Contains(message, "schema field"):
 		return diagnostic.Code("mace.syntax.malformed-schema")
-	case strings.Contains(message, "integer index in array access") || strings.Contains(message, "after array access index"):
-		return diagnostic.Code("mace.syntax.invalid-array-access-index")
-	case strings.Contains(message, "inline descriptions are not allowed on variable declarations"):
-		return diagnostic.Code("mace.syntax.variable-inline-description-not-allowed")
 	case strings.Contains(message, "expected expression"):
 		return diagnostic.Code("mace.syntax.missing-expression")
 	case strings.Contains(message, "expected ':' in conditional expression"):

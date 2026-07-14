@@ -12,6 +12,7 @@ import (
 const (
 	precedenceLowest = iota
 	precedenceTernary
+	precedenceCoalesce
 	precedenceOr
 	precedenceAnd
 	precedenceBitwiseOr
@@ -19,6 +20,7 @@ const (
 	precedenceBitwiseAnd
 	precedenceMerge
 	precedenceEquality
+	precedenceTypeTest
 	precedenceRelational
 	precedenceShift
 	precedenceAdditive
@@ -303,20 +305,19 @@ func (p *Parser) parseVariableDeclaration() (ast.Declaration, error) {
 		return nil, p.unexpectedTokenError("parser: expected '=' in variable declaration")
 	}
 
-	if p.current().Type == lexer.TokenInlineDescription {
-		return nil, p.diagnosticError(p.current(), diagnostic.Code("mace.syntax.variable-inline-description-not-allowed"), fmt.Sprintf("parser: inline descriptions are not allowed on variable declarations at %d:%d", p.current().Line, p.current().Column))
-	}
+	description := p.parseOptionalInlineDescription()
 	if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after variable declaration"); err != nil {
 		return nil, err
 	}
 
 	return ast.VariableDeclaration{
-		Nullable:  nullable,
-		HasValue:  hasValue,
-		Type:      typeRef,
-		NameToken: nameToken,
-		Name:      nameToken.Lexeme,
-		Value:     value,
+		Nullable:    nullable,
+		HasValue:    hasValue,
+		Type:        typeRef,
+		NameToken:   nameToken,
+		Name:        nameToken.Lexeme,
+		Value:       value,
+		Description: description,
 	}, nil
 }
 
@@ -403,10 +404,14 @@ func (p *Parser) parseDocDeclaration(kind ast.DocumentationKind, keywordType lex
 		if err != nil {
 			return nil, err
 		}
-		if _, exists := seenEntries[entryToken.Lexeme]; exists {
+		entryName := entryToken.Lexeme
+		if entryName == "props" {
+			entryName = "fields"
+		}
+		if _, exists := seenEntries[entryName]; exists {
 			return nil, p.diagnosticError(entryToken, diagnostic.Code("mace.doc.duplicate-entry"), fmt.Sprintf("parser: duplicate %s entry %q at %d:%d", keyword, entryToken.Lexeme, entryToken.Line, entryToken.Column))
 		}
-		seenEntries[entryToken.Lexeme] = struct{}{}
+		seenEntries[entryName] = struct{}{}
 
 		if _, err := p.consume(lexer.TokenColon, fmt.Sprintf("parser: expected ':' after %s entry name", keyword)); err != nil {
 			return nil, err
@@ -429,39 +434,39 @@ func (p *Parser) parseDocDeclaration(kind ast.DocumentationKind, keywordType lex
 			} else {
 				documentation.Description = &value
 			}
-		case "props":
+		case "props", "fields":
 			if kind != ast.DocumentationKindSchema {
-				return nil, p.diagnosticError(entryToken, diagnostic.Code("mace.doc.unknown-entry"), fmt.Sprintf("parser: props entry is only allowed in schema_doc at %d:%d", entryToken.Line, entryToken.Column))
+				return nil, p.diagnosticError(entryToken, diagnostic.Code("mace.doc.unknown-entry"), fmt.Sprintf("parser: %s entry is only allowed in schema_doc at %d:%d", entryToken.Lexeme, entryToken.Line, entryToken.Column))
 			}
-			if _, err := p.consume(lexer.TokenLBrace, "parser: expected '{' to start props entry"); err != nil {
+			if _, err := p.consume(lexer.TokenLBrace, fmt.Sprintf("parser: expected '{' to start %s entry", entryToken.Lexeme)); err != nil {
 				return nil, err
 			}
 
 			for !p.isAtEnd() && p.current().Type != lexer.TokenRBrace {
-				nameToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier in props entry")
+				nameToken, err := p.consume(lexer.TokenIdentifier, fmt.Sprintf("parser: expected identifier in %s entry", entryToken.Lexeme))
 				if err != nil {
 					return nil, err
 				}
 				if _, exists := documentation.Props[nameToken.Lexeme]; exists {
-					return nil, p.diagnosticError(nameToken, diagnostic.Code("mace.doc.duplicate-entry"), fmt.Sprintf("parser: duplicate props entry %q at %d:%d", nameToken.Lexeme, nameToken.Line, nameToken.Column))
+					return nil, p.diagnosticError(nameToken, diagnostic.Code("mace.doc.duplicate-entry"), fmt.Sprintf("parser: duplicate %s entry %q at %d:%d", entryToken.Lexeme, nameToken.Lexeme, nameToken.Line, nameToken.Column))
 				}
-				if _, err := p.consume(lexer.TokenColon, "parser: expected ':' after props entry name"); err != nil {
+				if _, err := p.consume(lexer.TokenColon, fmt.Sprintf("parser: expected ':' after %s entry name", entryToken.Lexeme)); err != nil {
 					return nil, err
 				}
-				valueToken, err := p.consume(lexer.TokenString, "parser: expected string literal in props entry")
+				valueToken, err := p.consume(lexer.TokenString, fmt.Sprintf("parser: expected string literal in %s entry", entryToken.Lexeme))
 				if err != nil {
 					return nil, err
 				}
-				if err := p.consumePairSeparator("props entry"); err != nil {
+				if err := p.consumePairSeparator(fmt.Sprintf("%s entry", entryToken.Lexeme)); err != nil {
 					return nil, err
 				}
 				documentation.Props[nameToken.Lexeme] = ast.StringLiteral{Token: valueToken, Lexeme: valueToken.Lexeme}
 			}
 
-			if _, err := p.consume(lexer.TokenRBrace, "parser: expected '}' to close props entry"); err != nil {
+			if _, err := p.consume(lexer.TokenRBrace, fmt.Sprintf("parser: expected '}' to close %s entry", entryToken.Lexeme)); err != nil {
 				return nil, err
 			}
-			if err := p.consumePairSeparator("props entry"); err != nil {
+			if err := p.consumePairSeparator(fmt.Sprintf("%s entry", entryToken.Lexeme)); err != nil {
 				return nil, err
 			}
 		default:
@@ -870,7 +875,7 @@ func (p *Parser) parseTypeReference() (ast.TypeReference, error) {
 	case lexer.TokenUnion:
 		token := p.current()
 		p.advance()
-		if _, err := p.consume(lexer.TokenLBracket, "parser: expected '[' after union type"); err != nil {
+		if _, err := p.consume(lexer.TokenLBracket, "parser: expected '[' after fusion type"); err != nil {
 			return nil, err
 		}
 		members := []ast.TypeReference{}
@@ -885,7 +890,7 @@ func (p *Parser) parseTypeReference() (ast.TypeReference, error) {
 			}
 			p.advance()
 		}
-		if _, err := p.consume(lexer.TokenRBracket, "parser: expected ']' after union type"); err != nil {
+		if _, err := p.consume(lexer.TokenRBracket, "parser: expected ']' after fusion type"); err != nil {
 			return nil, err
 		}
 		return ast.UnionType{Token: token, Members: members}, nil
@@ -1016,9 +1021,14 @@ func (p *Parser) parseExpression(precedence int) (ast.Expression, error) {
 		operator := p.current()
 		p.advance()
 
-		if operator.Type == lexer.TokenQuestion {
+		switch operator.Type {
+		case lexer.TokenQuestion:
 			left, err = p.parseConditionalExpression(left, operator)
-		} else {
+		case lexer.TokenCoalesce:
+			left, err = p.parseCoalesceExpression(left, operator)
+		case lexer.TokenIs:
+			left, err = p.parseTypeTestExpression(left, operator)
+		default:
 			left, err = p.parseInfixExpression(left, operator)
 		}
 
@@ -1331,27 +1341,12 @@ func (p *Parser) mergeInlineDescriptions(context string, leading string, trailin
 }
 
 func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token) (ast.Expression, error) {
-	if operator.Type == lexer.TokenDot {
-		memberToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier after '.' in member access")
+	if operator.Type == lexer.TokenDot || operator.Type == lexer.TokenOptionalDot {
+		memberToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier after member access operator")
 		if err != nil {
 			return nil, err
 		}
-		return ast.MemberAccess{Target: left, Name: memberToken.Lexeme}, nil
-	}
-
-	if operator.Type == lexer.TokenLBracket {
-		indexToken, err := p.consume(lexer.TokenInt, "parser: expected integer index in array access")
-		if err != nil {
-			return nil, err
-		}
-		if _, err := p.consume(lexer.TokenRBracket, "parser: expected ']' after array access index"); err != nil {
-			return nil, err
-		}
-		return ast.ArrayAccess{Target: left, Index: ast.IntLiteral{Token: indexToken, Lexeme: indexToken.Lexeme}}, nil
-	}
-
-	if operator.Type == lexer.TokenMerge && !isMergeLeftOperand(left) {
-		return nil, p.diagnosticError(operator, diagnostic.Code("mace.syntax.unexpected-token"), fmt.Sprintf("parser: expected identifier, array literal, or record literal before '<>' at %d:%d", operator.Line, operator.Column))
+		return ast.MemberAccess{Target: left, Name: memberToken.Lexeme, Optional: operator.Type == lexer.TokenOptionalDot}, nil
 	}
 
 	precedence := p.precedenceFor(operator.Type)
@@ -1365,10 +1360,6 @@ func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token)
 		return nil, err
 	}
 
-	if operator.Type == lexer.TokenMerge && !isMergeOperand(right) {
-		return nil, p.diagnosticError(operator, diagnostic.Code("mace.syntax.unexpected-token"), fmt.Sprintf("parser: expected identifier, array literal, or record literal after '<>' at %d:%d", operator.Line, operator.Column))
-	}
-
 	return ast.InfixExpression{
 		Left:     left,
 		Operator: operator.Type,
@@ -1376,21 +1367,24 @@ func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token)
 	}, nil
 }
 
-func isMergeLeftOperand(expression ast.Expression) bool {
-	if infix, ok := expression.(ast.InfixExpression); ok {
-		return infix.Operator == lexer.TokenMerge
+func (p *Parser) parseTypeTestExpression(left ast.Expression, operator lexer.Token) (ast.Expression, error) {
+	if _, chained := left.(ast.TypeTestExpression); chained {
+		return nil, p.diagnosticError(operator, diagnostic.Code("mace.syntax.invalid-is-type"), "parser: chained 'is' expressions are not allowed")
+	}
+	if p.current().Type == lexer.TokenEOF {
+		return nil, p.diagnosticError(p.current(), diagnostic.Code("mace.syntax.is-missing-type"), "parser: expected type reference after 'is'")
 	}
 
-	return isMergeOperand(expression)
-}
-
-func isMergeOperand(expression ast.Expression) bool {
-	switch expression.(type) {
-	case ast.Identifier, ast.ArrayLiteral, ast.RecordLiteral:
-		return true
-	default:
-		return false
+	targetType, err := p.parseTypeReference()
+	if err != nil {
+		return nil, p.diagnosticError(p.current(), diagnostic.Code("mace.syntax.invalid-is-type"), "parser: expected valid type reference after 'is'")
 	}
+
+	return ast.TypeTestExpression{
+		Expression: left,
+		TargetType: targetType,
+		EndToken:   p.tokens[p.position-1],
+	}, nil
 }
 
 func (p *Parser) parseConditionalExpression(left ast.Expression, operator lexer.Token) (ast.Expression, error) {
@@ -1417,6 +1411,15 @@ func (p *Parser) parseConditionalExpression(left ast.Expression, operator lexer.
 		Then:      thenExpression,
 		Else:      elseExpression,
 	}, nil
+}
+
+func (p *Parser) parseCoalesceExpression(left ast.Expression, operator lexer.Token) (ast.Expression, error) {
+	right, err := p.parseExpression(precedenceCoalesce - 1)
+	if err != nil {
+		return nil, err
+	}
+
+	return ast.InfixExpression{Left: left, Operator: operator.Type, Right: right}, nil
 }
 
 func (p *Parser) consume(tokenType lexer.TokenType, message string) (lexer.Token, error) {
@@ -1462,6 +1465,8 @@ func (p *Parser) precedenceFor(tokenType lexer.TokenType) int {
 	switch tokenType {
 	case lexer.TokenQuestion:
 		return precedenceTernary
+	case lexer.TokenCoalesce:
+		return precedenceCoalesce
 	case lexer.TokenOrOr:
 		return precedenceOr
 	case lexer.TokenAndAnd:
@@ -1474,6 +1479,8 @@ func (p *Parser) precedenceFor(tokenType lexer.TokenType) int {
 		return precedenceBitwiseAnd
 	case lexer.TokenEqualEqual, lexer.TokenNotEqual:
 		return precedenceEquality
+	case lexer.TokenIs:
+		return precedenceTypeTest
 	case lexer.TokenMerge:
 		return precedenceMerge
 	case lexer.TokenLess, lexer.TokenLessEqual, lexer.TokenGreater, lexer.TokenGreaterEqual, lexer.TokenIn:
@@ -1486,7 +1493,7 @@ func (p *Parser) precedenceFor(tokenType lexer.TokenType) int {
 		return precedenceMultiplicative
 	case lexer.TokenDoubleStar:
 		return precedenceExponent
-	case lexer.TokenDot, lexer.TokenLBracket:
+	case lexer.TokenDot, lexer.TokenOptionalDot:
 		return precedenceMember
 	default:
 		return precedenceLowest

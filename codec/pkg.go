@@ -750,7 +750,7 @@ func formatSchemaType(value inferredType, depth int) string {
 		for _, member := range value.members {
 			parts = append(parts, formatSchemaType(member, depth))
 		}
-		return fmt.Sprintf("union[%s]", strings.Join(parts, ", "))
+		return fmt.Sprintf("fusion[%s]", strings.Join(parts, ", "))
 	case inferredTypeVariant:
 		parts := make([]string, 0, len(value.members))
 		for _, member := range value.members {
@@ -1128,7 +1128,7 @@ func (context *jsonSchemaContext) unionSchemaType(variants []any, path []string)
 	for index, variant := range variants {
 		record, ok := variant.(map[string]any)
 		if !ok {
-			return inferredType{}, false, fmt.Errorf("union members must be objects")
+			return inferredType{}, false, fmt.Errorf("fusion members must be objects")
 		}
 
 		valueType, variantNullable, err := context.propertyType(record, append(append([]string{}, path...), fmt.Sprintf("member%d", index+1)))
@@ -1140,7 +1140,7 @@ func (context *jsonSchemaContext) unionSchemaType(variants []any, path []string)
 	}
 
 	if len(members) == 0 {
-		return inferredType{}, false, fmt.Errorf("empty unions are not representable")
+		return inferredType{}, false, fmt.Errorf("empty fusions are not representable")
 	}
 	if len(members) == 1 {
 		return members[0], nullable, nil
@@ -1314,14 +1314,6 @@ func jsonSchemaDefinitionName(path string) string {
 	return jsonSchemaIdentifier(segments[1])
 }
 
-func jsonSchemaPathName(path []string) string {
-	parts := make([]string, 0, len(path))
-	for _, segment := range path {
-		parts = append(parts, jsonSchemaIdentifier(segment))
-	}
-	return strings.Join(parts, "")
-}
-
 func jsonSchemaIdentifier(value string) string {
 	parts := strings.FieldsFunc(value, func(r rune) bool {
 		return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9')
@@ -1400,16 +1392,16 @@ func validateUnionMembers(members []inferredType) (inferredType, error) {
 			hasSchema = true
 		case inferredTypeNamed:
 			if member.namedCategory != "schema" {
-				return inferredType{}, fmt.Errorf("union members must be schemas")
+				return inferredType{}, fmt.Errorf("fusion members must be schemas")
 			}
 			hasSchema = true
 		default:
-			return inferredType{}, fmt.Errorf("union members must be schemas")
+			return inferredType{}, fmt.Errorf("fusion members must be schemas")
 		}
 	}
 
 	if !hasSchema {
-		return inferredType{}, fmt.Errorf("union members must be schemas")
+		return inferredType{}, fmt.Errorf("fusion members must be schemas")
 	}
 
 	return inferredType{kind: inferredTypeUnion, members: members}, nil

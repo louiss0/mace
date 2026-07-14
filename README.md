@@ -9,12 +9,12 @@ This repository contains:
 - a CLI for inspecting, formatting, and evaluating Mace documents
 - a language server for editor integrations
 - a public Go package for parsing, unmarshalling, and marshalling Mace data
-- official Node and Python binding packages under `bindings/`
+- official Node and Python binding packages under `bindings&#x2f;`
 
 ## Status
 
 Mace is actively implemented in this repository. The current language contract
-is documented in [the formal specification](./docs/src/content/docs/reference/specification.md).
+is documented in [the formal specification](.&#x2f;docs&#x2f;src&#x2f;content&#x2f;docs&#x2f;reference&#x2f;spec.mdx).
 
 ## Features
 
@@ -24,7 +24,7 @@ is documented in [the formal specification](./docs/src/content/docs/reference/sp
 - Deterministic expression evaluation
 - Output validation against local schemas or external schema files in implicit or explicit data outputs
 - Relative imports between Mace files and remote imports over HTTP(S)
-- Schema-validated runtime input through `parse = <Schema>` and `parse_file = "<path>"` in data outputs, including remote schema files over HTTP(S); parsed fields are exposed as `$`-prefixed variables, `parse` selects an already-available schema, and `parse_file` loads schema declarations and can infer the schema when the referenced file exports exactly one schema
+- Schema-validated runtime input through `parse = &lt;Schema&gt;` and `parse_file = &quot;&lt;path&gt;&quot;` in data outputs, including remote schema files over HTTP(S); parsed fields are exposed as `$`-prefixed variables, `parse` selects an already-available schema, and `parse_file` loads schema declarations and can infer the schema when the referenced file exports exactly one schema
 - Canonical source formatting
 - Language Server Protocol support over stdio
 - Go bindings for parsing, unmarshalling, and marshalling
@@ -39,19 +39,19 @@ A Mace file can contain:
 
 Imports use `from ... import ...;` and must appear at the top of the script
 block before other declarations. Imported names may optionally define a
-local alias with `Name:Alias`. Use `from "./schema.mace" import-as Name` to import an output schema file as a single schema or an output data file as a single record variable.
+local alias with `Name:Alias`. Use `from &quot;.&#x2f;schema.mace&quot; import-as Name` to import an output schema file as a single schema or an output data file as a single record variable.
 
 Example:
 
 ```mace
 |===|
-from "./shared.mace" import User:ProfileUser;
+from &quot;.&#x2f;shared.mace&quot; import User:ProfileUser;
 
-type Environment: choice["dev", "prod"];
+type Environment: choice[&quot;dev&quot;, &quot;prod&quot;];
 
-Environment env = "prod";
+Environment env = &quot;prod&quot;;
 ProfileUser current = {
-  name: "Ada",
+  name: &quot;Ada&quot;,
   age: 27
 };
 |===|
@@ -71,11 +71,11 @@ Mace supports:
 - `:` for type declarations (`type`, `schema`)
 - `=` for variable initializers
 - primitive types: `string`, `int`, `float`, `hex_int`, `hex_float`, `boolean`
-- arrays: `array<T>`
-- open records: `record<T>` for arbitrary keys whose values must match `T`
-- unions: `union[T1, T2, ...]`
+- arrays: `array&lt;T&gt;`
+- open records: `record&lt;T&gt;` for arbitrary keys whose values must match `T`
+- fusions: `fusion[T1, T2, ...]`
 - variants: `variant[T1, T2, ...]`
-- choices: `choice["a", 1, true, OtherChoice]`
+- choices: `choice[&quot;a&quot;, 1, true, OtherChoice]`
 - named type aliases
 - schemas
 - literal `choice[...]` aliases with mixed scalar members, reusable choice aliases,
@@ -87,11 +87,11 @@ Mace supports:
 - `$self` references inside output evaluation
 - hexadecimal integer and fractional numeric types with canonical string JSON output
 
-Union and variant types are first-class across the language, including named
+Fusion and variant types are first-class across the language, including named
 aliases, output schema validation, imports, formatter output, and editor
 tooling.
 
-Structural merge with `<>` combines identifier, object literal, or array literal
+Structural merge with `&lt;&gt;` combines identifier, object literal, or array literal
 operands of the same mergeable type. Records merge deeply, colliding scalar
 fields use the right-hand value, and colliding nested records or arrays merge
 recursively. Arrays concatenate in left-to-right order.
@@ -99,8 +99,8 @@ recursively. Arrays concatenate in left-to-right order.
 ```mace
 [output = data]
 {
-  result: { profile: { name: "Ada" }; tags: ["base"]; }
-    <> { profile: { active: true }; tags: ["override"]; }
+  result: { profile: { name: &quot;Ada&quot; }; tags: [&quot;base&quot;]; }
+    &lt;&gt; { profile: { active: true }; tags: [&quot;override&quot;]; }
 }
 ```
 
@@ -111,10 +111,10 @@ combine fields from different variant branches.
 ```mace
 |===|
 type Identity: variant[string, int];
-type Values: variant[array<string>, array<int>];
-Identity primary = "Ada";
+type Values: variant[array&lt;string&gt;, array&lt;int&gt;];
+Identity primary = &quot;Ada&quot;;
 Identity fallback = 42;
-Values tags = ["api", "web"];
+Values tags = [&quot;api&quot;, &quot;web&quot;];
 |===|
 [output = data]
 {
@@ -124,17 +124,17 @@ Values tags = ["api", "web"];
 }
 ```
 
-Mace treats unions as composition: schema members are combined into one closed
+Mace treats fusions as composition: schema members are combined into one closed
 record shape.
 
 ```mace
 |===|
 schema Profile: { name: string };
 schema Audit: { created_at: string };
-type User: union[Profile, Audit];
+type User: fusion[Profile, Audit];
 User value = {
-  name: "Ada",
-  created_at: "2026-04-08"
+  name: &quot;Ada&quot;,
+  created_at: &quot;2026-04-08&quot;
 };
 |===|
 [output = data]
@@ -148,10 +148,10 @@ Choice aliases can be reused, nested, and embedded inside variants.
 
 ```mace
 |===|
-type Access: choice["read", "write"];
-type Feature: choice["write", "execute"];
+type Access: choice[&quot;read&quot;, &quot;write&quot;];
+type Feature: choice[&quot;write&quot;, &quot;execute&quot;];
 type Permission: choice[Access, Feature];
-Permission value = "execute";
+Permission value = &quot;execute&quot;;
 |===|
 [output = data]
 {
@@ -161,23 +161,23 @@ Permission value = "execute";
 
 Hexadecimal values stay distinct from decimal numerics. When emitted through
 `mace json`, `hex_int` and `hex_float` values are serialized as strings such as
-`"0xFF"` and `"0x2.8"` so their hexadecimal spelling is preserved.
+`&quot;0xFF&quot;` and `&quot;0x2.8&quot;` so their hexadecimal spelling is preserved.
 
 For the exact rules and currently supported syntax, see
-[the formal specification](./docs/src/content/docs/reference/specification.md).
+[the formal specification](.&#x2f;docs&#x2f;src&#x2f;content&#x2f;docs&#x2f;reference&#x2f;spec.mdx).
 
 ## Installation
 
 ### Build locally
 
 ```bash
-go build ./cmd
+go build .&#x2f;cmd
 ```
 
 ### Install the CLI
 
 ```bash
-go install github.com/louiss0/mace/cmd@latest
+go install github.com&#x2f;louiss0&#x2f;mace&#x2f;cmd@latest
 ```
 
 Package managers will also be supported through Homebrew, Winget, and Nix.
@@ -185,7 +185,7 @@ Package managers will also be supported through Homebrew, Winget, and Nix.
 If you are working on this repository directly, you can also run:
 
 ```bash
-go run ./cmd --help
+go run .&#x2f;cmd --help
 ```
 
 ## CLI
@@ -193,26 +193,26 @@ go run ./cmd --help
 The root command is `mace`.
 
 ```text
-mace json <path>
-mace import <path>
-mace check <path>
-mace nodes <path>
-mace output <path>
+mace json &lt;path&gt;
+mace import &lt;path&gt;
+mace check &lt;path&gt;
+mace nodes &lt;path&gt;
+mace output &lt;path&gt;
 mace lsp
 ```
 
-### `mace json <path>`
+### `mace json &lt;path&gt;`
 
 Evaluates a Mace file and prints the computed output block as JSON.
 
 ```bash
-mace json ./config.mace
+mace json .&#x2f;config.mace
 ```
 
 You can provide runtime parse input with `--input` using a Mace record literal:
 
 ```bash
-mace json ./config.mace --input '{ env: "prod", token: "abc" }'
+mace json .&#x2f;config.mace --input &#x27;{ env: &quot;prod&quot;, token: &quot;abc&quot; }&#x27;
 ```
 
 Example input:
@@ -233,12 +233,12 @@ Example output:
 
 ```json
 {
-  "base": 4,
-  "env": "prod"
+  &quot;base&quot;: 4,
+  &quot;env&quot;: &quot;prod&quot;
 }
 ```
 
-### `mace import <path> [path...]`
+### `mace import &lt;path&gt; [path...]`
 
 Converts JSON, YAML, and TOML files into `.mace` files.
 
@@ -249,31 +249,32 @@ Converts JSON, YAML, and TOML files into `.mace` files.
 - JSON Schema `null` maps to field optionality during schema conversion
 - JSON Schema `anyOf` and `oneOf` alternatives can be emitted as Mace
   `variant[...]` types during import
-- JSON Schema `allOf` schema composition can be emitted as Mace `union[...]`
+- JSON Schema `allOf` schema composition can be emitted as Mace `fusion[...]`
   types during import
-- imported `variant[...]` types use Mace's closed variant semantics rather than
+- imported `variant[...]` types use Mace&#x27;s closed variant semantics rather than
   preserving a distinct `anyOf` versus `oneOf` behavior
-- imported `union[...]` types represent schema composition and require schema
+- imported `fusion[...]` types represent schema composition and require schema
   members only
-- imported `variant[...]` and `union[...]` types remain regular Mace types that
+- imported `variant[...]` and `fusion[...]` types remain regular Mace types that
   work in scripts, schema validation, formatting, and LSP tooling
 - when multiple files are imported, successful files are still written even if
   some files fail
 
 ```bash
-mace import ./config.yaml
-mace import ./config.toml
-mace import ./config.json
-mace import ./config.json ./config.yaml ./config.toml
+mace import .&#x2f;config.yaml
+mace import .&#x2f;config.toml
+mace import .&#x2f;config.json
+mace import .&#x2f;config.json .&#x2f;config.yaml .&#x2f;config.toml
 ```
 
 Use `--output-dir` to write generated files to a different directory:
 
 ```bash
-mace import ./config.json --output-dir ./generated
+mac
+e import .&#x2f;config.json --output-dir .&#x2f;generated
 ```
 
-### `mace check <path> [path...]`
+### `mace check &lt;path&gt; [path...]`
 
 Checks JSON, YAML, and TOML files for Mace compatibility issues and prints a
 Mace record report.
@@ -282,7 +283,7 @@ Mace record report.
 - JSON can fall back to content detection when no supported extension is present
 - syntax problems are reported under `syntax`
 - incompatible keys are reported under `key_incompatibility`
-- `null` values and YAML scalar/tag mismatches are reported under
+- `null` values and YAML scalar&#x2f;tag mismatches are reported under
   `type_incompatibility`
 - duplicate keys, YAML multi-document files, comments, block scalar style loss,
   and structural mismatches such as non-record JSON roots are reported under
@@ -290,8 +291,8 @@ Mace record report.
 - multiple files are emitted as a `files` array of per-file reports
 
 ```bash
-mace check ./config.json
-mace check ./config.yaml ./config.toml
+mace check .&#x2f;config.json
+mace check .&#x2f;config.yaml .&#x2f;config.toml
 ```
 
 Example output:
@@ -300,33 +301,33 @@ Example output:
 {
   syntax: [],
   key_incompatibility: [{
-      path: "$[\"foo-bar\"]",
-      reason: "key is not a valid Mace identifier",
-      format: "json",
-      key: "foo-bar"
+      path: &quot;$[\&quot;foo-bar\&quot;]&quot;,
+      reason: &quot;key is not a valid Mace identifier&quot;,
+      format: &quot;json&quot;,
+      key: &quot;foo-bar&quot;
     }],
   type_incompatibility: [],
   structure_incompatibility: []
 }
 ```
 
-### `mace nodes <path>`
+### `mace nodes &lt;path&gt;`
 
 Parses a file and prints its AST-like node structure. This is useful when
 working on the language itself.
 
 ```bash
-mace nodes ./config.mace
+mace nodes .&#x2f;config.mace
 ```
 
-### `mace output <path>`
+### `mace output &lt;path&gt;`
 
 Parses a file and prints canonical Mace source.
 
 This command does not evaluate the file into runtime JSON output.
 
 ```bash
-mace output ./config.mace
+mace output .&#x2f;config.mace
 ```
 
 This is useful for inspecting how the formatter normalizes script delimiters,
@@ -352,7 +353,7 @@ The server currently supports:
 
 ## Go package usage
 
-The public Go API lives in [`./codec`](./codec).
+The public Go API lives in [`.&#x2f;codec`](.&#x2f;codec).
 
 ### Parse Mace into generic Go data
 
@@ -360,22 +361,22 @@ The public Go API lives in [`./codec`](./codec).
 package main
 
 import (
-	"fmt"
+	&quot;fmt&quot;
 
-	"github.com/louiss0/mace/codec"
+	&quot;github.com&#x2f;louiss0&#x2f;mace&#x2f;codec&quot;
 )
 
 func main() {
 	result, err := codec.Parse(`[output = data]
 {
-  name: "Ada",
+  name: &quot;Ada&quot;,
   enabled: true
 }`)
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Println(result.Data["name"])
+	fmt.Println(result.Data[&quot;name&quot;])
 }
 ```
 
@@ -389,7 +390,7 @@ schema Runtime: { env: string; };
 {
   env: $env
 }`, map[string]any{
-	"env": "prod",
+	&quot;env&quot;: &quot;prod&quot;,
 })
 ```
 
@@ -397,25 +398,25 @@ schema Runtime: { env: string; };
 
 ```go
 type Config struct {
-	Name    string `json:"name"`
-	Enabled bool   `json:"enabled"`
+	Name    string `json:&quot;name&quot;`
+	Enabled bool   `json:&quot;enabled&quot;`
 }
 
 var config Config
 err := codec.Unmarshal(`[output = data]
 {
-  name: "Ada";
+  name: &quot;Ada&quot;;
   enabled: true;
-}`, &config)
+}`, &amp;config)
 ```
 
 ### Marshal Go values back to Mace
 
 ```go
 source, err := codec.Marshal(map[string]any{
-	"name": "Ada",
-	"enabled": true,
-	"scores": []int{1, 2, 3},
+	&quot;name&quot;: &quot;Ada&quot;,
+	&quot;enabled&quot;: true,
+	&quot;scores&quot;: []int{1, 2, 3},
 })
 ```
 
@@ -429,12 +430,12 @@ profile:
 `)
 
 schemaSource, err := codec.ImportJSONSchema(`{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "name": { "type": "string" }
+  &quot;$schema&quot;: &quot;https:&#x2f;&#x2f;json-schema.org&#x2f;draft&#x2f;2020-12&#x2f;schema&quot;,
+  &quot;type&quot;: &quot;object&quot;,
+  &quot;properties&quot;: {
+    &quot;name&quot;: { &quot;type&quot;: &quot;string&quot; }
   },
-  "required": ["name"]
+  &quot;required&quot;: [&quot;name&quot;]
 }`)
 ```
 
@@ -446,20 +447,20 @@ For schema output, `codec.Parse` also returns structured schema metadata in
 ### Run tests
 
 ```bash
-go test ./...
+go test .&#x2f;...
 ```
 
 ### Repository layout
 
-- `cmd/` - CLI entrypoints and the LSP server command
-- `codec/` - public Go API for parsing and marshalling
-- `internal/lexer/` - tokenization
-- `internal/parser/` - parsing and AST construction
-- `internal/processor/` - validation, imports, evaluation, and schema checks
-- `internal/analyzer/` - editor analysis, diagnostics, hover, completion,
+- `cmd&#x2f;` - CLI entrypoints and the LSP server command
+- `codec&#x2f;` - public Go API for parsing and marshalling
+- `internal&#x2f;lexer&#x2f;` - tokenization
+- `internal&#x2f;parser&#x2f;` - parsing and AST construction
+- `internal&#x2f;processor&#x2f;` - validation, imports, evaluation, and schema checks
+- `internal&#x2f;analyzer&#x2f;` - editor analysis, diagnostics, hover, completion,
   definitions, symbols, code actions, and formatting helpers
-- `internal/formatter/` - canonical source formatting
-- `docs/src/content/docs/reference/specification.md` - current language
+- `internal&#x2f;formatter&#x2f;` - canonical source formatting
+- `docs&#x2f;src&#x2f;content&#x2f;docs&#x2f;reference&#x2f;spec.mdx` - current language
   specification
 - `mace.ebnf` - grammar reference
 
@@ -473,3 +474,28 @@ writing, the specification lists these as not yet implemented:
 ## License
 
 Add a license file if you intend to publish or distribute this project.
+
+## Optional chaining
+
+Use `?.` for optional schema properties and record keys that may be absent. A
+nullable variable must first be guarded with a truthiness check; its true branch
+treats that variable as non-null. Resolve an optional access with `??` before
+placing it in output.
+
+```mace
+city: user ? user.profile.address?.city ?? "" : "",
+packages: record<record<string>>,
+value: packages?.codefixer?.cn_efs ?? "",
+```
+
+Each nested record lookup requires a corresponding nested record type. For
+example, `packages.codefixer.cn_efs` requires `record<record<string>>`; it is
+invalid for `record<string>`.
+
+For a record variant, the permitted chain depth is the common record depth of
+every variant member. For example,
+`variant[record<string>, record<record<string>>]` permits one optional lookup
+but rejects a second because the first member is already a `string`.
+
+Accessing a nullable variable with either `.` or `?.` without a truthiness check
+reports `mace.type.optional-field-access`.

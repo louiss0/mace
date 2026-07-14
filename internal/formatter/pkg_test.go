@@ -18,6 +18,21 @@ func TestFormatter(t *testing.T) {
 	RunSpecs(t, "Formatter Suite")
 }
 
+func lexFormatterExpression(input string) ([]lexer.Token, error) {
+	lexerInstance := lexer.New(input)
+	tokens := []lexer.Token{}
+	for {
+		token, err := lexerInstance.NextToken()
+		if err != nil {
+			return nil, err
+		}
+		tokens = append(tokens, token)
+		if token.Type == lexer.TokenEOF {
+			return tokens, nil
+		}
+	}
+}
+
 func parseMaceFile(input string) (ast.File, error) {
 	lexerInstance := lexer.New(input)
 	tokens := []lexer.Token{}
@@ -75,6 +90,16 @@ var _ = Describe("FormatFile", func() {
 		Entry("tilde", lexer.TokenTilde, "~"),
 		Entry("unknown", lexer.TokenEOF, ""),
 	)
+
+	It("formats member type tests with their precedence", func() {
+		tokens, err := lexFormatterExpression("condition && config.value is string == true")
+		tAssert.NoError(err)
+		expression, err := parser.New(tokens).ParseExpression()
+		tAssert.NoError(err)
+		formatted, err := formatExpressionWithDepth(expression, 0)
+		tAssert.NoError(err)
+		tAssert.Equal("condition && config.value is string == true", formatted)
+	})
 
 	It("formats imports, script declarations, and output", func() {
 		file, err := parseMaceFile(`|===|
@@ -137,6 +162,19 @@ from "./base.mace" import User:Person, Config;
 
 		tAssert.NoError(err)
 		tAssert.Equal("nullable string nickname;", line)
+	})
+
+	It("formats variable inline descriptions before semicolons", func() {
+		line, err := formatDeclaration(ast.VariableDeclaration{
+			HasValue:    true,
+			Type:        ast.PrimitiveType{Name: "int"},
+			Name:        "count",
+			Value:       ast.IntLiteral{Lexeme: "1"},
+			Description: "Item count",
+		})
+
+		tAssert.NoError(err)
+		tAssert.Equal("int count = 1 /# Item count;", line)
 	})
 
 	It("formats import-as declarations", func() {
@@ -233,11 +271,11 @@ type Mode: choice[Environment, 1, true];
 }`, output)
 	})
 
-	It("formats documentation declarations with props", func() {
+	It("formats documentation declarations with fields", func() {
 		file, err := parseMaceFile(`|===|
 schema_doc User {
   summary: "User summary",
-  props: {
+  fields: {
     name: "Display name",
     age: "Age in years",
   },
@@ -251,7 +289,7 @@ schema_doc User {
 		tAssert.Equal(`|==========================|
 schema_doc User {
   summary: "User summary",
-  props: {
+  fields: {
     age: "Age in years",
     name: "Display name",
   },
@@ -360,18 +398,6 @@ schema_doc User {
 }`, output)
 	})
 
-	It("formats array access expressions", func() {
-		file, err := parseMaceFile(`[output = data] { result: users [ 0 ] . name, }`)
-		tAssert.NoError(err)
-
-		output, err := FormatFile(file)
-		tAssert.NoError(err)
-		tAssert.Equal(`[output = data]
-{
-  result: users[0].name
-}`, output)
-	})
-
 	It("formats bare output blocks without injecting a directive", func() {
 		file, err := parseMaceFile(`{ result: 1 + 2, }`)
 		tAssert.NoError(err)
@@ -472,24 +498,24 @@ hex_float ratio = 0x02.80;
 }`, output)
 	})
 
-	It("formats union type references", func() {
+	It("formats fusion type references", func() {
 		file, err := parseMaceFile(`|===|
-type Value: union[Profile, Audit];
+type Value: fusion[Profile, Audit];
 |===|
 [output = schema]
 {
-  value: union[Profile, Audit],
+  value: fusion[Profile, Audit],
 }`)
 		tAssert.NoError(err)
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
-		tAssert.Equal(`|==================================|
-type Value: union[Profile, Audit];
-|==================================|
+		tAssert.Equal(`|===================================|
+type Value: fusion[Profile, Audit];
+|===================================|
 [output = schema]
 {
-  value: union[Profile, Audit]
+  value: fusion[Profile, Audit]
 }`, output)
 	})
 
@@ -584,7 +610,7 @@ from "./base.mace" import User;
 		Entry("nil type reference", nil),
 		Entry("array element", ast.ArrayType{}),
 		Entry("record map value", ast.RecordMapType{}),
-		Entry("union member", ast.UnionType{Members: []ast.TypeReference{nil}}),
+		Entry("fusion member", ast.UnionType{Members: []ast.TypeReference{nil}}),
 		Entry("variant member", ast.VariantType{Members: []ast.TypeReference{nil}}),
 	)
 
@@ -646,7 +672,6 @@ from "./base.mace" import User;
 	It("returns errors for malformed expression children", func() {
 		expressions := []ast.Expression{
 			ast.MemberAccess{Target: ast.NullLiteral{}, Name: "value"},
-			ast.ArrayAccess{Target: ast.NullLiteral{}, Index: ast.IntLiteral{Lexeme: "0"}},
 			ast.ArrayLiteral{Elements: []ast.Expression{ast.NullLiteral{}}},
 			ast.RecordLiteral{Fields: []ast.RecordField{{Name: "value", Value: ast.NullLiteral{}}}},
 			ast.PrefixExpression{Operator: lexer.TokenBang, Right: ast.NullLiteral{}},

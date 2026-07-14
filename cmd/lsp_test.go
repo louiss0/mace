@@ -435,18 +435,18 @@ Login login = {
 		}
 	})
 
-	It("publishes processor diagnostics for invalid union declarations", func() {
+	It("publishes processor diagnostics for invalid fusion declarations", func() {
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `|===|
-type Broken: union[string, int];
+type Broken: fusion[string, int];
 |===|
 [output = data] {}`, &notifications)
 
 		if tAssert.Len(notifications, 1) {
 			params := requireDiagnostics(notifications[0])
 			tAssert.Len(params.Diagnostics, 1)
-			tAssert.Contains(params.Diagnostics[0].Message, `processor: union members must be schemas`)
+			tAssert.Contains(params.Diagnostics[0].Message, `processor: fusion members must be schemas`)
 			tAssert.NotNil(params.Diagnostics[0].Code)
 		}
 	})
@@ -505,107 +505,6 @@ int count = 7;
 		if tAssert.Len(notifications, 2) {
 			params := requireDiagnostics(notifications[1])
 			tAssert.Empty(params.Diagnostics)
-		}
-	})
-
-	It("publishes parse diagnostics when an array index is not an int literal", func() {
-		notifications := []capturedNotification{}
-
-		didOpen(server, uri, `[output = data]
-{
-  values: [1, 2, 3],
-  result: values[name]
-}`, &notifications)
-
-		if tAssert.Len(notifications, 1) {
-			params := requireDiagnostics(notifications[0])
-			if tAssert.Len(params.Diagnostics, 1) {
-				tAssert.Contains(params.Diagnostics[0].Message, `expected integer index in array access`)
-				tAssert.Equal(`mace.syntax.invalid-array-access-index`, params.Diagnostics[0].Code.Value)
-			}
-		}
-	})
-
-	It("publishes diagnostics when an array index is out of range", func() {
-		notifications := []capturedNotification{}
-
-		didOpen(server, uri, `|===|
-array<int> values = [1, 2, 3];
-|===|
-[output = data]
-{
-  result: values[9]
-}`, &notifications)
-
-		if tAssert.Len(notifications, 1) {
-			params := requireDiagnostics(notifications[0])
-			if tAssert.Len(params.Diagnostics, 1) {
-				tAssert.Contains(params.Diagnostics[0].Message, `array index 9 is out of range`)
-				tAssert.Equal(`mace.type.invalid-array-access`, params.Diagnostics[0].Code.Value)
-			}
-		}
-	})
-
-	It("binds out-of-range diagnostics to the array index token", func() {
-		notifications := []capturedNotification{}
-
-		didOpen(server, uri, `|===|
-int count = 9;
-array<int> values = [1, 2, 3];
-|===|
-[output = data]
-{
-  result: values[9]
-}`, &notifications)
-
-		if tAssert.Len(notifications, 1) {
-			params := requireDiagnostics(notifications[0])
-			if tAssert.Len(params.Diagnostics, 1) {
-				tAssert.Equal(protocol.UInteger(6), params.Diagnostics[0].Range.Start.Line)
-				tAssert.Equal(protocol.UInteger(17), params.Diagnostics[0].Range.Start.Character)
-				tAssert.Equal(protocol.UInteger(18), params.Diagnostics[0].Range.End.Character)
-			}
-		}
-	})
-
-	It("binds out-of-range diagnostics to the first failing array access", func() {
-		notifications := []capturedNotification{}
-
-		didOpen(server, uri, `|===|
-array<int> values = [1, 2, 3];
-|===|
-[output = data]
-{
-  first: values[9],
-  second: values[9]
-}`, &notifications)
-
-		if tAssert.Len(notifications, 1) {
-			params := requireDiagnostics(notifications[0])
-			if tAssert.Len(params.Diagnostics, 1) {
-				tAssert.Equal(protocol.UInteger(5), params.Diagnostics[0].Range.Start.Line)
-				tAssert.Equal(protocol.UInteger(16), params.Diagnostics[0].Range.Start.Character)
-				tAssert.Equal(protocol.UInteger(17), params.Diagnostics[0].Range.End.Character)
-			}
-		}
-	})
-
-	It("binds invalid array access diagnostics to the first failing expression", func() {
-		notifications := []capturedNotification{}
-
-		didOpen(server, uri, `[output = data]
-{
-  first: 1[0],
-  second: 2[0]
-}`, &notifications)
-
-		if tAssert.Len(notifications, 1) {
-			params := requireDiagnostics(notifications[0])
-			if tAssert.Len(params.Diagnostics, 1) {
-				tAssert.Equal(protocol.UInteger(2), params.Diagnostics[0].Range.Start.Line)
-				tAssert.Equal(protocol.UInteger(10), params.Diagnostics[0].Range.Start.Character)
-				tAssert.Equal(protocol.UInteger(11), params.Diagnostics[0].Range.End.Character)
-			}
 		}
 	})
 
@@ -1078,89 +977,6 @@ array<Fruit> favorites = ["A
 		tAssert.NotContains(labels, "Strawberry")
 	})
 
-	It("suggests array indexes for script variables", func() {
-		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `|===|
-array<string> names = ["Ada", "Linus", "Grace"];
-string selected = names[
-|===|
-[output = data] {}`, nil)
-
-		labels := completeLabels(server, uri, 2, uint32(len(`string selected = names[`)))
-		tAssert.Equal([]string{"0", "1", "2"}, labels)
-	})
-
-	It("suggests array indexes for imported values in script variables", func() {
-		workspace, err := os.MkdirTemp("", "mace-lsp-imported-array-index-*")
-		tAssert.NoError(err)
-
-		writeWorkspaceFile(workspace, "shared.mace", `[output = data]
-{
-  names: ["Ada", "Linus", "Grace"]
-}`)
-		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
-
-		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `|===|
-from "./shared.mace" import names;
-string selected = names[
-|===|
-[output = data] {}`, nil)
-
-		labels := completeLabels(server, uri, 2, uint32(len(`string selected = names[`)))
-		tAssert.Equal([]string{"0", "1", "2"}, labels)
-	})
-
-	It("suggests array indexes for local arrays despite unrelated script errors", func() {
-		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `|===|
-array<string> names = ["Ada", "Linus", "Grace"];
-string broken = missing;
-string selected = names[
-|===|
-[output = data] {}`, nil)
-
-		labels := completeLabels(server, uri, 3, uint32(len(`string selected = names[`)))
-		tAssert.Equal([]string{"0", "1", "2"}, labels)
-	})
-
-	It("suggests array indexes for script arrays in output fields", func() {
-		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `|===|
-array<string> names = ["Ada", "Linus", "Grace"];
-|===|
-[output = data]
-{
-  result: names[
-}`, nil)
-
-		labels := completeLabels(server, uri, 5, uint32(len(`  result: names[`)))
-		tAssert.Equal([]string{"0", "1", "2"}, labels)
-	})
-
-	It("suggests array indexes for imported arrays in output fields", func() {
-		workspace, err := os.MkdirTemp("", "mace-lsp-output-imported-array-index-*")
-		tAssert.NoError(err)
-
-		writeWorkspaceFile(workspace, "shared.mace", `[output = data]
-{
-  names: ["Ada", "Linus", "Grace"]
-}`)
-		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", ``))
-
-		openEmptyDocument(server, uri, nil)
-		didChange(server, uri, 2, `|===|
-from "./shared.mace" import names;
-|===|
-[output = data]
-{
-  result: names[
-}`, nil)
-
-		labels := completeLabels(server, uri, 5, uint32(len(`  result: names[`)))
-		tAssert.Equal([]string{"0", "1", "2"}, labels)
-	})
-
 	It("suggests schema record literals for nested schema fields after a record colon", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
@@ -1537,12 +1353,12 @@ schema Runtime: { env: string, region: string, };
 		tAssert.Contains(labels, `{ name: "" }`)
 	})
 
-	It("suggests composed schema literals for nested output union aliases", func() {
+	It("suggests composed schema literals for nested output fusion aliases", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
 schema Profile: { name: string, };
 schema Audit: { created_at: string, };
-type User: union[Profile, Audit];
+type User: fusion[Profile, Audit];
 schema Envelope: { value: User, };
 schema Response: { payload: Envelope, };
 |===|
@@ -1781,7 +1597,7 @@ from "./shared.mace" import ImportedUser;
 		didOpen(server, uri, `|===|
 schema User: { name: string, };
 type Identity: variant[string, int];
-type UserRecord: union[User, Profile];
+type UserRecord: fusion[User, Profile];
 schema Profile: { age: int, };
 |===|
 [output = data] { name: "Ada", }`, nil)
@@ -1910,7 +1726,7 @@ string env = "dev";
 schema Profile: { name: string, };
 schema Audit: { created_at: string, };
 type Identity: variant[string, int];
-type User: union[Profile, Audit];
+type User: fusion[Profile, Audit];
 Identity id = "Ada";
 User user = { name: "Ada", created_at: "2026-04-09", };
 |===|
@@ -1979,7 +1795,7 @@ User user = { name: "Ada", created_at: "2026-04-09", };
 		content, ok = hover.Contents.(protocol.MarkupContent)
 		tAssert.True(ok)
 		if ok {
-			tAssert.Contains(content.Value, `union[Profile, Audit] user = record literal`)
+			tAssert.Contains(content.Value, `fusion[Profile, Audit] user = record literal`)
 		}
 	})
 
@@ -2104,7 +1920,7 @@ schema_doc User {
 # User
 Reusable schema.
 """,
-  props: {
+  fields: {
     name: "The user's display name",
   },
 };
@@ -2134,7 +1950,7 @@ Reusable schema.
 			tAssert.Contains(content.Value, `schema User: { name: string };`)
 			tAssert.Contains(content.Value, `Represents a user.`)
 			tAssert.Contains(content.Value, `# User`)
-			tAssert.Contains(content.Value, `Props:`)
+			tAssert.Contains(content.Value, `Fields:`)
 			tAssert.Contains(content.Value, "`name`: The user's display name")
 		}
 	})
@@ -2158,7 +1974,7 @@ schema_doc User {
 
 Hover should surface this documentation.
 """,
-  props: {
+  fields: {
     name: "The user's display name",
   },
 };
@@ -2194,7 +2010,7 @@ Hover should surface this documentation.
 			tAssert.Contains(content.Value, `schema User: { name: string };`)
 			tAssert.Contains(content.Value, `Represents a user`)
 			tAssert.Contains(content.Value, `Hover should surface this documentation.`)
-			tAssert.Contains(content.Value, `Props:`)
+			tAssert.Contains(content.Value, `Fields:`)
 			tAssert.Contains(content.Value, "`name`: The user's display name")
 		}
 	})

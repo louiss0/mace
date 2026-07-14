@@ -176,7 +176,8 @@ func formatDeclaration(declaration ast.Declaration) (string, error) {
 			return "", err
 		}
 
-		return fmt.Sprintf("%s%s %s = %s;", prefix, typeReference, typedDeclaration.Name, value), nil
+		description := formatInlineDescription(typedDeclaration.Description)
+		return fmt.Sprintf("%s%s %s = %s%s;", prefix, typeReference, typedDeclaration.Name, value, description), nil
 	case ast.TypeDeclaration:
 		typeReference, err := formatTypeReference(typedDeclaration.Type)
 		if err != nil {
@@ -226,7 +227,7 @@ func formatTypeReference(typeReference ast.TypeReference) (string, error) {
 			}
 			members = append(members, formatted)
 		}
-		return fmt.Sprintf("union[%s]", strings.Join(members, ", ")), nil
+		return fmt.Sprintf("fusion[%s]", strings.Join(members, ", ")), nil
 	case ast.VariantType:
 		members := make([]string, 0, len(typedReference.Members))
 		for _, member := range typedReference.Members {
@@ -299,7 +300,7 @@ func formatDocDeclaration(declaration ast.DocDeclaration) (string, error) {
 		lines = append(lines, fmt.Sprintf("  description: %s,", declaration.Documentation.Description.Lexeme))
 	}
 	if len(declaration.Documentation.Props) > 0 {
-		lines = append(lines, "  props: {")
+		lines = append(lines, "  fields: {")
 		keys := lo.Keys(declaration.Documentation.Props)
 		slices.Sort(keys)
 		for _, key := range keys {
@@ -401,13 +402,21 @@ func formatExpressionNode(expression ast.Expression, depth int) (string, int, er
 		if err != nil {
 			return "", 0, err
 		}
-		return target + "." + typedExpression.Name, precedencePrimary, nil
-	case ast.ArrayAccess:
-		target, err := formatExpressionWithPrecedence(typedExpression.Target, precedencePrimary, depth)
+		operator := "."
+		if typedExpression.Optional {
+			operator = "?."
+		}
+		return target + operator + typedExpression.Name, precedencePrimary, nil
+	case ast.TypeTestExpression:
+		left, err := formatExpressionWithPrecedence(typedExpression.Expression, precedenceTypeTest, depth)
 		if err != nil {
 			return "", 0, err
 		}
-		return target + "[" + typedExpression.Index.Lexeme + "]", precedencePrimary, nil
+		targetType, err := formatTypeReference(typedExpression.TargetType)
+		if err != nil {
+			return "", 0, err
+		}
+		return left + " is " + targetType, precedenceTypeTest, nil
 	case ast.StringLiteral:
 		return typedExpression.Lexeme, precedencePrimary, nil
 	case ast.IntLiteral:
@@ -640,6 +649,8 @@ func tokenLexeme(tokenType lexer.TokenType) string {
 		return "&&"
 	case lexer.TokenOrOr:
 		return "||"
+	case lexer.TokenCoalesce:
+		return "??"
 	case lexer.TokenShiftLeft:
 		return "<<"
 	case lexer.TokenShiftRight:
@@ -654,6 +665,7 @@ func tokenLexeme(tokenType lexer.TokenType) string {
 const (
 	precedenceLowest = iota
 	precedenceConditional
+	precedenceCoalesce
 	precedenceLogicalOr
 	precedenceLogicalAnd
 	precedenceBitwiseOr
@@ -661,6 +673,7 @@ const (
 	precedenceBitwiseAnd
 	precedenceMerge
 	precedenceEquality
+	precedenceTypeTest
 	precedenceRelational
 	precedenceShift
 	precedenceAdditive
@@ -674,6 +687,8 @@ func infixPrecedence(tokenType lexer.TokenType) int {
 	switch tokenType {
 	case lexer.TokenOrOr:
 		return precedenceLogicalOr
+	case lexer.TokenCoalesce:
+		return precedenceCoalesce
 	case lexer.TokenAndAnd:
 		return precedenceLogicalAnd
 	case lexer.TokenPipe:

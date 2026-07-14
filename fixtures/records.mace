@@ -44,6 +44,11 @@ record<variant[int, float, choice[1, 2, 3], choice["one", "two"]]> number_or_cho
     c: 2,
     d: "one",
 };
+
+record<array<string>> lists = {
+    value: ["one", "two", "three"],
+};
+
 record<record<string>> level1 = {
     value: {
         name: "one",
@@ -102,4 +107,5 @@ record<record<string>> team = {
     },
 };
 |============================================================================================================|
-{}
+{
+}

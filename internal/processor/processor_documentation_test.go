@@ -34,7 +34,7 @@ gen_doc Status {
 
 schema_doc profile {
   summary: "Profile object.",
-  props: {
+  fields: {
     name: "Profile name.",
   },
 };
@@ -102,37 +102,37 @@ gen_doc Name {
   summary: "Public name type",
 };
 |===|`, "already documented"),
-		Entry("schema field inline description conflicts with schema_doc props", `|===|
+		Entry("schema field inline description conflicts with schema_doc fields", `|===|
 schema User: {
   name: string /# Duplicate inline docs,
 };
 
 schema_doc User {
-  props: {
+  fields: {
     name: "The user's display name",
   },
 };
 |===|`, "already documented"),
-		Entry("schema_doc props reject unknown schema fields", `|===|
+		Entry("schema_doc fields reject unknown schema fields", `|===|
 schema User: {
   name: string,
 };
 
 schema_doc User {
-  props: {
+  fields: {
     age: "Unknown field",
   },
 };
 |===|`, "does not exist"),
-		Entry("gen_doc props reject type targets", `|===|
+		Entry("gen_doc fields reject type targets", `|===|
 type Name: string;
 
 gen_doc Name {
-  props: {
+  fields: {
     value: "Nope",
   },
 };
-|===|`, "props entry is only allowed in schema_doc"),
+|===|`, "fields entry is only allowed in schema_doc"),
 		Entry("schema_doc must appear after its schema declaration", `|===|
 schema_doc User {
   summary: "Late-bound docs",

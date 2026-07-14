@@ -30,17 +30,6 @@ var _ = Describe("Expressions", func() {
 		Entry("level 5", `[output = data] { a: { b: { c: { d: { e: true, }, }, }, }, result: $self.a.b.c.d.e, }`, expectedValue{kind: ValueBoolean, bool: true}),
 	)
 
-	DescribeTable("returns nested array access results by depth",
-		func(input string, expected expectedValue) {
-			assertProcessedResult(input, expected)
-		},
-		Entry("level 1", `[output = data] { result: [10][0], }`, expectedValue{kind: ValueInt, int64: 10}),
-		Entry("level 2", `[output = data] { result: [[10]][0][0], }`, expectedValue{kind: ValueInt, int64: 10}),
-		Entry("level 3", `[output = data] { result: [[[10]]][0][0][0], }`, expectedValue{kind: ValueInt, int64: 10}),
-		Entry("level 4", `[output = data] { result: [[[[10]]]][0][0][0][0], }`, expectedValue{kind: ValueInt, int64: 10}),
-		Entry("level 5", `[output = data] { result: [[[[[10]]]]][0][0][0][0][0], }`, expectedValue{kind: ValueInt, int64: 10}),
-	)
-
 	DescribeTable("returns mixed self reference results",
 		func(input string, expected expectedValue) {
 			assertProcessedResult(input, expected)

@@ -94,76 +94,51 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Clone Zed extension repository
+      - name: Load secret
+        id: load_secrets
+        uses: 1password/load-secrets-action@v4
+        with:
+          export-env: false
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          GH_GENERAL_TOKEN: "op://Development/GENERAL_TOKEN GH--PT Fine Grained/credential"
+
+      - name: Checkout Zed extension repository
+        uses: actions/checkout@v5
+        with:
+          repository: louiss0/zed-extension-mace
+          token: ${{ steps.load_secrets.outputs.GH_GENERAL_TOKEN }}
+          path: zed-extension-mace
+
+      - name: Update version file
         run: |
-          git -c http.extraheader="AUTHORIZATION: bearer ${GH_TOKEN}" clone https://github.com/louiss0/zed-extension-mace.git "$RUNNER_TEMP/zed-extension-mace"
+          VERSION="${GITHUB_REF_NAME}"
 
-      - name: Sync bundled Mace binaries into Zed extension repository
-        run: |
-          set -euo pipefail
-
-          zed_repo="$RUNNER_TEMP/zed-extension-mace"
-          bin_dir="$zed_repo/bin"
-          extract_dir="$RUNNER_TEMP/mace-release-binaries"
-
-          rm -rf "$extract_dir"
-          mkdir -p "$bin_dir" "$extract_dir"
-
-          extract_archive() {
-            archive_path="$1"
-            output_path="$2"
-            stage_dir="$extract_dir/stage"
-
-            rm -rf "$stage_dir"
-            mkdir -p "$stage_dir"
-
-            case "$archive_path" in
-              *.tar.gz)
-                tar -xzf "$archive_path" -C "$stage_dir"
-                ;;
-              *.zip)
-                unzip -q "$archive_path" -d "$stage_dir"
-                ;;
-              *)
-                echo "unsupported archive format: $archive_path" >&2
-                exit 1
-                ;;
-            esac
-
-            binary_path=$(find "$stage_dir" -type f \( -name mace -o -name 'mace.exe' \) | head -n 1)
-            if [ -z "$binary_path" ]; then
-              echo "unable to find mace binary in $archive_path" >&2
-              exit 1
-            fi
-
-            cp "$binary_path" "$output_path"
-            chmod 755 "$output_path" || true
+          cat > zed-extension-mace/mace-version.json <<EOF
+          {
+            "version": "${VERSION}",
+            "source_repository": "${GITHUB_REPOSITORY}",
+            "source_commit": "${GITHUB_SHA}"
           }
+          EOF
 
-          extract_archive dist/mace_*_darwin_amd64.tar.gz "$bin_dir/mace-darwin-amd64"
-          extract_archive dist/mace_*_darwin_arm64.tar.gz "$bin_dir/mace-darwin-arm64"
-          extract_archive dist/mace_*_linux_amd64.tar.gz "$bin_dir/mace-linux-amd64"
-          extract_archive dist/mace_*_linux_arm64.tar.gz "$bin_dir/mace-linux-arm64"
-          extract_archive dist/mace_*_windows_amd64.zip "$bin_dir/mace-windows-amd64.exe"
-          extract_archive dist/mace_*_windows_arm64.zip "$bin_dir/mace-windows-arm64.exe"
-
-      - name: Commit bundled Mace binaries to Zed extension repository
-        env:
-          GITHUB_REF_NAME: ${{ github.ref_name }}
+      - name: Commit and push branch
+        working-directory: zed-extension-mace
         run: |
-          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME}"
+          BRANCH_NAME="chore/update-mace-${VERSION}"
 
-          cd "$RUNNER_TEMP/zed-extension-mace"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add bin
+
+          git checkout -b "$BRANCH_NAME"
+
+          git add mace-version.json
 
           if git diff --cached --quiet; then
-            echo "No bundled Mace binary changes to commit"
+            echo "No changes to commit."
             exit 0
           fi
 
-          git commit -m "chore(release): sync bundled mace binaries for ${GITHUB_REF_NAME}"
-          git push
+          git commit -m "Update Mace version to ${VERSION}"
+          git push origin "$BRANCH_NAME"

@@ -66,6 +66,12 @@ func (l *Lexer) NextToken() (Token, error) {
 	case ':':
 		return l.makeToken(TokenColon, startPosition, startLine, startColumn), nil
 	case '?':
+		if l.match('?') {
+			return l.makeToken(TokenCoalesce, startPosition, startLine, startColumn), nil
+		}
+		if l.match('.') {
+			return l.makeToken(TokenOptionalDot, startPosition, startLine, startColumn), nil
+		}
 		return l.makeToken(TokenQuestion, startPosition, startLine, startColumn), nil
 	case '.':
 		return l.makeToken(TokenDot, startPosition, startLine, startColumn), nil
@@ -445,7 +451,7 @@ func keywordToken(lexeme string) (TokenType, bool) {
 		return TokenSchemaDoc, true
 	case "array":
 		return TokenArray, true
-	case "union":
+	case "fusion":
 		return TokenUnion, true
 	case "variant":
 		return TokenVariant, true
@@ -479,6 +485,8 @@ func keywordToken(lexeme string) (TokenType, bool) {
 		return TokenNullable, true
 	case "in":
 		return TokenIn, true
+	case "is":
+		return TokenIs, true
 	case "null":
 		return TokenNull, true
 	case "true", "false":

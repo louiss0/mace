@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/louiss0/mace/internal/diagnostic"
+	"github.com/louiss0/mace/internal/parser/ast"
 )
 
 type ErrorKind string
@@ -27,11 +28,10 @@ const (
 type ErrorCode string
 
 const (
-	CodeArrayIndexOutOfRange         ErrorCode = "mace.type.invalid-array-access"
-	CodeArrayValueRequired           ErrorCode = "mace.type.invalid-array-access"
 	CodeImportFileFailedParse        ErrorCode = "mace.import.file-failed-to-parse"
 	CodeImportFileNotFound           ErrorCode = "mace.import.file-not-found"
 	CodeInternal                     ErrorCode = "mace.internal"
+	CodeImpossibleNarrowing          ErrorCode = "mace.type.impossible-narrowing"
 	CodeInvalidNullUsage             ErrorCode = "mace.type.invalid-null-usage"
 	CodeInvalidOutputSchemaField     ErrorCode = "mace.type.invalid-output-schema-field"
 	CodeMissingRequiredField         ErrorCode = "mace.type.record-does-not-match-schema"
@@ -48,8 +48,6 @@ type DiagnosticFields struct {
 	Schema   string
 	Expected string
 	Actual   string
-	Index    string
-	Level    int
 	Operator string
 	Path     string
 	Details  map[string]string
@@ -81,6 +79,16 @@ func diagnosticErrorf(kind ErrorKind, code ErrorCode, fields DiagnosticFields, f
 	}
 }
 
+func impossibleNarrowingError(expression ast.TypeTestExpression, source string, target string) error {
+	return DiagnosticError{
+		Kind:    ErrorType,
+		Code:    CodeImpossibleNarrowing,
+		Message: fmt.Sprintf("processor: type %q has no member compatible with %q", source, target),
+		Range:   diagnostic.FromASTRange(expression.Range()),
+		Fields:  DiagnosticFields{Actual: source, Expected: target},
+	}
+}
+
 func typeMismatchError(expected string, actual string) error {
 	return diagnosticErrorf(
 		ErrorType,
@@ -98,6 +106,45 @@ func invalidNullUsageError() error {
 		CodeInvalidNullUsage,
 		DiagnosticFields{},
 		"null can only be assigned to nullable variables and optional schema fields",
+	)
+}
+
+func optionalFieldAccessError(field string) error {
+	return diagnosticErrorf(
+		ErrorType,
+		CodeOptionalFieldAccess,
+		DiagnosticFields{Field: field},
+		"member %q may be null or absent; use optional chaining '?.'",
+		field,
+	)
+}
+
+func nullableVariableAccessError(field string) error {
+	return diagnosticErrorf(
+		ErrorType,
+		CodeOptionalFieldAccess,
+		DiagnosticFields{Field: field},
+		"member %q belongs to a nullable variable; guard the variable with a truthiness check",
+		field,
+	)
+}
+
+func nonRecordMemberAccessError(field string) error {
+	return diagnosticErrorf(
+		ErrorType,
+		CodeTypeMismatch,
+		DiagnosticFields{Field: field},
+		"member %q cannot be accessed because its target is not a record",
+		field,
+	)
+}
+
+func possiblyAbsentValueError() error {
+	return diagnosticErrorf(
+		ErrorType,
+		CodeOptionalFieldAccess,
+		DiagnosticFields{},
+		"possibly absent expressions must be resolved with '??' before use",
 	)
 }
 
@@ -153,8 +200,6 @@ func inferErrorCode(message string) ErrorCode {
 		return ErrorCode("mace.declaration.duplicate-output-field")
 	case strings.Contains(message, "array literal has mixed element types"):
 		return ErrorCode("mace.type.mixed-array-literal")
-	case strings.Contains(message, "array access requires an array value") || strings.Contains(message, "array index ") && strings.Contains(message, "out of range"):
-		return CodeArrayIndexOutOfRange
 	case strings.Contains(message, "unknown identifier"):
 		return ErrorCode("mace.type.unknown-identifier")
 	case strings.Contains(message, "unknown self reference"):
@@ -165,6 +210,8 @@ func inferErrorCode(message string) ErrorCode {
 		return ErrorCode("mace.type.invalid-unary-operator")
 	case strings.Contains(message, "expected numeric operands") || strings.Contains(message, "expected int operands") || strings.Contains(message, "expected boolean operands") || strings.Contains(message, "incompatible equality comparison") || strings.Contains(message, "merge operands") || strings.Contains(message, "expected ") && strings.Contains(message, " operands"):
 		return ErrorCode("mace.type.invalid-binary-operator")
+	case strings.Contains(message, "use optional chaining '?.'"):
+		return CodeOptionalFieldAccess
 	case strings.Contains(message, "null can only be assigned to nullable variables and optional schema fields"):
 		return CodeInvalidNullUsage
 	case strings.Contains(message, "type mismatch"):
@@ -194,7 +241,7 @@ func inferErrorKind(message string) ErrorKind {
 		return ErrorSchema
 	case strings.Contains(message, "runtime"):
 		return ErrorRuntime
-	case strings.Contains(message, "value") || strings.Contains(message, "literal") || strings.Contains(message, "expression") || strings.Contains(message, "self reference") || strings.Contains(message, "member access") || strings.Contains(message, "array access"):
+	case strings.Contains(message, "value") || strings.Contains(message, "literal") || strings.Contains(message, "expression") || strings.Contains(message, "self reference") || strings.Contains(message, "member access"):
 		return ErrorValue
 	default:
 		return ErrorInternal

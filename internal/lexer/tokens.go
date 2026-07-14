@@ -32,6 +32,7 @@ const (
 	TokenData
 	TokenNullable
 	TokenIn
+	TokenIs
 	TokenNull
 
 	TokenString
@@ -46,6 +47,8 @@ const (
 	TokenComma
 	TokenColon
 	TokenQuestion
+	TokenCoalesce
+	TokenOptionalDot
 	TokenDot
 
 	TokenPlus
