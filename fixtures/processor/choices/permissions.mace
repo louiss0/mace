@@ -1,7 +1,7 @@
 |==================================================|
 type ReadAction: choice["read"];
 type WriteAction: choice["write", "approve"];
-type Permission: choice[ReadAction, WriteAction];
+type Permission: fusion[ReadAction, WriteAction];
 type Role: choice["admin", "auditor"];
 
 schema AccessGrant: {

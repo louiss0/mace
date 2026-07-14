@@ -44,16 +44,16 @@ Value fallback = %s;
 {
   result: result,
 }`, expectedValue{kind: ValueString, string: "Apple"}),
-		Entry("choice aliases can be mixed", `|===|
+		Entry("fusion merges and deduplicates choices", `|===|
  type Environment: choice["dev", "prod"];
- type Numeric: choice[1, 2];
- type Mode: choice[Environment, Numeric, true];
- Mode result = 2;
+ type Feature: choice["prod", "test"];
+ type Mode: fusion[Environment, Feature];
+ Mode result = "test";
 |===|
 [output = 'data']
 {
   result: result,
-}`, expectedValue{kind: ValueInt, int64: 2}),
+}`, expectedValue{kind: ValueString, string: "test"}),
 		Entry("choice float members preserve precision", `|===|
  type Ratio: choice[1.04, 1.0];
  Ratio first = 1.04;
@@ -75,13 +75,9 @@ Value fallback = %s;
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, message)
 		},
-		Entry("unknown choice alias", wrapScriptWithOutput(`|===|
+		Entry("choice aliases require fusion", wrapScriptWithOutput(`|===|
  type Fruit: choice[MissingChoice];
-|===|`), "unknown choice member"),
-		Entry("non-choice alias in choice members", wrapScriptWithOutput(`|===|
- type Name: string;
- type Fruit: choice[Name];
-|===|`), "must resolve to a choice type"),
+|===|`), "use fusion to merge choice types"),
 		Entry("value outside choice domain", `|===|
  type Fruit: choice["Apple", "Strawberry"];
  Fruit result = "Pear";
@@ -131,12 +127,7 @@ var _ = Describe("Choice type helpers", func() {
 
 	It("covers choice resolution branches", func() {
 		types := newTypeRegistry()
-		types.AddAlias("Fruit", ast.ChoiceType{Members: []ast.Expression{ast.StringLiteral{Lexeme: `"Apple"`}, ast.StringLiteral{Lexeme: `"Pear"`}}})
-		types.AddAlias("Loop", ast.NamedType{Name: "Loop"})
-		types.AddAlias("LoopChoice", ast.ChoiceType{Members: []ast.Expression{ast.Identifier{Name: "LoopChoice"}}})
-		types.AddAlias("Plain", ast.PrimitiveType{Name: "string"})
-
-		resolved, err := resolveChoiceType(ast.ChoiceType{Members: []ast.Expression{ast.Identifier{Name: "Fruit"}, ast.IntLiteral{Lexeme: "7"}}}, types)
+		resolved, err := resolveChoiceType(ast.ChoiceType{Members: []ast.Expression{ast.StringLiteral{Lexeme: `"Apple"`}, ast.IntLiteral{Lexeme: "7"}}}, types)
 		tAssert.NoError(err)
 		tAssert.True(choiceContainsValue(resolved.choiceValues, Value{Kind: ValueString, String: "Apple"}))
 		tAssert.True(choiceContainsValue(resolved.choiceValues, Value{Kind: ValueInt, Int: 7}))
@@ -144,13 +135,7 @@ var _ = Describe("Choice type helpers", func() {
 
 		_, err = resolveChoiceValues([]ast.Expression{ast.RecordLiteral{}}, types, map[string]struct{}{})
 		tAssert.Error(err)
-		_, err = resolveChoiceMemberValues(ast.Identifier{Name: "Missing"}, types, map[string]struct{}{})
-		tAssert.Error(err)
-		_, err = resolveChoiceMemberValues(ast.Identifier{Name: "Loop"}, types, map[string]struct{}{})
-		tAssert.Error(err)
-		_, err = resolveChoiceType(ast.ChoiceType{Members: []ast.Expression{ast.Identifier{Name: "LoopChoice"}}}, types)
-		tAssert.Error(err)
-		_, err = resolveChoiceMemberValues(ast.Identifier{Name: "Plain"}, types, map[string]struct{}{})
+		_, err = resolveChoiceMemberValues(ast.Identifier{Name: "Choice"}, types, map[string]struct{}{})
 		tAssert.Error(err)
 		_, err = resolveChoiceMemberValues(ast.StringLiteral{Lexeme: `"unterminated`}, types, map[string]struct{}{})
 		tAssert.Error(err)

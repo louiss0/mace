@@ -1520,10 +1520,7 @@ func validateTypeReference(typeRef ast.TypeReference, symbols *symbolTable, type
 	case ast.RecordMapType:
 		return validateTypeReference(ref.Value, symbols, types, schemas, enums)
 	case ast.UnionType:
-		_, err := resolveUnionRecordType(ref, symbols, types, schemas)
-		if err != nil && strings.Contains(err.Error(), "fusion members must be schemas") {
-			return validationErrorf("fusion members must be schemas")
-		}
+		_, err := resolveValueType(ref, symbols, types, schemas, enums)
 		return err
 	case ast.VariantType:
 		for _, member := range ref.Members {
@@ -3919,11 +3916,7 @@ func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *ty
 	case ast.ChoiceType:
 		return resolveChoiceType(ref, types)
 	case ast.UnionType:
-		record, err := resolveUnionRecordType(ref, symbols, types, schemas)
-		if err != nil {
-			return valueType{}, err
-		}
-		return valueType{kind: ValueRecord, record: &record}, nil
+		return resolveFusionValueType(ref, symbols, types, schemas, enums)
 	case ast.VariantType:
 		members := make([]valueType, 0, len(ref.Members))
 		for _, member := range ref.Members {
@@ -3958,6 +3951,44 @@ func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *ty
 	default:
 		return valueType{}, validationErrorf("unknown type reference")
 	}
+}
+
+func resolveFusionValueType(reference ast.UnionType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
+	members := make([]valueType, 0, len(reference.Members))
+	allChoices := true
+	allRecords := true
+
+	for _, member := range reference.Members {
+		resolved, err := resolveValueType(member, symbols, types, schemas, enums)
+		if err != nil {
+			return valueType{}, err
+		}
+		members = append(members, resolved)
+		allChoices = allChoices && len(resolved.choiceValues) > 0
+		allRecords = allRecords && resolved.kind == ValueRecord
+	}
+
+	if allChoices {
+		values := make([]Value, 0)
+		for _, member := range members {
+			for _, value := range member.choiceValues {
+				if !choiceContainsValue(values, value) {
+					values = append(values, value)
+				}
+			}
+		}
+		return valueType{choiceValues: values}, nil
+	}
+
+	if allRecords {
+		record, err := resolveUnionRecordType(reference, symbols, types, schemas)
+		if err != nil {
+			return valueType{}, err
+		}
+		return valueType{kind: ValueRecord, record: &record}, nil
+	}
+
+	return valueType{}, validationErrorf("fusion members must be schemas or choices")
 }
 
 func validateVariantValueTypes(members []valueType) error {
@@ -4098,6 +4129,11 @@ func schemaTypeFromTypeReference(typeRef ast.TypeReference, types *typeRegistry)
 		}
 		return SchemaType{Kind: SchemaTypeRecordMap, Element: &value}, nil
 	case ast.UnionType:
+		if values, ok, err := resolveFusionChoiceValues(ref, types); err != nil {
+			return SchemaType{}, err
+		} else if ok {
+			return SchemaType{Kind: SchemaTypeNamed, Name: choiceTypeName(values)}, nil
+		}
 		members := make([]SchemaType, 0, len(ref.Members))
 		for _, member := range ref.Members {
 			resolved, err := schemaTypeFromTypeReference(member, types)
@@ -4133,6 +4169,39 @@ func schemaTypeFromTypeReference(typeRef ast.TypeReference, types *typeRegistry)
 		return SchemaType{Kind: SchemaTypeRecord, Fields: fields}, nil
 	default:
 		return SchemaType{}, validationErrorf("unknown type reference")
+	}
+}
+
+func resolveFusionChoiceValues(reference ast.TypeReference, types *typeRegistry) ([]Value, bool, error) {
+	switch typed := reference.(type) {
+	case ast.ChoiceType:
+		resolved, err := resolveChoiceType(typed, types)
+		if err != nil {
+			return nil, false, err
+		}
+		return resolved.choiceValues, true, nil
+	case ast.UnionType:
+		values := make([]Value, 0)
+		for _, member := range typed.Members {
+			memberValues, ok, err := resolveFusionChoiceValues(member, types)
+			if err != nil || !ok {
+				return nil, false, err
+			}
+			for _, value := range memberValues {
+				if !choiceContainsValue(values, value) {
+					values = append(values, value)
+				}
+			}
+		}
+		return values, true, nil
+	case ast.NamedType:
+		resolved, ok, err := types.Resolve(typed.Name)
+		if err != nil || !ok {
+			return nil, false, err
+		}
+		return resolveFusionChoiceValues(resolved, types)
+	default:
+		return nil, false, nil
 	}
 }
 

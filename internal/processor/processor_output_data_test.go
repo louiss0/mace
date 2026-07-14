@@ -69,13 +69,13 @@ schema User: { name: string, };
 }`, map[expectedSchemaField]SchemaType{
 			{name: "value"}: {Kind: SchemaTypeVariant, Members: []SchemaType{schemaPrimitive("string"), schemaPrimitive("int")}},
 		}),
-		Entry("choice fields resolve nested choice aliases", `|===|
+		Entry("fusion fields resolve and deduplicate choices", `|===|
  type Environment: choice["dev", "prod"];
  type Numeric: choice[1, 2];
 |===|
 [output = 'schema']
 {
-  mode: choice[Environment, Numeric],
+  mode: fusion[Environment, Numeric],
 }`, map[expectedSchemaField]SchemaType{
 			{name: "mode"}: schemaNamed(`choice["dev", "prod", 1, 2]`),
 		}),

@@ -488,7 +488,6 @@ var _ = Describe("Parser", func() {
 		Entry("self reference requires dot", "$self"),
 		Entry("self reference requires first identifier", "$self."),
 		Entry("self reference requires later identifier", "$self.user."),
-		Entry("array literal rejects trailing comma", "[1,]"),
 		Entry("record literal requires field separator", "{ name \"Ada\" }"),
 		Entry("conditional requires colon", "ready ? yes"),
 		Entry("conditional requires then expression", "ready ? : no"),
@@ -783,6 +782,16 @@ var _ = Describe("Parser", func() {
 			tAssert.NoError(err)
 			_, err = New(tokens).parseTypeReference()
 			tAssert.Error(err)
+		}
+	})
+
+	It("parses array literals with a trailing comma", func() {
+		expression, err := parseExpressionInput(`[{ name: "Ada", },]`)
+		tAssert.NoError(err)
+		array, ok := expression.(ast.ArrayLiteral)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Len(array.Elements, 1)
 		}
 	})
 
@@ -1525,25 +1534,23 @@ type Matrix: array<array<int>>;
 			}
 		})
 
-		It("parses choice types with literals and choice aliases", func() {
+		It("parses choice types with scalar literals", func() {
 			input := `|===|
- type Environment: choice["dev", "prod"];
- type Mode: choice[Environment, 1, true, 1.5, 0xFF, 0x2.8, record];
+ type Mode: choice["dev", 1, true, 1.5, 0xFF, 0x2.8];
 |===|
 [output = 'data'] {}`
 
 			file, err := parseFileInput(input)
 			tAssert.NoError(err)
 
-			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 2) {
-				choiceDecl, ok := file.Script.Items[1].(ast.TypeDeclaration)
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 1) {
+				choiceDecl, ok := file.Script.Items[0].(ast.TypeDeclaration)
 				tAssert.True(ok)
 				if ok {
 					choiceType, ok := choiceDecl.Type.(ast.ChoiceType)
 					tAssert.True(ok)
-					if ok && tAssert.Len(choiceType.Members, 7) {
-						_, ok = choiceType.Members[0].(ast.Identifier)
-						tAssert.True(ok)
+					if ok && tAssert.Len(choiceType.Members, 6) {
+						requireStringLiteral(choiceType.Members[0], `"dev"`)
 						requireIntLiteral(choiceType.Members[1], "1")
 						booleanLiteral, ok := choiceType.Members[2].(ast.BooleanLiteral)
 						tAssert.True(ok)
@@ -1557,7 +1564,6 @@ type Matrix: array<array<int>>;
 						}
 						requireHexIntLiteral(choiceType.Members[4], "0xFF")
 						requireHexFloatLiteral(choiceType.Members[5], "0x2.8")
-						requireIdentifier(choiceType.Members[6], "record")
 					}
 				}
 			}

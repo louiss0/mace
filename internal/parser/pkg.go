@@ -897,6 +897,9 @@ func (p *Parser) parseTypeReference() (ast.TypeReference, error) {
 				break
 			}
 			p.advance()
+			if p.current().Type == lexer.TokenRBracket {
+				break
+			}
 		}
 		if _, err := p.consume(lexer.TokenRBracket, "parser: expected ']' after fusion type"); err != nil {
 			return nil, err
@@ -990,7 +993,7 @@ func (p *Parser) parseChoiceMember() (ast.Expression, error) {
 		p.advance()
 		return ast.Identifier{Token: token, Name: token.Lexeme}, nil
 	default:
-		return nil, p.unexpectedTokenError("parser: expected literal or choice name")
+		return nil, p.unexpectedTokenError("parser: expected choice literal or name")
 	}
 }
 
@@ -1175,6 +1178,9 @@ func (p *Parser) parseArrayLiteral() (ast.Expression, error) {
 				break
 			}
 			p.advance()
+			if p.current().Type == lexer.TokenRBracket {
+				break
+			}
 		}
 	}
 

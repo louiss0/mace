@@ -76,7 +76,7 @@ self_type_reference = "$self" ;
 fusion_type = "fusion" , ws0 , "[" , ws0 , type_reference , { ws0 , "," , ws0 , type_reference } , [ ws0 , "," ] , ws0 , "]" ;
 variant_type = "variant" , ws0 , "[" , ws0 , type_reference , { ws0 , "," , ws0 , type_reference } , [ ws0 , "," ] , ws0 , "]" ;
 choice_type = "choice" , ws0 , "[" , ws0 , choice_member , { ws0 , "," , ws0 , choice_member } , [ ws0 , "," ] , ws0 , "]" ;
-choice_member = string_literal | int_literal | float_literal | hex_int_literal | hex_float_literal | boolean_literal | identifier ;
+choice_member = string_literal | int_literal | float_literal | hex_int_literal | hex_float_literal | boolean_literal ;
 
 (* OUTPUT *)
 output_block = [ output_directive_list , ws0 , [ block_string , ws0 ] ] , "{" , ws0 , [ output_field , { ws0 , "," , ws0 , output_field } , [ ws0 , "," ] ] , ws0 , "}" ;

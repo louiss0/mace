@@ -1630,6 +1630,24 @@ schema User: { name: Name, };
 		}
 	})
 
+	It("treats types nested in type tests as used", func() {
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := analyzeDocumentAt(`|===|
+type Name: string;
+variant[Name, int] value = "Ada";
+boolean is_name = value is array<Name>;
+|===|
+[output = 'data']
+{
+  is_name: is_name,
+}`, documentPath)
+
+		unusedTypeDiagnostics := lo.Filter(snapshot.diagnostics, func(diagnostic protocol.Diagnostic, _ int) bool {
+			return requireDiagnosticCode(diagnostic) == string(diagnosticDeclarationUnusedType)
+		})
+		tAssert.Empty(unusedTypeDiagnostics)
+	})
+
 	It("translates array literal initializer mismatches into token-scoped diagnostics", func() {
 		snapshot := analyzeDocument(`|===|
 array<int> foo = ["4", 6];

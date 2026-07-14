@@ -29,6 +29,24 @@ User value = {
 		}})
 	})
 
+	It("merges choice aliases and deduplicates their values", func() {
+		processor := New()
+		result, err := processor.Process(`|===|
+type Access: choice["read", "write"];
+type Feature: choice["write", "execute"];
+type Permission: fusion[Access, Feature];
+Permission value = "execute";
+|===|
+[output = 'data']
+{
+  value: value,
+}`)
+		tAssert.NoError(err)
+
+		actual := requireOutputValue(result, "value")
+		assertExpectedValue(actual, expectedValue{kind: ValueString, string: "execute"})
+	})
+
 	It("rejects fusion schema composition with non-schema members", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|

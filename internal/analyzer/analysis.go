@@ -2581,6 +2581,12 @@ func referencedNames(file ast.File) map[string]struct{} {
 			for _, member := range typed.Members {
 				visitType(member)
 			}
+		case ast.ChoiceType:
+			for _, member := range typed.Members {
+				if identifier, ok := member.(ast.Identifier); ok {
+					names[identifier.Name] = struct{}{}
+				}
+			}
 		case ast.RecordType:
 			for _, field := range typed.Fields {
 				visitType(field.Type)
@@ -2602,6 +2608,43 @@ func referencedNames(file ast.File) map[string]struct{} {
 	}
 	for _, field := range file.Output.SchemaFields {
 		visitType(field.Type)
+	}
+	var visitExpression func(ast.Expression)
+	visitExpression = func(expression ast.Expression) {
+		switch typed := expression.(type) {
+		case ast.MemberAccess:
+			visitExpression(typed.Target)
+		case ast.ArrayLiteral:
+			for _, element := range typed.Elements {
+				visitExpression(element)
+			}
+		case ast.RecordLiteral:
+			for _, field := range typed.Fields {
+				visitExpression(field.Value)
+			}
+		case ast.PrefixExpression:
+			visitExpression(typed.Right)
+		case ast.InfixExpression:
+			visitExpression(typed.Left)
+			visitExpression(typed.Right)
+		case ast.ConditionalExpression:
+			visitExpression(typed.Condition)
+			visitExpression(typed.Then)
+			visitExpression(typed.Else)
+		case ast.TypeTestExpression:
+			visitExpression(typed.Expression)
+			visitType(typed.TargetType)
+		}
+	}
+	if file.Script != nil {
+		for _, item := range file.Script.Items {
+			if declaration, ok := item.(ast.VariableDeclaration); ok && declaration.HasValue {
+				visitExpression(declaration.Value)
+			}
+		}
+	}
+	for _, field := range file.Output.DataFields {
+		visitExpression(field.Value)
 	}
 	for _, directive := range file.Output.Directives {
 		if directive.Kind == ast.OutputDirectiveSchema {
@@ -2694,6 +2737,8 @@ func usedVariableNames(file ast.File) map[string]struct{} {
 			visit(typed.Condition)
 			visit(typed.Then)
 			visit(typed.Else)
+		case ast.TypeTestExpression:
+			visit(typed.Expression)
 		}
 	}
 

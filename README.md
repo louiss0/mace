@@ -144,13 +144,13 @@ User value = {
 ```
 
 Choices define finite literal domains directly in the type system.
-Choice aliases can be reused, nested, and embedded inside variants.
+Choice aliases can be merged with `fusion[...]` and embedded inside variants.
 
 ```mace
 |===|
 type Access: choice[&quot;read&quot;, &quot;write&quot;];
 type Feature: choice[&quot;write&quot;, &quot;execute&quot;];
-type Permission: choice[Access, Feature];
+type Permission: fusion[Access, Feature];
 Permission value = &quot;execute&quot;;
 |===|
 [output = 'data']

@@ -375,9 +375,9 @@ var _ = Describe("Variant type system helpers", func() {
 		tAssert.NoError(err)
 		tAssert.Equal(SchemaType{Kind: SchemaTypeVariant, Members: []SchemaType{schemaPrimitive("string"), schemaPrimitive("int")}}, result)
 
-		result, err = schemaType(ast.ChoiceType{Members: []ast.Expression{
-			ast.Identifier{Name: "ChoiceAlias"},
-			ast.StringLiteral{Lexeme: `"Carol"`},
+		result, err = schemaType(ast.UnionType{Members: []ast.TypeReference{
+			ast.NamedType{Name: "ChoiceAlias"},
+			ast.ChoiceType{Members: []ast.Expression{ast.StringLiteral{Lexeme: `"Carol"`}}},
 		}}, types)
 		tAssert.NoError(err)
 		tAssert.Equal(SchemaType{Kind: SchemaTypeNamed, Name: `choice["Ada", "Bob", "Carol"]`}, result)

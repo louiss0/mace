@@ -118,7 +118,7 @@ self_type_reference = &quot;$self&quot; ;
 fusion_type = &quot;fusion&quot; , ws0 , &quot;[&quot; , ws0 , type_reference , { ws0 , &quot;,&quot; , ws0 , type_reference } , [ ws0 , &quot;,&quot; ] , ws0 , &quot;]&quot; ;
 variant_type = &quot;variant&quot; , ws0 , &quot;[&quot; , ws0 , type_reference , { ws0 , &quot;,&quot; , ws0 , type_reference } , [ ws0 , &quot;,&quot; ] , ws0 , &quot;]&quot; ;
 choice_type = &quot;choice&quot; , ws0 , &quot;[&quot; , ws0 , choice_member , { ws0 , &quot;,&quot; , ws0 , choice_member } , [ ws0 , &quot;,&quot; ] , ws0 , &quot;]&quot; ;
-choice_member = string_literal | int_literal | float_literal | hex_int_literal | hex_float_literal | boolean_literal | identifier ;
+choice_member = string_literal | int_literal | float_literal | hex_int_literal | hex_float_literal | boolean_literal ;
 
 (* OUTPUT *)
 output_block = [ output_directive_list , ws0 , [ block_string , ws0 ] ] , &quot;{&quot; , ws0 , [ output_field , { ws0 , &quot;,&quot; , ws0 , output_field } , [ ws0 , &quot;,&quot; ] ] , ws0 , &quot;}&quot; ;
@@ -255,16 +255,19 @@ required fields must be present, optional fields may be omitted, and unknown
 fields are rejected. Optionality is a record-shape property only; it cannot
 annotate a runtime record or data-output field.
 
-A fusion member must resolve to a record type: a named schema, a type alias to
-a record, an inline record type, or another valid fusion. For equal field names,
+A fusion member must resolve consistently to either a record type or a choice
+type. Record members may be named schemas, record aliases, inline record types,
+or other record fusions. Choice members may be choice aliases, inline choices,
+or other choice fusions; their resolved literal domains are deduplicated. A
+fusion cannot mix records and choices. For equal record field names,
 equal resolved types are compatible. Required plus optional yields required;
 optional plus optional yields optional. Different resolved types conflict. A
 fusion never silently creates a variant.
 
-Choice members are scalar literals or identifiers resolving to choices. A
-literal repeated directly within one choice is an error. Values repeated only
-through composed aliases are deduplicated in the resolved domain. Choice alias
-cycles are errors.
+Choice members are scalar literals. A literal repeated directly within one
+choice is an error. Use `fusion[...]` to compose choice aliases; values repeated
+through the fusion are deduplicated in the resolved domain. Choice alias cycles
+are errors.
 
 Variant identity is the unordered set of resolved members, so member order does
 not matter and duplicate equivalent members are invalid. A value normally must
