@@ -86,7 +86,7 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenFrom, lexeme: "from"},
 			{tokenType: TokenImport, lexeme: "import"},
 			{tokenType: TokenTypeKeyword, lexeme: "type"},
-			{tokenType: TokenIdentifier, lexeme: "schema"},
+			{tokenType: TokenSchema, lexeme: "schema"},
 			{tokenType: TokenGenDoc, lexeme: "gen_doc"},
 			{tokenType: TokenSchemaDoc, lexeme: "schema_doc"},
 			{tokenType: TokenIdentifier, lexeme: "enum"},
@@ -380,23 +380,23 @@ var _ = Describe("Lexer", func() {
 			assertTokenTypes(tokens, expected)
 		},
 		Entry("single schema with required and optional fields", "schema User: { name: string, age?: int, };", []TokenType{
-			TokenIdentifier, TokenIdentifier, TokenColon, TokenLBrace,
+			TokenSchema, TokenIdentifier, TokenColon, TokenLBrace,
 			TokenIdentifier, TokenColon, TokenStringType, TokenComma,
 			TokenIdentifier, TokenQuestion, TokenColon, TokenIntType, TokenComma,
 			TokenRBrace, TokenSemicolon, TokenEOF,
 		}),
 		Entry("multiple schemas with nested references", "schema Address: { street: string, }; schema User: { address: Address, tags: array<string>, };", []TokenType{
-			TokenIdentifier, TokenIdentifier, TokenColon, TokenLBrace,
+			TokenSchema, TokenIdentifier, TokenColon, TokenLBrace,
 			TokenIdentifier, TokenColon, TokenStringType, TokenComma,
 			TokenRBrace, TokenSemicolon,
-			TokenIdentifier, TokenIdentifier, TokenColon, TokenLBrace,
+			TokenSchema, TokenIdentifier, TokenColon, TokenLBrace,
 			TokenIdentifier, TokenColon, TokenIdentifier, TokenComma,
 			TokenIdentifier, TokenColon, TokenArray, TokenLess, TokenStringType, TokenGreater, TokenComma,
 			TokenRBrace, TokenSemicolon, TokenEOF,
 		}),
 		Entry("schema inside a script block", "|===| schema Config: { nested: array<Profile>, flags: array<boolean>, }; |===|", []TokenType{
 			TokenScriptDelimiter,
-			TokenIdentifier, TokenIdentifier, TokenColon, TokenLBrace,
+			TokenSchema, TokenIdentifier, TokenColon, TokenLBrace,
 			TokenIdentifier, TokenColon, TokenArray, TokenLess, TokenIdentifier, TokenGreater, TokenComma,
 			TokenIdentifier, TokenColon, TokenArray, TokenLess, TokenBooleanType, TokenGreater, TokenComma,
 			TokenRBrace, TokenSemicolon,
@@ -431,18 +431,18 @@ var _ = Describe("Lexer", func() {
 			assertTokenTypes(tokens, expected)
 		},
 		Entry("array of schema identifiers", "schema User: { tags: array<Tag>, };", []TokenType{
-			TokenIdentifier, TokenIdentifier, TokenColon, TokenLBrace,
+			TokenSchema, TokenIdentifier, TokenColon, TokenLBrace,
 			TokenIdentifier, TokenColon, TokenArray, TokenLess, TokenIdentifier, TokenGreater, TokenComma,
 			TokenRBrace, TokenSemicolon, TokenEOF,
 		}),
 		Entry("nested array of schema identifiers", "schema User: { tags: array<array<Tag>>, };", []TokenType{
-			TokenIdentifier, TokenIdentifier, TokenColon, TokenLBrace,
+			TokenSchema, TokenIdentifier, TokenColon, TokenLBrace,
 			TokenIdentifier, TokenColon, TokenArray, TokenLess, TokenArray, TokenLess, TokenIdentifier,
 			TokenShiftRight, TokenComma,
 			TokenRBrace, TokenSemicolon, TokenEOF,
 		}),
 		Entry("array of primitive and schema references", "schema User: { flags: array<boolean>, roles: array<Role>, };", []TokenType{
-			TokenIdentifier, TokenIdentifier, TokenColon, TokenLBrace,
+			TokenSchema, TokenIdentifier, TokenColon, TokenLBrace,
 			TokenIdentifier, TokenColon, TokenArray, TokenLess, TokenBooleanType, TokenGreater, TokenComma,
 			TokenIdentifier, TokenColon, TokenArray, TokenLess, TokenIdentifier, TokenGreater, TokenComma,
 			TokenRBrace, TokenSemicolon, TokenEOF,

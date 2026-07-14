@@ -443,6 +443,8 @@ func keywordToken(lexeme string) (TokenType, bool) {
 		return TokenImport, true
 	case "type":
 		return TokenTypeKeyword, true
+	case "schema":
+		return TokenSchema, true
 	case "gen_doc":
 		return TokenGenDoc, true
 	case "schema_doc":

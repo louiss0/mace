@@ -263,11 +263,8 @@ func (p *Parser) parseDeclaration() (ast.Declaration, error) {
 	switch p.current().Type {
 	case lexer.TokenTypeKeyword:
 		return p.parseTypeDeclaration()
-	case lexer.TokenIdentifier:
-		if p.current().Lexeme == "schema" {
-			return p.parseSchemaDeclaration()
-		}
-		return p.parseVariableDeclaration()
+	case lexer.TokenSchema:
+		return p.parseSchemaDeclaration()
 	case lexer.TokenGenDoc:
 		return p.parseDocDeclaration(ast.DocumentationKindGeneral, lexer.TokenGenDoc, "gen_doc")
 	case lexer.TokenSchemaDoc:
@@ -358,10 +355,9 @@ func (p *Parser) parseTypeDeclaration() (ast.Declaration, error) {
 }
 
 func (p *Parser) parseSchemaDeclaration() (ast.Declaration, error) {
-	if p.current().Type != lexer.TokenIdentifier || p.current().Lexeme != "schema" {
-		return nil, p.unexpectedTokenError("parser: expected 'schema'")
+	if _, err := p.consume(lexer.TokenSchema, "parser: expected 'schema'"); err != nil {
+		return nil, err
 	}
-	p.advance()
 
 	nameToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier in schema declaration")
 	if err != nil {
