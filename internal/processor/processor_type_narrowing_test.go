@@ -196,10 +196,10 @@ string fallback = stringValue is NestedRecord ? "matched" : stringValue;
 			tAssert.NoError(err)
 			lo.ForEach(members[:arity], func(_ nestedTernaryMember, index int) {
 				expected := "broad"
-				switch {
-				case index == 0:
+				switch index {
+				case 0:
 					expected = "selected"
-				case index == arity-1:
+				case arity - 1:
 					expected = "outside"
 				}
 				tAssert.Equal(expected, result.Output[fmt.Sprintf("result%d", index)].String)
