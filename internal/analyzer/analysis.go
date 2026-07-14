@@ -82,6 +82,10 @@ func (snapshot analysisSnapshot) symbolAt(position protocol.Position) (semanticS
 		return symbol, true
 	}
 
+	if symbol, ok := snapshot.memberAccessSymbolAt(position); ok {
+		return symbol, true
+	}
+
 	identifier, found := identifierAt(snapshot.text, position)
 	if !found {
 		return semanticSymbol{}, false
@@ -161,7 +165,8 @@ func (snapshot analysisSnapshot) selfReferenceSymbolAt(position protocol.Positio
 	}
 
 	name := "$self." + strings.Join(path, ".")
-	return outputValueSymbol(name, path, rangeValue, value), true
+	includesValue := !snapshot.outputExpressionContainsEmptyLiteral(path)
+	return outputValueSymbolWithValue(name, path, rangeValue, value, includesValue), true
 }
 
 func (snapshot analysisSnapshot) nestedOutputFieldSymbolAt(position protocol.Position) (semanticSymbol, bool) {
@@ -180,14 +185,105 @@ func (snapshot analysisSnapshot) nestedOutputFieldSymbolAt(position protocol.Pos
 	}
 
 	name := strings.Join(path, ".")
-	return outputValueSymbol(name, path, rangeValue, value), true
+	includesValue := !snapshot.outputExpressionContainsEmptyLiteral(path)
+	return outputValueSymbolWithValue(name, path, rangeValue, value, includesValue), true
+}
+
+func (snapshot analysisSnapshot) memberAccessSymbolAt(position protocol.Position) (semanticSymbol, bool) {
+	if snapshot.file == nil {
+		return semanticSymbol{}, false
+	}
+
+	path, rangeValue, found := memberAccessPathAt(snapshot.tokens, position)
+	if !found {
+		return semanticSymbol{}, false
+	}
+
+	documentPath := documentPath(snapshot.documentURI)
+	baseDir := filepath.Dir(documentPath)
+	model := buildCompletionModel(*snapshot.file, baseDir, snapshot.importRootDir, map[string]completionModel{})
+	rootType, found := model.variables[path[0]]
+	if !found {
+		return semanticSymbol{}, false
+	}
+
+	memberType, found := completionTypeAtPath(rootType, path[1:], model)
+	if !found {
+		return semanticSymbol{}, false
+	}
+
+	name := strings.Join(path, ".")
+	return semanticSymbol{
+		Name:   name,
+		Kind:   protocol.CompletionItemKindField,
+		Detail: fmt.Sprintf("%s: %s", name, typeReferenceDetail(memberType)),
+		Origin: symbolOriginLocal,
+		Range:  rangeValue,
+	}, true
+}
+
+func memberAccessPathAt(tokens []lexer.Token, position protocol.Position) ([]string, protocol.Range, bool) {
+	memberIndex := slices.IndexFunc(tokens, func(token lexer.Token) bool {
+		if token.Type != lexer.TokenIdentifier {
+			return false
+		}
+		rangeValue := tokenProtocolRange(token)
+		return comparePositions(rangeValue.Start, position) <= 0 &&
+			comparePositions(position, rangeValue.End) <= 0
+	})
+	if memberIndex < 2 || !isMemberAccessOperator(tokens[memberIndex-1].Type) {
+		return nil, protocol.Range{}, false
+	}
+
+	rangeValue := tokenProtocolRange(tokens[memberIndex])
+	path := []string{tokens[memberIndex].Lexeme}
+	for memberIndex >= 2 && isMemberAccessOperator(tokens[memberIndex-1].Type) &&
+		tokens[memberIndex-2].Type == lexer.TokenIdentifier {
+		path = append([]string{tokens[memberIndex-2].Lexeme}, path...)
+		memberIndex -= 2
+	}
+	if len(path) < 2 {
+		return nil, protocol.Range{}, false
+	}
+
+	return path, rangeValue, true
+}
+
+func isMemberAccessOperator(tokenType lexer.TokenType) bool {
+	return tokenType == lexer.TokenDot || tokenType == lexer.TokenOptionalDot
+}
+
+func (snapshot analysisSnapshot) outputExpressionContainsEmptyLiteral(path []string) bool {
+	if snapshot.file == nil || len(path) == 0 {
+		return false
+	}
+
+	field, found := lo.Find(snapshot.file.Output.DataFields, func(field ast.OutputField) bool {
+		return field.Name == path[0]
+	})
+	return found && expressionContainsEmptyLiteral(field.Value)
 }
 
 func outputValueSymbol(name string, path []string, rangeValue protocol.Range, value processor.Value) semanticSymbol {
+	return outputValueSymbolWithValue(name, path, rangeValue, value, true)
+}
+
+func outputValueSymbolWithValue(
+	name string,
+	path []string,
+	rangeValue protocol.Range,
+	value processor.Value,
+	includesValue bool,
+) semanticSymbol {
+	detail := fmt.Sprintf("output %s: %s", strings.Join(path, "."), valueTypeSummary(value))
+	if includesValue {
+		detail += " = " + summarizeValue(value)
+	}
+
 	return semanticSymbol{
 		Name:   name,
 		Kind:   protocol.CompletionItemKindProperty,
-		Detail: fmt.Sprintf("output %s: %s = %s", strings.Join(path, "."), valueTypeSummary(value), summarizeValue(value)),
+		Detail: detail,
 		Origin: symbolOriginOutput,
 		Range:  rangeValue,
 	}
@@ -3149,13 +3245,44 @@ func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *process
 				if outputType, found := outputTypes[field.Name]; found {
 					typeName = typeReferenceDetail(outputType)
 				}
-				detail = fmt.Sprintf("output %s: %s = %s", field.Name, typeName, summarizeValue(value))
+				detail = fmt.Sprintf("output %s: %s", field.Name, typeName)
+				if !expressionContainsEmptyLiteral(field.Value) {
+					detail += " = " + summarizeValue(value)
+				}
 			}
 		}
 		return newOutputSymbol(field.NameToken, documentURI, field.Name, detail, inlineDescriptionDocumentation(field.Description))
 	})...)
 
 	return dedupeSymbols(symbols)
+}
+
+func expressionContainsEmptyLiteral(expression ast.Expression) bool {
+	switch typed := expression.(type) {
+	case ast.StringLiteral:
+		value, ok := stringLiteralValue(typed)
+		return ok && value == ""
+	case ast.ArrayLiteral:
+		return len(typed.Elements) == 0 || lo.ContainsBy(typed.Elements, expressionContainsEmptyLiteral)
+	case ast.RecordLiteral:
+		return len(typed.Fields) == 0 || lo.ContainsBy(typed.Fields, func(field ast.RecordField) bool {
+			return expressionContainsEmptyLiteral(field.Value)
+		})
+	case ast.MemberAccess:
+		return expressionContainsEmptyLiteral(typed.Target)
+	case ast.PrefixExpression:
+		return expressionContainsEmptyLiteral(typed.Right)
+	case ast.InfixExpression:
+		return expressionContainsEmptyLiteral(typed.Left) || expressionContainsEmptyLiteral(typed.Right)
+	case ast.TypeTestExpression:
+		return expressionContainsEmptyLiteral(typed.Expression)
+	case ast.ConditionalExpression:
+		return expressionContainsEmptyLiteral(typed.Condition) ||
+			expressionContainsEmptyLiteral(typed.Then) ||
+			expressionContainsEmptyLiteral(typed.Else)
+	default:
+		return false
+	}
 }
 
 func dataOutputFieldTypes(file ast.File, documentPath string) map[string]ast.TypeReference {
@@ -3166,7 +3293,10 @@ func dataOutputFieldTypes(file ast.File, documentPath string) map[string]ast.Typ
 		return map[string]ast.TypeReference{}
 	}
 
-	return lo.SliceToMap(record.Fields, func(field ast.SchemaField) (string, ast.TypeReference) {
+	inferredFields := lo.Filter(record.Fields, func(field ast.SchemaField, _ int) bool {
+		return field.Type != nil
+	})
+	return lo.SliceToMap(inferredFields, func(field ast.SchemaField) (string, ast.TypeReference) {
 		return field.Name, field.Type
 	})
 }

@@ -236,6 +236,58 @@ string result = root.%s
 		Entry("fifteen nested schemas", 15),
 	)
 
+	DescribeTable("completes variant schema variable fields in is-narrowed initializers",
+		func(depth int) {
+			schemaDeclarations := lo.Map(lo.Range(depth), func(index int, _ int) string {
+				name := fmt.Sprintf("Level%d", index+1)
+				if index == depth-1 {
+					return fmt.Sprintf("schema %s: { value: string, };", name)
+				}
+				return fmt.Sprintf("schema %s: { next: Level%d, };", name, index+2)
+			})
+			memberPath := strings.Repeat("next.", depth-1)
+			rootValue := strings.Repeat("{ next: ", depth-1) + `{ value: "", }` + strings.Repeat(", }", depth-1)
+			text := fmt.Sprintf(`|===|
+%s
+schema Other: { other: string, };
+variant[Level1, Other] root = %s;
+string result = root is Level1 ? root.%s
+|===|
+[output = data]
+{ value: result, }`,
+				strings.Join(schemaDeclarations, "\n"), rootValue, memberPath)
+
+			position := protocol.Position{
+				Line:      uint32(depth + 3),
+				Character: uint32(len("string result = root is Level1 ? root." + memberPath)),
+			}
+			documentPath := filepath.Join("workspace", "document.mace")
+			snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+			items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+			labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+				return item.Label
+			})
+
+			tAssert.Equal([]string{"value"}, labels)
+		},
+		Entry("one nested schema", 1),
+		Entry("two nested schemas", 2),
+		Entry("three nested schemas", 3),
+		Entry("four nested schemas", 4),
+		Entry("five nested schemas", 5),
+		Entry("six nested schemas", 6),
+		Entry("seven nested schemas", 7),
+		Entry("eight nested schemas", 8),
+		Entry("nine nested schemas", 9),
+		Entry("ten nested schemas", 10),
+		Entry("eleven nested schemas", 11),
+		Entry("twelve nested schemas", 12),
+		Entry("thirteen nested schemas", 13),
+		Entry("fourteen nested schemas", 14),
+		Entry("fifteen nested schemas", 15),
+	)
+
 	It("completes nullable schema variable fields in a truthy initializer branch", func() {
 		text := `|===|
 schema User: { name: string, email: string, };

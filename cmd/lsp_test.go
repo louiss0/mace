@@ -1720,6 +1720,74 @@ schema Profile: { age: int, };
 		}
 	})
 
+	DescribeTable("resolves member hover from its receiver variable",
+		func(target string, expectedDetail string) {
+			text := `|===|
+schema TextHolder: { records: record<string>, text_only?: string, };
+schema NumberHolder: { records: array<int>, number_only?: int, };
+TextHolder text_holder = { records: { primary: "active", }, };
+NumberHolder number_holder = { records: [1, 2], };
+boolean configured = true;
+|===|
+[output = data]
+{
+  records: configured ? text_holder.records : {},
+  numbers: configured ? number_holder.records : [],
+}`
+			didOpen(server, uri, text, nil)
+
+			targetIndex := strings.Index(text, target)
+			tAssert.GreaterOrEqual(targetIndex, 0)
+			position := positionFromIndex(text, targetIndex+strings.LastIndex(target, ".")+1)
+			resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+				TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+					TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+					Position:     position,
+				},
+			}, nil)
+			tAssert.True(validMethod)
+			tAssert.True(validParams)
+			tAssert.NoError(err)
+
+			hover, ok := resultValue.(*protocol.Hover)
+			tAssert.True(ok)
+			if !ok || hover == nil {
+				return
+			}
+
+			content, ok := hover.Contents.(protocol.MarkupContent)
+			tAssert.True(ok)
+			if ok {
+				tAssert.Contains(content.Value, expectedDetail)
+				tAssert.NotContains(content.Value, "output records")
+			}
+		},
+		Entry("record member", "text_holder.records : {}", "text_holder.records: record<string>"),
+		Entry("array member", "number_holder.records : []", "number_holder.records: array<int>"),
+	)
+
+	DescribeTable("completes output member access from its receiver variable",
+		func(target string, expected []string, excluded string) {
+			text := fmt.Sprintf(`|===|
+schema TextHolder: { records: record<string>, text_only?: string, };
+schema NumberHolder: { records: array<int>, number_only?: int, };
+TextHolder text_holder = { records: { primary: "active", }, };
+NumberHolder number_holder = { records: [1, 2], };
+|===|
+[output = data]
+{
+  result: %s.
+}`, target)
+			didOpen(server, uri, text, nil)
+
+			labels := completeLabels(server, uri, 8, uint32(len("  result: "+target+".")))
+			tAssert.ElementsMatch(expected, labels)
+			tAssert.NotContains(labels, excluded)
+		},
+		Entry("record variable", "text_holder", []string{"records", "text_only"}, "number_only"),
+		Entry("array-bearing variable", "number_holder", []string{"number_only", "records"}, "text_only"),
+	)
+
 	It("surfaces every conditional branch type in output hover", func() {
 		text := `|===|
 variant[string, int, boolean] selected_value = true ? "primary" : false ? 10 : true;
@@ -1752,6 +1820,192 @@ variant[string, int, boolean] selected_value = true ? "primary" : false ? 10 : t
 			tAssert.Contains(content.Value, `output selected: variant[string, int, boolean] = "primary"`)
 		}
 	})
+
+	It("infers a string from coalesced and empty-string conditional branches", func() {
+		text := `|===|
+schema Address: { city?: string, };
+schema Profile: { address: Address, };
+schema User: { profile: Profile, };
+nullable User user = { profile: { address: { city: "Paris", }, }, };
+string fallback = "";
+|===|
+[output = data]
+{
+  city: user ? user.profile.address?.city ?? fallback : "",
+}`
+		didOpen(server, uri, text, nil)
+
+		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Position:     protocol.Position{Line: 9, Character: 4},
+			},
+		}, nil)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+
+		hover, ok := resultValue.(*protocol.Hover)
+		tAssert.True(ok)
+		if !ok || hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, `output city: string`)
+			tAssert.NotContains(content.Value, ` = `)
+		}
+	})
+
+	DescribeTable("omits evaluated values from hover for empty literals",
+		func(text string, line uint32, expectedDetail string) {
+			didOpen(server, uri, text, nil)
+
+			resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+				TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+					TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+					Position:     protocol.Position{Line: line, Character: 4},
+				},
+			}, nil)
+			tAssert.True(validMethod)
+			tAssert.True(validParams)
+			tAssert.NoError(err)
+
+			hover, ok := resultValue.(*protocol.Hover)
+			tAssert.True(ok)
+			if !ok || hover == nil {
+				return
+			}
+
+			content, ok := hover.Contents.(protocol.MarkupContent)
+			tAssert.True(ok)
+			if ok {
+				tAssert.Contains(content.Value, expectedDetail)
+				tAssert.NotContains(content.Value, ` = `)
+			}
+		},
+		Entry("empty string", `[output = data]
+{
+  value: "",
+}`, uint32(2), `output value: string`),
+		Entry("contextual empty array ternary", `|===|
+schema Result: { value: array<string>, };
+|===|
+[output = data, schema = Result]
+{
+  value: true ? ["configured"] : [],
+}`, uint32(5), `output value: array<string>`),
+		Entry("contextual empty record ternary", `|===|
+schema Result: { value: { name?: string, }, };
+|===|
+[output = data, schema = Result]
+{
+  value: true ? { name: "Ada", } : {},
+}`, uint32(5), `output value: { name?: string }`),
+	)
+
+	DescribeTable("does not infer schema-less output ternaries containing empty collections",
+		func(declaration string, expression string) {
+			text := fmt.Sprintf(`|===|
+boolean configured = true;
+%s
+|===|
+[output = data]
+{
+  value: %s,
+}`, declaration, expression)
+			didOpen(server, uri, text, nil)
+
+			resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+				TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+					TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+					Position:     protocol.Position{Line: 6, Character: 4},
+				},
+			}, nil)
+			tAssert.True(validMethod)
+			tAssert.True(validParams)
+			tAssert.NoError(err)
+
+			hover, ok := resultValue.(*protocol.Hover)
+			tAssert.True(ok)
+			if !ok || hover == nil {
+				return
+			}
+
+			content, ok := hover.Contents.(protocol.MarkupContent)
+			tAssert.True(ok)
+			if ok {
+				tAssert.Contains(content.Value, "output value")
+				tAssert.NotContains(content.Value, "output value:")
+			}
+		},
+		Entry(
+			"empty array",
+			`array<string> configured_value = ["configured"];`,
+			`configured ? configured_value : []`,
+		),
+		Entry(
+			"empty record",
+			`record<string> configured_value = { primary: "active", };`,
+			`configured ? configured_value : {}`,
+		),
+	)
+
+	DescribeTable("uses schema_file types for output ternaries containing empty collections",
+		func(fieldType string, expression string, expectedDetail string) {
+			workspace, err := os.MkdirTemp("", "mace-lsp-hover-empty-output-*")
+			tAssert.NoError(err)
+			defer func() { _ = os.RemoveAll(workspace) }()
+
+			writeWorkspaceFile(workspace, "schema.mace", fmt.Sprintf(`[output = schema]
+{
+  value: %s,
+}`, fieldType))
+			text := fmt.Sprintf(`[output = data, schema_file = "./schema.mace"]
+{
+  value: %s,
+}`, expression)
+			documentURI := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", text))
+			didOpen(server, documentURI, text, nil)
+
+			resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
+				TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+					TextDocument: protocol.TextDocumentIdentifier{URI: documentURI},
+					Position:     protocol.Position{Line: 2, Character: 4},
+				},
+			}, nil)
+			tAssert.True(validMethod)
+			tAssert.True(validParams)
+			tAssert.NoError(err)
+
+			hover, ok := resultValue.(*protocol.Hover)
+			tAssert.True(ok)
+			if !ok || hover == nil {
+				return
+			}
+
+			content, ok := hover.Contents.(protocol.MarkupContent)
+			tAssert.True(ok)
+			if ok {
+				tAssert.Contains(content.Value, expectedDetail)
+				tAssert.NotContains(content.Value, ` = `)
+			}
+		},
+		Entry(
+			"empty array",
+			`array<string>`,
+			`true ? ["configured"] : []`,
+			`output value: array<string>`,
+		),
+		Entry(
+			"empty record",
+			`{ name?: string, }`,
+			`true ? { name: "Ada", } : {}`,
+			`output value: { name?: string }`,
+		),
+	)
 
 	It("surfaces conditional variants imported from Mace files", func() {
 		workspace, err := os.MkdirTemp("", "mace-lsp-hover-import-conditional-*")
