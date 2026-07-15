@@ -218,26 +218,37 @@ func (i InfixExpression) Range() SourceRange {
 	return i.Left.Range()
 }
 
-type TypeTestExpression struct {
-	Expression Expression
-	TargetType TypeReference
-	EndToken   lexer.Token
-}
-
-func (TypeTestExpression) expressionNode() {
-	_ = 0
-}
-
-func (t TypeTestExpression) Range() SourceRange {
-	sourceRange := t.Expression.Range()
-	sourceRange.End = TokenRange(t.EndToken).End
-	return sourceRange
-}
-
 type ConditionalExpression struct {
 	Condition Expression
 	Then      Expression
 	Else      Expression
+}
+
+type MatchPattern struct {
+	Type    TypeReference
+	Literal Expression
+}
+
+type MatchArm struct {
+	Pattern MatchPattern
+	Value   Expression
+}
+
+type MatchExpression struct {
+	MatchToken lexer.Token
+	Value      Expression
+	Arms       []MatchArm
+	EndToken   lexer.Token
+}
+
+func (MatchExpression) expressionNode() {
+	_ = 0
+}
+
+func (m MatchExpression) Range() SourceRange {
+	sourceRange := TokenRange(m.MatchToken)
+	sourceRange.End = TokenRange(m.EndToken).End
+	return sourceRange
 }
 
 func (ConditionalExpression) expressionNode() {

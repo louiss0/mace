@@ -25,8 +25,8 @@ affect evaluation.
 Identifiers are case-sensitive and consist of a Unicode letter followed by zero
 or more Unicode letters, Unicode decimal digits, or `_`. Casing styles are
 non-normative: tools may warn about unusual casing, but must accept every
-identifier satisfying that lexical rule. `is` is a reserved keyword and is
-never split from a containing identifier such as `island` or `isReady`.
+identifier satisfying that lexical rule. `match` is a reserved keyword and is
+never split from a containing identifier such as `matcher` or `matching`.
 
 Line endings are LF, CRLF, or CR; CRLF is one newline. `&#x2f;&#x2f;` comments run to a
 line ending or EOF. `&#x2f;*` comments run to the next `*&#x2f;`, may span lines, and do
@@ -138,7 +138,7 @@ schema_output_field = identifier , [ &quot;?&quot; ] , ws0 , &quot;:&quot; , ws0
 
 (* EXPRESSIONS *)
 expression = conditional_expression ;
-conditional_expression = coalescing_expression , [ ws0 , &quot;?&quot; , ws0 , expression , ws0 , &quot;:&quot; , ws0 , conditional_expression ] ;
+conditional_expression = coalescing_expression , [ ws0 , &quot;?&quot; , ws0 , coalescing_expression , ws0 , &quot;:&quot; , ws0 , coalescing_expression ] ;
 coalescing_expression = logical_or_expression , [ ws0 , &quot;??&quot; , ws0 , coalescing_expression ] ;
 logical_or_expression = logical_and_expression , { ws0 , &quot;||&quot; , ws0 , logical_and_expression } ;
 logical_and_expression = bitwise_or_expression , { ws0 , &quot;&amp;&amp;&quot; , ws0 , bitwise_or_expression } ;
@@ -146,9 +146,7 @@ bitwise_or_expression = bitwise_xor_expression , { ws0 , &quot;|&quot; , ws0 , b
 bitwise_xor_expression = bitwise_and_expression , { ws0 , &quot;^&quot; , ws0 , bitwise_and_expression } ;
 bitwise_and_expression = merge_expression , { ws0 , &quot;&amp;&quot; , ws0 , merge_expression } ;
 merge_expression = equality_expression , { ws0 , &quot;&lt;&gt;&quot; , ws0 , equality_expression } ;
-equality_expression = type_test_expression , { ws0 , ( &quot;==&quot; | &quot;!=&quot; ) , ws0 , type_test_expression } ;
-type_test_expression = relational_expression , [ ws1 , &quot;is&quot; , ws1 , type_reference ] ;
-(* Type tests are non-chainable; their right operand is a type reference, not an expression. *)
+equality_expression = relational_expression , { ws0 , ( &quot;==&quot; | &quot;!=&quot; ) , ws0 , relational_expression } ;
 relational_expression = shift_expression , { ws0 , ( &quot;&lt;&quot; | &quot;&lt;=&quot; | &quot;&gt;&quot; | &quot;&gt;=&quot; ) , ws0 , shift_expression } ;
 shift_expression = additive_expression , { ws0 , ( &quot;&lt;&lt;&quot; | &quot;&gt;&gt;&quot; | &quot;&gt;&gt;&gt;&quot; ) , ws0 , additive_expression } ;
 additive_expression = multiplicative_expression , { ws0 , ( &quot;+&quot; | &quot;-&quot; ) , ws0 , multiplicative_expression } ;
@@ -156,7 +154,7 @@ multiplicative_expression = exponent_expression , { ws0 , ( &quot;*&quot; | &quo
 exponent_expression = unary_expression , [ ws0 , &quot;**&quot; , ws0 , exponent_expression ] ;
 unary_expression = ( &quot;!&quot; | &quot;~&quot; | &quot;+&quot; | &quot;-&quot; ) , ws0 , unary_expression | postfix_expression ;
 postfix_expression = primary_atom , { postfix_suffix } ;
-primary_atom = identifier | self_reference | parsed_input_reference | int_literal | float_literal | hex_int_literal | hex_float_literal | string_literal | boolean_literal | null_literal | array_literal | record_literal | grouped_expression ;
+primary_atom = identifier | self_reference | parsed_input_reference | int_literal | float_literal | hex_int_literal | hex_float_literal | string_literal | boolean_literal | null_literal | array_literal | record_literal | match_expression | grouped_expression ;
 postfix_suffix = ws0 , ( &quot;.&quot; | &quot;?.&quot; ) , ws0 , identifier ;
 self_reference = &quot;$self&quot; , &quot;.&quot; , identifier , { &quot;.&quot; , identifier } ;
 parsed_input_reference = &quot;$&quot; , identifier ;
@@ -166,6 +164,9 @@ array_literal = &quot;[&quot; , ws0 , [ expression , { ws0 , &quot;,&quot; , ws0
 record_literal = &quot;{&quot; , ws0 , [ record_field , { ws0 , &quot;,&quot; , ws0 , record_field } , [ ws0 , &quot;,&quot; ] ] , ws0 , &quot;}&quot; ;
 record_field = identifier , ws0 , &quot;:&quot; , ws0 , expression , [ ws0 , inline_description ]
              | identifier , [ ws0 , inline_description ] ;
+match_expression = &quot;match&quot; , ws0 , &quot;(&quot; , ws0 , expression , ws0 , &quot;)&quot; , ws0 , &quot;{&quot; , ws0 , match_arm , { ws0 , match_arm } , ws0 , &quot;}&quot; ;
+match_arm = match_pattern , ws0 , &quot;=&gt;&quot; , ws0 , expression , ws0 , &quot;,&quot; ;
+match_pattern = type_reference | choice_member ;
 
 interpolation = &quot;$&quot; , &quot;(&quot; , expression , &quot;)&quot; ;
 ```
@@ -221,11 +222,11 @@ data output requires an output shape supplied through `schema` or `schema_file`,
 even when another conditional branch has a known collection type. Empty schemas
 are valid.
 
-Conditional branch types are inferred recursively. Branches of the same type
-produce that type. Different branch types produce a flattened, deduplicated
-`variant[...]` containing every type returned by nested conditionals, and the
-receiving variable or output schema MUST accept every inferred member. A schema
-and a populated `record&lt;T&gt;` remain distinct variant members.
+Conditional branches of the same type produce that type. Different branch
+types produce a deduplicated `variant[...]`, and the receiving variable or
+output schema MUST accept every inferred member. A conditional expression MUST
+NOT contain another conditional expression in its condition or either branch.
+A schema and a populated `record&lt;T&gt;` remain distinct variant members.
 
 When a conditional combines an empty array or empty record with a different
 branch type, the empty collection has no inferable member type. In a data output,
@@ -277,63 +278,36 @@ suggested values while `string` permits additional values. Implementations must
 not use first-match behavior, and must accept a value assignable to at least one
 member.
 
-### Type tests and branch-local narrowing
+### Match expressions
 
-`expression is Type` is a boolean type test. Its right operand MUST be a type
-reference; literals and runtime expressions are invalid there. A type test may
-appear wherever a boolean expression is accepted, but it narrows a stable
-identifier or member path only when it directly controls a conditional
-expression. Parentheses around that direct condition do not change this rule.
-Negated tests and booleans stored in variables do not carry narrowing.
+`match` accepts only a value whose static type resolves to a `variant[...]` or
+`choice[...]`. The matched expression is evaluated exactly once. A variant arm
+uses a type-reference pattern; a choice arm uses one scalar literal from the
+choice domain. Patterns do not bind or expose the matched value.
 
-For a source `variant[A, B, C]`, the true branch retains, in declaration order,
-all source members assignable to the resolved target type. The false branch
-removes those members. A one-member result is simplified to that member, and
-aliases are resolved before overlap is calculated. Nested conditionals build on
-the environment of their containing branch. The declared symbol type is never
-mutated, and neither branch environment survives the conditional expression.
+Every resolved variant member or choice literal MUST appear exactly once.
+Missing, duplicate, incompatible, or extra patterns are static errors, so a
+match expression has no default arm. Each arm ends with a comma, including the
+last arm.
 
 ```mace
-variant[string, int, boolean] value = 7;
-string result = value is string
-    ? value
-    : value is int
-        ? "$(value)"
-        : value ? "true" : "false";
+variant[string, int] value = 7;
+string result = match (value) {
+    string => "text",
+    int => "number",
+};
+
+choice["dev", "prod"] environment = "prod";
+int workers = match (environment) {
+    "dev" => 1,
+    "prod" => 4,
+};
 ```
 
-A nullable value behaves as its present type plus absence for narrowing:
-`nullable string` tested with `is string` is `string` in the true branch, while
-an absent runtime value makes the test false. A non-nullable concrete value may
-be tested against its own type and the result is statically known to be true.
-An incompatible concrete test, or a variant test whose target overlaps no
-remaining member, is a static `mace.type.impossible-narrowing` error rather than
-a constant false. This also rejects a repeated test for a member already removed
-by an enclosing false branch.
-
-Schemas retain closed, nominal branch types. Runtime schema conformance checks
-required and optional fields, nested field types, and rejects unknown fields;
-it does not select a schema merely because host values share a map
-representation. Existing exact-one-member variant validation still applies.
-Arrays compare resolved element types. Choice targets denote their complete
-finite literal domain, not equality with one choice member.
-
-```mace
-schema LocalConfig: { path: string, };
-schema RemoteConfig: { url: string, };
-type Name: string;
-variant[LocalConfig, RemoteConfig] config = { path: "/tmp", };
-variant[array<string>, Name] payload = ["first"];
-
-string source = config is LocalConfig ? config.path : config.url;
-boolean hasStringItems = payload is array<string>;
-```
-
-At runtime, `is` evaluates its left operand once and returns true exactly when
-the value conforms to the resolved target under the same primitive, choice,
-array, and closed-schema rules used by assignment validation. Decimal and
-hexadecimal numeric families remain distinct. Type tests do not weaken or
-bypass variant ambiguity diagnostics.
+Arm result types are combined using the same rules as conditional branches:
+equal results retain their type and distinct results form a flattened,
+deduplicated variant. Runtime member selection uses the same primitive, choice,
+array, and closed-schema conformance rules as assignment validation.
 
 Pure alias cycles are invalid. Within a schema or inline record type, `$self`
 means the enclosing schema type and may be used only as a structurally guarded
@@ -346,8 +320,8 @@ terminate on finite values.
 
 Operator precedence, highest to lowest, is postfix access; unary; exponent;
 multiplication&#x2f;division&#x2f;modulo; addition&#x2f;subtraction; shifts; relational;
-type test `is`; equality; merge `&lt;&gt;`; bitwise AND; XOR; OR; logical AND;
-logical OR; and `?:`.
+equality; merge `&lt;&gt;`; bitwise AND; XOR; OR; logical AND; logical OR; and
+`?:`.
 Merge operands are ordinary expressions, enabling `base &lt;&gt; overrides` and
 `base &lt;&gt; defaults &lt;&gt; local`, but static checking requires each evaluated
 operand to be a compatible record or array. Record merges are deep, arrays

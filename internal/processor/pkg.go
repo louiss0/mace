@@ -1962,8 +1962,13 @@ func expressionContainsEmptyCollection(expression ast.Expression) bool {
 		return expressionContainsEmptyCollection(typed.Right)
 	case ast.InfixExpression:
 		return expressionContainsEmptyCollection(typed.Left) || expressionContainsEmptyCollection(typed.Right)
-	case ast.TypeTestExpression:
-		return expressionContainsEmptyCollection(typed.Expression)
+	case ast.MatchExpression:
+		if expressionContainsEmptyCollection(typed.Value) {
+			return true
+		}
+		return lo.ContainsBy(typed.Arms, func(arm ast.MatchArm) bool {
+			return expressionContainsEmptyCollection(arm.Value)
+		})
 	case ast.ConditionalExpression:
 		return expressionContainsEmptyCollection(typed.Condition) ||
 			expressionContainsEmptyCollection(typed.Then) ||
@@ -1999,12 +2004,18 @@ func validateExpressionPresence(expression ast.Expression, variables *variableRe
 			return possiblyAbsentValueError()
 		}
 		return validateExpressionPresence(expr.Target, variables, symbols, types, schemas, enums, true)
-	case ast.TypeTestExpression:
-		_, err := inferTypeTestType(expr, variables, symbols, types, schemas, enums)
-		if err != nil {
+	case ast.MatchExpression:
+		if _, err := inferMatchType(expr, variables, symbols, types, schemas, enums); err != nil {
 			return err
 		}
-		return validateExpressionPresence(expr.Expression, variables, symbols, types, schemas, enums, false)
+		if err := validateExpressionPresence(expr.Value, variables, symbols, types, schemas, enums, false); err != nil {
+			return err
+		}
+		for _, arm := range expr.Arms {
+			if err := validateExpressionPresence(arm.Value, variables, symbols, types, schemas, enums, false); err != nil {
+				return err
+			}
+		}
 	case ast.ArrayLiteral:
 		for _, element := range expr.Elements {
 			if err := validateExpressionPresence(element, variables, symbols, types, schemas, enums, false); err != nil {
@@ -2055,8 +2066,15 @@ func validateDataOutputExpression(expression ast.Expression, symbols *symbolTabl
 		}
 	case ast.MemberAccess:
 		return validateDataOutputExpression(expr.Target, symbols)
-	case ast.TypeTestExpression:
-		return validateDataOutputExpression(expr.Expression, symbols)
+	case ast.MatchExpression:
+		if err := validateDataOutputExpression(expr.Value, symbols); err != nil {
+			return err
+		}
+		for _, arm := range expr.Arms {
+			if err := validateDataOutputExpression(arm.Value, symbols); err != nil {
+				return err
+			}
+		}
 	case ast.ArrayLiteral:
 		for _, element := range expr.Elements {
 			if err := validateDataOutputExpression(element, symbols); err != nil {
@@ -2142,6 +2160,9 @@ func validateExpressionAgainstType(expression ast.Expression, expectedType value
 	if _, ok := expression.(ast.NullLiteral); ok && expectedType.nullable {
 		return nil
 	}
+	if match, ok := expression.(ast.MatchExpression); ok {
+		return validateMatchAgainstType(match, expectedType, variables, symbols, types, schemas, enums)
+	}
 	if len(expectedType.members) > 0 {
 		return validateExpressionAgainstVariantMembers(expression, expectedType.members, variables, symbols, types, schemas, enums)
 	}
@@ -2222,6 +2243,18 @@ func validateExpressionAgainstType(expression ast.Expression, expectedType value
 				return err
 			}
 			return ensureAssignable(expectedType, actualType)
+		}
+	}
+	return nil
+}
+
+func validateMatchAgainstType(expression ast.MatchExpression, expectedType valueType, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
+	if _, err := inferMatchType(expression, variables, symbols, types, schemas, enums); err != nil {
+		return err
+	}
+	for _, arm := range expression.Arms {
+		if err := validateExpressionAgainstType(arm.Value, expectedType, variables, symbols, types, schemas, enums); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -2739,8 +2772,8 @@ func evaluateExpression(expression ast.Expression, environment *valueEnvironment
 		return value, nil
 	case ast.MemberAccess:
 		return evaluateMemberAccess(expr, environment, self, symbols, types, schemas, enums)
-	case ast.TypeTestExpression:
-		return evaluateTypeTest(expr, environment, self, symbols, types, schemas, enums)
+	case ast.MatchExpression:
+		return evaluateMatch(expr, environment, self, symbols, types, schemas, enums)
 	case ast.IntLiteral:
 		return parseInt(expr.Lexeme)
 	case ast.FloatLiteral:
@@ -3101,17 +3134,34 @@ trim:
 	return sign + "0x" + wholeText + "." + string(digits)
 }
 
-func evaluateTypeTest(expr ast.TypeTestExpression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
-	value, err := evaluateExpression(expr.Expression, environment, self, symbols, types, schemas, enums)
+func evaluateMatch(expr ast.MatchExpression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
+	matched, err := evaluateExpression(expr.Value, environment, self, symbols, types, schemas, enums)
 	if err != nil {
 		return Value{}, err
 	}
-	targetType, err := resolveValueType(expr.TargetType, symbols, types, schemas, enums)
-	if err != nil {
-		return Value{}, err
+
+	for _, arm := range expr.Arms {
+		if arm.Pattern.Type != nil {
+			patternType, err := resolveValueType(arm.Pattern.Type, symbols, types, schemas, enums)
+			if err != nil {
+				return Value{}, err
+			}
+			if validateEvaluatedValueAgainstType(matched, patternType, symbols, types, schemas, enums) == nil {
+				return evaluateExpression(arm.Value, environment, self, symbols, types, schemas, enums)
+			}
+			continue
+		}
+
+		patternValues, err := resolveChoiceMemberValues(arm.Pattern.Literal, types, map[string]struct{}{})
+		if err != nil {
+			return Value{}, err
+		}
+		if len(patternValues) == 1 && choiceContainsValue(patternValues, matched) {
+			return evaluateExpression(arm.Value, environment, self, symbols, types, schemas, enums)
+		}
 	}
-	matches := validateEvaluatedValueAgainstType(value, targetType, symbols, types, schemas, enums) == nil
-	return Value{Kind: ValueBoolean, Boolean: matches}, nil
+
+	return Value{}, validationErrorf("match expression has no matching arm")
 }
 
 func evaluateMemberAccess(expr ast.MemberAccess, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
@@ -4238,8 +4288,8 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 			return valueType{}, optionalFieldAccessError(expr.Name)
 		}
 		return inferMemberAccessType(targetType, expr, symbols, types, schemas, enums)
-	case ast.TypeTestExpression:
-		return inferTypeTestType(expr, variables, symbols, types, schemas, enums)
+	case ast.MatchExpression:
+		return inferMatchType(expr, variables, symbols, types, schemas, enums)
 	case ast.IntLiteral:
 		value, err := parseInt(expr.Lexeme)
 		if err != nil {
@@ -4293,19 +4343,86 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 	}
 }
 
-func inferTypeTestType(expr ast.TypeTestExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
-	sourceType, err := inferExpressionType(expr.Expression, variables, symbols, types, schemas, enums)
+func inferMatchType(expr ast.MatchExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
+	matchedType, err := inferExpressionType(expr.Value, variables, symbols, types, schemas, enums)
 	if err != nil {
 		return valueType{}, err
 	}
-	targetType, err := resolveValueType(expr.TargetType, symbols, types, schemas, enums)
-	if err != nil {
+	if len(matchedType.members) == 0 && len(matchedType.choiceValues) == 0 {
+		return valueType{}, validationErrorf("match input must be a variant or choice")
+	}
+	if err := validateMatchPatterns(expr.Arms, matchedType, symbols, types, schemas, enums); err != nil {
 		return valueType{}, err
 	}
-	if _, _, matched := narrowValueType(sourceType, targetType); !matched {
-		return valueType{}, impossibleNarrowingError(expr, sourceType.name(), targetType.name())
+
+	var result valueType
+	for index, arm := range expr.Arms {
+		armType, err := inferExpressionType(arm.Value, variables, symbols, types, schemas, enums)
+		if err != nil {
+			return valueType{}, err
+		}
+		if index == 0 {
+			result = armType
+			continue
+		}
+		result = unifyConditionalTypes(result, armType)
 	}
-	return valueType{kind: ValueBoolean}, nil
+	return result, nil
+}
+
+func validateMatchPatterns(arms []ast.MatchArm, matchedType valueType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
+	if len(matchedType.members) > 0 {
+		seen := make([]valueType, 0, len(arms))
+		for _, arm := range arms {
+			if arm.Pattern.Type == nil {
+				return validationErrorf("variant match arms require a type pattern")
+			}
+			patternType, err := resolveValueType(arm.Pattern.Type, symbols, types, schemas, enums)
+			if err != nil {
+				return err
+			}
+			if !containsValueType(matchedType.members, patternType) {
+				return validationErrorf("match pattern %s is not a member of %s", patternType.name(), matchedType.name())
+			}
+			if containsValueType(seen, patternType) {
+				return validationErrorf("duplicate match pattern %s", patternType.name())
+			}
+			seen = append(seen, patternType)
+		}
+		if len(seen) != len(matchedType.members) {
+			return validationErrorf("match expression must be exhaustive for %s", matchedType.name())
+		}
+		return nil
+	}
+
+	seen := []Value{}
+	for _, arm := range arms {
+		if arm.Pattern.Literal == nil {
+			return validationErrorf("choice match arms require a literal pattern")
+		}
+		values, err := resolveChoiceMemberValues(arm.Pattern.Literal, types, map[string]struct{}{})
+		if err != nil {
+			return err
+		}
+		pattern := values[0]
+		if !choiceContainsValue(matchedType.choiceValues, pattern) {
+			return validationErrorf("match pattern %s is not a member of %s", scalarValueDisplay(pattern), matchedType.name())
+		}
+		if choiceContainsValue(seen, pattern) {
+			return validationErrorf("duplicate match pattern %s", scalarValueDisplay(pattern))
+		}
+		seen = append(seen, pattern)
+	}
+	if len(seen) != len(matchedType.choiceValues) {
+		return validationErrorf("match expression must be exhaustive for %s", matchedType.name())
+	}
+	return nil
+}
+
+func containsValueType(types []valueType, candidate valueType) bool {
+	return lo.ContainsBy(types, func(existing valueType) bool {
+		return typesEqual(existing, candidate)
+	})
 }
 
 func inferMemberAccessType(targetType valueType, expr ast.MemberAccess, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
@@ -4700,33 +4817,6 @@ func widenedValueType(input valueType) valueType {
 }
 
 func conditionalVariables(condition ast.Expression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (*variableRegistry, *variableRegistry, error) {
-	if typeTest, ok := condition.(ast.TypeTestExpression); ok {
-		path, stable := stableExpressionPath(typeTest.Expression)
-		if !stable {
-			return variables, variables, nil
-		}
-		sourceType, err := inferExpressionType(typeTest.Expression, variables, symbols, types, schemas, enums)
-		if err != nil {
-			return nil, nil, err
-		}
-		targetType, err := resolveValueType(typeTest.TargetType, symbols, types, schemas, enums)
-		if err != nil {
-			return nil, nil, err
-		}
-		matchedType, remainingType, matched := narrowValueType(sourceType, targetType)
-		if !matched {
-			return nil, nil, impossibleNarrowingError(typeTest, sourceType.name(), targetType.name())
-		}
-
-		thenVariables := variables.Clone()
-		thenVariables.Add(path, matchedType)
-		elseVariables := variables.Clone()
-		if !isUnknownValueType(remainingType) {
-			elseVariables.Add(path, remainingType)
-		}
-		return thenVariables, elseVariables, nil
-	}
-
 	identifier, ok := condition.(ast.Identifier)
 	if !ok {
 		return variables, variables, nil
@@ -4740,53 +4830,6 @@ func conditionalVariables(condition ast.Expression, variables *variableRegistry,
 	variableType.nullable = false
 	narrowed.Add(identifier.Name, variableType)
 	return narrowed, variables, nil
-}
-
-func narrowValueType(sourceType valueType, targetType valueType) (valueType, valueType, bool) {
-	sourceMembers := flattenVariantValueTypes(sourceType.members)
-	if len(sourceMembers) == 0 {
-		presentType := sourceType
-		presentType.nullable = false
-		sourceMembers = []valueType{presentType}
-	}
-
-	matchedMembers := make([]valueType, 0, len(sourceMembers))
-	remainingMembers := make([]valueType, 0, len(sourceMembers))
-	for _, member := range sourceMembers {
-		matchingChoiceValues := lo.Filter(targetType.choiceValues, func(value Value, _ int) bool {
-			return len(member.choiceValues) == 0 && member.exactValue == nil && value.Kind == member.kind
-		})
-		if len(matchingChoiceValues) > 0 {
-			matchedMembers = appendUniqueValueType(matchedMembers, valueType{choiceValues: matchingChoiceValues})
-			remainingMembers = appendUniqueValueType(remainingMembers, member)
-			continue
-		}
-
-		if ensureAssignable(targetType, member) == nil {
-			matchedMembers = appendUniqueValueType(matchedMembers, member)
-		} else {
-			remainingMembers = appendUniqueValueType(remainingMembers, member)
-		}
-	}
-	if len(matchedMembers) == 0 {
-		return valueType{}, valueType{}, false
-	}
-	if sourceType.nullable {
-		remainingMembers = appendUniqueValueType(remainingMembers, valueType{kind: ValueNull})
-	}
-
-	return simplifiedVariantType(matchedMembers), simplifiedVariantType(remainingMembers), true
-}
-
-func simplifiedVariantType(members []valueType) valueType {
-	switch len(members) {
-	case 0:
-		return valueType{kind: ValueUnknown}
-	case 1:
-		return members[0]
-	default:
-		return valueType{members: members}
-	}
 }
 
 func stableExpressionPath(expression ast.Expression) (string, bool) {

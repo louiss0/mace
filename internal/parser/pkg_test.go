@@ -1,13 +1,11 @@
 package parser
 
 import (
-	"errors"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/louiss0/mace/internal/diagnostic"
 	"github.com/louiss0/mace/internal/lexer"
 	"github.com/louiss0/mace/internal/parser/ast"
 )
@@ -135,15 +133,6 @@ func requireInfix(expression ast.Expression, operator lexer.TokenType) ast.Infix
 	return infix
 }
 
-func requireTypeTest(expression ast.Expression) ast.TypeTestExpression {
-	typeTest, ok := expression.(ast.TypeTestExpression)
-	tAssert.True(ok)
-	if !ok {
-		return ast.TypeTestExpression{}
-	}
-	return typeTest
-}
-
 func requireConditional(expression ast.Expression) ast.ConditionalExpression {
 	conditional, ok := expression.(ast.ConditionalExpression)
 	tAssert.True(ok)
@@ -228,79 +217,11 @@ var _ = Describe("Parser", func() {
 		}),
 	)
 
-	DescribeTable("parses type-test targets as type references",
-		func(input string, assertTarget func(ast.TypeReference)) {
-			expression, err := parseExpressionInput(input)
-			tAssert.NoError(err)
-			typeTest := requireTypeTest(expression)
-			requireIdentifier(typeTest.Expression, "value")
-			assertTarget(typeTest.TargetType)
-		},
-		Entry("primitive", "value is string", func(target ast.TypeReference) {
-			primitive, ok := target.(ast.PrimitiveType)
-			tAssert.True(ok)
-			tAssert.Equal("string", primitive.Name)
-		}),
-		Entry("schema", "value is LocalConfig", func(target ast.TypeReference) {
-			named, ok := target.(ast.NamedType)
-			tAssert.True(ok)
-			tAssert.Equal("LocalConfig", named.Name)
-		}),
-		Entry("array", "value is array<string>", func(target ast.TypeReference) {
-			array, ok := target.(ast.ArrayType)
-			tAssert.True(ok)
-			_, primitive := array.Element.(ast.PrimitiveType)
-			tAssert.True(primitive)
-		}),
-	)
-
-	It("preserves type-test operands and source range", func() {
-		expression, err := parseExpressionInput("record.value is string")
+	It("treats is as an ordinary identifier", func() {
+		expression, err := parseExpressionInput("is")
 		tAssert.NoError(err)
-		typeTest := requireTypeTest(expression)
-		requireMemberAccess(typeTest.Expression, "record", "value")
-		tAssert.Equal(ast.SourcePosition{Line: 1, Column: 1}, typeTest.Range().Start)
-		tAssert.Equal(ast.SourcePosition{Line: 1, Column: 23}, typeTest.Range().End)
+		requireIdentifier(expression, "is")
 	})
-
-	It("rejects indexing syntax", func() {
-		_, err := parseExpressionInput("values[0] is string")
-
-		tAssert.Error(err)
-	})
-
-	It("applies type-test precedence", func() {
-		expression, err := parseExpressionInput("condition && value is string == true")
-		tAssert.NoError(err)
-		logical := requireInfix(expression, lexer.TokenAndAnd)
-		requireIdentifier(logical.Left, "condition")
-		equality := requireInfix(logical.Right, lexer.TokenEqualEqual)
-		requireTypeTest(equality.Left)
-	})
-
-	It("binds relational expressions before type tests", func() {
-		expression, err := parseExpressionInput("1 < 2 is boolean")
-		tAssert.NoError(err)
-		typeTest := requireTypeTest(expression)
-		requireInfix(typeTest.Expression, lexer.TokenLess)
-	})
-
-	DescribeTable("rejects invalid type-test targets",
-		func(input string, expectedCode diagnostic.Code) {
-			_, err := parseExpressionInput(input)
-			tAssert.Error(err)
-			var syntaxError diagnostic.Error
-			tAssert.True(errors.As(err, &syntaxError))
-			tAssert.Equal(expectedCode, syntaxError.Code)
-		},
-		Entry("missing target", "value is", diagnostic.Code("mace.syntax.is-missing-type")),
-		Entry("string target", "value is \"string\"", diagnostic.Code("mace.syntax.invalid-is-type")),
-		Entry("numeric target", "value is 42", diagnostic.Code("mace.syntax.invalid-is-type")),
-		Entry("missing operand", "is string", diagnostic.Code("mace.syntax.missing-expression")),
-		Entry("malformed array", "value is array<string", diagnostic.Code("mace.syntax.invalid-is-type")),
-		Entry("malformed variant", "value is variant[string, int", diagnostic.Code("mace.syntax.invalid-is-type")),
-		Entry("chained test", "value is string is boolean", diagnostic.Code("mace.syntax.invalid-is-type")),
-	)
 
 	It("rejects trailing tokens after an expression", func() {
 		_, err := parseExpressionInput("{ a: 1, } garbage")
@@ -444,22 +365,37 @@ var _ = Describe("Parser", func() {
 		Entry("double star associates right", "2 ** 3 ** 4"),
 	)
 
-	DescribeTable("parses conditional expressions",
+	It("parses one conditional level", func() {
+		expression, err := parseExpressionInput("a ? b : c")
+		tAssert.NoError(err)
+
+		root := requireConditional(expression)
+		requireIdentifier(root.Condition, "a")
+		requireIdentifier(root.Then, "b")
+		requireIdentifier(root.Else, "c")
+	})
+
+	DescribeTable("rejects nested conditional expressions",
 		func(input string) {
-			expression, err := parseExpressionInput(input)
-			tAssert.NoError(err)
-
-			root := requireConditional(expression)
-			requireIdentifier(root.Condition, "a")
-			requireIdentifier(root.Then, "b")
-
-			elseConditional := requireConditional(root.Else)
-			requireIdentifier(elseConditional.Condition, "c")
-			requireIdentifier(elseConditional.Then, "d")
-			requireIdentifier(elseConditional.Else, "e")
+			_, err := parseExpressionInput(input)
+			tAssert.Error(err)
 		},
-		Entry("nested ternary", "a ? b : c ? d : e"),
+		Entry("nested then branch", "a ? b ? c : d : e"),
+		Entry("nested else branch", "a ? b : c ? d : e"),
+		Entry("nested condition", "(a ? b : c) ? d : e"),
 	)
+
+	It("parses variant and choice match arms", func() {
+		expression, err := parseExpressionInput(`match (value) { string => "text", int => "number", }`)
+		tAssert.NoError(err)
+
+		matched, ok := expression.(ast.MatchExpression)
+		tAssert.True(ok)
+		requireIdentifier(matched.Value, "value")
+		tAssert.Len(matched.Arms, 2)
+		tAssert.IsType(ast.PrimitiveType{}, matched.Arms[0].Pattern.Type)
+		requireStringLiteral(matched.Arms[1].Value, `"number"`)
+	})
 
 	It("parses coalescing inside a conditional branch", func() {
 		expression, err := parseExpressionInput("user ? user.profile.address?.city ?? fallback : fallback")

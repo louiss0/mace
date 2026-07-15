@@ -55,6 +55,9 @@ func (l *Lexer) NextToken() (Token, error) {
 		}
 		return Token{}, fmt.Errorf("lexer: unexpected character %q at %d:%d", current, startLine, startColumn)
 	case '=':
+		if l.match('>') {
+			return l.makeToken(TokenArrow, startPosition, startLine, startColumn), nil
+		}
 		if l.match('=') {
 			return l.makeToken(TokenEqualEqual, startPosition, startLine, startColumn), nil
 		}
@@ -457,6 +460,8 @@ func keywordToken(lexeme string) (TokenType, bool) {
 		return TokenVariant, true
 	case "choice":
 		return TokenChoice, true
+	case "match":
+		return TokenMatch, true
 	case "record":
 		return TokenRecord, true
 	case "string":
@@ -475,8 +480,6 @@ func keywordToken(lexeme string) (TokenType, bool) {
 		return TokenNullable, true
 	case "in":
 		return TokenIn, true
-	case "is":
-		return TokenIs, true
 	case "null":
 		return TokenNull, true
 	case "true", "false":

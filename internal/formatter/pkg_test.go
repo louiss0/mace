@@ -91,14 +91,14 @@ var _ = Describe("FormatFile", func() {
 		Entry("unknown", lexer.TokenEOF, ""),
 	)
 
-	It("formats member type tests with their precedence", func() {
-		tokens, err := lexFormatterExpression("condition && config.value is string == true")
+	It("formats match expressions", func() {
+		tokens, err := lexFormatterExpression(`match (value) { string => "text", int => "number", }`)
 		tAssert.NoError(err)
 		expression, err := parser.New(tokens).ParseExpression()
 		tAssert.NoError(err)
 		formatted, err := formatExpressionWithDepth(expression, 0)
 		tAssert.NoError(err)
-		tAssert.Equal("condition && config.value is string == true", formatted)
+		tAssert.Equal("match (value) {\n  string => \"text\",\n  int => \"number\",\n}", formatted)
 	})
 
 	It("formats imports, script declarations, and output", func() {

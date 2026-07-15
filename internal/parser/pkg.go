@@ -20,7 +20,6 @@ const (
 	precedenceBitwiseAnd
 	precedenceMerge
 	precedenceEquality
-	precedenceTypeTest
 	precedenceRelational
 	precedenceShift
 	precedenceAdditive
@@ -1037,8 +1036,6 @@ func (p *Parser) parseExpression(precedence int) (ast.Expression, error) {
 			left, err = p.parseConditionalExpression(left, operator)
 		case lexer.TokenCoalesce:
 			left, err = p.parseCoalesceExpression(left, operator)
-		case lexer.TokenIs:
-			left, err = p.parseTypeTestExpression(left, operator)
 		default:
 			left, err = p.parseInfixExpression(left, operator)
 		}
@@ -1095,6 +1092,8 @@ func (p *Parser) parsePrefix(token lexer.Token) (ast.Expression, error) {
 			return nil, err
 		}
 		return expression, nil
+	case lexer.TokenMatch:
+		return p.parseMatchExpression()
 	case lexer.TokenBang, lexer.TokenTilde, lexer.TokenPlus, lexer.TokenMinus:
 		p.advance()
 		right, err := p.parseExpression(precedencePrefix)
@@ -1381,43 +1380,33 @@ func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token)
 	}, nil
 }
 
-func (p *Parser) parseTypeTestExpression(left ast.Expression, operator lexer.Token) (ast.Expression, error) {
-	if _, chained := left.(ast.TypeTestExpression); chained {
-		return nil, p.diagnosticError(operator, diagnostic.Code("mace.syntax.invalid-is-type"), "parser: chained 'is' expressions are not allowed")
-	}
-	if p.current().Type == lexer.TokenEOF {
-		return nil, p.diagnosticError(p.current(), diagnostic.Code("mace.syntax.is-missing-type"), "parser: expected type reference after 'is'")
-	}
-
-	targetType, err := p.parseTypeReference()
-	if err != nil {
-		return nil, p.diagnosticError(p.current(), diagnostic.Code("mace.syntax.invalid-is-type"), "parser: expected valid type reference after 'is'")
-	}
-
-	return ast.TypeTestExpression{
-		Expression: left,
-		TargetType: targetType,
-		EndToken:   p.tokens[p.position-1],
-	}, nil
-}
-
 func (p *Parser) parseConditionalExpression(left ast.Expression, operator lexer.Token) (ast.Expression, error) {
 	if operator.Type != lexer.TokenQuestion {
 		return nil, p.unexpectedTokenError("parser: expected '?' for conditional expression")
 	}
 
-	thenExpression, err := p.parseExpression(precedenceLowest)
+	if expressionContainsConditional(left) {
+		return nil, p.diagnosticError(operator, diagnostic.Code("mace.syntax.nested-conditional"), "parser: nested conditional expressions are not allowed")
+	}
+
+	thenExpression, err := p.parseExpression(precedenceTernary)
 	if err != nil {
 		return nil, err
+	}
+	if p.current().Type == lexer.TokenQuestion {
+		return nil, p.diagnosticError(p.current(), diagnostic.Code("mace.syntax.nested-conditional"), "parser: nested conditional expressions are not allowed")
 	}
 
 	if _, err := p.consume(lexer.TokenColon, "parser: expected ':' in conditional expression"); err != nil {
 		return nil, err
 	}
 
-	elseExpression, err := p.parseExpression(precedenceTernary - 1)
+	elseExpression, err := p.parseExpression(precedenceTernary)
 	if err != nil {
 		return nil, err
+	}
+	if expressionContainsConditional(thenExpression) || expressionContainsConditional(elseExpression) {
+		return nil, p.diagnosticError(operator, diagnostic.Code("mace.syntax.nested-conditional"), "parser: nested conditional expressions are not allowed")
 	}
 
 	return ast.ConditionalExpression{
@@ -1425,6 +1414,100 @@ func (p *Parser) parseConditionalExpression(left ast.Expression, operator lexer.
 		Then:      thenExpression,
 		Else:      elseExpression,
 	}, nil
+}
+
+func expressionContainsConditional(expression ast.Expression) bool {
+	switch typed := expression.(type) {
+	case ast.ConditionalExpression:
+		return true
+	case ast.ArrayLiteral:
+		for _, element := range typed.Elements {
+			if expressionContainsConditional(element) {
+				return true
+			}
+		}
+	case ast.RecordLiteral:
+		for _, field := range typed.Fields {
+			if expressionContainsConditional(field.Value) {
+				return true
+			}
+		}
+	case ast.MemberAccess:
+		return expressionContainsConditional(typed.Target)
+	case ast.PrefixExpression:
+		return expressionContainsConditional(typed.Right)
+	case ast.InfixExpression:
+		return expressionContainsConditional(typed.Left) || expressionContainsConditional(typed.Right)
+	case ast.MatchExpression:
+		if expressionContainsConditional(typed.Value) {
+			return true
+		}
+		for _, arm := range typed.Arms {
+			if expressionContainsConditional(arm.Value) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (p *Parser) parseMatchExpression() (ast.Expression, error) {
+	matchToken, err := p.consume(lexer.TokenMatch, "parser: expected 'match'")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := p.consume(lexer.TokenLParen, "parser: expected '(' after 'match'"); err != nil {
+		return nil, err
+	}
+	value, err := p.parseExpression(precedenceLowest)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := p.consume(lexer.TokenRParen, "parser: expected ')' after match value"); err != nil {
+		return nil, err
+	}
+	if _, err := p.consume(lexer.TokenLBrace, "parser: expected '{' before match arms"); err != nil {
+		return nil, err
+	}
+
+	arms := []ast.MatchArm{}
+	for p.current().Type != lexer.TokenRBrace && !p.isAtEnd() {
+		pattern, err := p.parseMatchPattern()
+		if err != nil {
+			return nil, err
+		}
+		if _, err := p.consume(lexer.TokenArrow, "parser: expected '=>' after match pattern"); err != nil {
+			return nil, err
+		}
+		armValue, err := p.parseExpression(precedenceLowest)
+		if err != nil {
+			return nil, err
+		}
+		arms = append(arms, ast.MatchArm{Pattern: pattern, Value: armValue})
+		if p.current().Type != lexer.TokenComma {
+			return nil, p.unexpectedTokenError("parser: expected ',' after match arm")
+		}
+		p.advance()
+	}
+	endToken, err := p.consume(lexer.TokenRBrace, "parser: expected '}' after match arms")
+	if err != nil {
+		return nil, err
+	}
+	if len(arms) == 0 {
+		return nil, p.diagnosticError(endToken, diagnostic.Code("mace.syntax.empty-match"), "parser: match expression requires at least one arm")
+	}
+	return ast.MatchExpression{MatchToken: matchToken, Value: value, Arms: arms, EndToken: endToken}, nil
+}
+
+func (p *Parser) parseMatchPattern() (ast.MatchPattern, error) {
+	switch p.current().Type {
+	case lexer.TokenString, lexer.TokenInt, lexer.TokenFloat, lexer.TokenHexInt, lexer.TokenHexFloat, lexer.TokenBoolean:
+		literal, err := p.parsePrefix(p.current())
+		return ast.MatchPattern{Literal: literal}, err
+	default:
+		typeReference, err := p.parseTypeReference()
+		return ast.MatchPattern{Type: typeReference}, err
+	}
 }
 
 func (p *Parser) parseCoalesceExpression(left ast.Expression, operator lexer.Token) (ast.Expression, error) {
@@ -1493,8 +1576,6 @@ func (p *Parser) precedenceFor(tokenType lexer.TokenType) int {
 		return precedenceBitwiseAnd
 	case lexer.TokenEqualEqual, lexer.TokenNotEqual:
 		return precedenceEquality
-	case lexer.TokenIs:
-		return precedenceTypeTest
 	case lexer.TokenMerge:
 		return precedenceMerge
 	case lexer.TokenLess, lexer.TokenLessEqual, lexer.TokenGreater, lexer.TokenGreaterEqual, lexer.TokenIn:

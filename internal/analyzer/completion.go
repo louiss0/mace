@@ -451,9 +451,7 @@ func outputTruthyNames(linePrefix string) map[string]struct{} {
 	)
 	condition := strings.TrimSpace(conditionPrefix[conditionStart+1:])
 	parts := strings.Fields(condition)
-	if len(parts) == 3 && parts[1] == "is" {
-		condition = parts[0]
-	} else if len(parts) != 1 {
+	if len(parts) != 1 {
 		return truthy
 	}
 	if condition == "" || !isIdentifierStartCharacter(condition[0]) {
@@ -470,40 +468,7 @@ func outputTruthyNames(linePrefix string) map[string]struct{} {
 }
 
 func outputNarrowedTypes(linePrefix string) map[string]ast.TypeReference {
-	narrowed := map[string]ast.TypeReference{}
-	questionIndex := lastUnquotedByteInPrefix(linePrefix, '?')
-	if questionIndex < 0 {
-		return narrowed
-	}
-
-	conditionPrefix := linePrefix[:questionIndex]
-	conditionStart := max(
-		strings.LastIndex(conditionPrefix, ":"),
-		strings.LastIndex(conditionPrefix, "="),
-		lastUnquotedByteInPrefix(conditionPrefix, '?'),
-	)
-	parts := strings.Fields(strings.TrimSpace(conditionPrefix[conditionStart+1:]))
-	if len(parts) != 3 || parts[1] != "is" {
-		return narrowed
-	}
-	if !isIdentifier(parts[0]) || !isIdentifier(parts[2]) {
-		return narrowed
-	}
-
-	narrowed[parts[0]] = ast.NamedType{Name: parts[2]}
-	return narrowed
-}
-
-func isIdentifier(value string) bool {
-	if value == "" || !isIdentifierStartCharacter(value[0]) {
-		return false
-	}
-	for index := 1; index < len(value); index++ {
-		if !isIdentifierCharacter(value[index]) {
-			return false
-		}
-	}
-	return true
+	return map[string]ast.TypeReference{}
 }
 
 // lastUnquotedByteInPrefix returns the index of the last occurrence of target
@@ -1730,6 +1695,15 @@ func placeholderPath(expression ast.Expression) ([]string, bool) {
 			return path, true
 		}
 		return placeholderPath(typed.Else)
+	case ast.MatchExpression:
+		if path, ok := placeholderPath(typed.Value); ok {
+			return path, true
+		}
+		for _, arm := range typed.Arms {
+			if path, ok := placeholderPath(arm.Value); ok {
+				return path, true
+			}
+		}
 	}
 
 	return nil, false
@@ -2481,6 +2455,22 @@ func completionOutputFieldType(expression ast.Expression, model completionModel)
 			return nil, false
 		}
 		return mergedConditionalCompletionType(thenType, elseType, model), true
+	case ast.MatchExpression:
+		if len(typed.Arms) == 0 {
+			return nil, false
+		}
+		result, found := completionOutputFieldType(typed.Arms[0].Value, model)
+		if !found {
+			return nil, false
+		}
+		for _, arm := range typed.Arms[1:] {
+			armType, found := completionOutputFieldType(arm.Value, model)
+			if !found {
+				return nil, false
+			}
+			result = mergedConditionalCompletionType(result, armType, model)
+		}
+		return result, true
 	case ast.Identifier:
 		if record, ok := model.schemas[typed.Name]; ok {
 			return record, true

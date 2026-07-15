@@ -82,7 +82,7 @@ var _ = Describe("Lexer", func() {
 			tAssert.NoError(err)
 			assertTokenSequence(tokens, expected)
 		},
-		Entry("keywords and identifiers", "from import type schema gen_doc schema_doc enum array fusion variant choice record string int float hex_int hex_float boolean output schema_file parse parse_file data nullable in is null user_1", []expectedToken{
+		Entry("keywords and identifiers", "from import type schema gen_doc schema_doc enum array fusion variant choice match record string int float hex_int hex_float boolean output schema_file parse parse_file data nullable in is null user_1", []expectedToken{
 			{tokenType: TokenFrom, lexeme: "from"},
 			{tokenType: TokenImport, lexeme: "import"},
 			{tokenType: TokenTypeKeyword, lexeme: "type"},
@@ -94,6 +94,7 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenUnion, lexeme: "fusion"},
 			{tokenType: TokenVariant, lexeme: "variant"},
 			{tokenType: TokenChoice, lexeme: "choice"},
+			{tokenType: TokenMatch, lexeme: "match"},
 			{tokenType: TokenRecord, lexeme: "record"},
 			{tokenType: TokenStringType, lexeme: "string"},
 			{tokenType: TokenIntType, lexeme: "int"},
@@ -108,7 +109,7 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenIdentifier, lexeme: "data"},
 			{tokenType: TokenNullable, lexeme: "nullable"},
 			{tokenType: TokenIn, lexeme: "in"},
-			{tokenType: TokenIs, lexeme: "is"},
+			{tokenType: TokenIdentifier, lexeme: "is"},
 			{tokenType: TokenNull, lexeme: "null"},
 			{tokenType: TokenIdentifier, lexeme: "user_1"},
 			{tokenType: TokenEOF, lexeme: ""},
@@ -123,13 +124,11 @@ var _ = Describe("Lexer", func() {
 		}),
 	)
 
-	It("recognizes only the complete is keyword", func() {
-		tokens, err := collectTokens("value /* comment */ is /* comment */ string island thisValue isReady valueis isstring")
+	It("recognizes only the complete match keyword", func() {
+		tokens, err := collectTokens("match matcher matching")
 		tAssert.NoError(err)
 		assertTokenTypes(tokens, []TokenType{
-			TokenIdentifier, TokenIs, TokenStringType,
-			TokenIdentifier, TokenIdentifier, TokenIdentifier,
-			TokenIdentifier, TokenIdentifier, TokenEOF,
+			TokenMatch, TokenIdentifier, TokenIdentifier, TokenEOF,
 		})
 	})
 
@@ -161,8 +160,9 @@ var _ = Describe("Lexer", func() {
 			tAssert.NoError(err)
 			assertTokenSequence(tokens, expected)
 		},
-		Entry("operators", "= ; , : ? . + - * / % ** ! ~ < <= <> > >= == != & ^ | && || << >> >>> ( ) { } [ ]", []expectedToken{
+		Entry("operators", "= => ; , : ? . + - * / % ** ! ~ < <= <> > >= == != & ^ | && || << >> >>> ( ) { } [ ]", []expectedToken{
 			{tokenType: TokenAssign, lexeme: "="},
+			{tokenType: TokenArrow, lexeme: "=>"},
 			{tokenType: TokenSemicolon, lexeme: ";"},
 			{tokenType: TokenComma, lexeme: ","},
 			{tokenType: TokenColon, lexeme: ":"},

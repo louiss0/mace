@@ -2631,9 +2631,13 @@ func referencedNames(file ast.File) map[string]struct{} {
 			visitExpression(typed.Condition)
 			visitExpression(typed.Then)
 			visitExpression(typed.Else)
-		case ast.TypeTestExpression:
-			visitExpression(typed.Expression)
-			visitType(typed.TargetType)
+		case ast.MatchExpression:
+			visitExpression(typed.Value)
+			for _, arm := range typed.Arms {
+				visitType(arm.Pattern.Type)
+				visitExpression(arm.Pattern.Literal)
+				visitExpression(arm.Value)
+			}
 		}
 	}
 	if file.Script != nil {
@@ -2737,8 +2741,12 @@ func usedVariableNames(file ast.File) map[string]struct{} {
 			visit(typed.Condition)
 			visit(typed.Then)
 			visit(typed.Else)
-		case ast.TypeTestExpression:
-			visit(typed.Expression)
+		case ast.MatchExpression:
+			visit(typed.Value)
+			for _, arm := range typed.Arms {
+				visit(arm.Pattern.Literal)
+				visit(arm.Value)
+			}
 		}
 	}
 
@@ -3328,8 +3336,10 @@ func expressionContainsEmptyLiteral(expression ast.Expression) bool {
 		return expressionContainsEmptyLiteral(typed.Right)
 	case ast.InfixExpression:
 		return expressionContainsEmptyLiteral(typed.Left) || expressionContainsEmptyLiteral(typed.Right)
-	case ast.TypeTestExpression:
-		return expressionContainsEmptyLiteral(typed.Expression)
+	case ast.MatchExpression:
+		return expressionContainsEmptyLiteral(typed.Value) || lo.ContainsBy(typed.Arms, func(arm ast.MatchArm) bool {
+			return expressionContainsEmptyLiteral(arm.Value)
+		})
 	case ast.ConditionalExpression:
 		return expressionContainsEmptyLiteral(typed.Condition) ||
 			expressionContainsEmptyLiteral(typed.Then) ||
@@ -3357,8 +3367,10 @@ func expressionContainsConditional(expression ast.Expression) bool {
 		return expressionContainsConditional(typed.Right)
 	case ast.InfixExpression:
 		return expressionContainsConditional(typed.Left) || expressionContainsConditional(typed.Right)
-	case ast.TypeTestExpression:
-		return expressionContainsConditional(typed.Expression)
+	case ast.MatchExpression:
+		return expressionContainsConditional(typed.Value) || lo.ContainsBy(typed.Arms, func(arm ast.MatchArm) bool {
+			return expressionContainsConditional(arm.Value)
+		})
 	case ast.ConditionalExpression:
 		return true
 	default:

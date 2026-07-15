@@ -18,6 +18,7 @@ const (
 	TokenUnion
 	TokenVariant
 	TokenChoice
+	TokenMatch
 	TokenRecord
 	TokenStringType
 	TokenIntType
@@ -32,7 +33,6 @@ const (
 	TokenData
 	TokenNullable
 	TokenIn
-	TokenIs
 	TokenNull
 
 	TokenString
@@ -43,6 +43,7 @@ const (
 	TokenBoolean
 
 	TokenAssign
+	TokenArrow
 	TokenSemicolon
 	TokenComma
 	TokenColon

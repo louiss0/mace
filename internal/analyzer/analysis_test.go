@@ -1680,16 +1680,19 @@ schema User: { name: Name, };
 		}
 	})
 
-	It("treats types nested in type tests as used", func() {
+	It("treats types used by match patterns as referenced", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		snapshot := analyzeDocumentAt(`|===|
 type Name: string;
 variant[Name, int] value = "Ada";
-boolean is_name = value is array<Name>;
+string kind = match (value) {
+  Name => "name",
+  int => "number",
+};
 |===|
 [output = 'data']
 {
-  is_name: is_name,
+  kind: kind,
 }`, documentPath)
 
 		unusedTypeDiagnostics := lo.Filter(snapshot.diagnostics, func(diagnostic protocol.Diagnostic, _ int) bool {

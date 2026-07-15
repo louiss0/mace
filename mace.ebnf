@@ -95,7 +95,7 @@ schema_output_field = identifier , [ "?" ] , ws0 , ":" , ws0 , type_reference , 
 
 (* EXPRESSIONS *)
 expression = conditional_expression ;
-conditional_expression = coalescing_expression , [ ws0 , "?" , ws0 , expression , ws0 , ":" , ws0 , conditional_expression ] ;
+conditional_expression = coalescing_expression , [ ws0 , "?" , ws0 , coalescing_expression , ws0 , ":" , ws0 , coalescing_expression ] ;
 coalescing_expression = logical_or_expression , [ ws0 , "??" , ws0 , coalescing_expression ] ;
 logical_or_expression = logical_and_expression , { ws0 , "||" , ws0 , logical_and_expression } ;
 logical_and_expression = bitwise_or_expression , { ws0 , "&&" , ws0 , bitwise_or_expression } ;
@@ -103,9 +103,7 @@ bitwise_or_expression = bitwise_xor_expression , { ws0 , "|" , ws0 , bitwise_xor
 bitwise_xor_expression = bitwise_and_expression , { ws0 , "^" , ws0 , bitwise_and_expression } ;
 bitwise_and_expression = merge_expression , { ws0 , "&" , ws0 , merge_expression } ;
 merge_expression = equality_expression , { ws0 , "<>" , ws0 , equality_expression } ;
-equality_expression = type_test_expression , { ws0 , ( "==" | "!=" ) , ws0 , type_test_expression } ;
-type_test_expression = relational_expression , [ ws1 , "is" , ws1 , type_reference ] ;
-(* Type tests are non-chainable; their right operand is a type reference, not an expression. *)
+equality_expression = relational_expression , { ws0 , ( "==" | "!=" ) , ws0 , relational_expression } ;
 relational_expression = shift_expression , { ws0 , ( "<" | "<=" | ">" | ">=" ) , ws0 , shift_expression } ;
 shift_expression = additive_expression , { ws0 , ( "<<" | ">>" | ">>>" ) , ws0 , additive_expression } ;
 additive_expression = multiplicative_expression , { ws0 , ( "+" | "-" ) , ws0 , multiplicative_expression } ;
@@ -113,7 +111,7 @@ multiplicative_expression = exponent_expression , { ws0 , ( "*" | "/" | "%" ) , 
 exponent_expression = unary_expression , [ ws0 , "**" , ws0 , exponent_expression ] ;
 unary_expression = ( "!" | "~" | "+" | "-" ) , ws0 , unary_expression | postfix_expression ;
 postfix_expression = primary_atom , { postfix_suffix } ;
-primary_atom = identifier | self_reference | parsed_input_reference | int_literal | float_literal | hex_int_literal | hex_float_literal | string_literal | boolean_literal | null_literal | array_literal | record_literal | grouped_expression ;
+primary_atom = identifier | self_reference | parsed_input_reference | int_literal | float_literal | hex_int_literal | hex_float_literal | string_literal | boolean_literal | null_literal | array_literal | record_literal | match_expression | grouped_expression ;
 postfix_suffix = ws0 , ( "." | "?." ) , ws0 , identifier ;
 self_reference = "$self" , "." , identifier , { "." , identifier } ;
 parsed_input_reference = "$" , identifier ;
@@ -123,5 +121,8 @@ array_literal = "[" , ws0 , [ expression , { ws0 , "," , ws0 , expression } , [ 
 record_literal = "{" , ws0 , [ record_field , { ws0 , "," , ws0 , record_field } , [ ws0 , "," ] ] , ws0 , "}" ;
 record_field = identifier , ws0 , ":" , ws0 , expression , [ ws0 , inline_description ]
              | identifier , [ ws0 , inline_description ] ;
+match_expression = "match" , ws0 , "(" , ws0 , expression , ws0 , ")" , ws0 , "{" , ws0 , match_arm , { ws0 , match_arm } , ws0 , "}" ;
+match_arm = match_pattern , ws0 , "=>" , ws0 , expression , ws0 , "," ;
+match_pattern = type_reference | choice_member ;
 
 interpolation = "$" , "(" , expression , ")" ;

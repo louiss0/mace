@@ -407,16 +407,31 @@ func formatExpressionNode(expression ast.Expression, depth int) (string, int, er
 			operator = "?."
 		}
 		return target + operator + typedExpression.Name, precedencePrimary, nil
-	case ast.TypeTestExpression:
-		left, err := formatExpressionWithPrecedence(typedExpression.Expression, precedenceTypeTest, depth)
+	case ast.MatchExpression:
+		matched, err := formatExpressionWithDepth(typedExpression.Value, depth)
 		if err != nil {
 			return "", 0, err
 		}
-		targetType, err := formatTypeReference(typedExpression.TargetType)
-		if err != nil {
-			return "", 0, err
+		lines := []string{"match (" + matched + ") {"}
+		indent := strings.Repeat("  ", depth+1)
+		for _, arm := range typedExpression.Arms {
+			pattern := ""
+			if arm.Pattern.Type != nil {
+				pattern, err = formatTypeReference(arm.Pattern.Type)
+			} else {
+				pattern, err = formatExpressionWithDepth(arm.Pattern.Literal, depth+1)
+			}
+			if err != nil {
+				return "", 0, err
+			}
+			value, err := formatExpressionWithDepth(arm.Value, depth+1)
+			if err != nil {
+				return "", 0, err
+			}
+			lines = append(lines, indent+pattern+" => "+value+",")
 		}
-		return left + " is " + targetType, precedenceTypeTest, nil
+		lines = append(lines, strings.Repeat("  ", depth)+"}")
+		return strings.Join(lines, "\n"), precedencePrimary, nil
 	case ast.StringLiteral:
 		return typedExpression.Lexeme, precedencePrimary, nil
 	case ast.IntLiteral:
@@ -673,7 +688,6 @@ const (
 	precedenceBitwiseAnd
 	precedenceMerge
 	precedenceEquality
-	precedenceTypeTest
 	precedenceRelational
 	precedenceShift
 	precedenceAdditive
