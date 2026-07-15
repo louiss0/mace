@@ -78,6 +78,9 @@ Value fallback = %s;
 		Entry("choice aliases require fusion", wrapScriptWithOutput(`|===|
  type Fruit: choice[MissingChoice];
 |===|`), "use fusion to merge choice types"),
+		Entry("duplicate choice members", wrapScriptWithOutput(`|===|
+ type Fruit: choice["Apple", "Apple"];
+|===|`), "duplicate choice member"),
 		Entry("value outside choice domain", `|===|
  type Fruit: choice["Apple", "Strawberry"];
  Fruit result = "Pear";

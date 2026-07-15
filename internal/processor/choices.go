@@ -28,7 +28,7 @@ func resolveChoiceValues(members []ast.Expression, types *typeRegistry, seen map
 		for _, value := range resolved {
 			key, _ := scalarValueKey(value)
 			if _, exists := seenValues[key]; exists {
-				continue
+				return nil, validationErrorf("duplicate choice member %s", scalarValueDisplay(value))
 			}
 			seenValues[key] = struct{}{}
 			values = append(values, value)

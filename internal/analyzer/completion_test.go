@@ -2130,29 +2130,26 @@ int count = 1;
 
 		It("covers completion choice members and directory helpers", func() {
 			model := completionModel{aliases: map[string]ast.TypeReference{
-				"Mode": ast.ChoiceType{Members: []ast.Expression{
+				"Access": ast.ChoiceType{Members: []ast.Expression{
 					ast.StringLiteral{Lexeme: `"auto"`},
 					ast.IntLiteral{Lexeme: "1"},
 				}},
+				"Feature": ast.ChoiceType{Members: []ast.Expression{
+					ast.StringLiteral{Lexeme: `"auto"`},
+					ast.StringLiteral{Lexeme: `"manual"`},
+				}},
 			}}
 
-			members, ok := completionChoiceMemberValues(ast.Identifier{Name: "Mode"}, model, map[string]struct{}{})
-			tAssert.True(ok)
-			tAssert.Equal("\"auto\"", members[0].Label)
-
-			members, ok = completionChoiceMemberValues(ast.BooleanLiteral{Value: true}, model, map[string]struct{}{})
+			members, ok := completionChoiceMemberValues(ast.BooleanLiteral{Value: true}, model, map[string]struct{}{})
 			tAssert.True(ok)
 			tAssert.Equal("true", members[0].Label)
 
-			_, ok = completionChoiceMemberValues(ast.Identifier{Name: "Missing"}, model, map[string]struct{}{})
+			_, ok = completionChoiceMemberValues(ast.Identifier{Name: "Access"}, model, map[string]struct{}{})
 			tAssert.False(ok)
 
-			choice, ok := completionChoiceFromMembers([]ast.Expression{ast.Identifier{Name: "Mode"}}, model, map[string]struct{}{})
+			choice, ok := completionUnionChoice([]ast.TypeReference{ast.NamedType{Name: "Access"}, ast.NamedType{Name: "Feature"}}, model, map[string]struct{}{})
 			tAssert.True(ok)
-			tAssert.NotEmpty(choice.members)
-
-			_, ok = completionChoiceFromMembers([]ast.Expression{ast.Identifier{Name: "Mode"}, ast.Identifier{Name: "Mode"}}, model, map[string]struct{}{})
-			tAssert.True(ok)
+			tAssert.Equal([]string{`"auto"`, "1", `"manual"`}, lo.Map(choice.members, func(member completionChoiceMember, _ int) string { return member.Label }))
 
 			tAssert.Equal("", completionExpressionClosers("x", 0))
 			tAssert.Equal(")", completionExpressionClosers("($self.foo", len("($self.foo")))

@@ -253,7 +253,7 @@ record<string> deps = {
 	It("formats choice type declarations", func() {
 		file, err := parseMaceFile(`|===|
  type Environment: choice["dev", "prod"];
- type Mode: choice[Environment, 1, true];
+ type Mode: fusion[Environment, choice[1, true]];
 |===|
 [output = 'data']
 { value: "dev", }`)
@@ -261,11 +261,11 @@ record<string> deps = {
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
-		tAssert.Equal(`|========================================|
+		tAssert.Equal(`|================================================|
 type Environment: choice["dev", "prod"];
-type Mode: choice[Environment, 1, true];
-|========================================|
-[output = 'data']
+type Mode: fusion[Environment, choice[1, true]];
+|================================================|
+[output = data]
 {
   value: "dev"
 }`, output)

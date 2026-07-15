@@ -2598,10 +2598,14 @@ func resolveCompletionType(typeReference ast.TypeReference, model completionMode
 		return completionType{kind: completionTypeRecordMap, element: typed.Value}
 	case ast.UnionType:
 		record, ok := completionUnionRecord(typed.Members, model, seen)
-		if !ok {
-			return completionType{}
+		if ok {
+			return completionType{kind: completionTypeSchema, record: record}
 		}
-		return completionType{kind: completionTypeSchema, record: record}
+		choiceValue, ok := completionUnionChoice(typed.Members, model, seen)
+		if ok {
+			return completionType{kind: completionTypeChoice, choice: choiceValue}
+		}
+		return completionType{}
 	case ast.VariantType:
 		return completionType{kind: completionTypeVariant, members: typed.Members}
 	case ast.ChoiceType:
@@ -2658,30 +2662,32 @@ func completionChoiceFromMembers(members []ast.Expression, model completionModel
 }
 
 func completionChoiceMemberValues(member ast.Expression, model completionModel, seen map[string]struct{}) ([]completionChoiceMember, bool) {
-	switch typed := member.(type) {
-	case ast.Identifier:
-		if _, exists := seen[typed.Name]; exists {
-			return nil, false
-		}
-		aliasValue, ok := model.aliases[typed.Name]
-		if !ok {
-			return nil, false
-		}
-		nextSeen := map[string]struct{}{typed.Name: {}}
-		for name := range seen {
-			nextSeen[name] = struct{}{}
-		}
-		resolved := resolveCompletionType(aliasValue, model, nextSeen)
-		if resolved.kind != completionTypeChoice {
-			return nil, false
-		}
-		return resolved.choice.members, true
+	switch member.(type) {
 	case ast.StringLiteral, ast.IntLiteral, ast.FloatLiteral, ast.HexIntLiteral, ast.HexFloatLiteral, ast.BooleanLiteral:
 		label := expressionSummary(member)
 		return []completionChoiceMember{{Label: label, Detail: label}}, true
 	default:
 		return nil, false
 	}
+}
+
+func completionUnionChoice(members []ast.TypeReference, model completionModel, seen map[string]struct{}) (completionChoice, bool) {
+	choiceMembers := []completionChoiceMember{}
+	seenLabels := map[string]struct{}{}
+	for _, member := range members {
+		resolved := resolveCompletionType(member, model, seen)
+		if resolved.kind != completionTypeChoice {
+			return completionChoice{}, false
+		}
+		for _, choiceMember := range resolved.choice.members {
+			if _, exists := seenLabels[choiceMember.Label]; exists {
+				continue
+			}
+			seenLabels[choiceMember.Label] = struct{}{}
+			choiceMembers = append(choiceMembers, choiceMember)
+		}
+	}
+	return completionChoice{members: choiceMembers}, true
 }
 
 func completionUnionRecord(members []ast.TypeReference, model completionModel, seen map[string]struct{}) (ast.RecordType, bool) {
