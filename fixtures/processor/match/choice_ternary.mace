@@ -1,0 +1,23 @@
+|===|
+type Environment: choice["dev", "prod"];
+
+Environment environment = "prod";
+nullable boolean preferMatch = true;
+nullable boolean useFallback = null;
+
+string fromQuestion = preferMatch ? match (environment) {
+  "dev" => "development",
+  "prod" => "production",
+} : "fallback";
+
+string fromColon = useFallback ? "fallback" : match (environment) {
+  "dev" => "development",
+  "prod" => "production",
+};
+|===|
+
+[output = 'data']
+{
+  from_question: fromQuestion,
+  from_colon: fromColon,
+}

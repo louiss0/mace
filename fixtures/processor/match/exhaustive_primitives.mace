@@ -1,0 +1,18 @@
+|===|
+type Primitive: variant[string, int, float, hex_int, hex_float, boolean];
+
+Primitive value = 0x1.8;
+string kind = match (value) {
+  string => "string",
+  int => "int",
+  float => "float",
+  hex_int => "hex_int",
+  hex_float => "hex_float",
+  boolean => "boolean",
+};
+|===|
+
+[output = 'data']
+{
+  kind: kind,
+}
