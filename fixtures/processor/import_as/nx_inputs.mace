@@ -9,7 +9,7 @@ schema Workspace: {
 };
 |===================|
 
-[output=schema]
+[output='schema']
 {
   project: Project,
   workspace: Workspace,

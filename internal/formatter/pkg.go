@@ -42,8 +42,9 @@ func (f *formatter) writeFile(file ast.File) error {
 }
 
 func formatImportDeclaration(importDeclaration ast.ImportDeclaration) string {
+	path := formatStaticPath(importDeclaration.Path.Lexeme)
 	if importDeclaration.ImportAs != nil {
-		return "from ' + importDeclaration.Path.Lexeme + ' import-as " + importDeclaration.ImportAs.LocalName() + ";"
+		return "from " + path + " import-as " + importDeclaration.ImportAs.LocalName() + ";"
 	}
 
 	parts := make([]string, 0, len(importDeclaration.Identifiers))
@@ -54,7 +55,11 @@ func formatImportDeclaration(importDeclaration ast.ImportDeclaration) string {
 			parts = append(parts, id.Name)
 		}
 	}
-	return "from ' + importDeclaration.Path.Lexeme + ' import " + strings.Join(parts, ", ") + ";"
+	return "from " + path + " import " + strings.Join(parts, ", ") + ";"
+}
+
+func formatStaticPath(path string) string {
+	return "'" + strings.Trim(path, "'\"") + "'"
 }
 
 func normalizedScriptBlock(file ast.File) (ast.ScriptBlock, bool) {
@@ -317,7 +322,7 @@ func formatOutputDirectives(directives []ast.OutputDirective) (string, error) {
 	for _, directive := range directives {
 		switch directive.Kind {
 		case ast.OutputDirectiveOutput:
-			parts = append(parts, "output = "+directive.Value)
+			parts = append(parts, "output = '"+directive.Value+"'")
 		case ast.OutputDirectiveSchemaFile:
 			parts = append(parts, "schema_file = "+directive.Value)
 		case ast.OutputDirectiveSchema:

@@ -265,7 +265,7 @@ record<string> deps = {
 type Environment: choice["dev", "prod"];
 type Mode: fusion[Environment, choice[1, true]];
 |================================================|
-[output = data]
+[output = 'data']
 {
   value: "dev"
 }`, output)

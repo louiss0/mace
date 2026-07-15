@@ -1005,7 +1005,7 @@ string user = "Ada";
 			tAssert.NoError(err)
 
 			if tAssert.Len(file.Imports, 1) {
-				tAssert.Equal("\"base.mace\"", file.Imports[0].Path.Lexeme)
+				tAssert.Equal("'base.mace'", file.Imports[0].Path.Lexeme)
 				tAssert.Equal([]ast.ImportedIdentifier{{Name: "User"}, {Name: "Config"}}, file.Imports[0].Identifiers)
 			}
 
@@ -1178,7 +1178,7 @@ from './also_ignored.mace' import AlsoIgnored;
 			file, err := parseFileInput(input)
 			tAssert.NoError(err)
 			if tAssert.Len(file.Imports, 1) {
-				tAssert.Equal("\"./base.mace\"", file.Imports[0].Path.Lexeme)
+				tAssert.Equal("'./base.mace'", file.Imports[0].Path.Lexeme)
 				tAssert.Equal([]ast.ImportedIdentifier{{Name: "User"}}, file.Imports[0].Identifiers)
 			}
 		})
