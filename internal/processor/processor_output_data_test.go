@@ -276,6 +276,8 @@ schema Plot: { points: array<Point>, };
 { favorite: "Pear", }`, "type mismatch: expected choice[\"Apple\", \"Strawberry\"], got \"Pear\""),
 		Entry("output shorthand rejects unknown variables", `[output = 'data']
 { missing, }`, "unknown identifier \"missing\""),
+		Entry("record shorthand rejects unknown variables", `[output = 'data']
+{ value: { kind, }, }`, "unknown identifier \"kind\""),
 		Entry("record shorthand rejects missing required fields", `|===|
 schema User: { name: string, };
 User user = { missing, };
