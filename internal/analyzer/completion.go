@@ -467,8 +467,78 @@ func outputTruthyNames(linePrefix string) map[string]struct{} {
 	return truthy
 }
 
-func outputNarrowedTypes(linePrefix string) map[string]ast.TypeReference {
-	return map[string]ast.TypeReference{}
+func matchArmNarrowedTypes(file ast.File) map[string]ast.TypeReference {
+	narrowedTypes := map[string]ast.TypeReference{}
+
+	for _, item := range fileScriptItems(file) {
+		declaration, ok := item.(ast.VariableDeclaration)
+		if !ok {
+			continue
+		}
+		mergeNarrowedTypes(narrowedTypes, expressionMatchArmNarrowedTypes(declaration.Value))
+	}
+	for _, field := range file.Output.DataFields {
+		mergeNarrowedTypes(narrowedTypes, expressionMatchArmNarrowedTypes(field.Value))
+	}
+
+	return narrowedTypes
+}
+
+func expressionMatchArmNarrowedTypes(expression ast.Expression) map[string]ast.TypeReference {
+	if _, containsPlaceholder := placeholderPath(expression); !containsPlaceholder {
+		return nil
+	}
+
+	switch typed := expression.(type) {
+	case ast.MatchExpression:
+		for _, arm := range typed.Arms {
+			if _, containsPlaceholder := placeholderPath(arm.Value); !containsPlaceholder {
+				continue
+			}
+
+			narrowedTypes := map[string]ast.TypeReference{}
+			if path, stable := expressionPath(typed.Value); stable && arm.Pattern.Type != nil {
+				narrowedTypes[strings.Join(path, ".")] = arm.Pattern.Type
+			}
+			mergeNarrowedTypes(narrowedTypes, expressionMatchArmNarrowedTypes(arm.Value))
+			return narrowedTypes
+		}
+	case ast.ConditionalExpression:
+		for _, branch := range []ast.Expression{typed.Condition, typed.Then, typed.Else} {
+			if narrowedTypes := expressionMatchArmNarrowedTypes(branch); len(narrowedTypes) > 0 {
+				return narrowedTypes
+			}
+		}
+	case ast.RecordLiteral:
+		for _, field := range typed.Fields {
+			if narrowedTypes := expressionMatchArmNarrowedTypes(field.Value); len(narrowedTypes) > 0 {
+				return narrowedTypes
+			}
+		}
+	case ast.ArrayLiteral:
+		for _, element := range typed.Elements {
+			if narrowedTypes := expressionMatchArmNarrowedTypes(element); len(narrowedTypes) > 0 {
+				return narrowedTypes
+			}
+		}
+	case ast.MemberAccess:
+		return expressionMatchArmNarrowedTypes(typed.Target)
+	case ast.PrefixExpression:
+		return expressionMatchArmNarrowedTypes(typed.Right)
+	case ast.InfixExpression:
+		if narrowedTypes := expressionMatchArmNarrowedTypes(typed.Left); len(narrowedTypes) > 0 {
+			return narrowedTypes
+		}
+		return expressionMatchArmNarrowedTypes(typed.Right)
+	}
+
+	return nil
+}
+
+func mergeNarrowedTypes(target map[string]ast.TypeReference, source map[string]ast.TypeReference) {
+	for path, typeReference := range source {
+		target[path] = typeReference
+	}
 }
 
 // lastUnquotedByteInPrefix returns the index of the last occurrence of target
@@ -549,7 +619,7 @@ func variableMemberCompletionItems(document document, uri protocol.DocumentUri, 
 	importBaseDir := filepath.Dir(documentPath(uri))
 	importRootDir := completionRoot(document.analysis, uri)
 	model := buildCompletionModel(*file, importBaseDir, importRootDir, map[string]completionModel{})
-	rootType, ok, guarded := variableMemberCompletionRootType(model, path, outputGuardedNames(linePrefix), outputTruthyNames(linePrefix), outputNarrowedTypes(linePrefix))
+	rootType, ok, guarded := variableMemberCompletionRootType(model, path, outputGuardedNames(linePrefix), outputTruthyNames(linePrefix), matchArmNarrowedTypes(*file))
 	if guarded {
 		return []protocol.CompletionItem{}, true
 	}
@@ -597,7 +667,7 @@ func parsedVariableMemberCompletionItems(document document, uri protocol.Documen
 
 	rootType, ok, guarded := parseInputMemberCompletionRootType(file, model, chain, importBaseDir, importRootDir, cache, guardedNames)
 	if !ok && !guarded {
-		rootType, ok, guarded = variableMemberCompletionRootType(model, chain, guardedNames, outputTruthyNames(linePrefix), outputNarrowedTypes(linePrefix))
+		rootType, ok, guarded = variableMemberCompletionRootType(model, chain, guardedNames, outputTruthyNames(linePrefix), matchArmNarrowedTypes(file))
 	}
 	if guarded {
 		return []protocol.CompletionItem{}, true
@@ -2124,19 +2194,27 @@ func variableMemberCompletionRootType(model completionModel, path []string, guar
 	if !ok {
 		return nil, false, false
 	}
-	if narrowedType, narrowed := narrowedTypes[path[0]]; narrowed {
-		rootType = narrowedType
-	}
 	if model.nullableVariables[path[0]] {
 		if _, truthy := truthyNames[path[0]]; !truthy {
 			return nil, false, true
 		}
 	}
-	if len(path) == 1 {
+
+	remainingPath := path[1:]
+	for pathLength := len(path); pathLength > 0; pathLength-- {
+		narrowedType, narrowed := narrowedTypes[strings.Join(path[:pathLength], ".")]
+		if !narrowed {
+			continue
+		}
+		rootType = narrowedType
+		remainingPath = path[pathLength:]
+		break
+	}
+	if len(remainingPath) == 0 {
 		return rootType, true, false
 	}
 
-	return parseMemberCompletionType(rootType, path[1:], model, guardedNames)
+	return parseMemberCompletionType(rootType, remainingPath, model, guardedNames)
 }
 
 func parseMemberCompletionType(typeReference ast.TypeReference, path []string, model completionModel, guardedNames map[string]struct{}) (ast.TypeReference, bool, bool) {

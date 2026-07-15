@@ -307,6 +307,155 @@ nullable User user = null;
 		tAssert.Empty(items)
 	})
 
+	It("completes schema fields from a narrowed match arm", func() {
+		text := `|===|
+schema LocalConfig: { path: string, enabled: boolean, };
+schema RemoteConfig: { url: string, };
+type Config: variant[LocalConfig, RemoteConfig];
+Config config = { path: "/tmp/mace", enabled: true, };
+string result = match (config) {
+  LocalConfig => config.
+  RemoteConfig => config.url,
+};
+|===|
+[output = 'data']
+{ value: result, }`
+
+		position := protocol.Position{
+			Line:      6,
+			Character: uint32(len("  LocalConfig => config.")),
+		}
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+			return item.Label
+		})
+
+		tAssert.Equal([]string{"enabled", "path"}, labels)
+	})
+
+	DescribeTable("completes nested record fields from narrowed match arms",
+		func(depth int) {
+			recordType := `{ value: string, }`
+			recordValue := `{ value: "matched", }`
+			for range depth - 1 {
+				recordType = fmt.Sprintf(`{ next: %s, }`, recordType)
+				recordValue = fmt.Sprintf(`{ next: %s, }`, recordValue)
+			}
+			memberPath := strings.Repeat("next.", depth-1)
+			text := fmt.Sprintf(`|===|
+type Config: variant[%s, string];
+Config config = %s;
+string result = match (config) {
+  %s => config.%s<cursor>
+  string => "text",
+};
+|===|
+[output = 'data']
+{ value: result, }`, recordType, recordValue, recordType, memberPath)
+			cursorIndex := strings.Index(text, "<cursor>")
+			text = strings.Replace(text, "<cursor>", "", 1)
+			position := positionFromIndex(text, cursorIndex)
+			documentPath := filepath.Join("workspace", "document.mace")
+			snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+			items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+			labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+				return item.Label
+			})
+
+			tAssert.Equal([]string{"value"}, labels)
+		},
+		Entry("one nested record", 1),
+		Entry("two nested records", 2),
+		Entry("three nested records", 3),
+		Entry("four nested records", 4),
+		Entry("five nested records", 5),
+		Entry("six nested records", 6),
+		Entry("seven nested records", 7),
+		Entry("eight nested records", 8),
+		Entry("nine nested records", 9),
+		Entry("ten nested records", 10),
+	)
+
+	DescribeTable("completes nested schema fields from narrowed match arms",
+		func(depth int) {
+			schemaDeclarations := lo.Map(lo.Range(depth), func(index int, _ int) string {
+				name := fmt.Sprintf("Level%d", index+1)
+				if index == depth-1 {
+					return fmt.Sprintf("schema %s: { value: string, };", name)
+				}
+				return fmt.Sprintf("schema %s: { next: Level%d, };", name, index+2)
+			})
+			memberPath := strings.Repeat("next.", depth-1)
+			rootValue := strings.Repeat("{ next: ", depth-1) + `{ value: "matched", }` + strings.Repeat(", }", depth-1)
+			text := fmt.Sprintf(`|===|
+%s
+schema Other: { message: string, };
+type Config: variant[Level1, Other];
+Config config = %s;
+string result = match (config) {
+  Level1 => config.%s<cursor>
+  Other => config.message,
+};
+|===|
+[output = 'data']
+{ value: result, }`, strings.Join(schemaDeclarations, "\n"), rootValue, memberPath)
+			cursorIndex := strings.Index(text, "<cursor>")
+			text = strings.Replace(text, "<cursor>", "", 1)
+			position := positionFromIndex(text, cursorIndex)
+			documentPath := filepath.Join("workspace", "document.mace")
+			snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+			items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+			labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+				return item.Label
+			})
+
+			tAssert.Equal([]string{"value"}, labels)
+		},
+		Entry("one nested schema", 1),
+		Entry("two nested schemas", 2),
+		Entry("three nested schemas", 3),
+		Entry("four nested schemas", 4),
+		Entry("five nested schemas", 5),
+		Entry("six nested schemas", 6),
+		Entry("seven nested schemas", 7),
+		Entry("eight nested schemas", 8),
+		Entry("nine nested schemas", 9),
+		Entry("ten nested schemas", 10),
+	)
+
+	It("completes narrowed schema fields in output match arms", func() {
+		text := `|===|
+schema LocalConfig: { path: string, enabled: boolean, };
+schema RemoteConfig: { url: string, };
+type Config: variant[LocalConfig, RemoteConfig];
+Config config = { path: "/tmp/mace", enabled: true, };
+|===|
+[output = 'data']
+{
+  value: match (config) {
+    LocalConfig => config.<cursor>
+    RemoteConfig => config.url,
+  },
+}`
+		cursorIndex := strings.Index(text, "<cursor>")
+		text = strings.Replace(text, "<cursor>", "", 1)
+		position := positionFromIndex(text, cursorIndex)
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+			return item.Label
+		})
+
+		tAssert.Equal([]string{"enabled", "path"}, labels)
+	})
+
 	It("returns no global completions after a dot in the script block", func() {
 		text := `|===|
 schema User: { name: string, };
