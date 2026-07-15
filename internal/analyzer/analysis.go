@@ -78,6 +78,10 @@ func (snapshot analysisSnapshot) symbolAt(position protocol.Position) (semanticS
 		return symbol, true
 	}
 
+	if symbol, ok := snapshot.variableInitializerFieldSymbolAt(position); ok {
+		return symbol, true
+	}
+
 	if symbol, ok := snapshot.schemaFieldSymbolAt(position); ok {
 		return symbol, true
 	}
@@ -171,6 +175,143 @@ func (snapshot analysisSnapshot) selfReferenceSymbolAt(position protocol.Positio
 	name := "$self." + strings.Join(path, ".")
 	includesValue := !snapshot.outputExpressionSuppressesValue(path)
 	return outputValueSymbolWithValue(name, path, rangeValue, value, includesValue), true
+}
+
+func (snapshot analysisSnapshot) variableInitializerFieldSymbolAt(position protocol.Position) (semanticSymbol, bool) {
+	if snapshot.file == nil || snapshot.file.Script == nil {
+		return semanticSymbol{}, false
+	}
+
+	documentPath := documentPath(snapshot.documentURI)
+	baseDir := filepath.Dir(documentPath)
+	model := buildCompletionModel(*snapshot.file, baseDir, snapshot.importRootDir, map[string]completionModel{})
+	for _, item := range snapshot.file.Script.Items {
+		declaration, ok := item.(ast.VariableDeclaration)
+		if !ok || !declaration.HasValue {
+			continue
+		}
+
+		if symbol, found := variableInitializerFieldSymbolInExpression(
+			declaration.Value,
+			declaration.Type,
+			[]string{declaration.Name},
+			position,
+			model,
+		); found {
+			return symbol, true
+		}
+	}
+
+	return semanticSymbol{}, false
+}
+
+func variableInitializerFieldSymbolInExpression(
+	expression ast.Expression,
+	expectedType ast.TypeReference,
+	path []string,
+	position protocol.Position,
+	model completionModel,
+) (semanticSymbol, bool) {
+	switch typed := expression.(type) {
+	case ast.RecordLiteral:
+		for _, field := range typed.Fields {
+			fieldType, schemaField, found := variableInitializerFieldType(expectedType, field.Name, model)
+			if !found {
+				continue
+			}
+
+			fieldRange := tokenProtocolRange(field.NameToken)
+			fieldPath := append(append([]string{}, path...), field.Name)
+			if comparePositions(fieldRange.Start, position) <= 0 && comparePositions(position, fieldRange.End) <= 0 {
+				name := strings.Join(fieldPath, ".")
+				if schemaField.Optional {
+					name += "?"
+				}
+				return semanticSymbol{
+					Name:          name,
+					Kind:          protocol.CompletionItemKindField,
+					Detail:        fmt.Sprintf("%s: %s", name, fieldTypeDetail(fieldType)),
+					Documentation: inlineDescriptionDocumentation(schemaField.Description),
+					Origin:        symbolOriginLocal,
+					Range:         fieldRange,
+				}, true
+			}
+
+			if symbol, found := variableInitializerFieldSymbolInExpression(
+				field.Value,
+				fieldType,
+				fieldPath,
+				position,
+				model,
+			); found {
+				return symbol, true
+			}
+		}
+	case ast.ArrayLiteral:
+		resolved := resolveCompletionType(expectedType, model, map[string]struct{}{})
+		if resolved.kind != completionTypeArray || resolved.element == nil {
+			return semanticSymbol{}, false
+		}
+		for _, element := range typed.Elements {
+			if symbol, found := variableInitializerFieldSymbolInExpression(
+				element,
+				resolved.element,
+				path,
+				position,
+				model,
+			); found {
+				return symbol, true
+			}
+		}
+	case ast.ConditionalExpression:
+		for _, branch := range []ast.Expression{typed.Then, typed.Else} {
+			if symbol, found := variableInitializerFieldSymbolInExpression(
+				branch,
+				expectedType,
+				path,
+				position,
+				model,
+			); found {
+				return symbol, true
+			}
+		}
+	case ast.MatchExpression:
+		for _, arm := range typed.Arms {
+			if symbol, found := variableInitializerFieldSymbolInExpression(
+				arm.Value,
+				expectedType,
+				path,
+				position,
+				model,
+			); found {
+				return symbol, true
+			}
+		}
+	}
+
+	return semanticSymbol{}, false
+}
+
+func variableInitializerFieldType(
+	expectedType ast.TypeReference,
+	name string,
+	model completionModel,
+) (ast.TypeReference, ast.SchemaField, bool) {
+	resolved := resolveCompletionType(expectedType, model, map[string]struct{}{})
+	if resolved.kind == completionTypeRecordMap && resolved.element != nil {
+		return resolved.element, ast.SchemaField{Name: name, Type: resolved.element}, true
+	}
+	if resolved.kind != completionTypeSchema {
+		return nil, ast.SchemaField{}, false
+	}
+
+	field, found := lo.Find(resolved.record.Fields, func(field ast.SchemaField) bool {
+		return field.Name == name
+	})
+	if !found {
+		return nil, ast.SchemaField{}, false
+	}
+	return field.Type, field, true
 }
 
 func (snapshot analysisSnapshot) schemaFieldSymbolAt(position protocol.Position) (semanticSymbol, bool) {

@@ -469,6 +469,98 @@ string result = match (catalog) {
 		tAssert.Equal([]string{"city", "postal_code"}, labels)
 	})
 
+	DescribeTable("scopes five nested keys across schemas in output expressions",
+		func(schemaCount int, depth int, expressionKind string) {
+			fieldNamesForSchema := func(schemaIndex int) []string {
+				return []string{
+					"shared_1",
+					"shared_2",
+					"shared_3",
+					"shared_4",
+					fmt.Sprintf("schema_%d_only", schemaIndex),
+				}
+			}
+			nestedType := func(schemaIndex int) string {
+				fields := lo.Map(fieldNamesForSchema(schemaIndex), func(name string, _ int) string {
+					return name + ": string"
+				})
+				result := "{ " + strings.Join(fields, ", ") + ", }"
+				for level := depth; level >= 1; level-- {
+					result = fmt.Sprintf("{ level_%d: %s, }", level, result)
+				}
+				return result
+			}
+			nestedValue := func(schemaIndex int) string {
+				fields := lo.Map(fieldNamesForSchema(schemaIndex), func(name string, _ int) string {
+					return fmt.Sprintf("%s: '%s'", name, name)
+				})
+				result := "{ " + strings.Join(fields, ", ") + ", }"
+				for level := depth; level >= 1; level-- {
+					result = fmt.Sprintf("{ level_%d: %s, }", level, result)
+				}
+				return result
+			}
+
+			lines := []string{"|===|", "type Enabled: choice[true, false];", "Enabled enabled = true;"}
+			variantMembers := make([]string, 0, schemaCount)
+			for schemaIndex := 1; schemaIndex <= schemaCount; schemaIndex++ {
+				schemaName := fmt.Sprintf("Schema%d", schemaIndex)
+				variantMembers = append(variantMembers, schemaName)
+				lines = append(lines, fmt.Sprintf("schema %s: %s;", schemaName, nestedType(schemaIndex)))
+				lines = append(lines, fmt.Sprintf("%s schema_%d = %s;", schemaName, schemaIndex, nestedValue(schemaIndex)))
+			}
+			memberPrefix := "schema_1"
+			for level := 1; level <= depth; level++ {
+				memberPrefix += fmt.Sprintf(".level_%d", level)
+			}
+			lines = append(lines, "|===|", "[output = 'data']", "{")
+			switch expressionKind {
+			case "ternary":
+				lines = append(lines, fmt.Sprintf("  selected: enabled ? %s.<cursor> : '',", memberPrefix))
+			case "match":
+				lines = append(lines[:len(lines)-3],
+					fmt.Sprintf("type Catalog: variant[%s];", strings.Join(variantMembers, ", ")),
+					"Catalog catalog = schema_1;",
+					"|===|",
+					"[output = 'data']",
+					"{",
+					"  selected: match (catalog) {",
+					fmt.Sprintf("    Schema1 => catalog.%s.<cursor>", strings.TrimPrefix(memberPrefix, "schema_1.")),
+				)
+				for schemaIndex := 2; schemaIndex <= schemaCount; schemaIndex++ {
+					lines = append(lines, fmt.Sprintf("    Schema%d => '',", schemaIndex))
+				}
+				lines = append(lines, "  },")
+			}
+			lines = append(lines, "}")
+			text := strings.Join(lines, "\n")
+			cursorIndex := strings.Index(text, "<cursor>")
+			tAssert.NotEqual(-1, cursorIndex)
+			if cursorIndex < 0 {
+				return
+			}
+			text = strings.Replace(text, "<cursor>", "", 1)
+			position := positionFromIndex(text, cursorIndex)
+			documentPath := filepath.Join("workspace", "document.mace")
+			snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+			items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+			labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+				return item.Label
+			})
+
+			tAssert.Equal([]string{"schema_1_only", "shared_1", "shared_2", "shared_3", "shared_4"}, labels)
+		},
+		Entry("two schemas and one ternary level", 2, 1, "ternary"),
+		Entry("three schemas and four ternary levels", 3, 4, "ternary"),
+		Entry("four schemas and seven ternary levels", 4, 7, "ternary"),
+		Entry("five schemas and ten ternary levels", 5, 10, "ternary"),
+		Entry("two schemas and two match levels", 2, 2, "match"),
+		Entry("three schemas and five match levels", 3, 5, "match"),
+		Entry("four schemas and eight match levels", 4, 8, "match"),
+		Entry("five schemas and ten match levels", 5, 10, "match"),
+	)
+
 	DescribeTable("completes nested record fields from narrowed match arms",
 		func(depth int) {
 			recordType := `{ value: string, }`

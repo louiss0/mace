@@ -545,6 +545,200 @@ Catalog catalog = primary;
 		}
 	})
 
+	It("scopes every typed key in the nullable user fixture", func() {
+		fixturePath := filepath.Join("..", "..", "fixtures", "processor", "optional_chaining", "nullable_user.mace")
+		contents, err := os.ReadFile(fixturePath)
+		tAssert.NoError(err)
+		text := string(contents)
+		snapshot := analyzeDocumentAt(text, fixturePath)
+		cases := []struct {
+			needle   string
+			offset   int
+			expected string
+		}{
+			{needle: "city?: string", expected: "schema Address.city?: string"},
+			{needle: "address: Address", expected: "schema Profile.address: Address"},
+			{needle: "records: record<string>", expected: "schema User.records: record<string>"},
+			{needle: "profile: Profile", expected: "schema User.profile: Profile"},
+			{needle: "user.profile.address", offset: len("user."), expected: "user.profile: Profile"},
+		}
+
+		for _, test := range cases {
+			index := strings.Index(text, test.needle)
+			tAssert.NotEqual(-1, index)
+			if index < 0 {
+				continue
+			}
+
+			hover := Hover(text, snapshot, positionFromIndex(text, index+test.offset))
+			tAssert.NotNil(hover)
+			if hover == nil {
+				continue
+			}
+
+			content, ok := hover.Contents.(protocol.MarkupContent)
+			tAssert.True(ok)
+			if ok {
+				tAssert.Contains(content.Value, test.expected)
+			}
+		}
+
+		initializerStart := strings.Index(text, "nullable User user = {")
+		tAssert.NotEqual(-1, initializerStart)
+		initializerCases := []struct {
+			needle   string
+			expected string
+		}{
+			{needle: "records: {", expected: "user.records: record<string>"},
+			{needle: "primary: \"active\"", expected: "user.records.primary: string"},
+			{needle: "profile: {", expected: "user.profile: Profile"},
+			{needle: "address: {", expected: "user.profile.address: Address"},
+			{needle: "city: \"Paris\"", expected: "user.profile.address.city?: string"},
+		}
+		for _, test := range initializerCases {
+			relativeIndex := strings.Index(text[initializerStart:], test.needle)
+			tAssert.NotEqual(-1, relativeIndex)
+			if relativeIndex < 0 {
+				continue
+			}
+
+			hover := Hover(text, snapshot, positionFromIndex(text, initializerStart+relativeIndex))
+			tAssert.NotNil(hover)
+			if hover == nil {
+				continue
+			}
+
+			content, ok := hover.Contents.(protocol.MarkupContent)
+			tAssert.True(ok)
+			if ok {
+				tAssert.Contains(content.Value, test.expected)
+			}
+		}
+	})
+
+	DescribeTable("scopes five initializer keys across schemas and nested expressions",
+		func(schemaCount int, depth int, expressionKind string) {
+			fieldNamesForSchema := func(schemaIndex int) []string {
+				return []string{
+					"shared_1",
+					"shared_2",
+					"shared_3",
+					"shared_4",
+					fmt.Sprintf("schema_%d_only", schemaIndex),
+				}
+			}
+			nestedType := func(schemaIndex int) string {
+				fields := lo.Map(fieldNamesForSchema(schemaIndex), func(name string, _ int) string {
+					return name + ": string"
+				})
+				result := "{ " + strings.Join(fields, ", ") + ", }"
+				for level := depth; level >= 1; level-- {
+					result = fmt.Sprintf("{ level_%d: %s, }", level, result)
+				}
+				return result
+			}
+			nestedValue := func(schemaIndex int) string {
+				fields := lo.Map(fieldNamesForSchema(schemaIndex), func(name string, _ int) string {
+					return fmt.Sprintf("%s: '%s'", name, name)
+				})
+				result := "{ " + strings.Join(fields, ", ") + ", }"
+				for level := depth; level >= 1; level-- {
+					result = fmt.Sprintf("{ level_%d: %s, }", level, result)
+				}
+				return result
+			}
+
+			declarations := []string{"|===|", "type Enabled: choice[true, false];", "Enabled enabled = true;"}
+			for schemaIndex := 1; schemaIndex <= schemaCount; schemaIndex++ {
+				declarations = append(declarations, fmt.Sprintf("schema Schema%d: %s;", schemaIndex, nestedType(schemaIndex)))
+			}
+			for schemaIndex := 1; schemaIndex <= schemaCount; schemaIndex++ {
+				value := nestedValue(schemaIndex)
+				initializer := value
+				if schemaIndex == 1 {
+					switch expressionKind {
+					case "ternary":
+						initializer = fmt.Sprintf("enabled ? %s : %s", value, value)
+					case "match":
+						initializer = fmt.Sprintf("match (enabled) { true => %s, false => %s, }", value, value)
+					}
+				}
+				declarations = append(declarations, fmt.Sprintf("Schema%d schema_%d = %s;", schemaIndex, schemaIndex, initializer))
+			}
+			declarations = append(declarations, "|===|", "[output = 'data']", "{")
+			memberPrefix := "schema_1"
+			for level := 1; level <= depth; level++ {
+				memberPrefix += fmt.Sprintf(".level_%d", level)
+			}
+			for _, name := range fieldNamesForSchema(1) {
+				declarations = append(declarations, fmt.Sprintf("  %s: %s.%s,", name, memberPrefix, name))
+			}
+			declarations = append(declarations, "}")
+			text := strings.Join(declarations, "\n")
+			snapshot := analyzeDocument(text)
+
+			pathSegments := lo.Map(lo.Range(depth), func(index int, _ int) string {
+				return fmt.Sprintf("level_%d", index+1)
+			})
+			for schemaIndex := 1; schemaIndex <= schemaCount; schemaIndex++ {
+				variablePrefix := fmt.Sprintf("Schema%d schema_%d = ", schemaIndex, schemaIndex)
+				variableStart := strings.Index(text, variablePrefix)
+				tAssert.NotEqual(-1, variableStart)
+				if variableStart < 0 {
+					continue
+				}
+				for _, name := range fieldNamesForSchema(schemaIndex) {
+					relativeIndex := strings.Index(text[variableStart:], name+":")
+					tAssert.NotEqual(-1, relativeIndex)
+					if relativeIndex < 0 {
+						continue
+					}
+
+					hover := Hover(text, snapshot, positionFromIndex(text, variableStart+relativeIndex))
+					tAssert.NotNil(hover)
+					if hover == nil {
+						continue
+					}
+					content, ok := hover.Contents.(protocol.MarkupContent)
+					tAssert.True(ok)
+					if ok {
+						expectedPath := append([]string{fmt.Sprintf("schema_%d", schemaIndex)}, pathSegments...)
+						expectedPath = append(expectedPath, name)
+						tAssert.Contains(content.Value, strings.Join(expectedPath, ".")+": string")
+					}
+				}
+			}
+
+			for _, name := range fieldNamesForSchema(1) {
+				memberAccess := memberPrefix + "." + name
+				accessIndex := strings.LastIndex(text, memberAccess)
+				tAssert.NotEqual(-1, accessIndex)
+				if accessIndex < 0 {
+					continue
+				}
+				memberIndex := accessIndex + len(memberAccess) - len(name)
+				hover := Hover(text, snapshot, positionFromIndex(text, memberIndex))
+				tAssert.NotNil(hover)
+				if hover == nil {
+					continue
+				}
+				content, ok := hover.Contents.(protocol.MarkupContent)
+				tAssert.True(ok)
+				if ok {
+					tAssert.Contains(content.Value, memberAccess+": string")
+				}
+			}
+		},
+		Entry("two schemas and one ternary level", 2, 1, "ternary"),
+		Entry("three schemas and four ternary levels", 3, 4, "ternary"),
+		Entry("four schemas and seven ternary levels", 4, 7, "ternary"),
+		Entry("five schemas and ten ternary levels", 5, 10, "ternary"),
+		Entry("two schemas and two match levels", 2, 2, "match"),
+		Entry("three schemas and five match levels", 3, 5, "match"),
+		Entry("four schemas and eight match levels", 4, 8, "match"),
+		Entry("five schemas and ten match levels", 5, 10, "match"),
+	)
+
 	It("renders record map types in schema hovers", func() {
 		text := `|===|
 schema User: {
