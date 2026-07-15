@@ -307,6 +307,68 @@ nullable User user = null;
 		tAssert.Empty(items)
 	})
 
+	DescribeTable("scopes repeated schema keys in ternary initializers",
+		func(text string, expected string) {
+			cursorIndex := strings.Index(text, "<cursor>")
+			text = strings.Replace(text, "<cursor>", "", 1)
+			position := positionFromIndex(text, cursorIndex)
+			documentPath := filepath.Join("workspace", "document.mace")
+			snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+			items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+			labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+				return item.Label
+			})
+
+			tAssert.Equal([]string{expected}, labels)
+		},
+		Entry("top-level keys", `|===|
+type Enabled: choice[true, false];
+schema Primary: { city: choice['Boston'], };
+schema Secondary: { city: choice['Paris'], };
+Enabled enabled = true;
+Primary selected = enabled ? { city: '<cursor>', } : { city: 'Boston', };
+Secondary secondary = { city: 'Paris', };
+|===|
+[output = 'data']
+{ city: selected.city, secondary_city: secondary.city, }`, "Boston"),
+		Entry("nested keys", `|===|
+type Enabled: choice[true, false];
+schema Primary: { location: { city: choice['Boston'], }, };
+schema Secondary: { location: { city: choice['Paris'], }, };
+Enabled enabled = true;
+Primary selected = enabled ? { location: { city: '<cursor>', }, } : { location: { city: 'Boston', }, };
+Secondary secondary = { location: { city: 'Paris', }, };
+|===|
+[output = 'data']
+{ city: selected.location.city, secondary_city: secondary.location.city, }`, "Boston"),
+	)
+
+	It("completes nested record schema fields through optional access in a ternary", func() {
+		text := `|===|
+schema Primary: { packages: record<record<{ city: string, postal_code: string, }>>, };
+schema Secondary: { packages: record<record<{ city: int, population: int, }>>, };
+Primary primary = { packages: {}, };
+Secondary secondary = { packages: {}, };
+boolean enabled = true;
+string result = enabled ? primary.packages?.north?.api?.<cursor> : 'fallback';
+|===|
+[output = 'data']
+{ result: result, population: secondary.packages?.north?.api?.population ?? 0, }`
+		cursorIndex := strings.Index(text, "<cursor>")
+		text = strings.Replace(text, "<cursor>", "", 1)
+		position := positionFromIndex(text, cursorIndex)
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+			return item.Label
+		})
+
+		tAssert.Equal([]string{"city", "postal_code"}, labels)
+	})
+
 	It("completes schema fields from a narrowed match arm", func() {
 		text := `|===|
 schema LocalConfig: { path: string, enabled: boolean, };
@@ -334,6 +396,77 @@ string result = match (config) {
 		})
 
 		tAssert.Equal([]string{"enabled", "path"}, labels)
+	})
+
+	DescribeTable("scopes repeated schema keys in match initializers",
+		func(text string, expected string) {
+			cursorIndex := strings.Index(text, "<cursor>")
+			text = strings.Replace(text, "<cursor>", "", 1)
+			position := positionFromIndex(text, cursorIndex)
+			documentPath := filepath.Join("workspace", "document.mace")
+			snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+			items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+			labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+				return item.Label
+			})
+
+			tAssert.Equal([]string{expected}, labels)
+		},
+		Entry("top-level keys", `|===|
+type Enabled: choice[true, false];
+schema Primary: { city: choice['Boston'], };
+schema Secondary: { city: choice['Paris'], };
+Enabled enabled = true;
+Primary selected = match (enabled) {
+  true => { city: '<cursor>', },
+  false => { city: 'Boston', },
+};
+Secondary secondary = { city: 'Paris', };
+|===|
+[output = 'data']
+{ city: selected.city, secondary_city: secondary.city, }`, "Boston"),
+		Entry("nested keys", `|===|
+type Enabled: choice[true, false];
+schema Primary: { location: { city: choice['Boston'], }, };
+schema Secondary: { location: { city: choice['Paris'], }, };
+Enabled enabled = true;
+Primary selected = match (enabled) {
+  true => { location: { city: '<cursor>', }, },
+  false => { location: { city: 'Boston', }, },
+};
+Secondary secondary = { location: { city: 'Paris', }, };
+|===|
+[output = 'data']
+{ city: selected.location.city, secondary_city: secondary.location.city, }`, "Boston"),
+	)
+
+	It("completes narrowed nested record fields through optional access in a match arm", func() {
+		text := `|===|
+schema Primary: { packages: record<record<{ city: string, postal_code: string, }>>, };
+schema Secondary: { packages: record<record<{ city: int, population: int, }>>, };
+type Catalog: variant[Primary, Secondary];
+Primary primary = { packages: {}, };
+Catalog catalog = primary;
+string result = match (catalog) {
+  Primary => catalog.packages?.north?.api?.<cursor>
+  Secondary => 'fallback',
+};
+|===|
+[output = 'data']
+{ result: result, }`
+		cursorIndex := strings.Index(text, "<cursor>")
+		text = strings.Replace(text, "<cursor>", "", 1)
+		position := positionFromIndex(text, cursorIndex)
+		documentPath := filepath.Join("workspace", "document.mace")
+		snapshot := AnalyzeCompletionContext(text, documentPath, position)
+
+		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+			return item.Label
+		})
+
+		tAssert.Equal([]string{"city", "postal_code"}, labels)
 	})
 
 	DescribeTable("completes nested record fields from narrowed match arms",

@@ -485,6 +485,66 @@ string greeting = enabled ? "Hello" : "Goodbye";
 		}
 	})
 
+	It("scopes schema field hovers away from ternary output fields with the same key", func() {
+		text := `|===|
+schema Address: { city: string, };
+schema Metrics: { city: int, };
+Address address = { city: 'Boston', };
+Metrics metrics = { city: 7, };
+boolean use_address = true;
+|===|
+[output = 'data']
+{
+  city: use_address ? address.city : 'unknown',
+  metric: metrics.city,
+}`
+		snapshot := analyzeDocument(text)
+		hover := Hover(text, snapshot, protocol.Position{Line: 1, Character: 20})
+		tAssert.NotNil(hover)
+		if hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, "schema Address.city: string")
+			tAssert.NotContains(content.Value, "output city")
+		}
+	})
+
+	It("scopes nested record field hovers away from match output fields with the same key", func() {
+		text := `|===|
+schema Primary: { packages: record<record<{ <cursor>city: string, }>>, };
+schema Secondary: { packages: record<record<{ city: int, }>>, };
+type Catalog: variant[Primary, Secondary];
+Primary primary = { packages: {}, };
+Catalog catalog = primary;
+|===|
+[output = 'data']
+{
+  city: match (catalog) {
+    Primary => catalog.packages?.north?.api?.city ?? 'unknown',
+    Secondary => 'unavailable',
+  },
+}`
+		cursorIndex := strings.Index(text, "<cursor>")
+		text = strings.Replace(text, "<cursor>", "", 1)
+		snapshot := analyzeDocument(text)
+		hover := Hover(text, snapshot, positionFromIndex(text, cursorIndex))
+		tAssert.NotNil(hover)
+		if hover == nil {
+			return
+		}
+
+		content, ok := hover.Contents.(protocol.MarkupContent)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Contains(content.Value, "schema Primary.packages.city: string")
+			tAssert.NotContains(content.Value, "output city")
+		}
+	})
+
 	It("renders record map types in schema hovers", func() {
 		text := `|===|
 schema User: {

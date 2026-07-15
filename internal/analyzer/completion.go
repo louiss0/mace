@@ -580,7 +580,7 @@ func outputMemberAccessContext(linePrefix string) ([]string, bool) {
 	chainStart := dotEnd
 	for chainStart > 0 {
 		c := trimmed[chainStart-1]
-		if c == '.' || isIdentifierCharacter(c) {
+		if c == '.' || c == '?' || isIdentifierCharacter(c) {
 			chainStart--
 			continue
 		}
@@ -594,8 +594,9 @@ func outputMemberAccessContext(linePrefix string) ([]string, bool) {
 		return nil, false
 	}
 
-	chain := trimmed[chainStart:dotEnd]
-	if chain[0] == '.' {
+	chain := strings.TrimSuffix(trimmed[chainStart:dotEnd], "?")
+	chain = strings.ReplaceAll(chain, "?.", ".")
+	if chain == "" || chain[0] == '.' {
 		return nil, false
 	}
 
@@ -1804,11 +1805,12 @@ func trailingMemberAccessPath(linePrefix string) ([]string, bool) {
 		return nil, false
 	}
 	trimmed = strings.TrimSuffix(trimmed, ".")
+	trimmed = strings.TrimSuffix(trimmed, "?")
 	end := len(trimmed)
 	start := end
 	for start > 0 {
 		character := trimmed[start-1]
-		if !isIdentifierCharacter(character) && character != '.' {
+		if !isIdentifierCharacter(character) && character != '.' && character != '?' {
 			break
 		}
 		start--
@@ -1819,7 +1821,8 @@ func trailingMemberAccessPath(linePrefix string) ([]string, bool) {
 	if start > 0 && trimmed[start-1] == '$' {
 		return nil, false
 	}
-	segments := strings.Split(trimmed[start:end], ".")
+	chain := strings.ReplaceAll(trimmed[start:end], "?.", ".")
+	segments := strings.Split(chain, ".")
 	for _, segment := range segments {
 		if segment == "" || !isIdentifierStartCharacter(segment[0]) {
 			return nil, false

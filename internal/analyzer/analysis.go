@@ -78,6 +78,10 @@ func (snapshot analysisSnapshot) symbolAt(position protocol.Position) (semanticS
 		return symbol, true
 	}
 
+	if symbol, ok := snapshot.schemaFieldSymbolAt(position); ok {
+		return symbol, true
+	}
+
 	if symbol, ok := snapshot.nestedOutputFieldSymbolAt(position); ok {
 		return symbol, true
 	}
@@ -167,6 +171,96 @@ func (snapshot analysisSnapshot) selfReferenceSymbolAt(position protocol.Positio
 	name := "$self." + strings.Join(path, ".")
 	includesValue := !snapshot.outputExpressionSuppressesValue(path)
 	return outputValueSymbolWithValue(name, path, rangeValue, value, includesValue), true
+}
+
+func (snapshot analysisSnapshot) schemaFieldSymbolAt(position protocol.Position) (semanticSymbol, bool) {
+	if snapshot.file == nil || snapshot.file.Script == nil {
+		return semanticSymbol{}, false
+	}
+
+	for _, item := range snapshot.file.Script.Items {
+		schema, ok := item.(ast.SchemaDeclaration)
+		if !ok {
+			continue
+		}
+
+		if symbol, found := schemaFieldSymbolInRecord(
+			schema.Type,
+			[]string{schema.Name},
+			position,
+			snapshot.documentURI,
+		); found {
+			return symbol, true
+		}
+	}
+
+	return semanticSymbol{}, false
+}
+
+func schemaFieldSymbolInRecord(
+	record ast.RecordType,
+	path []string,
+	position protocol.Position,
+	documentURI protocol.DocumentUri,
+) (semanticSymbol, bool) {
+	for _, field := range record.Fields {
+		fieldRange := tokenProtocolRange(field.NameToken)
+		fieldPath := append(append([]string{}, path...), field.Name)
+		if comparePositions(fieldRange.Start, position) <= 0 && comparePositions(position, fieldRange.End) <= 0 {
+			name := strings.Join(fieldPath, ".")
+			if field.Optional {
+				name += "?"
+			}
+			return semanticSymbol{
+				Name:          name,
+				Kind:          protocol.CompletionItemKindField,
+				Detail:        fmt.Sprintf("schema %s: %s", name, fieldTypeDetail(field.Type)),
+				Documentation: inlineDescriptionDocumentation(field.Description),
+				Origin:        symbolOriginLocal,
+				Range:         fieldRange,
+				Definition: protocol.Location{
+					URI:   documentURI,
+					Range: fieldRange,
+				},
+			}, true
+		}
+
+		if symbol, found := schemaFieldSymbolInType(field.Type, fieldPath, position, documentURI); found {
+			return symbol, true
+		}
+	}
+
+	return semanticSymbol{}, false
+}
+
+func schemaFieldSymbolInType(
+	typeReference ast.TypeReference,
+	path []string,
+	position protocol.Position,
+	documentURI protocol.DocumentUri,
+) (semanticSymbol, bool) {
+	switch typed := typeReference.(type) {
+	case ast.RecordType:
+		return schemaFieldSymbolInRecord(typed, path, position, documentURI)
+	case ast.ArrayType:
+		return schemaFieldSymbolInType(typed.Element, path, position, documentURI)
+	case ast.RecordMapType:
+		return schemaFieldSymbolInType(typed.Value, path, position, documentURI)
+	case ast.UnionType:
+		for _, member := range typed.Members {
+			if symbol, found := schemaFieldSymbolInType(member, path, position, documentURI); found {
+				return symbol, true
+			}
+		}
+	case ast.VariantType:
+		for _, member := range typed.Members {
+			if symbol, found := schemaFieldSymbolInType(member, path, position, documentURI); found {
+				return symbol, true
+			}
+		}
+	}
+
+	return semanticSymbol{}, false
 }
 
 func (snapshot analysisSnapshot) nestedOutputFieldSymbolAt(position protocol.Position) (semanticSymbol, bool) {
