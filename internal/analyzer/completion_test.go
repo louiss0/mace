@@ -2336,7 +2336,7 @@ var _ = Describe("completion coverage helpers", func() {
 		doc := document{text: "", analysis: analyzeDocumentAtInRoot("", docPath, workspace)}
 		uri := protocol.DocumentUri(fileURI(docPath))
 
-		items, handled := importCompletionItems(doc, `from "./`, uri, protocol.Position{})
+		items, handled := importCompletionItems(doc, `from './`, uri, protocol.Position{})
 		tAssert.True(handled)
 		tAssert.NotEmpty(items)
 		items, handled = importCompletionItems(doc, `from './shared.mace' import U`, uri, protocol.Position{})

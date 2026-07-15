@@ -742,9 +742,9 @@ from './shared.mace' imp`, nil)
 
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
-from "`, nil)
+from '`, nil)
 
-		labels := completeLabels(server, uri, 1, uint32(len(`from "`)))
+		labels := completeLabels(server, uri, 1, uint32(len(`from '`)))
 		tAssert.Contains(labels, "./shared.mace")
 		tAssert.Contains(labels, "./nested/")
 	})
@@ -759,9 +759,9 @@ from "`, nil)
 
 		openEmptyDocument(server, consumerURI, nil)
 		didChange(server, consumerURI, 2, `|===|
-from "../`, nil)
+from '../`, nil)
 
-		labels := completeLabels(server, consumerURI, 1, uint32(len(`from "../`)))
+		labels := completeLabels(server, consumerURI, 1, uint32(len(`from '../`)))
 		tAssert.Contains(labels, "../shared.mace")
 	})
 
@@ -1440,9 +1440,9 @@ schema LocalUser: { id: int, };
 		didChange(server, uri, 2, `|===|
 from './shared.mace' import ImportedUser;
 |===|
-[output = 'data', schema_file = "`, nil)
+[output = 'data', schema_file = '`, nil)
 
-		labels := completeLabels(server, uri, 3, uint32(len(`[output = 'data', schema_file = "`)))
+		labels := completeLabels(server, uri, 3, uint32(len(`[output = 'data', schema_file = '`)))
 		tAssert.NotContains(labels, "./shared.mace")
 		tAssert.Contains(labels, "./other.mace")
 	})
@@ -2877,14 +2877,14 @@ from './shared.mace' import User;
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentPrepareRename, protocol.PrepareRenameParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 				TextDocument: protocol.TextDocumentIdentifier{URI: consumerURI},
-				Position:     protocol.Position{Line: 3, Character: 25},
+				Position:     protocol.Position{Line: 3, Character: 27},
 			},
 		}, nil)
 		tAssert.True(validMethod)
 		tAssert.True(validParams)
 		tAssert.NoError(err)
 
-		expectedRange := protocol.Range{Start: protocol.Position{Line: 3, Character: 25}, End: protocol.Position{Line: 3, Character: 29}}
+		expectedRange := protocol.Range{Start: protocol.Position{Line: 3, Character: 27}, End: protocol.Position{Line: 3, Character: 31}}
 		switch rangeValue := resultValue.(type) {
 		case protocol.Range:
 			tAssert.Equal(expectedRange, rangeValue)

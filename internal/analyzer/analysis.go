@@ -593,7 +593,7 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 		}
 
 		if documentPath != "" {
-			fixedPath := strconv.Quote(pathValue + ".mace")
+			fixedPath := quoteMaceString(pathValue + ".mace")
 			result.action = &analysisCodeActionCandidate{
 				Range: rangeValue,
 				Action: protocol.CodeAction{
@@ -674,7 +674,7 @@ func directivePathDiagnostics(file ast.File, tokens []lexer.Token, documentPath 
 			continue
 		}
 
-		pathValue, err := strconv.Unquote(directive.Value)
+		pathValue, err := unquoteMaceString(directive.Value)
 		if err != nil {
 			continue
 		}
@@ -691,7 +691,7 @@ func directivePathDiagnostics(file ast.File, tokens []lexer.Token, documentPath 
 			Action: protocol.CodeAction{
 				Title: "Append .mace to import path",
 				Kind:  Ptr(protocol.CodeActionKindQuickFix),
-				Edit:  &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: {{Range: rangeValue, NewText: strconv.Quote(pathValue + ".mace")}}}},
+				Edit:  &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: {{Range: rangeValue, NewText: quoteMaceString(pathValue + ".mace")}}}},
 			},
 		})
 	}
@@ -832,7 +832,7 @@ func schemaCreationTextCodeActions(text string, documentPath string) []analysisC
 }
 
 func extractOutputShapeIntoSchemaText(text string) (string, bool) {
-	if strings.Contains(text, "schema Output:") || !strings.Contains(text, "[output = data]") {
+	if strings.Contains(text, "schema Output:") || !strings.Contains(text, "[output = 'data']") {
 		return "", false
 	}
 	fields := inferOutputSchemaFields(text)
@@ -840,7 +840,7 @@ func extractOutputShapeIntoSchemaText(text string) (string, bool) {
 		return "", false
 	}
 	schema := "|===|\nschema Output: { " + strings.Join(fields, ", ") + " };\n|===|\n"
-	updated := schema + strings.Replace(text, "[output = data]", "[output = data, schema = Output]", 1)
+	updated := schema + strings.Replace(text, "[output = 'data']", "[output = 'data', schema = Output]", 1)
 	return updated, true
 }
 
@@ -896,7 +896,7 @@ func generateSampleDataFromSchemaText(text string) (string, bool) {
 	if len(sampleFields) == 0 {
 		return "", false
 	}
-	updated := regexp.MustCompile(`\[output\s*=\s*schema\]\s*\{\}`).ReplaceAllString(text, "[output = data, schema = "+matches[1]+"]\n{ "+strings.Join(sampleFields, ", ")+" }")
+	updated := regexp.MustCompile(`\[output\s*=\s*'schema'\]\s*\{\}`).ReplaceAllString(text, "[output = 'data', schema = "+matches[1]+"]\n{ "+strings.Join(sampleFields, ", ")+" }")
 	return updated, updated != text
 }
 
@@ -1218,7 +1218,7 @@ func importResolutionCodeActions(text string, file ast.File, tokens []lexer.Toke
 					Title: "Create missing imported file",
 					Kind:  Ptr(protocol.CodeActionKindQuickFix),
 					Edit: &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{
-						protocol.DocumentUri(fileURI(importedPath)): {{Range: protocol.Range{}, NewText: "[output = schema]\n{}\n"}},
+						protocol.DocumentUri(fileURI(importedPath)): {{Range: protocol.Range{}, NewText: "[output = 'schema']\n{}\n"}},
 					}},
 				},
 			})
@@ -1232,7 +1232,7 @@ func importResolutionCodeActions(text string, file ast.File, tokens []lexer.Toke
 					}
 					actions = append(actions, analysisCodeActionCandidate{
 						Range:  protocol.Range{Start: protocol.Position{}, End: protocol.Position{}},
-						Action: protocol.CodeAction{Title: "Update import path after file rename", Kind: Ptr(protocol.CodeActionKindQuickFix), Edit: &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: {{Range: importRange, NewText: strconv.Quote(relativePath)}}}}},
+						Action: protocol.CodeAction{Title: "Update import path after file rename", Kind: Ptr(protocol.CodeActionKindQuickFix), Edit: &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: {{Range: importRange, NewText: quoteMaceString(relativePath)}}}}},
 					})
 				}
 			}
@@ -1541,7 +1541,7 @@ func addImportRefactorActions(file ast.File, addWholeFileAction func(string, pro
 		pathValue, _ := stringLiteralValue(importDecl.Path)
 		if pathValue != "" && !strings.HasPrefix(pathValue, "./") && !strings.HasPrefix(pathValue, "../") && !filepath.IsAbs(pathValue) {
 			updatedImports := append([]ast.ImportDeclaration{}, imports...)
-			updatedImports[index].Path = ast.StringLiteral{Lexeme: strconv.Quote("./" + pathValue)}
+			updatedImports[index].Path = ast.StringLiteral{Lexeme: quoteMaceString("./" + pathValue)}
 			updated := replaceFileImports(file, updatedImports)
 			addWholeFileAction("Fix relative import path", targetRange, updated)
 		}
@@ -2190,7 +2190,7 @@ func missingImportEdit(text string, file ast.File, tokens []lexer.Token, message
 			break
 		}
 	}
-	return protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, fmt.Sprintf("|===|\nfrom \"./shared.mace\" import %s;\n|===|\n", name), true
+	return protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, fmt.Sprintf("|===|\nfrom './shared.mace' import %s;\n|===|\n", name), true
 }
 
 func moveImportsToTopEdit(text string, file ast.File, tokens []lexer.Token, message string) (protocol.Range, string, bool) {
@@ -2818,7 +2818,7 @@ func schemaOutputVariableDiagnostics(file ast.File, tokens []lexer.Token) []prot
 			rangeValue,
 			protocol.DiagnosticSeverityError,
 			diagnosticDirectiveSchemaOutputVariableIgnored,
-			fmt.Sprintf("script variable %q is not allowed when output = schema; only type and schema declarations affect schema output", declaration.Name),
+			fmt.Sprintf("script variable %q is not allowed when output = 'schema'; only type and schema declarations affect schema output", declaration.Name),
 		), true
 	})
 }

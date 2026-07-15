@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/samber/lo"
@@ -20,14 +19,14 @@ import (
 )
 
 var (
-	importPathPattern           = regexp.MustCompile(`^\s*from\s+"([^"]+)"\s*([A-Za-z_]*)$`)
-	importOpenPathPattern       = regexp.MustCompile(`^\s*from\s+"([^"]*)$`)
-	importIdentifiersPattern    = regexp.MustCompile(`^\s*from\s+"([^"]+)"\s+import\s*(?:[A-Za-z_][A-Za-z0-9_]*\s*,\s*)*([A-Za-z_][A-Za-z0-9_]*)?$`)
+	importPathPattern           = regexp.MustCompile(`^\s*from\s+'([^']+)'\s*([A-Za-z_]*)$`)
+	importOpenPathPattern       = regexp.MustCompile(`^\s*from\s+'([^']*)$`)
+	importIdentifiersPattern    = regexp.MustCompile(`^\s*from\s+'([^']+)'\s+import\s*(?:[A-Za-z_][A-Za-z0-9_]*\s*,\s*)*([A-Za-z_][A-Za-z0-9_]*)?$`)
 	directiveOutputValuePattern = regexp.MustCompile(`^\s*output\s*=\s*([A-Za-z_]*)$`)
 	directiveSchemaPattern      = regexp.MustCompile(`^\s*schema\s*=\s*([A-Za-z_]*)$`)
-	directiveSchemaFilePattern  = regexp.MustCompile(`^\s*schema_file\s*=\s*"([^"]*)$`)
+	directiveSchemaFilePattern  = regexp.MustCompile(`^\s*schema_file\s*=\s*'([^']*)$`)
 	directiveParsePattern       = regexp.MustCompile(`^\s*parse\s*=\s*([A-Za-z_]*)$`)
-	directiveParseFilePattern   = regexp.MustCompile(`^\s*parse_file\s*=\s*"([^"]*)$`)
+	directiveParseFilePattern   = regexp.MustCompile(`^\s*parse_file\s*=\s*'([^']*)$`)
 	selfMemberAccessPattern     = regexp.MustCompile(`(?:^|[^A-Za-z0-9_$.])\$self(?:\.[A-Za-z_][A-Za-z0-9_]*)*\.$`)
 	parsedMemberAccessPattern   = regexp.MustCompile(`(?:^|[^A-Za-z0-9_$.])\$[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\.$`)
 )
@@ -726,7 +725,7 @@ func partialScriptVariables(text string, uri protocol.DocumentUri, position prot
 		return nil
 	}
 
-	partialText := prefix + "\n|===|\n[output = data] {}"
+	partialText := prefix + "\n|===|\n[output = 'data'] {}"
 	return processVariablesInDocument(partialText, uri)
 }
 
@@ -755,7 +754,7 @@ func scriptVariablesForOutput(text string, uri protocol.DocumentUri) map[string]
 		return nil
 	}
 
-	partialText := text[:scriptEnd] + "\n[output = data] {}"
+	partialText := text[:scriptEnd] + "\n[output = 'data'] {}"
 	return processVariablesInDocument(partialText, uri)
 }
 
@@ -784,7 +783,7 @@ func partialScriptFile(text string, position protocol.Position) (ast.File, bool)
 		return ast.File{}, false
 	}
 
-	file, err := parseFile(prefix + "\n|===|\n[output = data] {}")
+	file, err := parseFile(prefix + "\n|===|\n[output = 'data'] {}")
 	if err != nil {
 		return ast.File{}, false
 	}
@@ -875,12 +874,11 @@ func directiveCompletionItems(document document, uri protocol.DocumentUri, lineP
 		return nil, false
 	}
 
-	parts := lo.FilterMap(strings.Split(content, ","), func(part string, _ int) (string, bool) {
-		trimmed := strings.TrimSpace(part)
-		return trimmed, trimmed != ""
+	parts := lo.Map(strings.Split(content, ","), func(part string, _ int) string {
+		return strings.TrimSpace(part)
 	})
 
-	if len(parts) == 0 {
+	if len(parts) == 0 || (len(parts) == 1 && parts[0] == "") {
 		prefix := trailingIdentifierPrefix(content)
 		return itemsFromDefinitions([]completionDefinition{
 			{Label: "output", Kind: protocol.CompletionItemKindKeyword, Detail: "output directive"},
@@ -974,7 +972,7 @@ func parseDirectiveState(parts []string) directiveState {
 		case strings.HasPrefix(part, "output"):
 			segments := strings.SplitN(part, "=", 2)
 			if len(segments) == 2 {
-				agg.outputMode = strings.TrimSpace(segments[1])
+				agg.outputMode = strings.Trim(strings.TrimSpace(segments[1]), "'\"")
 			}
 		case strings.HasPrefix(part, "schema_file"):
 			agg.seenSchemaFile = true
@@ -1241,11 +1239,11 @@ func availableSchemaNames(document document, uri protocol.DocumentUri, linePrefi
 		}
 
 		outputMode := "data"
-		if strings.Contains(linePrefix, "output = schema") {
+		if strings.Contains(linePrefix, "output = 'schema'") {
 			outputMode = "schema"
 		}
 
-		parsedFile, err := parseFile(document.text[:openIndex] + "[output = " + outputMode + "] {}")
+		parsedFile, err := parseFile(document.text[:openIndex] + "[output = '" + outputMode + "'] {}")
 		if err != nil {
 			return nil
 		}
@@ -1299,11 +1297,11 @@ func completionFile(document document, linePrefix string) *ast.File {
 
 	prefix := document.text[:openIndex]
 	outputMode := "data"
-	if strings.Contains(linePrefix, "output = schema") {
+	if strings.Contains(linePrefix, "output = 'schema'") {
 		outputMode = "schema"
 	}
 
-	file, err := parseFile(prefix + "[output = " + outputMode + "] {}")
+	file, err := parseFile(prefix + "[output = '" + outputMode + "'] {}")
 	if err != nil {
 		return nil
 	}
@@ -1491,7 +1489,7 @@ func tokenStartIndex(text string, token lexer.Token) int {
 }
 
 func stringLiteralValue(literal ast.StringLiteral) (string, bool) {
-	value, err := strconv.Unquote(literal.Lexeme)
+	value, err := unquoteMaceString(literal.Lexeme)
 	if err != nil {
 		return "", false
 	}
@@ -1662,7 +1660,7 @@ func partialScriptFileWithPlaceholder(text string, position protocol.Position) (
 		return ast.File{}, false
 	}
 
-	file, err := parseFile(prefix + "\n|===|\n[output = data] {}")
+	file, err := parseFile(prefix + "\n|===|\n[output = 'data'] {}")
 	if err != nil {
 		return ast.File{}, false
 	}
@@ -1990,11 +1988,7 @@ func syntheticCompletionValue(typeReference ast.TypeReference, model completionM
 }
 
 func unquotedStringChoiceLabel(label string) (string, bool) {
-	if len(label) < 2 || label[0] != '"' || label[len(label)-1] != '"' {
-		return "", false
-	}
-
-	value, err := strconv.Unquote(label)
+	value, err := unquoteMaceString(label)
 	if err != nil {
 		return "", false
 	}

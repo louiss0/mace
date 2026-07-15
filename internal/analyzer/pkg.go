@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf16"
 
@@ -481,6 +482,18 @@ func parseExpression(text string) (ast.Expression, error) {
 	}
 
 	return parser.New(tokens).ParseExpression()
+}
+
+func unquoteMaceString(value string) (string, error) {
+	if len(value) >= 2 && value[0] == '\'' && value[len(value)-1] == '\'' {
+		return value[1 : len(value)-1], nil
+	}
+
+	return strconv.Unquote(value)
+}
+
+func quoteMaceString(value string) string {
+	return "'" + value + "'"
 }
 
 func lex(text string) ([]lexer.Token, error) {

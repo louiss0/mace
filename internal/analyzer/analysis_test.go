@@ -188,7 +188,7 @@ var _ = Describe("LSP analysis", func() {
 		text := `from './shared.mace' import Remote: Local;`
 		tokens := lexAnalysisTokens(text)
 		importDecl := ast.ImportDeclaration{
-			Path: ast.StringLiteral{Lexeme: `"./shared.mace"`},
+			Path: ast.StringLiteral{Lexeme: `'./shared.mace'`},
 		}
 		identifier := ast.ImportedIdentifier{Name: "Remote", Alias: "Local"}
 
@@ -337,7 +337,7 @@ schema User: {
 
 		rangeValue, ok = invalidDirectiveRange(schemaText, schemaFile, schemaTokens, "schema directive is invalid when output mode is schema")
 		tAssert.True(ok)
-		tAssert.Equal(protocol.Position{Line: 0, Character: 10}, rangeValue.Start)
+		tAssert.Equal(protocol.Position{Line: 0, Character: 18}, rangeValue.Start)
 
 		importText := `[output = 'data'] { result: value, }`
 		importFile, err := parseFile(importText)
@@ -647,7 +647,7 @@ from './shared' import name;
 
 		edits := action.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
 		if tAssert.Len(edits, 1) {
-			tAssert.Equal(`"./shared.mace"`, edits[0].NewText)
+			tAssert.Equal(`'./shared.mace'`, edits[0].NewText)
 		}
 	})
 
@@ -673,7 +673,7 @@ from './shared' import name;
 
 		edits := action.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
 		if tAssert.Len(edits, 1) {
-			tAssert.Equal(`"https://example.com/schema.mace"`, edits[0].NewText)
+			tAssert.Equal(`'https://example.com/schema.mace'`, edits[0].NewText)
 		}
 	})
 
@@ -967,7 +967,7 @@ from './shared-old.mace' import Role;
 		tAssert.Contains(createAction.Edit.Changes[protocol.DocumentUri(fileURI(filepath.Join(workspace, "missing.mace")))][0].NewText, "[output = 'schema']")
 
 		renameAction := requireCodeAction(snapshot, uri, rangeValue, "Update import path after file rename")
-		tAssert.Equal(`"./shared.mace"`, renameAction.Edit.Changes[uri][0].NewText)
+		tAssert.Equal(`'./shared.mace'`, renameAction.Edit.Changes[uri][0].NewText)
 
 		replaceAction := requireCodeAction(snapshot, uri, rangeValue, "Replace unavailable imported symbol with User")
 		tAssert.Equal("User", replaceAction.Edit.Changes[uri][0].NewText)
@@ -1055,10 +1055,10 @@ from 'dupes.mace' import User, User, Role;
 		rangeValue := protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}
 
 		extensionAction := requireCodeAction(snapshot, uri, protocol.Range{Start: protocol.Position{Line: 1, Character: 5}, End: protocol.Position{Line: 1, Character: 13}}, "Append .mace to import path")
-		tAssert.Equal(`"shared.mace"`, extensionAction.Edit.Changes[uri][0].NewText)
+		tAssert.Equal(`'shared.mace'`, extensionAction.Edit.Changes[uri][0].NewText)
 
 		sortAction := requireCodeAction(snapshot, uri, rangeValue, "Sort imports")
-		tAssert.Contains(sortAction.Edit.Changes[uri][0].NewText, "from \"alpha.mace\" import User;\nfrom \"dupes.mace\" import User, User, Role;")
+		tAssert.Contains(sortAction.Edit.Changes[uri][0].NewText, "from 'alpha.mace' import User;\nfrom 'dupes.mace' import User, User, Role;")
 
 		duplicateAction := requireCodeAction(snapshot, uri, rangeValue, "Remove duplicate imported names")
 		tAssert.Contains(duplicateAction.Edit.Changes[uri][0].NewText, `from 'dupes.mace' import User, Role;`)
@@ -2171,8 +2171,8 @@ from './rename.mace' import Missing;
 }`
 		tokens := lexAnalysisTokens(text)
 		file := ast.File{Imports: []ast.ImportDeclaration{
-			{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "Usr"}}},
-			{Path: ast.StringLiteral{Lexeme: `"./rename.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "Missing"}}},
+			{Path: ast.StringLiteral{Lexeme: `'./shared.mace'`}, Identifiers: []ast.ImportedIdentifier{{Name: "Usr"}}},
+			{Path: ast.StringLiteral{Lexeme: `'./rename.mace'`}, Identifiers: []ast.ImportedIdentifier{{Name: "Missing"}}},
 		}}
 		actions := importResolutionCodeActions(text, file, tokens, documentPath)
 		titles := lo.Map(actions, func(action analysisCodeActionCandidate, _ int) string { return action.Action.Title })
@@ -2466,7 +2466,7 @@ Profile record = { age: 1, };
 		tAssert.True(ok)
 		importText := `from './a.mace' import One, Two;`
 		importTokens := lexAnalysisTokens(importText)
-		nameToken, found := importIdentifierToken(importTokens, ast.ImportDeclaration{Path: ast.StringLiteral{Lexeme: `"./a.mace"`}}, "One")
+		nameToken, found := importIdentifierToken(importTokens, ast.ImportDeclaration{Path: ast.StringLiteral{Lexeme: `'./a.mace'`}}, "One")
 		tAssert.True(found)
 		_, ok = importIdentifierEditRange(importText, importTokens, nameToken, false)
 		tAssert.True(ok)
@@ -2474,7 +2474,7 @@ Profile record = { age: 1, };
 		tAssert.True(ok)
 		_, ok = declarationEditRange("|===|\nstring value = \"x\";\n|===|", lexAnalysisTokens("|===|\nstring value = \"x\";\n|===|"), lexer.Token{Line: 2, Column: 8, Lexeme: "value"})
 		tAssert.True(ok)
-		_, ok = importAliasToken(lexAnalysisTokens(`from './a.mace' import One: Local;`), ast.ImportDeclaration{Path: ast.StringLiteral{Lexeme: `"./a.mace"`}}, ast.ImportedIdentifier{Name: "One", Alias: "Local"})
+		_, ok = importAliasToken(lexAnalysisTokens(`from './a.mace' import One: Local;`), ast.ImportDeclaration{Path: ast.StringLiteral{Lexeme: `'./a.mace'`}}, ast.ImportedIdentifier{Name: "One", Alias: "Local"})
 		tAssert.True(ok)
 	})
 
