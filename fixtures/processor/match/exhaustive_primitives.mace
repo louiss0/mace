@@ -14,5 +14,5 @@ string kind = match (value) {
 
 [output = 'data']
 {
-  kind: kind,
+  kind,
 }
