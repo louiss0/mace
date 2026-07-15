@@ -1,6 +1,6 @@
 |=======================================================|
-type Status: choice["pending", "approved", "rejected"];
-type ReviewValue: variant[Status, string];
+alias Status: choice["pending", "approved", "rejected"];
+alias ReviewValue: variant[Status, string];
 
 schema Review: {
   reviewer: string,

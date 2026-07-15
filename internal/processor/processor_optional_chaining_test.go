@@ -223,7 +223,7 @@ string fallback = "missing";
 			tAssert.ErrorContains(err, "cannot be accessed because its target is not a record")
 
 			_, err = New().Process(`|===|
-type Packages: variant[` + nestedRecordMapTypeText(depth) + `, ` + nestedRecordMapTypeText(depth+1) + `];
+alias Packages: variant[` + nestedRecordMapTypeText(depth) + `, ` + nestedRecordMapTypeText(depth+1) + `];
 nullable Packages packages = null;
 string fallback = "missing";
 |===|

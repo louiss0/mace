@@ -260,7 +260,7 @@ func (p *Parser) parseScriptBlock() (ast.ScriptBlock, error) {
 
 func (p *Parser) parseDeclaration() (ast.Declaration, error) {
 	switch p.current().Type {
-	case lexer.TokenTypeKeyword:
+	case lexer.TokenAliasKeyword:
 		return p.parseTypeDeclaration()
 	case lexer.TokenSchema:
 		return p.parseSchemaDeclaration()
@@ -321,7 +321,7 @@ func (p *Parser) parseVariableDeclaration() (ast.Declaration, error) {
 }
 
 func (p *Parser) parseTypeDeclaration() (ast.Declaration, error) {
-	if _, err := p.consume(lexer.TokenTypeKeyword, "parser: expected 'type'"); err != nil {
+	if _, err := p.consume(lexer.TokenAliasKeyword, "parser: expected 'alias'"); err != nil {
 		return nil, err
 	}
 
@@ -838,7 +838,7 @@ func (p *Parser) parseFieldHeader(context string) (lexer.Token, string, bool, er
 
 func isFieldNameToken(tokenType lexer.TokenType) bool {
 	switch tokenType {
-	case lexer.TokenIdentifier, lexer.TokenTypeKeyword, lexer.TokenSchema, lexer.TokenOutput, lexer.TokenParse, lexer.TokenParseFile, lexer.TokenSchemaFile, lexer.TokenData, lexer.TokenFrom, lexer.TokenImport, lexer.TokenRecord:
+	case lexer.TokenIdentifier, lexer.TokenAliasKeyword, lexer.TokenSchema, lexer.TokenOutput, lexer.TokenParse, lexer.TokenParseFile, lexer.TokenSchemaFile, lexer.TokenData, lexer.TokenFrom, lexer.TokenImport, lexer.TokenRecord:
 		return true
 	default:
 		return false
@@ -930,7 +930,7 @@ func (p *Parser) parseTypeReference() (ast.TypeReference, error) {
 		return p.parseChoiceType()
 	case lexer.TokenLBrace:
 		return p.parseRecordType()
-	case lexer.TokenIdentifier, lexer.TokenTypeKeyword:
+	case lexer.TokenIdentifier, lexer.TokenAliasKeyword:
 		token := p.current()
 		p.advance()
 		return ast.NamedType{Token: token, Name: token.Lexeme}, nil
@@ -988,7 +988,7 @@ func (p *Parser) parseChoiceMember() (ast.Expression, error) {
 	case lexer.TokenBoolean:
 		p.advance()
 		return ast.BooleanLiteral{Token: token, Value: token.Lexeme == "true"}, nil
-	case lexer.TokenIdentifier, lexer.TokenTypeKeyword, lexer.TokenRecord:
+	case lexer.TokenIdentifier, lexer.TokenAliasKeyword, lexer.TokenRecord:
 		p.advance()
 		return ast.Identifier{Token: token, Name: token.Lexeme}, nil
 	default:
@@ -1050,7 +1050,7 @@ func (p *Parser) parseExpression(precedence int) (ast.Expression, error) {
 
 func (p *Parser) parsePrefix(token lexer.Token) (ast.Expression, error) {
 	switch token.Type {
-	case lexer.TokenIdentifier, lexer.TokenTypeKeyword, lexer.TokenRecord:
+	case lexer.TokenIdentifier, lexer.TokenAliasKeyword, lexer.TokenRecord:
 		p.advance()
 		return ast.Identifier{Token: token, Name: token.Lexeme}, nil
 	case lexer.TokenString:

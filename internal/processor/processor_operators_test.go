@@ -52,7 +52,7 @@ var _ = Describe("Operators", func() {
 			{kind: ValueInt, int64: 4},
 		}}),
 		Entry("variant array merge", `|===|
-type Scalar: variant[string, int];
+alias Scalar: variant[string, int];
 array<Scalar> left = [1];
 array<Scalar> right = ["x"];
 |===|

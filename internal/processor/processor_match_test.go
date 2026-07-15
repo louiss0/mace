@@ -136,7 +136,7 @@ func pairedMatchSource(memberCount int) string {
 	pairs := make([]string, 0, pairCount)
 	arms := make([]string, 0, pairCount+memberCount%2)
 	for index := range pairCount {
-		pairs = append(pairs, fmt.Sprintf("type Pair%d: variant[Member%d, Member%d];", index, index*2, index*2+1))
+		pairs = append(pairs, fmt.Sprintf("alias Pair%d: variant[Member%d, Member%d];", index, index*2, index*2+1))
 		arms = append(arms, fmt.Sprintf("Pair%d => \"pair%d\",", index, index))
 	}
 
@@ -157,7 +157,7 @@ string result%d = match (value%d) {
 
 	return fmt.Sprintf(`|===|
 %s
-type PairedValue: variant[%s];
+alias PairedValue: variant[%s];
 %s
 %s
 |===|
@@ -167,7 +167,7 @@ type PairedValue: variant[%s];
 func redundantArrayMatchSource(depth int) string {
 	arrayType := nestedArrayType(depth)
 	return fmt.Sprintf(`|===|
-type Covered: variant[%s, int];
+alias Covered: variant[%s, int];
 variant[%s, int, string] value = %s;
 string selected = match (value) {
   Covered => "covered",
@@ -181,7 +181,7 @@ string selected = match (value) {
 func redundantRecordMatchSource(depth int) string {
 	return fmt.Sprintf(`|===|
 %s
-type Covered: variant[Record%d, string];
+alias Covered: variant[Record%d, string];
 variant[Record%d, string, int] value = %s;
 string selected = match (value) {
   Covered => "covered",
@@ -195,7 +195,7 @@ string selected = match (value) {
 func redundantPrimitiveMatchSource(typeReference string, initializer string) string {
 	return fmt.Sprintf(`|===|
 schema Marker: { value: string };
-type Covered: variant[%s, Marker];
+alias Covered: variant[%s, Marker];
 variant[%s, Marker, array<string>] value = %s;
 string selected = match (value) {
   Covered => "covered",
@@ -210,7 +210,7 @@ func redundantPrimitiveArrayMatchSource(depth int, typeReference string, initial
 	arrayType, arrayValue := nestedPrimitiveArray(depth, typeReference, initializer)
 	return fmt.Sprintf(`|===|
 schema Marker: { value: string };
-type Covered: variant[%s, Marker];
+alias Covered: variant[%s, Marker];
 variant[%s, Marker, string] value = %s;
 string selected = match (value) {
   Covered => "covered",
@@ -232,7 +232,7 @@ func redundantPrimitiveRecordMatchSource(depth int, typeReference string, initia
 
 	return fmt.Sprintf(`|===|
 %s
-type Covered: variant[%s, array<string>];
+alias Covered: variant[%s, array<string>];
 variant[%s, array<string>, boolean] value = %s;
 string selected = match (value) {
   Covered => "covered",
@@ -271,7 +271,7 @@ string selected = match (value) {
 
 	It("selects a choice arm by literal value", func() {
 		result, err := New().Process(`|===|
-type Status: choice["ready", "pending"];
+alias Status: choice["ready", "pending"];
 Status status = "ready";
 int selected = match (status) {
   "ready" => 1,
@@ -499,7 +499,7 @@ string selected = match (value) { Record%d => "record", string => "string", };
 		Entry("missing variant arm", `variant[string, int] value = 1; string selected = match (value) { string => "text", };`, "exhaustive"),
 		Entry("unknown variant arm", `variant[string, int] value = 1; string selected = match (value) { string => "text", boolean => "flag", int => "number", };`, "not a member"),
 		Entry("duplicate variant arm", `variant[string, int] value = 1; string selected = match (value) { string => "text", string => "again", int => "number", };`, "duplicate"),
-		Entry("overlapping grouped variant arm", `type Pair: variant[string, int]; variant[string, int, boolean] value = 1; string selected = match (value) { Pair => "pair", int => "number", boolean => "flag", };`, "duplicate"),
+		Entry("overlapping grouped variant arm", `alias Pair: variant[string, int]; variant[string, int, boolean] value = 1; string selected = match (value) { Pair => "pair", int => "number", boolean => "flag", };`, "duplicate"),
 		Entry("wrong pattern kind", `variant[string, int] value = 1; string selected = match (value) { "text" => "text", int => "number", };`, "type pattern"),
 		Entry("missing choice arm", `choice["on", "off"] value = "on"; int selected = match (value) { "on" => 1, };`, "exhaustive"),
 		Entry("unknown choice arm", `choice["on", "off"] value = "on"; int selected = match (value) { "on" => 1, "off" => 0, "auto" => 2, };`, "not a member"),

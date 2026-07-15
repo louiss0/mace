@@ -190,7 +190,7 @@ func formatDeclaration(declaration ast.Declaration) (string, error) {
 		}
 
 		description := formatInlineDescription(typedDeclaration.Description)
-		return fmt.Sprintf("type %s: %s%s;", typedDeclaration.Name, typeReference, description), nil
+		return fmt.Sprintf("alias %s: %s%s;", typedDeclaration.Name, typeReference, description), nil
 	case ast.SchemaDeclaration:
 		recordType, err := formatRecordType(typedDeclaration.Type, 0)
 		if err != nil {

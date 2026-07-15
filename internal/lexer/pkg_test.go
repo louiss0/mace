@@ -82,10 +82,11 @@ var _ = Describe("Lexer", func() {
 			tAssert.NoError(err)
 			assertTokenSequence(tokens, expected)
 		},
-		Entry("keywords and identifiers", "from import type schema gen_doc schema_doc enum array fusion variant choice match record string int float hex_int hex_float boolean output schema_file parse parse_file data nullable in is null user_1", []expectedToken{
+		Entry("keywords and identifiers", "from import alias type schema gen_doc schema_doc enum array fusion variant choice match record string int float hex_int hex_float boolean output schema_file parse parse_file data nullable in is null user_1", []expectedToken{
 			{tokenType: TokenFrom, lexeme: "from"},
 			{tokenType: TokenImport, lexeme: "import"},
-			{tokenType: TokenTypeKeyword, lexeme: "type"},
+			{tokenType: TokenAliasKeyword, lexeme: "alias"},
+			{tokenType: TokenIdentifier, lexeme: "type"},
 			{tokenType: TokenSchema, lexeme: "schema"},
 			{tokenType: TokenGenDoc, lexeme: "gen_doc"},
 			{tokenType: TokenSchemaDoc, lexeme: "schema_doc"},
@@ -410,16 +411,16 @@ var _ = Describe("Lexer", func() {
 			tAssert.NoError(err)
 			assertTokenTypes(tokens, expected)
 		},
-		Entry("primitive variant", "type Value: variant[string, int];", []TokenType{
-			TokenTypeKeyword, TokenIdentifier, TokenColon, TokenVariant, TokenLBracket,
+		Entry("primitive variant", "alias Value: variant[string, int];", []TokenType{
+			TokenAliasKeyword, TokenIdentifier, TokenColon, TokenVariant, TokenLBracket,
 			TokenStringType, TokenComma, TokenIntType, TokenRBracket, TokenSemicolon, TokenEOF,
 		}),
-		Entry("variant with array and identifier", "type Value: variant[array<string>, User];", []TokenType{
-			TokenTypeKeyword, TokenIdentifier, TokenColon, TokenVariant, TokenLBracket,
+		Entry("variant with array and identifier", "alias Value: variant[array<string>, User];", []TokenType{
+			TokenAliasKeyword, TokenIdentifier, TokenColon, TokenVariant, TokenLBracket,
 			TokenArray, TokenLess, TokenStringType, TokenGreater, TokenComma, TokenIdentifier, TokenRBracket, TokenSemicolon, TokenEOF,
 		}),
-		Entry("schema fusion", "type Value: fusion[Profile, Audit];", []TokenType{
-			TokenTypeKeyword, TokenIdentifier, TokenColon, TokenUnion, TokenLBracket,
+		Entry("schema fusion", "alias Value: fusion[Profile, Audit];", []TokenType{
+			TokenAliasKeyword, TokenIdentifier, TokenColon, TokenUnion, TokenLBracket,
 			TokenIdentifier, TokenComma, TokenIdentifier, TokenRBracket, TokenSemicolon, TokenEOF,
 		}),
 	)

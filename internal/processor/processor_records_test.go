@@ -9,7 +9,7 @@ import (
 var _ = Describe("Record maps", func() {
 	It("preserves multiple record entries and resolves their member values", func() {
 		result, err := New().Process(`|===|
-type Dependencies: record<string>;
+alias Dependencies: record<string>;
 Dependencies dependencies = {
   pi_prompt_guard: "^1.0.0",
   pi_prompt_form: "^1.0.0",
@@ -33,7 +33,7 @@ Dependencies dependencies = {
 
 	It("rejects record entries that do not match their value type", func() {
 		_, err := New().Process(`|===|
-type Dependencies: record<string>;
+alias Dependencies: record<string>;
 Dependencies dependencies = { pi_prompt_guard: 1, };
 |===|
 [output = 'data']
@@ -55,7 +55,7 @@ Dependencies dependencies = { pi_prompt_guard: 1, };
 		func(declarations string, valueType string, literal string) {
 			_, err := New().Process(fmt.Sprintf(`|===|
 %s
-type Packages: record<%s>;
+alias Packages: record<%s>;
 Packages packages = %s;
 |===|
 [output = 'data']
@@ -78,13 +78,13 @@ Packages packages = %s;
 		Entry("fusion", `
 schema Service: { name: string, };
 schema Versioned: { version: int, };
-type Deployment: fusion[Service, Versioned];`, "Deployment", `{ api: { name: "api", version: 1, }, }`),
+alias Deployment: fusion[Service, Versioned];`, "Deployment", `{ api: { name: "api", version: 1, }, }`),
 	)
 
 	DescribeTable("accepts every primitive variant combination as record values",
 		func(valueType string, literal string) {
 			_, err := New().Process(fmt.Sprintf(`|===|
-type Values: record<variant[%s]>;
+alias Values: record<variant[%s]>;
 Values values = %s;
 |===|
 [output = 'data']
@@ -114,7 +114,7 @@ Values values = %s;
 			valueType := recordMapTypeText(depth, "string")
 			literal := nestedRecordMapLiteralText(depth, `"enabled"`)
 			_, err := New().Process(fmt.Sprintf(`|===|
-type Packages: %s;
+alias Packages: %s;
 Packages packages = %s;
 |===|
 [output = 'data']
@@ -139,7 +139,7 @@ Packages packages = %s;
 			valueType := alternatingRecordArrayTypeText(depth, startsWithRecord)
 			literal := alternatingRecordArrayLiteralText(depth, startsWithRecord, `"enabled"`)
 			_, err := New().Process(fmt.Sprintf(`|===|
-type Packages: %s;
+alias Packages: %s;
 Packages packages = %s;
 |===|
 [output = 'data']
@@ -174,7 +174,7 @@ Packages packages = %s;
 			valueType := recordMapTypeText(depth, "string")
 			literal := nestedRecordMapLiteralText(depth, `"enabled"`)
 			_, err := New().Process(fmt.Sprintf(`|===|
-type Packages: variant[%s, %s];
+alias Packages: variant[%s, %s];
 Packages packages = %s;
 |===|
 [output = 'data']

@@ -125,7 +125,7 @@ array<Point> points = [
 		Entry("mixed alternative fields", `|===|
 schema EmailLogin: { email: string, password: string, };
 schema ApiKeyLogin: { api_key: string, };
-type Login: variant[EmailLogin, ApiKeyLogin];
+alias Login: variant[EmailLogin, ApiKeyLogin];
 Login value = {
   email: "ada@example.com",
   password: "secret",
@@ -135,7 +135,7 @@ Login value = {
 		Entry("multiple matching alternatives", `|===|
 schema Named: { id: string, };
 schema OptionallyNamed: { id: string, nickname?: string, };
-type Identity: variant[Named, OptionallyNamed];
+alias Identity: variant[Named, OptionallyNamed];
 Identity value = { id: "u1", };
 |===|`, "exactly one variant member"),
 	)

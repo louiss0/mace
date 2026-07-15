@@ -18,7 +18,7 @@ is documented in [the formal specification](.&#x2f;docs&#x2f;src&#x2f;content&#x
 
 ## Features
 
-- Typed script declarations for `type`, `schema`, and variables
+- Typed script declarations for `alias`, `schema`, and variables
 - Literal `choice[...]` types for user-selectable value domains
 - Choice-aware editor completions for literal domains and variants
 - Deterministic expression evaluation
@@ -47,7 +47,7 @@ Example:
 |===|
 from &quot;.&#x2f;shared.mace&quot; import User:ProfileUser;
 
-type Environment: choice[&quot;dev&quot;, &quot;prod&quot;];
+alias Environment: choice[&quot;dev&quot;, &quot;prod&quot;];
 
 Environment env = &quot;prod&quot;;
 ProfileUser current = {
@@ -68,7 +68,7 @@ not rename the exported key in the imported file.
 
 Mace supports:
 
-- `:` for type declarations (`type`, `schema`)
+- `:` for alias declarations (`alias`, `schema`)
 - `=` for variable initializers
 - primitive types: `string`, `int`, `float`, `hex_int`, `hex_float`, `boolean`
 - arrays: `array&lt;T&gt;`
@@ -110,8 +110,8 @@ combine fields from different variant branches.
 
 ```mace
 |===|
-type Identity: variant[string, int];
-type Values: variant[array&lt;string&gt;, array&lt;int&gt;];
+alias Identity: variant[string, int];
+alias Values: variant[array&lt;string&gt;, array&lt;int&gt;];
 Identity primary = &quot;Ada&quot;;
 Identity fallback = 42;
 Values tags = [&quot;api&quot;, &quot;web&quot;];
@@ -131,7 +131,7 @@ record shape.
 |===|
 schema Profile: { name: string };
 schema Audit: { created_at: string };
-type User: fusion[Profile, Audit];
+alias User: fusion[Profile, Audit];
 User value = {
   name: &quot;Ada&quot;,
   created_at: &quot;2026-04-08&quot;
@@ -148,9 +148,9 @@ Choice aliases can be merged with `fusion[...]` and embedded inside variants.
 
 ```mace
 |===|
-type Access: choice[&quot;read&quot;, &quot;write&quot;];
-type Feature: choice[&quot;write&quot;, &quot;execute&quot;];
-type Permission: fusion[Access, Feature];
+alias Access: choice[&quot;read&quot;, &quot;write&quot;];
+alias Feature: choice[&quot;write&quot;, &quot;execute&quot;];
+alias Permission: fusion[Access, Feature];
 Permission value = &quot;execute&quot;;
 |===|
 [output = 'data']

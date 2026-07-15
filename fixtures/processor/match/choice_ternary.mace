@@ -1,5 +1,5 @@
 |===|
-type Environment: choice["dev", "prod"];
+alias Environment: choice["dev", "prod"];
 
 Environment environment = "prod";
 nullable boolean preferMatch = true;

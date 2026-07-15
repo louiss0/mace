@@ -14,8 +14,8 @@ var _ = Describe("Documentation", func() {
 		Entry("documentation declarations", `|===|
 schema User: { name: string, };
 
-type Status: choice["Pending"];
-type Name: string;
+alias Status: choice["Pending"];
+alias Name: string;
 string greeting = "Hello";
 User profile = {
   name: greeting,
@@ -57,7 +57,7 @@ gen_doc greeting {
 			tAssert.ErrorContains(err, message)
 		},
 		Entry("interpolation rejects type references", `|===|
-type UserName: string;
+alias UserName: string;
 string value = "$(UserName)";
 |===|`, "type reference"),
 		Entry("schema_doc rejects duplicate keys", `|===|
@@ -69,7 +69,7 @@ schema_doc User {
 };
 |===|`, "duplicate schema_doc entry"),
 		Entry("schema_doc rejects type targets", `|===|
-type Status: string;
+alias Status: string;
 
 schema_doc Status {
   summary: "Invalid target.",
@@ -96,7 +96,7 @@ gen_doc profile {
 };
 |===|`, "gen_doc target \"profile\" must reference a type or non-object variable"),
 		Entry("type inline description conflicts with gen_doc", `|===|
-type Name: string /# Duplicate inline docs;
+alias Name: string /# Duplicate inline docs;
 
 gen_doc Name {
   summary: "Public name type",
@@ -125,7 +125,7 @@ schema_doc User {
 };
 |===|`, "does not exist"),
 		Entry("gen_doc fields reject type targets", `|===|
-type Name: string;
+alias Name: string;
 
 gen_doc Name {
   fields: {
@@ -147,7 +147,7 @@ gen_doc Name {
   summary: "Late-bound docs",
 };
 
-type Name: string;
+alias Name: string;
 |===|`, "must appear after its type or non-object variable declaration"),
 		Entry("gen_doc must appear after its variable declaration", `|===|
 gen_doc name {

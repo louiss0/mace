@@ -1,5 +1,5 @@
 |===|
-type Primitive: variant[string, int, float, hex_int, hex_float, boolean];
+alias Primitive: variant[string, int, float, hex_int, hex_float, boolean];
 
 Primitive value = 0x1.8;
 string kind = match (value) {

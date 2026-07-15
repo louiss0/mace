@@ -93,8 +93,8 @@ var _ = Describe("LSP analysis", func() {
 		file := ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}}}}
 		tokens := lexAnalysisTokens("from \"./shared.mace\" import Remote: Local;")
 		_, _, _ = moveImportsToTopEdit("from \"./shared.mace\" import Remote: Local;", file, tokens, "move")
-		_, _ = duplicateDeclarationEditRange("type Name: string; type Name: int;", file, tokens, "duplicate")
-		_, _, _ = declarationOperatorEdit("type Name: string;", tokens, "operator")
+		_, _ = duplicateDeclarationEditRange("alias Name: string; alias Name: int;", file, tokens, "duplicate")
+		_, _, _ = declarationOperatorEdit("alias Name: string;", tokens, "operator")
 		_, _, _ = selfOrderingEdit("[output = 'data'] { result: $self.name, }", file, tokens, "self")
 	})
 
@@ -517,7 +517,7 @@ boolean use_address = true;
 		text := `|===|
 schema Primary: { packages: record<record<{ <cursor>city: string, }>>, };
 schema Secondary: { packages: record<record<{ city: int, }>>, };
-type Catalog: variant[Primary, Secondary];
+alias Catalog: variant[Primary, Secondary];
 Primary primary = { packages: {}, };
 Catalog catalog = primary;
 |===|
@@ -648,7 +648,7 @@ Catalog catalog = primary;
 				return result
 			}
 
-			declarations := []string{"|===|", "type Enabled: choice[true, false];", "Enabled enabled = true;"}
+			declarations := []string{"|===|", "alias Enabled: choice[true, false];", "Enabled enabled = true;"}
 			for schemaIndex := 1; schemaIndex <= schemaCount; schemaIndex++ {
 				declarations = append(declarations, fmt.Sprintf("schema Schema%d: %s;", schemaIndex, nestedType(schemaIndex)))
 			}
@@ -768,7 +768,7 @@ schema User: {
 		tAssert.NoError(err)
 
 		writeAnalysisFile(workspace, "shared.mace", `|===|
-type Hidden: string;
+alias Hidden: string;
 schema User: { name: string, };
 string local = "Ada";
 |===|
@@ -1392,12 +1392,12 @@ schema User: { name: string, age: int, };
 
 		It("wraps types in arrays", func() {
 			snapshot := analyzeDocumentAt(`|===|
-type Name: string;
+alias Name: string;
 |===|
 [output = 'schema']
 {}`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Wrap type in array")
-			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "type Name: array<string>;")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "alias Name: array<string>;")
 		})
 
 		It("fixes mixed array literals with variants", func() {
@@ -1408,7 +1408,7 @@ array<string> values = ["Ada", 1];
 { value: values, }`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Fix mixed array literal")
 			text := action.Edit.Changes[uri][0].NewText
-			tAssert.Contains(text, "type ValuesItem: variant[string, int];")
+			tAssert.Contains(text, "alias ValuesItem: variant[string, int];")
 			tAssert.Contains(text, "array<ValuesItem> values")
 		})
 
@@ -1527,13 +1527,13 @@ string name = "Ada";
 
 		It("adds missing semicolons after script declarations", func() {
 			snapshot := analyzeDocumentAt(`|===|
-type Name: string
+alias Name: string
 |===|
 [output = 'schema']
 {}`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Add missing semicolon")
 
-			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "type Name: string;")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "alias Name: string;")
 		})
 
 		It("extracts repeated type references into an alias", func() {
@@ -1545,7 +1545,7 @@ schema User: { name: string, email: string, };
 			action := requireCodeAction(snapshot, uri, rangeValue, "Extract repeated type into alias")
 
 			text := action.Edit.Changes[uri][0].NewText
-			tAssert.Contains(text, "type ExtractedType: string;")
+			tAssert.Contains(text, "alias ExtractedType: string;")
 			tAssert.Contains(text, "name: ExtractedType")
 		})
 
@@ -1559,7 +1559,7 @@ string name = "Ada";
 			action := requireCodeAction(snapshot, uri, targetRange, "Extract variable type into alias")
 
 			text := action.Edit.Changes[uri][0].NewText
-			tAssert.Contains(text, "type ExampleType: string;")
+			tAssert.Contains(text, "alias ExampleType: string;")
 			tAssert.Contains(text, "ExampleType name = \"Ada\";")
 		})
 
@@ -1573,7 +1573,7 @@ schema User: { name: string, age: int, profile: string, };
 			action := requireCodeAction(snapshot, uri, targetRange, "Extract schema field name type into alias")
 
 			text := action.Edit.Changes[uri][0].NewText
-			tAssert.Contains(text, "type ExampleType: string;")
+			tAssert.Contains(text, "alias ExampleType: string;")
 			tAssert.Contains(text, "name: ExampleType")
 			tAssert.Contains(text, "age: int")
 			tAssert.Contains(text, "profile: string")
@@ -1589,7 +1589,7 @@ schema User: { profile: { name: string, }, };
 			action := requireCodeAction(snapshot, uri, targetRange, "Extract schema field profile.name type into alias")
 
 			text := action.Edit.Changes[uri][0].NewText
-			tAssert.Contains(text, "type ExampleType: string;")
+			tAssert.Contains(text, "alias ExampleType: string;")
 			tAssert.Contains(text, "name: ExampleType")
 			tAssert.Contains(text, "profile: {")
 		})
@@ -1644,24 +1644,24 @@ schema User: { profile: { name: string, }, };
 
 		It("fixes mismatched script delimiter widths", func() {
 			snapshot := analyzeDocumentAt(`|====|
-type Name: string;
+alias Name: string;
 |====|
 [output = 'schema']
 {}`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Fix script delimiter length mismatch")
 
-			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "|===|\ntype Name: string;")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "|===|\nalias Name: string;")
 		})
 
 		It("normalizes script fences", func() {
 			snapshot := analyzeDocumentAt(`|====|
-type Name: string;
+alias Name: string;
 |====|
 [output = 'schema']
 {}`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Normalize script fence")
 
-			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "|===|\ntype Name: string;")
+			tAssert.Contains(action.Edit.Changes[uri][0].NewText, "|===|\nalias Name: string;")
 		})
 
 		It("removes empty script blocks", func() {
@@ -1678,11 +1678,11 @@ type Name: string;
 			snapshot := analyzeDocumentAt(`[output = 'schema']
 {}
 |===|
-type Name: string;
+alias Name: string;
 |===|`, documentPath)
 			action := requireCodeAction(snapshot, uri, rangeValue, "Move script block before output block")
 
-			tAssert.True(strings.HasPrefix(action.Edit.Changes[uri][0].NewText, "|===|\ntype Name: string;"))
+			tAssert.True(strings.HasPrefix(action.Edit.Changes[uri][0].NewText, "|===|\nalias Name: string;"))
 		})
 	})
 
@@ -1782,7 +1782,7 @@ string name = "Ada";
 	It("offers inline description actions for type declarations", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		snapshot := analyzeDocumentAt(`|===|
-type Name: string;
+alias Name: string;
 |===|
 [output = 'schema']
 {
@@ -1823,7 +1823,7 @@ from './shared.mace' import User;
 	It("inserts inline descriptions after complex type declarations", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		snapshot := analyzeDocumentAt(`|===|
-type User: { name: string, };
+alias User: { name: string, };
 |===|
 [output = 'schema']
 {
@@ -1838,7 +1838,7 @@ type User: { name: string, };
 		edits := action.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
 		if tAssert.Len(edits, 1) {
 			tAssert.Equal(protocol.UInteger(1), edits[0].Range.Start.Line)
-			tAssert.Equal(protocol.UInteger(28), edits[0].Range.Start.Character)
+			tAssert.Equal(protocol.UInteger(29), edits[0].Range.Start.Character)
 		}
 	})
 
@@ -1910,8 +1910,8 @@ string name = "Grace";
 	It("warns about unused type declarations and offers removal", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		snapshot := analyzeDocumentAt(`|===|
-type Unused: string;
-type Name: string;
+alias Unused: string;
+alias Name: string;
 schema User: { name: Name, };
 |===|
 [output = 'schema']
@@ -1937,7 +1937,7 @@ schema User: { name: Name, };
 	It("treats types used by match patterns as referenced", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		snapshot := analyzeDocumentAt(`|===|
-type Name: string;
+alias Name: string;
 variant[Name, int] value = "Ada";
 string kind = match (value) {
   Name => "name",
@@ -1974,7 +1974,7 @@ array<int> foo = ["4", 6];
 
 	It("translates schema output script variables into variable diagnostics", func() {
 		snapshot := analyzeDocument(`|===|
-type Name: string;
+alias Name: string;
 schema User: { name: Name, age: int, };
 int local = 1;
 |===|
@@ -1995,7 +1995,7 @@ int local = 1;
 
 	It("translates data output type exports into value diagnostics", func() {
 		snapshot := analyzeDocument(`|===|
-type Name: string;
+alias Name: string;
 schema User: { name: string, };
 string value = "Ada";
 |===|
@@ -2452,7 +2452,7 @@ from './rename.mace' import Missing;
 	It("covers semantic and documentation code action aggregators", func() {
 		documentPath := filepath.Join(os.TempDir(), "mace-actions.mace")
 		text := `|===|
-type Alias: string;
+alias Alias: string;
 string value = "x";
 schema User: { name: string, };
 |===|
@@ -2581,7 +2581,7 @@ var _ = Describe("analyzer branch boost helpers", func() {
 		_, _ = semanticDiagnosticFromError(ast.File{}, nil, fmt.Errorf("plain"))
 		_, _ = importResolutionCodeActions(`from './shared.mace' import User;`, ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "User"}}}}}, lexAnalysisTokens(`from './shared.mace' import User;`), docPath), unavailableImportDiagnostics(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "User"}}}}}, lexAnalysisTokens(`from './shared.mace' import User;`), docPath)
 		_ = unavailableImportNameSet(ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "User"}}}}}, docPath)
-		_, _ = documentationCodeActions("|===|\ntype Alias: string;\n|===|\n[output = 'data']\n{}", ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.TypeDeclaration{Name: "Alias", NameToken: lexer.Token{Line: 2, Column: 6, Lexeme: "Alias"}, Type: ast.PrimitiveType{Name: "string"}}}}}, lexAnalysisTokens("|===|\ntype Alias: string;\n|===|\n[output = 'data']\n{}"), docPath), editorRefactorCodeActions("[output = 'data']\n{\n  value: 1,\n}\n", ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData, DataFields: []ast.OutputField{{Name: "value", Value: ast.IntLiteral{Lexeme: "1"}}}}}, lexAnalysisTokens("[output = 'data']\n{\n  value: 1,\n}\n"), docPath)
+		_, _ = documentationCodeActions("|===|\nalias Alias: string;\n|===|\n[output = 'data']\n{}", ast.File{Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.TypeDeclaration{Name: "Alias", NameToken: lexer.Token{Line: 2, Column: 6, Lexeme: "Alias"}, Type: ast.PrimitiveType{Name: "string"}}}}}, lexAnalysisTokens("|===|\nalias Alias: string;\n|===|\n[output = 'data']\n{}"), docPath), editorRefactorCodeActions("[output = 'data']\n{\n  value: 1,\n}\n", ast.File{Output: ast.OutputBlock{Mode: ast.OutputModeData, DataFields: []ast.OutputField{{Name: "value", Value: ast.IntLiteral{Lexeme: "1"}}}}}, lexAnalysisTokens("[output = 'data']\n{\n  value: 1,\n}\n"), docPath)
 		updated, ok = replaceVariableDeclaration("nothing", regexp.MustCompile(`missing`), func(matches []string) string { return "x" })
 		tAssert.False(ok)
 		tAssert.Equal("nothing", updated)

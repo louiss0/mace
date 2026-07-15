@@ -12,8 +12,8 @@ var _ = Describe("Choices", func() {
 		func(choiceType string, primitiveType string, presetValue string, fallbackValue string) {
 			processor := New()
 			_, err := processor.Process(wrapScriptWithOutput(fmt.Sprintf(`|===|
-type Preset: %s;
-type Value: variant[Preset, %s];
+alias Preset: %s;
+alias Value: variant[Preset, %s];
 Value preset = %s;
 Value fallback = %s;
 |===|`, choiceType, primitiveType, presetValue, fallbackValue)))
@@ -37,7 +37,7 @@ Value fallback = %s;
 			assertExpectedValue(actual, expected)
 		},
 		Entry("choice string literal", `|===|
- type Fruit: choice["Apple", "Strawberry"];
+ alias Fruit: choice["Apple", "Strawberry"];
  Fruit result = "Apple";
 |===|
 [output = 'data']
@@ -45,9 +45,9 @@ Value fallback = %s;
   result: result,
 }`, expectedValue{kind: ValueString, string: "Apple"}),
 		Entry("fusion merges and deduplicates choices", `|===|
- type Environment: choice["dev", "prod"];
- type Feature: choice["prod", "test"];
- type Mode: fusion[Environment, Feature];
+ alias Environment: choice["dev", "prod"];
+ alias Feature: choice["prod", "test"];
+ alias Mode: fusion[Environment, Feature];
  Mode result = "test";
 |===|
 [output = 'data']
@@ -55,7 +55,7 @@ Value fallback = %s;
   result: result,
 }`, expectedValue{kind: ValueString, string: "test"}),
 		Entry("choice float members preserve precision", `|===|
- type Ratio: choice[1.04, 1.0];
+ alias Ratio: choice[1.04, 1.0];
  Ratio first = 1.04;
  Ratio second = 1.0;
 |===|
@@ -76,13 +76,13 @@ Value fallback = %s;
 			tAssert.ErrorContains(err, message)
 		},
 		Entry("choice aliases require fusion", wrapScriptWithOutput(`|===|
- type Fruit: choice[MissingChoice];
+ alias Fruit: choice[MissingChoice];
 |===|`), "use fusion to merge choice types"),
 		Entry("duplicate choice members", wrapScriptWithOutput(`|===|
- type Fruit: choice["Apple", "Apple"];
+ alias Fruit: choice["Apple", "Apple"];
 |===|`), "duplicate choice member"),
 		Entry("value outside choice domain", `|===|
- type Fruit: choice["Apple", "Strawberry"];
+ alias Fruit: choice["Apple", "Strawberry"];
  Fruit result = "Pear";
 |===|
 [output = 'data']
@@ -91,7 +91,7 @@ Value fallback = %s;
 }`, "type mismatch: expected choice[\"Apple\", \"Strawberry\"], got \"Pear\""),
 		Entry("conditional branch outside choice domain", `|===|
  boolean enabled = true;
- type Fruit: choice["Apple", "Strawberry"];
+ alias Fruit: choice["Apple", "Strawberry"];
  Fruit result = (enabled ? "Pear" : "Apple");
 |===|
 [output = 'data']

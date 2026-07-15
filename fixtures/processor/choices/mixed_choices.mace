@@ -1,7 +1,7 @@
 |==================================================|
-type PrimaryChannel: choice["email", "sms"];
-type SupportChannel: choice["chat", "phone"];
-type ContactChannel: fusion[PrimaryChannel, SupportChannel];
+alias PrimaryChannel: choice["email", "sms"];
+alias SupportChannel: choice["chat", "phone"];
+alias ContactChannel: fusion[PrimaryChannel, SupportChannel];
 
 schema ContactPreference: {
   customer_id: string,

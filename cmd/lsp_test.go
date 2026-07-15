@@ -416,7 +416,7 @@ int count = "Ada";
 		didOpen(server, uri, `|===|
 schema EmailLogin: { email: string, };
 schema ApiKeyLogin: { api_key: string, };
-type Login: variant[EmailLogin, ApiKeyLogin];
+alias Login: variant[EmailLogin, ApiKeyLogin];
 Login login = {
   email: "ada@example.com",
   api_key: "secret",
@@ -439,7 +439,7 @@ Login login = {
 		notifications := []capturedNotification{}
 
 		didOpen(server, uri, `|===|
-type Broken: fusion[string, int];
+alias Broken: fusion[string, int];
 |===|
 [output = 'data'] {}`, &notifications)
 
@@ -894,7 +894,7 @@ ch
 	It("suggests choice values for script variable initializers", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
-type Fruit: choice["Apple", "Strawberry"];
+alias Fruit: choice["Apple", "Strawberry"];
 Fruit favorite =
 |===|
 [output = 'data'] {}`, nil)
@@ -907,7 +907,7 @@ Fruit favorite =
 	It("suggests unquoted choice values inside script strings", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
-type Fruit: choice["Apple", "Strawberry"];
+alias Fruit: choice["Apple", "Strawberry"];
 Fruit favorite = "A
 |===|
 [output = 'data'] {}`, nil)
@@ -921,8 +921,8 @@ Fruit favorite = "A
 	It("suggests choice values for script variable variants", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
-type Status: choice["pending", "approved"];
-type Label: variant[Status, string];
+alias Status: choice["pending", "approved"];
+alias Label: variant[Status, string];
 Label label =
 |===|
 [output = 'data'] {}`, nil)
@@ -935,7 +935,7 @@ Label label =
 	It("suggests choice values for script variable record fields", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
-type Fruit: choice["Apple", "Strawberry"];
+alias Fruit: choice["Apple", "Strawberry"];
 schema Basket: { favorite_fruit: Fruit, };
 Basket basket = {
   favorite_fruit:
@@ -951,7 +951,7 @@ Basket basket = {
 	It("suggests unquoted choice values inside record field strings", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
-type Fruit: choice["Apple", "Strawberry"];
+alias Fruit: choice["Apple", "Strawberry"];
 schema Basket: { favorite_fruit: Fruit, };
 Basket basket = {
   favorite_fruit: "Str
@@ -966,7 +966,7 @@ Basket basket = {
 	It("suggests unquoted choice values inside array element strings", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
-type Fruit: choice["Apple", "Strawberry"];
+alias Fruit: choice["Apple", "Strawberry"];
 array<Fruit> favorites = ["A
 |===|
 [output = 'data'] {}`, nil)
@@ -1300,7 +1300,7 @@ schema Runtime: { env: string, region: string, };
 	It("suggests choice values for output schema fields", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
- type Fruit: choice["Apple", "Strawberry"];
+ alias Fruit: choice["Apple", "Strawberry"];
  schema Basket: { favorite_fruit: Fruit, };
 |===|
 [output = 'data', schema = Basket]
@@ -1317,7 +1317,7 @@ schema Runtime: { env: string, region: string, };
 	It("suggests choice values after earlier self member access", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
- type Fruit: choice["Apple", "Strawberry"];
+ alias Fruit: choice["Apple", "Strawberry"];
  schema Basket: { previous: Fruit, favorite_fruit: Fruit, };
 |===|
 [output = 'data', schema = Basket]
@@ -1333,9 +1333,9 @@ schema Runtime: { env: string, region: string, };
 	It("suggests choice values inside variants while keeping imprecise alternatives", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
- type Role: choice["Admin", "Member"];
+ alias Role: choice["Admin", "Member"];
  schema User: { name: string, };
- type Identity: variant[Role, User];
+ alias Identity: variant[Role, User];
  schema Envelope: { value: Identity, };
  schema Response: { payload: Envelope, };
 |===|
@@ -1358,7 +1358,7 @@ schema Runtime: { env: string, region: string, };
 		didChange(server, uri, 2, `|===|
 schema Profile: { name: string, };
 schema Audit: { created_at: string, };
-type User: fusion[Profile, Audit];
+alias User: fusion[Profile, Audit];
 schema Envelope: { value: User, };
 schema Response: { payload: Envelope, };
 |===|
@@ -1377,7 +1377,7 @@ schema Response: { payload: Envelope, };
 	It("keeps typed output completions alongside $self in output schema fields", func() {
 		openEmptyDocument(server, uri, nil)
 		didChange(server, uri, 2, `|===|
- type Fruit: choice["Apple", "Strawberry"];
+ alias Fruit: choice["Apple", "Strawberry"];
  schema Basket: { favorite_fruit: Fruit, };
 |===|
 [output = 'data', schema = Basket]
@@ -1596,8 +1596,9 @@ from './shared.mace' import ImportedUser;
 	It("returns hover documentation for language keywords", func() {
 		didOpen(server, uri, `|===|
 schema User: { name: string, };
-type Identity: variant[string, int];
-type UserRecord: fusion[User, Profile];
+alias Identity: variant[string, int];
+alias UserRecord: fusion[User, Profile];
+alias Status: choice["active", "inactive"];
 schema Profile: { age: int, };
 |===|
 [output = 'data'] { name: "Ada", }`, nil)
@@ -1671,7 +1672,7 @@ schema Profile: { age: int, };
 		resultValue, validMethod, validParams, err = invoke(server.Handler(), protocol.MethodTextDocumentHover, protocol.HoverParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
-				Position:     protocol.Position{Line: 2, Character: 14},
+				Position:     protocol.Position{Line: 4, Character: 14},
 			},
 		}, nil)
 		tAssert.True(validMethod)
@@ -2051,8 +2052,8 @@ variant[string, int, boolean] current = selected;
 string env = "dev";
 schema Profile: { name: string, };
 schema Audit: { created_at: string, };
-type Identity: variant[string, int];
-type User: fusion[Profile, Audit];
+alias Identity: variant[string, int];
+alias User: fusion[Profile, Audit];
 Identity id = "Ada";
 User user = { name: "Ada", created_at: "2026-04-09", };
 |===|
@@ -2127,7 +2128,7 @@ User user = { name: "Ada", created_at: "2026-04-09", };
 
 	It("includes gen_doc details for choice types in hover", func() {
 		didOpen(server, uri, `|===|
- type Flavor: choice["Vanilla", "Chocolate"];
+ alias Flavor: choice["Vanilla", "Chocolate"];
  gen_doc Flavor {
    summary: "Selectable flavor values",
    description: "Use autocomplete to choose a supported flavor.",
@@ -2155,7 +2156,7 @@ User user = { name: "Ada", created_at: "2026-04-09", };
 		content, ok := hover.Contents.(protocol.MarkupContent)
 		tAssert.True(ok)
 		if ok {
-			tAssert.Contains(content.Value, `type Flavor: choice["Vanilla", "Chocolate"];`)
+			tAssert.Contains(content.Value, `alias Flavor: choice["Vanilla", "Chocolate"];`)
 			tAssert.Contains(content.Value, `Selectable flavor values`)
 			tAssert.Contains(content.Value, `Use autocomplete to choose a supported flavor.`)
 		}
@@ -2163,7 +2164,7 @@ User user = { name: "Ada", created_at: "2026-04-09", };
 
 	It("includes inline type descriptions in hover details when the type is used", func() {
 		didOpen(server, uri, `|===|
-type UserID: string /# A stable user identifier;
+alias UserID: string /# A stable user identifier;
 UserID current = "user_1";
 |===|
 [output = 'data'] { result: current, }`, nil)
@@ -2187,7 +2188,7 @@ UserID current = "user_1";
 		content, ok := hover.Contents.(protocol.MarkupContent)
 		tAssert.True(ok)
 		if ok {
-			tAssert.Contains(content.Value, `type UserID: string;`)
+			tAssert.Contains(content.Value, `alias UserID: string;`)
 			tAssert.Contains(content.Value, `A stable user identifier`)
 		}
 	})
@@ -2376,7 +2377,7 @@ schema User: { name: string, };
 
 	It("returns hover details for nested output record fields", func() {
 		didOpen(server, uri, `|===|
-type Name: string;
+alias Name: string;
 schema Profile: { age: int, };
 schema User: { name: Name, profile: Profile, };
 Name default_name = "Ada";
@@ -2415,7 +2416,7 @@ int default_age = 30;
 
 	It("prefers output field hover details when the same name is reused later in self references", func() {
 		didOpen(server, uri, `|===|
-type Name: string;
+alias Name: string;
 schema Profile: { age: int, };
 schema User: { name: Name, profile: Profile, };
 Name default_name = "Ada";
@@ -2527,7 +2528,7 @@ int default_age = 30;
 		tAssert.NoError(err)
 
 		writeWorkspaceFile(workspace, "shared.mace", `|===|
- type Flavor: choice["Vanilla", "Chocolate"];
+ alias Flavor: choice["Vanilla", "Chocolate"];
 |===|
 [output = 'schema']
 {
@@ -2564,7 +2565,7 @@ Flavor current = "Vanilla";
 		content, ok := hover.Contents.(protocol.MarkupContent)
 		tAssert.True(ok)
 		if ok {
-			tAssert.Contains(content.Value, `type Flavor: choice["Vanilla", "Chocolate"];`)
+			tAssert.Contains(content.Value, `alias Flavor: choice["Vanilla", "Chocolate"];`)
 		}
 	})
 
@@ -3066,7 +3067,7 @@ string env = "dev";
 
 	It("includes choice details in hierarchical document symbols", func() {
 		didOpen(server, uri, `|===|
- type Flavor: choice["Vanilla", "Chocolate"];
+ alias Flavor: choice["Vanilla", "Chocolate"];
 |===|
 [output = 'data']
 {

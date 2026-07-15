@@ -1,6 +1,6 @@
 |===========================================================================|
-type RestartPolicy: choice["no", "always", "unless-stopped", "on-failure"];
-type ComposeVersion: choice["3.9", "3.8"];
+alias RestartPolicy: choice["no", "always", "unless-stopped", "on-failure"];
+alias ComposeVersion: choice["3.9", "3.8"];
 
 schema DockerService: {
   image?: string,

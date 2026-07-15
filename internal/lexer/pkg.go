@@ -444,8 +444,8 @@ func keywordToken(lexeme string) (TokenType, bool) {
 		return TokenFrom, true
 	case "import":
 		return TokenImport, true
-	case "type":
-		return TokenTypeKeyword, true
+	case "alias":
+		return TokenAliasKeyword, true
 	case "schema":
 		return TokenSchema, true
 	case "gen_doc":

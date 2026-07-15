@@ -1,5 +1,5 @@
 |=======================================================|
-type ID: string;
+alias ID: string;
 schema Member: { id: ID, role: string, };
 schema Team: { name: string, members: array<Member>, };
 |=======================================================|

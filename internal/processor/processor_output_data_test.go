@@ -70,8 +70,8 @@ schema User: { name: string, };
 			{name: "value"}: {Kind: SchemaTypeVariant, Members: []SchemaType{schemaPrimitive("string"), schemaPrimitive("int")}},
 		}),
 		Entry("fusion fields resolve and deduplicate choices", `|===|
- type Environment: choice["dev", "prod"];
- type Numeric: choice[1, 2];
+ alias Environment: choice["dev", "prod"];
+ alias Numeric: choice[1, 2];
 |===|
 [output = 'schema']
 {
@@ -269,7 +269,7 @@ schema Plot: { points: array<Point>, };
 [output = 'data', schema = Plot]
 { points: [ { x: 1, y: 2, }, { x: 3, } ], }`, "missing required field"),
 		Entry("choice field rejects values outside the domain", `|===|
- type Fruit: choice["Apple", "Strawberry"];
+ alias Fruit: choice["Apple", "Strawberry"];
  schema Basket: { favorite: Fruit, };
 |===|
 [output = 'data', schema = Basket]

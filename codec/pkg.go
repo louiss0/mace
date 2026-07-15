@@ -1262,7 +1262,7 @@ func (context *jsonSchemaContext) declarationForSchema(name string, record map[s
 		if err != nil {
 			return inferredType{}, "", err
 		}
-		return inferredType{kind: inferredTypeNamed, name: name, namedCategory: "choice", backingType: declarationType.backingType}, fmt.Sprintf("type %s: %s;", name, formatSchemaType(declarationType, 0)), nil
+		return inferredType{kind: inferredTypeNamed, name: name, namedCategory: "choice", backingType: declarationType.backingType}, fmt.Sprintf("alias %s: %s;", name, formatSchemaType(declarationType, 0)), nil
 	}
 
 	valueType, _, err := context.propertyType(record, path)
@@ -1274,7 +1274,7 @@ func (context *jsonSchemaContext) declarationForSchema(name string, record map[s
 	case inferredTypeRecord:
 		return inferredType{kind: inferredTypeNamed, name: name, namedCategory: "schema"}, fmt.Sprintf("schema %s: %s", name, formatSchemaRecord(valueType.record.fields, 0)), nil
 	default:
-		return inferredType{kind: inferredTypeNamed, name: name, namedCategory: "alias"}, fmt.Sprintf("type %s: %s;", name, formatSchemaType(valueType, 0)), nil
+		return inferredType{kind: inferredTypeNamed, name: name, namedCategory: "alias"}, fmt.Sprintf("alias %s: %s;", name, formatSchemaType(valueType, 0)), nil
 	}
 }
 

@@ -1,5 +1,5 @@
 |=======================================|
-type UserID: string;
+alias UserID: string;
 
 gen_doc UserID {
   summary: "A stable user identifier.",

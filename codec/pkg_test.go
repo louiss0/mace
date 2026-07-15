@@ -1537,7 +1537,7 @@ var _ = Describe("ImportSchema", func() {
 schema Profile: {
   name: string
 }
-type Role: choice["admin", "member"];
+alias Role: choice["admin", "member"];
 |===|
 [output = 'schema']
 {
@@ -1609,11 +1609,11 @@ type Role: choice["admin", "member"];
 }`)
 		tAssert.NoError(err)
 		tAssert.Equal(`|===|
-type Count: int;
-type Enabled: boolean;
-type Name: string;
-type Ratio: float;
-type Tags: array<string>;
+alias Count: int;
+alias Enabled: boolean;
+alias Name: string;
+alias Ratio: float;
+alias Tags: array<string>;
 |===|
 [output = 'schema']
 {
@@ -1643,7 +1643,7 @@ type Tags: array<string>;
 }`)
 		tAssert.NoError(err)
 		tAssert.Equal(`|===|
-type Value: variant[string, int];
+alias Value: variant[string, int];
 |===|
 [output = 'schema']
 {
@@ -1675,8 +1675,8 @@ type Value: variant[string, int];
 }`)
 		tAssert.NoError(err)
 		tAssert.Equal(`|===|
-type Role: choice["admin", "member"];
-type State: choice["active", "paused"];
+alias Role: choice["admin", "member"];
+alias State: choice["active", "paused"];
 |===|
 [output = 'schema']
 {
@@ -1918,7 +1918,7 @@ schema Node: {
 schema User: {
   name: string
 }
-type Users: array<User>;
+alias Users: array<User>;
 |===|
 [output = 'schema']
 {
@@ -1944,7 +1944,7 @@ type Users: array<User>;
 }`)
 		tAssert.NoError(err)
 		tAssert.Equal(`|===|
-type Status: choice[0, 1];
+alias Status: choice[0, 1];
 |===|
 [output = 'schema']
 {

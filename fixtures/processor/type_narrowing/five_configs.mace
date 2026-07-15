@@ -19,7 +19,7 @@ schema InlineConfig: {
   content: string,
 };
 
-type Config: variant[
+alias Config: variant[
   LocalConfig,
   RemoteConfig,
   EnvironmentConfig,

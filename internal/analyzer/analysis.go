@@ -987,7 +987,7 @@ func addMissingScriptSemicolonText(text string) (string, bool) {
 		if trimmed == "" || strings.HasSuffix(trimmed, ";") || strings.HasSuffix(trimmed, "{") || strings.HasSuffix(trimmed, "}") {
 			return false
 		}
-		return strings.HasPrefix(trimmed, "type ") || strings.HasPrefix(trimmed, "schema ") || strings.Contains(trimmed, "=")
+		return strings.HasPrefix(trimmed, "alias ") || strings.HasPrefix(trimmed, "schema ") || strings.Contains(trimmed, "=")
 	})
 	if !ok {
 		return "", false
@@ -1199,7 +1199,7 @@ func arrayTextCodeActions(text string, documentPath string) []analysisCodeAction
 }
 
 func wrapTypeInArrayText(text string) (string, bool) {
-	updated := regexp.MustCompile(`type\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(string|int|float|boolean);`).ReplaceAllString(text, `type ${1}: array<${2}>;`)
+	updated := regexp.MustCompile(`alias\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(string|int|float|boolean);`).ReplaceAllString(text, `alias ${1}: array<${2}>;`)
 	return updated, updated != text
 }
 
@@ -1210,7 +1210,7 @@ func fixMixedArrayLiteralText(text string) (string, bool) {
 		return "", false
 	}
 	aliasName := strings.ToUpper(matches[1][:1]) + matches[1][1:] + "Item"
-	updated := strings.Replace(text, "|===|\n", "|===|\ntype "+aliasName+": variant[string, int];\n", 1)
+	updated := strings.Replace(text, "|===|\n", "|===|\nalias "+aliasName+": variant[string, int];\n", 1)
 	updated = strings.Replace(updated, "array<string> "+matches[1], "array<"+aliasName+"> "+matches[1], 1)
 	return updated, updated != text
 }
@@ -3507,7 +3507,7 @@ func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *process
 		symbols = append(symbols, lo.FilterMap(file.Script.Items, func(item ast.Declaration, _ int) (semanticSymbol, bool) {
 			switch declaration := item.(type) {
 			case ast.TypeDeclaration:
-				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindClass, symbolOriginLocal, fmt.Sprintf("type %s: %s;", declaration.Name, typeReferenceDetail(declaration.Type)), declarationDocumentation(file, declaration.Name)), true
+				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindClass, symbolOriginLocal, fmt.Sprintf("alias %s: %s;", declaration.Name, typeReferenceDetail(declaration.Type)), declarationDocumentation(file, declaration.Name)), true
 			case ast.SchemaDeclaration:
 				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindStruct, symbolOriginLocal, fmt.Sprintf("schema %s: %s;", declaration.Name, recordTypeDetail(declaration.Type)), declarationDocumentation(file, declaration.Name)), true
 			case ast.VariableDeclaration:
@@ -3869,7 +3869,7 @@ func importedSemanticSymbol(file ast.File, path string, name string) (semanticSy
 		rangeValue := tokenProtocolRange(field.NameToken)
 
 		kind := protocol.CompletionItemKindClass
-		detail := fmt.Sprintf("type %s: %s;", field.Name, resolvedImportedTypeDetail(field.Type, file))
+		detail := fmt.Sprintf("alias %s: %s;", field.Name, resolvedImportedTypeDetail(field.Type, file))
 		if isSchemaTypeReference(field.Type, file) {
 			kind = protocol.CompletionItemKindStruct
 			detail = fmt.Sprintf("schema %s: %s", field.Name, fieldTypeDetail(field.Type))

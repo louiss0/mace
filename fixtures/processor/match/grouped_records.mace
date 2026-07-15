@@ -11,8 +11,8 @@ schema InlineConfig: {
   content: string,
 };
 
-type ExternalConfig: variant[LocalConfig, RemoteConfig];
-type Config: variant[LocalConfig, RemoteConfig, InlineConfig];
+alias ExternalConfig: variant[LocalConfig, RemoteConfig];
+alias Config: variant[LocalConfig, RemoteConfig, InlineConfig];
 
 Config remote = { url: "https://example.com/mace" };
 Config inline = { content: "inline configuration" };

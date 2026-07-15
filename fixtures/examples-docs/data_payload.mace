@@ -1,5 +1,5 @@
 |=============================================|
-type Greeting: string /# A rendered greeting;
+alias Greeting: string /# A rendered greeting;
 
 schema User: {
   name: string, /# The user's display name

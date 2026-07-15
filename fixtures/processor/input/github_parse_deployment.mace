@@ -1,6 +1,6 @@
 |====================================|
-type ReportName: string;
-type ContactHandle: string;
+alias ReportName: string;
+alias ContactHandle: string;
 
 schema DeliveryAudit: {
   report: ReportName,

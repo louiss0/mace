@@ -104,8 +104,8 @@ var _ = Describe("FormatFile", func() {
 	It("formats imports, script declarations, and output", func() {
 		file, err := parseMaceFile(`|===|
 from './base.mace' import User, Config;
-type Name: string;
-type Fruit: choice["Apple", "strawberry"];
+alias Name: string;
+alias Fruit: choice["Apple", "strawberry"];
 schema User: { name: string, age?: int, };
 string user = "Ada";
 |===|
@@ -115,16 +115,16 @@ string user = "Ada";
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
-		tAssert.Equal(`|==========================================|
+		tAssert.Equal(`|===========================================|
 from './base.mace' import User, Config;
-type Name: string;
-type Fruit: choice["Apple", "strawberry"];
+alias Name: string;
+alias Fruit: choice["Apple", "strawberry"];
 schema User: {
   name: string,
   age?: int
 }
 string user = "Ada";
-|==========================================|
+|===========================================|
 [output = 'data', schema = User]
 {
   name: user,
@@ -216,7 +216,7 @@ from './base.mace' import-as Base;
 
 	It("formats record map type references", func() {
 		file, err := parseMaceFile(`|===|
-type Dependencies: record<string>;
+alias Dependencies: record<string>;
 record<string> deps = { foo: "bar", };
 |===|
 [output = 'schema']
@@ -225,12 +225,12 @@ record<string> deps = { foo: "bar", };
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
-		tAssert.Equal(`|==================================|
-type Dependencies: record<string>;
+		tAssert.Equal(`|===================================|
+alias Dependencies: record<string>;
 record<string> deps = {
   foo: "bar"
 };
-|==================================|
+|===================================|
 [output = 'schema']
 {
   dependencies: record<string>
@@ -252,8 +252,8 @@ record<string> deps = {
 
 	It("formats choice type declarations", func() {
 		file, err := parseMaceFile(`|===|
- type Environment: choice["dev", "prod"];
- type Mode: fusion[Environment, choice[1, true]];
+ alias Environment: choice["dev", "prod"];
+ alias Mode: fusion[Environment, choice[1, true]];
 |===|
 [output = 'data']
 { value: "dev", }`)
@@ -261,10 +261,10 @@ record<string> deps = {
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
-		tAssert.Equal(`|================================================|
-type Environment: choice["dev", "prod"];
-type Mode: fusion[Environment, choice[1, true]];
-|================================================|
+		tAssert.Equal(`|=================================================|
+alias Environment: choice["dev", "prod"];
+alias Mode: fusion[Environment, choice[1, true]];
+|=================================================|
 [output = 'data']
 {
   value: "dev"
@@ -454,7 +454,7 @@ schema_doc User {
 
 	It("formats variant type references", func() {
 		file, err := parseMaceFile(`|===|
-type Value: variant[string, int];
+alias Value: variant[string, int];
 |===|
 [output = 'schema']
 {
@@ -464,9 +464,9 @@ type Value: variant[string, int];
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
-		tAssert.Equal(`|=================================|
-type Value: variant[string, int];
-|=================================|
+		tAssert.Equal(`|==================================|
+alias Value: variant[string, int];
+|==================================|
 [output = 'schema']
 {
   value: variant[string, int]
@@ -500,7 +500,7 @@ hex_float ratio = 0x02.80;
 
 	It("formats fusion type references", func() {
 		file, err := parseMaceFile(`|===|
-type Value: fusion[Profile, Audit];
+alias Value: fusion[Profile, Audit];
 |===|
 [output = 'schema']
 {
@@ -510,9 +510,9 @@ type Value: fusion[Profile, Audit];
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
-		tAssert.Equal(`|===================================|
-type Value: fusion[Profile, Audit];
-|===================================|
+		tAssert.Equal(`|====================================|
+alias Value: fusion[Profile, Audit];
+|====================================|
 [output = 'schema']
 {
   value: fusion[Profile, Audit]

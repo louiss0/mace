@@ -323,7 +323,7 @@ nullable User user = null;
 			tAssert.Equal([]string{expected}, labels)
 		},
 		Entry("top-level keys", `|===|
-type Enabled: choice[true, false];
+alias Enabled: choice[true, false];
 schema Primary: { city: choice['Boston'], };
 schema Secondary: { city: choice['Paris'], };
 Enabled enabled = true;
@@ -333,7 +333,7 @@ Secondary secondary = { city: 'Paris', };
 [output = 'data']
 { city: selected.city, secondary_city: secondary.city, }`, "Boston"),
 		Entry("nested keys", `|===|
-type Enabled: choice[true, false];
+alias Enabled: choice[true, false];
 schema Primary: { location: { city: choice['Boston'], }, };
 schema Secondary: { location: { city: choice['Paris'], }, };
 Enabled enabled = true;
@@ -373,7 +373,7 @@ string result = enabled ? primary.packages?.north?.api?.<cursor> : 'fallback';
 		text := `|===|
 schema LocalConfig: { path: string, enabled: boolean, };
 schema RemoteConfig: { url: string, };
-type Config: variant[LocalConfig, RemoteConfig];
+alias Config: variant[LocalConfig, RemoteConfig];
 Config config = { path: "/tmp/mace", enabled: true, };
 string result = match (config) {
   LocalConfig => config.
@@ -414,7 +414,7 @@ string result = match (config) {
 			tAssert.Equal([]string{expected}, labels)
 		},
 		Entry("top-level keys", `|===|
-type Enabled: choice[true, false];
+alias Enabled: choice[true, false];
 schema Primary: { city: choice['Boston'], };
 schema Secondary: { city: choice['Paris'], };
 Enabled enabled = true;
@@ -427,7 +427,7 @@ Secondary secondary = { city: 'Paris', };
 [output = 'data']
 { city: selected.city, secondary_city: secondary.city, }`, "Boston"),
 		Entry("nested keys", `|===|
-type Enabled: choice[true, false];
+alias Enabled: choice[true, false];
 schema Primary: { location: { city: choice['Boston'], }, };
 schema Secondary: { location: { city: choice['Paris'], }, };
 Enabled enabled = true;
@@ -445,7 +445,7 @@ Secondary secondary = { location: { city: 'Paris', }, };
 		text := `|===|
 schema Primary: { packages: record<record<{ city: string, postal_code: string, }>>, };
 schema Secondary: { packages: record<record<{ city: int, population: int, }>>, };
-type Catalog: variant[Primary, Secondary];
+alias Catalog: variant[Primary, Secondary];
 Primary primary = { packages: {}, };
 Catalog catalog = primary;
 string result = match (catalog) {
@@ -501,7 +501,7 @@ string result = match (catalog) {
 				return result
 			}
 
-			lines := []string{"|===|", "type Enabled: choice[true, false];", "Enabled enabled = true;"}
+			lines := []string{"|===|", "alias Enabled: choice[true, false];", "Enabled enabled = true;"}
 			variantMembers := make([]string, 0, schemaCount)
 			for schemaIndex := 1; schemaIndex <= schemaCount; schemaIndex++ {
 				schemaName := fmt.Sprintf("Schema%d", schemaIndex)
@@ -519,7 +519,7 @@ string result = match (catalog) {
 				lines = append(lines, fmt.Sprintf("  selected: enabled ? %s.<cursor> : '',", memberPrefix))
 			case "match":
 				lines = append(lines[:len(lines)-3],
-					fmt.Sprintf("type Catalog: variant[%s];", strings.Join(variantMembers, ", ")),
+					fmt.Sprintf("alias Catalog: variant[%s];", strings.Join(variantMembers, ", ")),
 					"Catalog catalog = schema_1;",
 					"|===|",
 					"[output = 'data']",
@@ -571,7 +571,7 @@ string result = match (catalog) {
 			}
 			memberPath := strings.Repeat("next.", depth-1)
 			text := fmt.Sprintf(`|===|
-type Config: variant[%s, string];
+alias Config: variant[%s, string];
 Config config = %s;
 string result = match (config) {
   %s => config.%s<cursor>
@@ -619,7 +619,7 @@ string result = match (config) {
 			text := fmt.Sprintf(`|===|
 %s
 schema Other: { message: string, };
-type Config: variant[Level1, Other];
+alias Config: variant[Level1, Other];
 Config config = %s;
 string result = match (config) {
   Level1 => config.%s<cursor>
@@ -657,7 +657,7 @@ string result = match (config) {
 		text := `|===|
 schema LocalConfig: { path: string, enabled: boolean, };
 schema RemoteConfig: { url: string, };
-type Config: variant[LocalConfig, RemoteConfig];
+alias Config: variant[LocalConfig, RemoteConfig];
 Config config = { path: "/tmp/mace", enabled: true, };
 |===|
 [output = 'data']
@@ -702,7 +702,7 @@ User.
 
 	It("keeps typed output completions alongside $self in output schema fields", func() {
 		text := `|===|
- type Fruit: choice["Apple", "Strawberry"];
+ alias Fruit: choice["Apple", "Strawberry"];
  schema Basket: { favorite_fruit: Fruit, };
 |===|
 [output = 'data', schema = Basket]
@@ -1570,7 +1570,7 @@ schema User: {
 	})
 	It("suggests choice values for output block schema fields", func() {
 		text := `|===|
- type Fruit: choice["Apple", "Strawberry"];
+ alias Fruit: choice["Apple", "Strawberry"];
  schema Basket: { favorite_fruit: Fruit, };
 |===|
 [output = 'data', schema = Basket]
@@ -1597,7 +1597,7 @@ schema User: {
 
 	It("suggests choice values after earlier self member access", func() {
 		text := `|===|
- type Fruit: choice["Apple", "Strawberry"];
+ alias Fruit: choice["Apple", "Strawberry"];
  schema Basket: { previous: Fruit, favorite_fruit: Fruit, };
 |===|
 [output = 'data', schema = Basket]
@@ -1623,7 +1623,7 @@ schema User: {
 
 	It("suggests choice values for script variable initializers", func() {
 		text := `|===|
- type Fruit: choice["Apple", "Strawberry"];
+ alias Fruit: choice["Apple", "Strawberry"];
  Fruit favorite =
 |===|
 [output = 'data'] {}`
@@ -1646,7 +1646,7 @@ schema User: {
 
 	It("suggests unquoted choice values inside script strings", func() {
 		text := `|===|
- type Fruit: choice["Apple", "Strawberry"];
+ alias Fruit: choice["Apple", "Strawberry"];
  Fruit favorite = "A
 |===|
 [output = 'data'] {}`
@@ -1670,8 +1670,8 @@ schema User: {
 
 	It("suggests choice values inside script variable variants", func() {
 		text := `|===|
- type Status: choice["pending", "approved"];
- type Label: variant[Status, string];
+ alias Status: choice["pending", "approved"];
+ alias Label: variant[Status, string];
  Label label =
 |===|
 [output = 'data'] {}`
@@ -1694,7 +1694,7 @@ schema User: {
 
 	It("suggests choice values for script variable record fields", func() {
 		text := `|===|
- type Fruit: choice["Apple", "Strawberry"];
+ alias Fruit: choice["Apple", "Strawberry"];
  schema Basket: { favorite_fruit: Fruit, };
  Basket basket = {
    favorite_fruit:
@@ -1720,7 +1720,7 @@ schema User: {
 
 	It("suggests unquoted choice values inside record field strings", func() {
 		text := `|===|
- type Fruit: choice["Apple", "Strawberry"];
+ alias Fruit: choice["Apple", "Strawberry"];
  schema Basket: { favorite_fruit: Fruit, };
  Basket basket = {
    favorite_fruit: "Str
@@ -1745,7 +1745,7 @@ schema User: {
 
 	It("suggests unquoted choice values inside array element strings", func() {
 		text := `|===|
- type Fruit: choice["Apple", "Strawberry"];
+ alias Fruit: choice["Apple", "Strawberry"];
  array<Fruit> favorites = ["A
 |===|
 [output = 'data'] {}`
@@ -1769,9 +1769,9 @@ schema User: {
 
 	It("suggests choice values inside variants while keeping imprecise alternatives", func() {
 		text := `|===|
- type Role: choice["Admin", "Member"];
+ alias Role: choice["Admin", "Member"];
  schema User: { name: string, };
- type Identity: variant[Role, User];
+ alias Identity: variant[Role, User];
  schema Envelope: { value: Identity, };
  schema Response: { payload: Envelope, };
 |===|
@@ -1805,9 +1805,9 @@ schema User: {
 		tAssert.NoError(err)
 
 		writeAnalysisFile(workspace, "shared.mace", `|===|
- type Role: choice["Admin"];
+ alias Role: choice["Admin"];
  schema User: { name: string };
- type Alias: string;
+ alias Alias: string;
 |===|
 [output = 'schema']
 {
@@ -1838,7 +1838,7 @@ schema User: {
 		tAssert.NoError(err)
 
 		writeAnalysisFile(workspace, "shared.mace", `|===|
- type Flavor: choice["Vanilla", "Chocolate"];
+ alias Flavor: choice["Vanilla", "Chocolate"];
 |===|
 [output = 'schema']
 {

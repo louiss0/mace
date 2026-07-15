@@ -16,7 +16,7 @@ var _ = Describe("analyzer package helper coverage", func() {
 		workspace := GinkgoT().TempDir()
 		documentPath := filepath.Join(workspace, "document.mace")
 		text := `|===|
-type Alias: string;
+alias Alias: string;
 schema Doc: { field: string, };
 string value = "x";
 |===|

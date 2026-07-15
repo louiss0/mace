@@ -1,6 +1,6 @@
 |===|
-type ReportSource: string;
-type RolloutState: string;
+alias ReportSource: string;
+alias RolloutState: string;
 
 schema AuditTrail: {
   source: ReportSource,

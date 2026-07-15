@@ -496,7 +496,7 @@ var _ = Describe("Parser", func() {
 		tAssert.ErrorContains(err, "expected '['")
 
 		_, err = New(tokens).parseTypeDeclaration()
-		tAssert.ErrorContains(err, "expected 'type'")
+		tAssert.ErrorContains(err, "expected 'alias'")
 
 		_, err = New(tokens).parseSchemaDeclaration()
 		tAssert.ErrorContains(err, "expected 'schema'")
@@ -635,7 +635,7 @@ var _ = Describe("Parser", func() {
 				_, err := p.parseVariableDeclaration()
 				return err
 			}},
-			{`type Name: string`, func(p *Parser) error {
+			{`alias Name: string`, func(p *Parser) error {
 				_, err := p.parseTypeDeclaration()
 				return err
 			}},
@@ -994,7 +994,7 @@ string name = "Ada";
 		It("parses script imports, declarations, and output block", func() {
 			input := `|===|
 from 'base.mace' import User, Config;
-type Name: string;
+alias Name: string;
 schema User: { name: string, age?: int, };
 string user = "Ada";
 |===|
@@ -1131,7 +1131,7 @@ Profile current = {
 		It("ignores block comments that wrap script and output blocks", func() {
 			input := `/*
 |===|
-type Hidden: string;
+alias Hidden: string;
 |===|
 [output = 'data']
 {
@@ -1195,12 +1195,12 @@ from './also_ignored.mace' import AlsoIgnored;
 		It("ignores block comments around type and schema declarations", func() {
 			input := `|===|
 /*
-type Hidden: string;
+alias Hidden: string;
 schema HiddenUser: {
   name: string,
 };
 */
-type Name: string;
+alias Name: string;
 schema User: {
   name: Name,
 };
@@ -1367,7 +1367,7 @@ hex_float ratio = 0x2.8;
 
 		It("parses variant type references", func() {
 			input := `|===|
-type Value: variant[string, int];
+alias Value: variant[string, int];
 |===|
 [output = 'data'] {}`
 
@@ -1392,7 +1392,7 @@ type Value: variant[string, int];
 
 		It("parses array members in variant type references", func() {
 			input := `|===|
-type Value: variant[array<string>, array<int>];
+alias Value: variant[array<string>, array<int>];
 |===|
 [output = 'data'] {}`
 
@@ -1417,7 +1417,7 @@ type Value: variant[array<string>, array<int>];
 
 		It("parses fusion type references", func() {
 			input := `|===|
-type Value: fusion[Profile, Audit];
+alias Value: fusion[Profile, Audit];
 |===|
 [output = 'data'] {}`
 
@@ -1442,7 +1442,7 @@ type Value: fusion[Profile, Audit];
 
 		It("parses nested array type references without spacing between closers", func() {
 			input := `|===|
-type Matrix: array<array<int>>;
+alias Matrix: array<array<int>>;
 |===|
 [output = 'data'] {}`
 
@@ -1472,7 +1472,7 @@ type Matrix: array<array<int>>;
 
 		It("parses choice types with scalar literals", func() {
 			input := `|===|
- type Mode: choice["dev", 1, true, 1.5, 0xFF, 0x2.8];
+ alias Mode: choice["dev", 1, true, 1.5, 0xFF, 0x2.8];
 |===|
 [output = 'data'] {}`
 
@@ -1507,8 +1507,8 @@ type Matrix: array<array<int>>;
 
 		It("parses record map and inline record type references", func() {
 			file, err := parseFileInput(`|===|
-type Lookup: record<string>;
-type Inline: { name: string, };
+alias Lookup: record<string>;
+alias Inline: { name: string, };
 |===|
 [output = 'schema']
 {
@@ -1555,7 +1555,7 @@ type Name string;
 |===|
 [output = 'data'] {}`,
 				`|===|
-type Name: ;
+alias Name: ;
 |===|
 [output = 'data'] {}`,
 				`|===|
@@ -1618,31 +1618,31 @@ schema_doc User {
 				`[output = 'schema'] { name: , }`,
 				`[output = 'schema'] { name: string /# first, /# second }`,
 				`|===|
-type Names: array;
+alias Names: array;
 |===|
 [output = 'data'] {}`,
 				`|===|
-type Names: array<string;
+alias Names: array<string;
 |===|
 [output = 'data'] {}`,
 				`|===|
-type Names: record;
+alias Names: record;
 |===|
 [output = 'data'] {}`,
 				`|===|
-type Names: fusion;
+alias Names: fusion;
 |===|
 [output = 'data'] {}`,
 				`|===|
-type Names: variant[string,];
+alias Names: variant[string,];
 |===|
 [output = 'data'] {}`,
 				`|===|
-type Names: choice;
+alias Names: choice;
 |===|
 [output = 'data'] {}`,
 				`|===|
-type Names: choice[null];
+alias Names: choice[null];
 |===|
 [output = 'data'] {}`,
 				`|===|
@@ -1836,7 +1836,7 @@ schema User: {
 		It("parses comma separators across declarations", func() {
 			file, err := parseFileInput(`|===|
 from './shared.mace' import Name, User;
-type Alias: string;
+alias Alias: string;
 nullable string env = null;
 schema User: {
   name: string,
@@ -1876,7 +1876,7 @@ schema User: {
   name: string,
 };
 
-type Status: choice["Active"];
+alias Status: choice["Active"];
 
 schema_doc User {
   summary: "Represents a user.",
@@ -1919,7 +1919,7 @@ gen_doc Status {
 
 		It("rejects fields entries in gen_doc declarations", func() {
 			input := `|===|
-type Name: string;
+alias Name: string;
 
 gen_doc Name {
   fields: {

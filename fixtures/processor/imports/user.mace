@@ -1,15 +1,15 @@
 |=====================================================|
 from './profile.mace' import Profile, Age;
 
-type Name: string;
+alias Name: string;
 
 
-type Personality: choice["friendly", "nice", "rude"];
+alias Personality: choice["friendly", "nice", "rude"];
 
-type Thing: variant[string, int];
+alias Thing: variant[string, int];
 
-type Status: choice[0, 1, 2];
-type OtherStatus: choice[0.0, 0.1, 0.2];
+alias Status: choice[0, 1, 2];
+alias OtherStatus: choice[0.0, 0.1, 0.2];
 
 Personality is_type = "nice";
 

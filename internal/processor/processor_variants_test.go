@@ -15,7 +15,7 @@ var _ = Describe("Variants", func() {
 		func(typeReference string, firstValue string, secondValue string) {
 			processor := New()
 			_, err := processor.Process(wrapScriptWithOutput(fmt.Sprintf(`|===|
-type Value: %s;
+alias Value: %s;
 Value first = %s;
 Value second = %s;
 |===|`, typeReference, firstValue, secondValue)))
@@ -33,7 +33,7 @@ Value second = %s;
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
 schema User: { name: string, };
-type Value: variant[User, string];
+alias Value: variant[User, string];
 Value first = { name: "Ada", };
 Value second = "fallback";
 |===|`))
@@ -43,7 +43,7 @@ Value second = "fallback";
 	It("accepts array variant alternatives", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
-type Value: variant[array<string>, array<int>];
+alias Value: variant[array<string>, array<int>];
 Value names = ["Ada", "Lin"];
 Value counts = [1, 2];
 |===|`))
@@ -53,7 +53,7 @@ Value counts = [1, 2];
 	It("accepts nested array variant alternatives", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
-type Value: variant[array<array<string>>, array<array<array<int>>>];
+alias Value: variant[array<array<string>>, array<array<array<int>>>];
 Value tags = [["api"]];
 Value matrix = [[[1]]];
 |===|`))
@@ -63,8 +63,8 @@ Value matrix = [[[1]]];
 	It("accepts nested variant aliases", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
-type Scalar: variant[string, int];
-type Value: variant[Scalar, boolean];
+alias Scalar: variant[string, int];
+alias Value: variant[Scalar, boolean];
 Value first = "Ada";
 Value second = 42;
 Value third = true;
@@ -75,7 +75,7 @@ Value third = true;
 	It("rejects variant variables with non-matching values", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
-type Scalar: variant[string, int];
+alias Scalar: variant[string, int];
 Scalar value = true;
 |===|`))
 		tAssert.ErrorContains(err, "type mismatch")

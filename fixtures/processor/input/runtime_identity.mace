@@ -1,7 +1,7 @@
 |=======================|
-type UserID: string;
-type TeamSlug: string;
-type Email: string;
+alias UserID: string;
+alias TeamSlug: string;
+alias Email: string;
 
 schema UserProfile: {
   id: UserID,

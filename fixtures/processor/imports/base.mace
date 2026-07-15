@@ -1,6 +1,6 @@
 |======================================================|
 from './profile.mace' import Profile:UserProfile, Age;
-type Name: string;
+alias Name: string;
 
 schema User: {
   name: Name,

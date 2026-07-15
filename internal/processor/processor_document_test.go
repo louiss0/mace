@@ -26,7 +26,7 @@ var _ = Describe("Document", func() {
 			tAssert.NoError(err)
 		},
 		Entry("type and schema declarations", wrapScriptWithOutput(`|===|
-type Name: string;
+alias Name: string;
 schema User: { name: string, };
 |===|`)),
 		Entry("variables with literals", wrapScriptWithOutput(`|===|
@@ -66,7 +66,7 @@ Name user = "Ada";
 		Entry("unicode kubernetes deployment fixture", "../../fixtures/unicode/kubernetes_deployment.mace"),
 		Entry("unicode ai agent fixture", "../../fixtures/unicode/ai_agent.mace"),
 		Entry("variant declarations and assignments", wrapScriptWithOutput(`|===|
-type Scalar: variant[string, int];
+alias Scalar: variant[string, int];
 Scalar value = "Ada";
 |===|`)),
 		Entry("line and block comments are ignored", `|===|
@@ -126,7 +126,7 @@ Unknown value = 1;
 int total = 1.5;
 |===|`), "type mismatch"),
 		Entry("duplicate declaration name", wrapScriptWithOutput(`|===|
-type User: string;
+alias User: string;
 schema User: { name: string, };
 |===|`), "duplicate declaration"),
 		Entry("duplicate imports", `|===|
