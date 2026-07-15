@@ -2012,7 +2012,11 @@ func validateExpressionPresence(expression ast.Expression, variables *variableRe
 			return err
 		}
 		for _, arm := range expr.Arms {
-			if err := validateExpressionPresence(arm.Value, variables, symbols, types, schemas, enums, false); err != nil {
+			armVariables, err := matchArmVariables(expr.Value, arm.Pattern, variables, symbols, types, schemas, enums)
+			if err != nil {
+				return err
+			}
+			if err := validateExpressionPresence(arm.Value, armVariables, symbols, types, schemas, enums, false); err != nil {
 				return err
 			}
 		}
@@ -2253,7 +2257,11 @@ func validateMatchAgainstType(expression ast.MatchExpression, expectedType value
 		return err
 	}
 	for _, arm := range expression.Arms {
-		if err := validateExpressionAgainstType(arm.Value, expectedType, variables, symbols, types, schemas, enums); err != nil {
+		armVariables, err := matchArmVariables(expression.Value, arm.Pattern, variables, symbols, types, schemas, enums)
+		if err != nil {
+			return err
+		}
+		if err := validateExpressionAgainstType(arm.Value, expectedType, armVariables, symbols, types, schemas, enums); err != nil {
 			return err
 		}
 	}
@@ -4360,7 +4368,11 @@ func inferMatchType(expr ast.MatchExpression, variables *variableRegistry, symbo
 
 	var result valueType
 	for index, arm := range expr.Arms {
-		armType, err := inferExpressionType(arm.Value, variables, symbols, types, schemas, enums)
+		armVariables, err := matchArmVariables(expr.Value, arm.Pattern, variables, symbols, types, schemas, enums)
+		if err != nil {
+			return valueType{}, err
+		}
+		armType, err := inferExpressionType(arm.Value, armVariables, symbols, types, schemas, enums)
 		if err != nil {
 			return valueType{}, err
 		}
@@ -4384,13 +4396,19 @@ func validateMatchPatterns(arms []ast.MatchArm, matchedType valueType, symbols *
 			if err != nil {
 				return err
 			}
-			if !containsValueType(matchedType.members, patternType) {
-				return validationErrorf("match pattern %s is not a member of %s", patternType.name(), matchedType.name())
+			patternMembers := []valueType{patternType}
+			if len(patternType.members) > 0 {
+				patternMembers = flattenVariantValueTypes(patternType.members)
 			}
-			if containsValueType(seen, patternType) {
-				return validationErrorf("duplicate match pattern %s", patternType.name())
+			for _, patternMember := range patternMembers {
+				if !containsValueType(matchedType.members, patternMember) {
+					return validationErrorf("match pattern %s is not a member of %s", patternType.name(), matchedType.name())
+				}
+				if containsValueType(seen, patternMember) {
+					return validationErrorf("duplicate match pattern %s", patternMember.name())
+				}
+				seen = append(seen, patternMember)
 			}
-			seen = append(seen, patternType)
 		}
 		if len(seen) != len(matchedType.members) {
 			return validationErrorf("match expression must be exhaustive for %s", matchedType.name())
@@ -4420,6 +4438,24 @@ func validateMatchPatterns(arms []ast.MatchArm, matchedType valueType, symbols *
 		return validationErrorf("match expression must be exhaustive for %s", matchedType.name())
 	}
 	return nil
+}
+
+func matchArmVariables(expression ast.Expression, pattern ast.MatchPattern, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (*variableRegistry, error) {
+	if pattern.Type == nil {
+		return variables, nil
+	}
+	path, stable := stableExpressionPath(expression)
+	if !stable {
+		return variables, nil
+	}
+	patternType, err := resolveValueType(pattern.Type, symbols, types, schemas, enums)
+	if err != nil {
+		return nil, err
+	}
+
+	narrowed := variables.Clone()
+	narrowed.Add(path, patternType)
+	return narrowed, nil
 }
 
 func containsValueType(types []valueType, candidate valueType) bool {

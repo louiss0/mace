@@ -283,12 +283,17 @@ member.
 `match` accepts only a value whose static type resolves to a `variant[...]` or
 `choice[...]`. The matched expression is evaluated exactly once. A variant arm
 uses a type-reference pattern; a choice arm uses one scalar literal from the
-choice domain. Patterns do not bind or expose the matched value.
+choice domain. A variant type-reference pattern may cover one or more resolved
+members of the source variant. Pattern member sets MUST be disjoint.
 
-Every resolved variant member or choice literal MUST appear exactly once.
+Every source variant member or choice literal MUST be covered exactly once.
 Missing, duplicate, incompatible, or extra patterns are static errors, so a
 match expression has no default arm. Each arm ends with a comma, including the
 last arm.
+
+Patterns do not create a value binding or extract fields. When the matched
+expression is a stable variable or member path, that existing path is narrowed
+to the arm pattern while the arm result is checked.
 
 ```mace
 variant[string, int] value = 7;
