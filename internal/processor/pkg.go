@@ -2291,6 +2291,9 @@ func validateExpressionAgainstVariantMembers(expression ast.Expression, members 
 	if err != nil {
 		return err
 	}
+	if len(actualType.members) > 0 {
+		return ensureAssignable(valueType{members: members}, actualType)
+	}
 
 	matchCount := countVariantChoiceMatchesForExpression(expression, actualType, members, variables, symbols, types, schemas, enums)
 	if matchCount == 0 {
