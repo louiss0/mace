@@ -144,8 +144,7 @@ logical_or_expression = logical_and_expression , { ws0 , &quot;||&quot; , ws0 , 
 logical_and_expression = bitwise_or_expression , { ws0 , &quot;&amp;&amp;&quot; , ws0 , bitwise_or_expression } ;
 bitwise_or_expression = bitwise_xor_expression , { ws0 , &quot;|&quot; , ws0 , bitwise_xor_expression } ;
 bitwise_xor_expression = bitwise_and_expression , { ws0 , &quot;^&quot; , ws0 , bitwise_and_expression } ;
-bitwise_and_expression = merge_expression , { ws0 , &quot;&amp;&quot; , ws0 , merge_expression } ;
-merge_expression = equality_expression , { ws0 , &quot;&lt;&gt;&quot; , ws0 , equality_expression } ;
+bitwise_and_expression = equality_expression , { ws0 , &quot;&amp;&quot; , ws0 , equality_expression } ;
 equality_expression = relational_expression , { ws0 , ( &quot;==&quot; | &quot;!=&quot; ) , ws0 , relational_expression } ;
 relational_expression = shift_expression , { ws0 , ( &quot;&lt;&quot; | &quot;&lt;=&quot; | &quot;&gt;&quot; | &quot;&gt;=&quot; ) , ws0 , shift_expression } ;
 shift_expression = additive_expression , { ws0 , ( &quot;&lt;&lt;&quot; | &quot;&gt;&gt;&quot; | &quot;&gt;&gt;&gt;&quot; ) , ws0 , additive_expression } ;
@@ -323,15 +322,7 @@ terminate on finite values.
 
 ## Expressions and evaluation
 
-Operator precedence, highest to lowest, is postfix access; unary; exponent;
-multiplication&#x2f;division&#x2f;modulo; addition&#x2f;subtraction; shifts; relational;
-equality; merge `&lt;&gt;`; bitwise AND; XOR; OR; logical AND; logical OR; and
-`?:`.
-Merge operands are ordinary expressions, enabling `base &lt;&gt; overrides` and
-`base &lt;&gt; defaults &lt;&gt; local`, but static checking requires each evaluated
-operand to be a compatible record or array. Record merges are deep, arrays
-concatenate, and a scalar conflict takes the right value. A merge still must
-pass its eventual schema validation.
+Operator precedence, highest to lowest, is postfix access; unary; exponent;`r`nmultiplication&#x2f;division&#x2f;modulo; addition&#x2f;subtraction; shifts; relational;`r`nequality; bitwise AND; XOR; OR; logical AND; logical OR; and `?:`.
 
 Postfix member access may follow any ungrouped primary expression where its
 resulting type supports access. The grammar recognizes a parenthesized
@@ -340,7 +331,7 @@ only when it contains `+`, `-`, `*`, `/`, `%`, or `**` and changes the binding
 imposed by arithmetic precedence or associativity. Valid examples include
 `(1 + 2) * 3`, `1 - (2 - 3)`, and `(2 ** 3) ** 4`. Redundant groups such as
 `(1 + 2)` and `1 + (2 * 3)` are invalid. Parentheses MUST NOT group shifts,
-comparisons, merges, bitwise expressions, logical expressions, coalescing,
+comparisons, bitwise expressions, logical expressions, coalescing,
 conditionals, or values solely to enable access. Thus
 `({ user: { name: &quot;Ada&quot; } }).user.name` is invalid.
 
@@ -452,7 +443,6 @@ Declaration, type, schema, and evaluation diagnostics include:
 - an operator with invalid operand types, integer overflow, division by zero,
   invalid shift or exponent, or a non-finite floating-point result;
 - interpolation of a non-scalar or null value;
-- a merge whose operands are not compatible records or arrays.
 
 Match diagnostics include each of the following distinct static errors:
 

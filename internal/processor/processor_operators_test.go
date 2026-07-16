@@ -45,61 +45,11 @@ var _ = Describe("Operators", func() {
 		Entry("logical and", `[output = 'data'] { result: true && false, }`, expectedValue{kind: ValueBoolean, bool: false}),
 		Entry("logical or", `[output = 'data'] { result: true || false, }`, expectedValue{kind: ValueBoolean, bool: true}),
 		Entry("ternary", `[output = 'data'] { result: true ? 1 : 2, }`, expectedValue{kind: ValueInt, int64: 1}),
-		Entry("array merge", `[output = 'data'] { result: [1, 2] <> [3, 4], }`, expectedValue{kind: ValueArray, array: []expectedValue{
-			{kind: ValueInt, int64: 1},
-			{kind: ValueInt, int64: 2},
-			{kind: ValueInt, int64: 3},
-			{kind: ValueInt, int64: 4},
-		}}),
-		Entry("variant array merge", `|===|
-alias Scalar: variant[string, int];
-array<Scalar> left = [1];
-array<Scalar> right = ["x"];
-|===|
-[output = 'data'] { result: left <> right, }`, expectedValue{kind: ValueArray, array: []expectedValue{
-			{kind: ValueInt, int64: 1},
-			{kind: ValueString, string: "x"},
-		}}),
-		Entry("record merge", `[output = 'data'] { result: { name: "Ada", nested: { left: 1, shared: 1, }, tags: [1], } <> { age: 30, nested: { shared: 2, right: 3, }, tags: [2], }, }`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{
-			"name": {kind: ValueString, string: "Ada"},
-			"age":  {kind: ValueInt, int64: 30},
-			"nested": {kind: ValueRecord, record: map[string]expectedValue{
-				"left":   {kind: ValueInt, int64: 1},
-				"shared": {kind: ValueInt, int64: 2},
-				"right":  {kind: ValueInt, int64: 3},
-			}},
-			"tags": {kind: ValueArray, array: []expectedValue{
-				{kind: ValueInt, int64: 1},
-				{kind: ValueInt, int64: 2},
-			}},
-		}}),
-	)
-
-	DescribeTable("returns mixed operator results",
-		func(input string, expected expectedValue) {
-			assertProcessedResult(input, expected)
-		},
 		Entry("arithmetic precedence", `[output = 'data'] { result: 1 + 2 * 3 - 4, }`, expectedValue{kind: ValueInt, int64: 3}),
 		Entry("shift and additive precedence", `[output = 'data'] { result: 1 + 2 << 2, }`, expectedValue{kind: ValueInt, int64: 12}),
 		Entry("bitwise precedence", `[output = 'data'] { result: 7 & 3 ^ 1 | 8, }`, expectedValue{kind: ValueInt, int64: 10}),
 		Entry("comparison and logic precedence", `[output = 'data'] { result: 1 < 2 && 3 > 2 || false, }`, expectedValue{kind: ValueBoolean, bool: true}),
 		Entry("conditional with logical expression", `[output = 'data'] { result: false || true ? 5 : 2, }`, expectedValue{kind: ValueInt, int64: 5}),
-	)
-
-	DescribeTable("rejects invalid merge expressions",
-		func(input string, expected string) {
-			processor := New()
-			_, err := processor.ProcessInDir(input, "../..")
-			tAssert.Error(err)
-			tAssert.Contains(err.Error(), expected)
-		},
-		Entry("different kinds", `[output = 'data'] { result: { name: "Ada", } <> [1], }`, "merge operands must have the same type"),
-		Entry("primitive operands", `[output = 'data'] { result: 1 <> 2, }`, "merge operands must be records or arrays"),
-		Entry("different array element types", `|===|
-array<int> left = [1];
-array<string> right = ["two"];
-|===|
-[output = 'data'] { result: left <> right, }`, "merge operands must have the same type"),
 	)
 
 	DescribeTable("returns math results",
@@ -335,7 +285,7 @@ var _ = Describe("Operator helpers", func() {
 		tAssert.Equal(ast.StringLiteral{Lexeme: `"null"`}, expression(Value{Kind: ValueNull}))
 	})
 
-	It("formats scalar values and evaluates member/prefix/merge helpers", func() {
+	It("formats scalar values and evaluates member and prefix helpers", func() {
 		formatValue := stringifyValue
 		formatted, err := formatValue(Value{Kind: ValueString, String: "Ada"})
 		tAssert.NoError(err)
@@ -384,15 +334,6 @@ var _ = Describe("Operator helpers", func() {
 		tAssert.NoError(err)
 		tAssert.True(contains.Boolean)
 
-		merged, err := evaluateMerge(
-			Value{Kind: ValueArray, Array: []Value{{Kind: ValueString, String: "Ada"}}},
-			Value{Kind: ValueArray, Array: []Value{{Kind: ValueString, String: "Bob"}}},
-		)
-		tAssert.NoError(err)
-		tAssert.Len(merged.Array, 2)
-
-		_, err = evaluateMerge(Value{Kind: ValueString}, Value{Kind: ValueString})
-		tAssert.ErrorContains(err, "records or arrays")
 	})
 
 	It("evaluates numeric helper operations", func() {
@@ -506,9 +447,6 @@ var _ = Describe("Operator helpers", func() {
 		_, err = parseHexFloat("bad")
 		tAssert.Error(err)
 
-		tAssert.True(arrayMergeTypesMatch(Value{Kind: ValueArray, Array: []Value{{Kind: ValueInt, Int: 1}}}, Value{Kind: ValueArray, Array: []Value{{Kind: ValueInt, Int: 2}}}))
-		tAssert.False(arrayMergeTypesMatch(Value{Kind: ValueArray, Array: []Value{{Kind: ValueInt, Int: 1}}}, Value{Kind: ValueArray, Array: []Value{{Kind: ValueString, String: "a"}}}))
-
 		_, err = resolveUnionRecordType(ast.UnionType{Members: []ast.TypeReference{ast.PrimitiveType{Name: "string"}}}, newSymbolTable(), newTypeRegistry(), newSchemaRegistry())
 		tAssert.ErrorContains(err, "fusion members must be schemas")
 	})
@@ -584,8 +522,6 @@ int base = 1;
 		tAssert.NoError(validateDataOutputExpression(ast.ConditionalExpression{Condition: ast.InfixExpression{Operator: lexer.TokenIn, Left: ast.StringLiteral{Lexeme: `"age"`}, Right: ast.Identifier{Name: "record"}}, Then: ast.MemberAccess{Target: ast.Identifier{Name: "age"}, Name: "missing"}, Else: ast.Identifier{Name: "record"}}, symbols))
 		tAssert.NoError(validateOutputSchema("User", []ast.OutputField{{Name: "name", Value: ast.StringLiteral{Lexeme: `"Ada"`}}}, variables, symbols, types, schemas, nil))
 		var numericErr error
-		_, numericErr = inferMergeType(valueType{kind: ValueRecord}, valueType{kind: ValueRecord})
-		tAssert.NoError(numericErr)
 		for _, item := range []struct {
 			operator    lexer.TokenType
 			left, right Value

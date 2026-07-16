@@ -80,7 +80,7 @@ Mace supports:
 - schemas
 - literal `choice[...]` aliases with mixed scalar members, reusable choice aliases,
   and variant-friendly autocomplete
-- record, array, arithmetic, logical, merge, and conditional expressions
+- record, array, arithmetic, logical, and conditional expressions
 - record and data output field shorthand: `{ name, }` expands to `{ name: name, }`, and it works for strings, numbers, arrays, nested records, and output blocks
 - output fields evaluate expressions directly; parentheses are for grouping math and other expressions
 - commas separate record, schema, and output fields; semicolons terminate declarations and statements
@@ -91,18 +91,6 @@ Fusion and variant types are first-class across the language, including named
 aliases, output schema validation, imports, formatter output, and editor
 tooling.
 
-Structural merge with `&lt;&gt;` combines identifier, object literal, or array literal
-operands of the same mergeable type. Records merge deeply, colliding scalar
-fields use the right-hand value, and colliding nested records or arrays merge
-recursively. Arrays concatenate in left-to-right order.
-
-```mace
-[output = 'data']
-{
-  result: { profile: { name: &quot;Ada&quot; }; tags: [&quot;base&quot;]; }
-    &lt;&gt; { profile: { active: true }; tags: [&quot;override&quot;]; }
-}
-```
 
 Mace treats variants as closed alternatives: values must match exactly one
 member, record members reject unknown fields, and record values may not

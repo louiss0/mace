@@ -324,18 +324,6 @@ var _ = Describe("Parser", func() {
 		Entry("add with multiply", "1 + 2 * 3"),
 	)
 
-	DescribeTable("parses merge expressions",
-		func(input string) {
-			expression, err := parseExpressionInput(input)
-			tAssert.NoError(err)
-
-			root := requireInfix(expression, lexer.TokenMerge)
-			requireIdentifier(root.Left, "base")
-			requireIdentifier(root.Right, "override")
-		},
-		Entry("structural merge", "base <> override"),
-	)
-
 	DescribeTable("parses grouped expressions",
 		func(input string) {
 			expression, err := parseExpressionInput(input)
@@ -373,7 +361,6 @@ var _ = Describe("Parser", func() {
 		Entry("stronger right arithmetic", "1 + (2 * 3)"),
 		Entry("redundant left addition", "(1 + 2) + 3"),
 		Entry("redundant left multiplication", "(1 * 2) * 3"),
-		Entry("grouped merge member access", "(base <> override).name"),
 		Entry("grouped record member access", `({ name: "Ada", }).name`),
 		Entry("grouped arithmetic member access", "(1 + 2).value"),
 		Entry("logical precedence", "(ready && enabled) || fallback"),
@@ -469,26 +456,6 @@ var _ = Describe("Parser", func() {
 		Entry("grouped expression rejects missing expression", "()"),
 	)
 
-	It("parses normal expressions as merge operands", func() {
-		expression, err := parseExpressionInput("base.value <> overrides")
-		tAssert.NoError(err)
-
-		root := requireInfix(expression, lexer.TokenMerge)
-		requireMemberAccess(root.Left, "base", "value")
-		requireIdentifier(root.Right, "overrides")
-	})
-
-	It("parses chained merge expressions", func() {
-		expression, err := parseExpressionInput("base <> middle <> override")
-		tAssert.NoError(err)
-
-		root := requireInfix(expression, lexer.TokenMerge)
-		requireIdentifier(root.Right, "override")
-		left := requireInfix(root.Left, lexer.TokenMerge)
-		requireIdentifier(left.Left, "base")
-		requireIdentifier(left.Right, "middle")
-	})
-
 	It("covers parser helper edge branches directly", func() {
 		tAssert.True(New(nil).isAtEnd())
 		tAssert.Equal(lexer.TokenEOF, New(nil).current().Type)
@@ -578,7 +545,6 @@ var _ = Describe("Parser", func() {
 			lexer.TokenAmpersand:          precedenceBitwiseAnd,
 			lexer.TokenEqualEqual:         precedenceEquality,
 			lexer.TokenNotEqual:           precedenceEquality,
-			lexer.TokenMerge:              precedenceMerge,
 			lexer.TokenLess:               precedenceRelational,
 			lexer.TokenLessEqual:          precedenceRelational,
 			lexer.TokenGreater:            precedenceRelational,

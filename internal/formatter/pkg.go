@@ -651,8 +651,6 @@ func tokenLexeme(tokenType lexer.TokenType) string {
 		return "<"
 	case lexer.TokenLessEqual:
 		return "<="
-	case lexer.TokenMerge:
-		return "<>"
 	case lexer.TokenGreater:
 		return ">"
 	case lexer.TokenGreaterEqual:
@@ -693,7 +691,6 @@ const (
 	precedenceBitwiseOr
 	precedenceBitwiseXor
 	precedenceBitwiseAnd
-	precedenceMerge
 	precedenceEquality
 	precedenceRelational
 	precedenceShift
@@ -720,8 +717,6 @@ func infixPrecedence(tokenType lexer.TokenType) int {
 		return precedenceBitwiseAnd
 	case lexer.TokenEqualEqual, lexer.TokenNotEqual:
 		return precedenceEquality
-	case lexer.TokenMerge:
-		return precedenceMerge
 	case lexer.TokenLess, lexer.TokenLessEqual, lexer.TokenGreater, lexer.TokenGreaterEqual:
 		return precedenceRelational
 	case lexer.TokenShiftLeft, lexer.TokenShiftRight, lexer.TokenShiftRightUnsigned:

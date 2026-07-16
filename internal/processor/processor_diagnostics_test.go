@@ -55,7 +55,6 @@ var _ = Describe("Diagnostic fixtures", func() {
 		Entry("type alias cycle", "type-alias-cycle", "cyclic type alias"),
 		Entry("self outside schema", "self-outside-schema", "expected type reference"),
 		Entry("direct self recursion", "self-direct-recursion", "expected type reference"),
-		Entry("invalid merge operands", "invalid-merge-operands", "merge operands"),
 		Entry("self forward reference", "self-forward-reference", "unknown self reference"),
 		Entry("import after declaration", "import-after-declaration", "must appear at top"),
 		Entry("import shadows local declaration", "import-shadows-local", "duplicate declaration"),

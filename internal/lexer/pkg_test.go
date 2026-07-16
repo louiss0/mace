@@ -161,7 +161,7 @@ var _ = Describe("Lexer", func() {
 			tAssert.NoError(err)
 			assertTokenSequence(tokens, expected)
 		},
-		Entry("operators", "= => ; , : ? . + - * / % ** ! ~ < <= <> > >= == != & ^ | && || << >> >>> ( ) { } [ ]", []expectedToken{
+		Entry("operators", "= => ; , : ? . + - * / % ** ! ~ < <= > >= == != & ^ | && || << >> >>> ( ) { } [ ]", []expectedToken{
 			{tokenType: TokenAssign, lexeme: "="},
 			{tokenType: TokenArrow, lexeme: "=>"},
 			{tokenType: TokenSemicolon, lexeme: ";"},
@@ -179,7 +179,6 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenTilde, lexeme: "~"},
 			{tokenType: TokenLess, lexeme: "<"},
 			{tokenType: TokenLessEqual, lexeme: "<="},
-			{tokenType: TokenMerge, lexeme: "<>"},
 			{tokenType: TokenGreater, lexeme: ">"},
 			{tokenType: TokenGreaterEqual, lexeme: ">="},
 			{tokenType: TokenEqualEqual, lexeme: "=="},

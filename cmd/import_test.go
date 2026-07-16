@@ -449,8 +449,10 @@ api_service:
       CACHE_ENABLED: true
     }
   },
-  api_service: base_service <> {
+  api_service: {
+    image: "mace/api",
     replicas: 4,
+    port: 8080,
     env: {
       LOG_LEVEL: "debug",
       CACHE_ENABLED: true
@@ -518,13 +520,17 @@ services:
   },
   services: {
     writer: {
-      database: database_defaults <> {
+      database: {
+        host: "db.internal",
+        port: 5432,
         credentials: $self.database_credentials,
         pool_size: 20
       }
     },
     reader: {
-      database: database_defaults <> {
+      database: {
+        host: "db.internal",
+        port: 5432,
         credentials: $self.database_credentials,
         pool_size: 8
       }
@@ -545,13 +551,17 @@ services:
   },
   services: {
     writer: {
-      database: database_defaults <> {
+      database: {
+        host: "db.internal",
+        port: 5432,
         credentials: $self.database_credentials,
         pool_size: 20
       }
     },
     reader: {
-      database: database_defaults <> {
+      database: {
+        host: "db.internal",
+        port: 5432,
         credentials: $self.database_credentials,
         pool_size: 8
       }
@@ -590,9 +600,12 @@ worker:
     network: "private",
     expose_metrics: true
   },
-  worker: runtime_defaults <> network_defaults <> {
-    name: "queue-worker",
-    memory_mb: 1024
+  worker: {
+    restart: "always",
+    memory_mb: 1024,
+    network: "private",
+    expose_metrics: true,
+    name: "queue-worker"
   }
 }`, source)
 
@@ -606,9 +619,12 @@ worker:
     network: "private",
     expose_metrics: true
   },
-  worker: runtime_defaults <> network_defaults <> {
-    name: "queue-worker",
-    memory_mb: 1024
+  worker: {
+    restart: "always",
+    memory_mb: 1024,
+    network: "private",
+    expose_metrics: true,
+    name: "queue-worker"
   }
 }`)
 		tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(source)))
@@ -670,11 +686,10 @@ deployment:
 
 		source, err := importYAMLSource(filepath.Join("workspace", "05_deep_nested_merges.yaml"), input)
 		tAssert.NoError(err)
-		tAssert.Contains(source, "global_metadata <>")
+		tAssert.NotContains(source, "<>")
 		tAssert.Contains(source, "$self.global_labels")
-		tAssert.Contains(source, "base_container <>")
+		tAssert.Contains(source, "image: \"mace/processor\"")
 		tAssert.Contains(source, "$self.base_resources")
-		tAssert.GreaterOrEqual(strings.Count(source, "<>"), 6)
 
 		output := importedOutput(source)
 		deployment := output["deployment"].(map[string]any)
@@ -783,7 +798,7 @@ primary_user:
 		tAssert.Equal(int64(1), document2["total_users"])
 	})
 
-	It("converts YAML merge keys into Mace merge expressions", func() {
+	It("converts YAML merge keys into resolved records", func() {
 		input := `defaults: &defaults
   enabled: true
   retries: 3
@@ -793,7 +808,7 @@ profile:
   name: api
 `
 
-		source, err := importYAMLSource(filepath.Join("workspace", "merge_expression.yaml"), input)
+		source, err := importYAMLSource(filepath.Join("workspace", "merge_key.yaml"), input)
 		tAssert.NoError(err)
 		tAssert.Equal(`[output = 'data']
 {
@@ -801,7 +816,8 @@ profile:
     enabled: true,
     retries: 3
   },
-  profile: defaults <> {
+  profile: {
+    enabled: true,
     retries: 5,
     name: "api"
   }

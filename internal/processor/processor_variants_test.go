@@ -396,28 +396,10 @@ var _ = Describe("Variant type system helpers", func() {
 		tAssert.ErrorContains(err, "unknown type reference")
 	})
 
-	It("infers merge and numeric binary result types", func() {
-		mergeType := inferMergeType
+	It("infers numeric binary result types", func() {
 		numericType := inferNumericBinary
 
-		recordType := valueType{kind: ValueRecord, schemaName: "User"}
-		result, err := mergeType(recordType, recordType)
-		tAssert.NoError(err)
-		tAssert.Equal(recordType, result)
-
-		arrayElement := valueType{kind: ValueString}
-		arrayType := valueType{kind: ValueArray, element: &arrayElement}
-		result, err = mergeType(arrayType, arrayType)
-		tAssert.NoError(err)
-		tAssert.Equal(arrayType, result)
-
-		_, err = mergeType(valueType{kind: ValueString}, recordType)
-		tAssert.ErrorContains(err, "records or arrays")
-
-		_, err = mergeType(valueType{kind: ValueRecord, schemaName: "User"}, valueType{kind: ValueRecord, schemaName: "Audit"})
-		tAssert.ErrorContains(err, "same type")
-
-		result, err = numericType(lexer.TokenPlus, valueType{kind: ValueInt}, valueType{kind: ValueInt})
+		result, err := numericType(lexer.TokenPlus, valueType{kind: ValueInt}, valueType{kind: ValueInt})
 		tAssert.NoError(err)
 		tAssert.Equal(ValueInt, result.kind)
 

@@ -66,7 +66,6 @@ var _ = Describe("FormatFile", func() {
 		Entry("double star", lexer.TokenDoubleStar, "**", precedenceExponent),
 		Entry("less", lexer.TokenLess, "<", precedenceRelational),
 		Entry("less equal", lexer.TokenLessEqual, "<=", precedenceRelational),
-		Entry("merge", lexer.TokenMerge, "<>", precedenceMerge),
 		Entry("greater", lexer.TokenGreater, ">", precedenceRelational),
 		Entry("greater equal", lexer.TokenGreaterEqual, ">=", precedenceRelational),
 		Entry("equal equal", lexer.TokenEqualEqual, "==", precedenceEquality),

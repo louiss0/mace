@@ -324,7 +324,7 @@ func yamlMappingExpression(iter *yamlast.MapNodeIter, selfPath string, state *ya
 
 	parts := append([]importExpression{}, mergeParts...)
 	parts = append(parts, record)
-	return mergeExpression{parts: parts}, nil
+	return yamlResolvedRecord(mergeExpression{parts: parts}, state)
 }
 
 func yamlMergeExpressions(node yamlast.Node, selfPath string, state *yamlImportState) ([]importExpression, error) {
@@ -927,21 +927,11 @@ func (expression recordExpression) render(depth int) string {
 }
 
 func (expression mergeExpression) render(depth int) string {
-	parts := make([]string, 0, len(expression.parts))
-	for _, part := range expression.parts {
-		parts = append(parts, renderMergeOperand(part, depth))
+	record, err := yamlResolvedRecord(expression, &yamlImportState{})
+	if err != nil {
+		return recordExpression{}.render(depth)
 	}
-	return strings.Join(parts, " <> ")
-}
-
-func renderMergeOperand(expression importExpression, depth int) string {
-	if raw, ok := expression.(rawExpression); ok {
-		if name, isTopLevelReference := yamlTopLevelReferenceName(raw.text); isTopLevelReference {
-			return name
-		}
-	}
-
-	return expression.render(depth)
+	return record.render(depth)
 }
 
 func (expression omittedExpression) render(int) string {

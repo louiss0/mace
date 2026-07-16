@@ -3289,8 +3289,6 @@ func evaluateInfix(expr ast.InfixExpression, environment *valueEnvironment, self
 		return evaluateNumeric(expr.Operator, left, right)
 	case lexer.TokenIn:
 		return evaluateContains(left, right)
-	case lexer.TokenMerge:
-		return evaluateMerge(left, right)
 	case lexer.TokenPercent:
 		return evaluateModulo(left, right)
 	case lexer.TokenShiftLeft, lexer.TokenShiftRight, lexer.TokenShiftRightUnsigned:
@@ -3325,74 +3323,6 @@ func evaluateContains(left, right Value) (Value, error) {
 
 	_, exists := right.Record[left.String]
 	return Value{Kind: ValueBoolean, Boolean: exists}, nil
-}
-
-func evaluateMerge(left, right Value) (Value, error) {
-	if left.Kind != right.Kind {
-		return Value{}, validationErrorf("type mismatch: merge operands must have the same type")
-	}
-
-	switch left.Kind {
-	case ValueRecord:
-		return Value{Kind: ValueRecord, Record: mergeRecords(left.Record, right.Record), Type: mergeValueType(left, right)}, nil
-	case ValueArray:
-		if !arrayMergeTypesMatch(left, right) {
-			return Value{}, validationErrorf("type mismatch: merge operands must have the same type")
-		}
-		merged := make([]Value, 0, len(left.Array)+len(right.Array))
-		merged = append(merged, left.Array...)
-		merged = append(merged, right.Array...)
-		return Value{Kind: ValueArray, Array: merged, Type: mergeValueType(left, right)}, nil
-	default:
-		return Value{}, validationErrorf("type mismatch: merge operands must be records or arrays")
-	}
-}
-
-func arrayMergeTypesMatch(left, right Value) bool {
-	if left.Type != nil && right.Type != nil {
-		return typesEqual(*left.Type, *right.Type)
-	}
-
-	leftType := valueTypeFromValue(left)
-	rightType := valueTypeFromValue(right)
-	if leftType.element == nil || rightType.element == nil {
-		return true
-	}
-	if leftType.element.kind == ValueUnknown || rightType.element.kind == ValueUnknown {
-		return true
-	}
-	return typesEqual(*leftType.element, *rightType.element)
-}
-
-func mergeValueType(left, right Value) *valueType {
-	if left.Type != nil && right.Type != nil && typesEqual(*left.Type, *right.Type) {
-		return left.Type
-	}
-	return nil
-}
-
-func mergeRecords(left, right map[string]Value) map[string]Value {
-	merged := make(map[string]Value, len(left)+len(right))
-	for name, value := range left {
-		merged[name] = value
-	}
-	for name, value := range right {
-		if leftValue, exists := merged[name]; exists && leftValue.Kind == value.Kind {
-			switch value.Kind {
-			case ValueRecord:
-				merged[name] = Value{Kind: ValueRecord, Record: mergeRecords(leftValue.Record, value.Record)}
-				continue
-			case ValueArray:
-				array := make([]Value, 0, len(leftValue.Array)+len(value.Array))
-				array = append(array, leftValue.Array...)
-				array = append(array, value.Array...)
-				merged[name] = Value{Kind: ValueArray, Array: array}
-				continue
-			}
-		}
-		merged[name] = value
-	}
-	return merged
 }
 
 func evaluateNumeric(operator lexer.TokenType, left, right Value) (Value, error) {
@@ -4642,8 +4572,6 @@ func inferInfixType(expr ast.InfixExpression, variables *variableRegistry, symbo
 			return valueType{}, validationErrorf("type mismatch: expected string key and record value for 'in'")
 		}
 		return valueType{kind: ValueBoolean}, nil
-	case lexer.TokenMerge:
-		return inferMergeType(leftType, rightType)
 	case lexer.TokenPercent:
 		if !leftType.isNumeric() || !rightType.isNumeric() {
 			return valueType{}, validationErrorf("type mismatch: expected numeric operands for '%%'")
@@ -4747,16 +4675,6 @@ func coalesceOperands(expression ast.Expression) []ast.Expression {
 
 	operands := []ast.Expression{infix.Left}
 	return append(operands, coalesceOperands(infix.Right)...)
-}
-
-func inferMergeType(leftType, rightType valueType) (valueType, error) {
-	if leftType.kind != ValueRecord && leftType.kind != ValueArray {
-		return valueType{}, validationErrorf("type mismatch: merge operands must be records or arrays")
-	}
-	if !typesEqual(leftType, rightType) {
-		return valueType{}, validationErrorf("type mismatch: merge operands must have the same type")
-	}
-	return leftType, nil
 }
 
 func inferNumericBinary(operator lexer.TokenType, leftType, rightType valueType) (valueType, error) {

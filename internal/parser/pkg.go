@@ -18,7 +18,6 @@ const (
 	precedenceBitwiseOr
 	precedenceBitwiseXor
 	precedenceBitwiseAnd
-	precedenceMerge
 	precedenceEquality
 	precedenceRelational
 	precedenceShift
@@ -1661,8 +1660,6 @@ func (p *Parser) precedenceFor(tokenType lexer.TokenType) int {
 		return precedenceBitwiseAnd
 	case lexer.TokenEqualEqual, lexer.TokenNotEqual:
 		return precedenceEquality
-	case lexer.TokenMerge:
-		return precedenceMerge
 	case lexer.TokenLess, lexer.TokenLessEqual, lexer.TokenGreater, lexer.TokenGreaterEqual, lexer.TokenIn:
 		return precedenceRelational
 	case lexer.TokenShiftLeft, lexer.TokenShiftRight, lexer.TokenShiftRightUnsigned:

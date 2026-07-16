@@ -101,8 +101,7 @@ logical_or_expression = logical_and_expression , { ws0 , "||" , ws0 , logical_an
 logical_and_expression = bitwise_or_expression , { ws0 , "&&" , ws0 , bitwise_or_expression } ;
 bitwise_or_expression = bitwise_xor_expression , { ws0 , "|" , ws0 , bitwise_xor_expression } ;
 bitwise_xor_expression = bitwise_and_expression , { ws0 , "^" , ws0 , bitwise_and_expression } ;
-bitwise_and_expression = merge_expression , { ws0 , "&" , ws0 , merge_expression } ;
-merge_expression = equality_expression , { ws0 , "<>" , ws0 , equality_expression } ;
+bitwise_and_expression = equality_expression , { ws0 , "&" , ws0 , equality_expression } ;
 equality_expression = relational_expression , { ws0 , ( "==" | "!=" ) , ws0 , relational_expression } ;
 relational_expression = shift_expression , { ws0 , ( "<" | "<=" | ">" | ">=" ) , ws0 , shift_expression } ;
 shift_expression = additive_expression , { ws0 , ( "<<" | ">>" | ">>>" ) , ws0 , additive_expression } ;

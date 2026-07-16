@@ -196,7 +196,7 @@ func inferErrorCode(message string) ErrorCode {
 		return CodeInvalidOutputSchemaField
 	case strings.Contains(message, "expected boolean after '!'") || strings.Contains(message, "expected int after '~'") || strings.Contains(message, "expected numeric after unary operator"):
 		return ErrorCode("mace.type.invalid-unary-operator")
-	case strings.Contains(message, "expected numeric operands") || strings.Contains(message, "expected int operands") || strings.Contains(message, "expected boolean operands") || strings.Contains(message, "incompatible equality comparison") || strings.Contains(message, "merge operands") || strings.Contains(message, "expected ") && strings.Contains(message, " operands"):
+	case strings.Contains(message, "expected numeric operands") || strings.Contains(message, "expected int operands") || strings.Contains(message, "expected boolean operands") || strings.Contains(message, "incompatible equality comparison") || strings.Contains(message, "expected ") && strings.Contains(message, " operands"):
 		return ErrorCode("mace.type.invalid-binary-operator")
 	case strings.Contains(message, "use optional chaining '?.'"):
 		return CodeOptionalFieldAccess
