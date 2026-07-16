@@ -104,6 +104,19 @@ int age = 27;
 })
 
 var _ = Describe("Parse", func() {
+	It("preserves hex_float precision through the public output path", func() {
+		result, err := Parse(`[output = 'data'] { value: 0x1.0000000000001, }`)
+		tAssert.NoError(err)
+		formatted, ok := result.Data["value"].(string)
+		tAssert.True(ok)
+
+		roundTrip, err := Parse(`[output = 'data'] { value: ` + formatted + `, }`)
+		tAssert.NoError(err)
+		roundTripText, ok := roundTrip.Data["value"].(string)
+		tAssert.True(ok)
+		tAssert.Equal("0x1.0000000000001", roundTripText)
+	})
+
 	It("parses with input values through compatibility helpers", func() {
 		result, err := ParseWithInjections(`|===|
 schema Runtime: { name: string, enabled: boolean, };

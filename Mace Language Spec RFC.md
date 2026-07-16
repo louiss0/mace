@@ -204,14 +204,32 @@ field` or `expected &#x27;,&#x27; or &#x27;}&#x27; after field`, never suggest `
 
 The primitive types are `string`, `int`, `float`, `hex_int`, `hex_float`, and
 `boolean`. `int` is signed 64-bit. `float` is IEEE-754 binary64. `hex_int` has
-the same signed 64-bit range as `int` and `hex_float` uses binary64 storage,
-but both hexadecimal types are distinct from the decimal family. NaN and
-infinity have no literal syntax. Integer overflow, division by zero, and any
+the same exact range as `int`, from -2^63 through 2^63 - 1. The minimum
+`hex_int` is written `-0x8000000000000000`; the positive literal
+`0x8000000000000000` is out of range. Hexadecimal integer addition,
+subtraction, multiplication, non-negative integer exponentiation, unary
+negation, and left shift MUST produce an evaluation error rather than wrap
+when their mathematical result is outside that range.
+
+`hex_float` uses binary64 storage, but both hexadecimal types are distinct
+from the decimal family. A `hex_float` literal remains fixed-point:
+`0x<hex-digits>.<hex-digits>`, with arbitrarily long non-empty whole and
+fractional components and no scientific notation. Literal conversion rounds
+to the nearest binary64 value. Magnitudes through 2^1024 - 1 are accepted;
+values in the upper binary64 rounding interval produce `math.MaxFloat64`, and
+larger magnitudes are errors. Thus the largest finite positive Mace literal is
+`"0x" + strings.Repeat("F", 256) + ".0"`, representing
+`math.MaxFloat64 = (2 - 2^-52) * 2^1023 = 2^1024 - 2^971`.
+
+Canonical `hex_float` output uses uppercase hexadecimal digits, fixed-point
+notation, an exact binary64 expansion, and a required fractional component.
+Trailing fractional zeroes are removed, but `.0` remains for integer-valued
+floats. Parsing canonical output MUST reproduce the identical binary64 bit
+pattern, including negative zero. NaN, infinity, division by zero, and any
 operation producing a non-finite float are evaluation errors. `int &#x2f; int`
 truncates toward zero. Hexadecimal fractional digits are powers of 16, so
-`0xA.F` is `10.9375`; hexadecimal scientific notation is not supported.
-Decimal and hexadecimal values never mix implicitly. `hex_int &#x2f; hex_int`
-returns `hex_float`; `~` accepts only decimal `int`.
+`0xA.F` is `10.9375`. Decimal and hexadecimal values never mix implicitly.
+`hex_int &#x2f; hex_int` returns `hex_float`; `~` accepts only decimal `int`.
 
 Arrays are homogeneous unless their element type is a permitting `variant`.
 `record&lt;T&gt;` describes a record whose values conform to `T`. `[]` requires an expected array type because it has no inferable element type.

@@ -244,12 +244,14 @@ int base = 2 + 2;
 hex_int mask = 0xFF;
 hex_float ratio = 0x2.8;
 hex_float whole = 0x2.0;
+hex_float precise = 0x1.0000000000001;
 |===|
 [output = 'data']
 {
   mask: mask,
   ratio: ratio,
   whole: whole,
+  precise: precise,
 }`)
 
 			var stdout bytes.Buffer
@@ -263,6 +265,7 @@ hex_float whole = 0x2.0;
 			tAssert.Equal("", stderr.String())
 			tAssert.JSONEq(`{
   "mask": "0xFF",
+  "precise": "0x1.0000000000001",
   "ratio": "0x2.8",
   "whole": "0x2.0"
 }`, stdout.String())

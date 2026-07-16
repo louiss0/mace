@@ -150,6 +150,14 @@ Permission value = &quot;execute&quot;;
 Hexadecimal values stay distinct from decimal numerics. When emitted through
 `mace json`, `hex_int` and `hex_float` values are serialized as strings such as
 `&quot;0xFF&quot;` and `&quot;0x2.8&quot;` so their hexadecimal spelling is preserved.
+`hex_int` is signed 64-bit; arithmetic and overflowing left shifts fail rather
+than wrap, and its minimum value is written `-0x8000000000000000`.
+`hex_float` accepts arbitrarily long fixed-point hexadecimal components and is
+serialized as an exact, uppercase, fixed-point binary64 expansion with a
+required fractional component. This makes every finite value round-trip
+without precision loss. The largest finite literal is reproducibly constructed
+as `&quot;0x&quot; + strings.Repeat(&quot;F&quot;, 256) + &quot;.0&quot;` and represents
+`math.MaxFloat64`.
 
 For the exact rules and currently supported syntax, see
 [the formal specification](.&#x2f;docs&#x2f;src&#x2f;content&#x2f;docs&#x2f;reference&#x2f;spec.mdx).

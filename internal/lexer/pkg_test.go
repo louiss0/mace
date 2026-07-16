@@ -1,6 +1,7 @@
 package lexer
 
 import (
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -249,6 +250,14 @@ var _ = Describe("Lexer", func() {
 		Entry("missing fractional digits", "0x8.", "expected hexadecimal digit after hexadecimal point"),
 		Entry("invalid digit", "0xG", "expected hexadecimal digit after 0x"),
 	)
+
+	It("accepts arbitrarily long hexadecimal literal components", func() {
+		literal := "0x" + strings.Repeat("F", 256) + "." + strings.Repeat("A", 300)
+		tokens, err := collectTokens(literal)
+		tAssert.NoError(err)
+		tAssert.Equal(TokenHexFloat, tokens[0].Type)
+		tAssert.Equal(literal, tokens[0].Lexeme)
+	})
 
 	DescribeTable("tracks line and column positions",
 		func(input string, expected []expectedToken) {

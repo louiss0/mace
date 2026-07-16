@@ -221,7 +221,7 @@ func inferErrorKind(message string) ErrorKind {
 		return ErrorDirective
 	case strings.Contains(message, "declaration") || strings.Contains(message, "type alias"):
 		return ErrorDeclaration
-	case strings.Contains(message, "operator") || strings.Contains(message, "operands") || strings.Contains(message, "division by zero") || strings.Contains(message, "exponent") || strings.Contains(message, "shift count"):
+	case strings.Contains(message, "operator") || strings.Contains(message, "operands") || strings.Contains(message, "overflow") || strings.Contains(message, "division by zero") || strings.Contains(message, "exponent") || strings.Contains(message, "shift count") || strings.Contains(message, "non-finite"):
 		return ErrorOperator
 	case strings.Contains(message, "type mismatch") || strings.Contains(message, "unknown type") || strings.Contains(message, "type reference"):
 		return ErrorType

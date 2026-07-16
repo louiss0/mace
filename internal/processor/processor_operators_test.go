@@ -1,6 +1,9 @@
 package processor
 
 import (
+	"math"
+	"strings"
+
 	"github.com/louiss0/mace/internal/lexer"
 	"github.com/louiss0/mace/internal/parser/ast"
 	. "github.com/onsi/ginkgo/v2"
@@ -20,7 +23,6 @@ var _ = Describe("Operators", func() {
 		Entry("hex addition", `[output = 'data'] { result: 0x0F + 0x01, }`, expectedValue{kind: ValueHexInt, string: "0x10"}),
 		Entry("subtraction", `[output = 'data'] { result: 5 - 3, }`, expectedValue{kind: ValueInt, int64: 2}),
 		Entry("multiplication", `[output = 'data'] { result: 2 * 3, }`, expectedValue{kind: ValueInt, int64: 6}),
-		Entry("hex multiplication overflow", `[output = 'data'] { result: 0x4000000000000000 * 0x2, }`, expectedValue{kind: ValueHexInt, string: "-0x8000000000000000"}),
 		Entry("division", `[output = 'data'] { result: 8 / 2, }`, expectedValue{kind: ValueInt, int64: 4}),
 		Entry("hex division", `[output = 'data'] { result: 0x05 / 0x02, }`, expectedValue{kind: ValueHexFloat, string: "0x2.8"}),
 		Entry("modulo", `[output = 'data'] { result: 9 % 4, }`, expectedValue{kind: ValueInt, int64: 1}),
@@ -51,6 +53,114 @@ var _ = Describe("Operators", func() {
 		Entry("comparison and logic precedence", `[output = 'data'] { result: 1 < 2 && 3 > 2 || false, }`, expectedValue{kind: ValueBoolean, bool: true}),
 		Entry("conditional with logical expression", `[output = 'data'] { result: false || true ? 5 : 2, }`, expectedValue{kind: ValueInt, int64: 5}),
 	)
+
+	DescribeTable("rejects overflowing hex_int operations",
+		func(expression string) {
+			_, err := New().Process(`[output = 'data'] { result: ` + expression + `, }`)
+			tAssert.ErrorContains(err, "hex_int overflow")
+		},
+		Entry("addition", "0x7FFFFFFFFFFFFFFF + 0x1"),
+		Entry("subtraction", "-0x8000000000000000 - 0x1"),
+		Entry("multiplication", "0x4000000000000000 * 0x2"),
+		Entry("exponentiation", "0x2 ** 0x3F"),
+		Entry("left shift", "0x4000000000000000 << 0x2"),
+	)
+
+	It("accepts the signed hex_int boundaries", func() {
+		result, err := New().Process(`[output = 'data'] {
+  maximum: 0x7FFFFFFFFFFFFFFF,
+  minimum: -0x8000000000000000,
+}`)
+		tAssert.NoError(err)
+		tAssert.Equal(int64(math.MaxInt64), result.Output["maximum"].Int)
+		tAssert.Equal(int64(math.MinInt64), result.Output["minimum"].Int)
+	})
+
+	DescribeTable("rejects hex_int literals outside the signed range",
+		func(literal string) {
+			_, err := New().Process(`[output = 'data'] { result: ` + literal + `, }`)
+			tAssert.ErrorContains(err, "invalid hex_int literal")
+		},
+		Entry("positive minimum magnitude", "0x8000000000000000"),
+		Entry("larger positive magnitude", "0x10000000000000000"),
+		Entry("negative beyond minimum", "-0x8000000000000001"),
+	)
+
+	It("parses and round-trips finite fixed-point hex_float values", func() {
+		maximumLiteral := "0x" + strings.Repeat("F", 256) + ".0"
+		result, err := New().Process(`[output = 'data'] {
+  ordinary: 0x1.8,
+  uppercase: 0xA.F,
+  precise: 0x1.0000000000001,
+  large: 0x10000000000000000.0,
+  maximum: ` + maximumLiteral + `,
+  negative_maximum: -` + maximumLiteral + `,
+}`)
+		tAssert.NoError(err)
+		tAssert.Equal(1.5, result.Output["ordinary"].Float)
+		tAssert.Equal(10.9375, result.Output["uppercase"].Float)
+		tAssert.Equal(math.Float64bits(1+math.Ldexp(1, -52)), math.Float64bits(result.Output["precise"].Float))
+		tAssert.Equal(math.Float64bits(math.Ldexp(1, 64)), math.Float64bits(result.Output["large"].Float))
+		tAssert.Equal(math.Float64bits(math.MaxFloat64), math.Float64bits(result.Output["maximum"].Float))
+		tAssert.Equal(math.Float64bits(-math.MaxFloat64), math.Float64bits(result.Output["negative_maximum"].Float))
+
+		for _, name := range []string{"precise", "large", "maximum", "negative_maximum"} {
+			formatted, formatErr := FormatScalarValue(result.Output[name])
+			tAssert.NoError(formatErr)
+			roundTrip, parseErr := New().Process(`[output = 'data'] { result: ` + formatted + `, }`)
+			tAssert.NoError(parseErr)
+			tAssert.Equal(math.Float64bits(result.Output[name].Float), math.Float64bits(roundTrip.Output["result"].Float))
+		}
+	})
+
+	It("rejects a hex_float literal that rounds to infinity", func() {
+		literal := "0x1" + strings.Repeat("0", 256) + ".0"
+		_, err := New().Process(`[output = 'data'] { result: ` + literal + `, }`)
+		tAssert.ErrorContains(err, "invalid hex_float literal")
+	})
+
+	DescribeTable("rejects non-finite hex_float arithmetic",
+		func(operator lexer.TokenType, left float64, right float64) {
+			_, err := evaluateHexNumeric(operator, Value{Kind: ValueHexFloat, Float: left}, Value{Kind: ValueHexFloat, Float: right})
+			tAssert.ErrorContains(err, "non-finite hex_float result")
+		},
+		Entry("addition", lexer.TokenPlus, math.MaxFloat64, math.MaxFloat64),
+		Entry("subtraction", lexer.TokenMinus, math.MaxFloat64, -math.MaxFloat64),
+		Entry("multiplication", lexer.TokenStar, math.MaxFloat64, 2.0),
+		Entry("division", lexer.TokenSlash, math.MaxFloat64, math.SmallestNonzeroFloat64),
+		Entry("exponentiation", lexer.TokenDoubleStar, math.MaxFloat64, 2.0),
+	)
+
+	It("preserves negative zero as a hex_float", func() {
+		result, err := New().Process(`[output = 'data'] { result: -0x0.0, }`)
+		tAssert.NoError(err)
+		tAssert.True(math.Signbit(result.Output["result"].Float))
+		formatted, err := FormatScalarValue(result.Output["result"])
+		tAssert.NoError(err)
+		tAssert.Equal("-0x0.0", formatted)
+	})
+
+	It("round-trips representative finite float64 bit patterns", func() {
+		values := []float64{
+			0,
+			math.Copysign(0, -1),
+			math.SmallestNonzeroFloat64,
+			-math.SmallestNonzeroFloat64,
+			math.SmallestNonzeroFloat64 * 17,
+			math.Pi,
+			math.Nextafter(1, 2),
+			math.MaxFloat64,
+			-math.MaxFloat64,
+		}
+
+		for _, value := range values {
+			formatted, err := FormatScalarValue(Value{Kind: ValueHexFloat, Float: value})
+			tAssert.NoError(err)
+			result, err := New().Process(`[output = 'data'] { result: ` + formatted + `, }`)
+			tAssert.NoError(err)
+			tAssert.Equal(math.Float64bits(value), math.Float64bits(result.Output["result"].Float))
+		}
+	})
 
 	DescribeTable("returns math results",
 		func(file string, expected expectedValue) {

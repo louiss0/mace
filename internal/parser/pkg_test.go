@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -193,6 +194,9 @@ var _ = Describe("Parser", func() {
 		}),
 		Entry("hex float literal", "0x2.8", func(expression ast.Expression) {
 			requireHexFloatLiteral(expression, "0x2.8")
+		}),
+		Entry("long hex float literal", "0x"+strings.Repeat("F", 256)+".0", func(expression ast.Expression) {
+			requireHexFloatLiteral(expression, "0x"+strings.Repeat("F", 256)+".0")
 		}),
 		Entry("float literal", "3.14", func(expression ast.Expression) {
 			literal, ok := expression.(ast.FloatLiteral)

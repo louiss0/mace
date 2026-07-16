@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
@@ -2826,7 +2827,7 @@ func parseInt(lexeme string) (Value, error) {
 
 func parseFloat(lexeme string) (Value, error) {
 	value, err := strconv.ParseFloat(lexeme, 64)
-	if err != nil {
+	if err != nil || !isFiniteFloat(value) {
 		return Value{}, validationErrorf("invalid float literal %q", lexeme)
 	}
 	return Value{Kind: ValueFloat, Float: value}, nil
@@ -2841,28 +2842,53 @@ func parseHexInt(lexeme string) (Value, error) {
 	return Value{Kind: ValueHexInt, Int: value}, nil
 }
 
+func parseNegativeHexInt(lexeme string) (Value, error) {
+	trimmed := strings.TrimPrefix(strings.TrimPrefix(lexeme, "0x"), "0X")
+	magnitude, err := strconv.ParseUint(trimmed, 16, 64)
+	if err != nil || magnitude > uint64(math.MaxInt64)+1 {
+		return Value{}, validationErrorf("invalid hex_int literal %q", "-"+lexeme)
+	}
+	if magnitude == uint64(math.MaxInt64)+1 {
+		return Value{Kind: ValueHexInt, Int: math.MinInt64}, nil
+	}
+	return Value{Kind: ValueHexInt, Int: -int64(magnitude)}, nil
+}
+
 func parseHexFloat(lexeme string) (Value, error) {
 	trimmed := strings.TrimPrefix(strings.TrimPrefix(lexeme, "0x"), "0X")
 	parts := strings.Split(trimmed, ".")
-	if len(parts) != 2 {
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return Value{}, validationErrorf("invalid hex_float literal %q", lexeme)
 	}
 
-	whole, err := strconv.ParseInt(parts[0], 16, 64)
+	value, err := strconv.ParseFloat(lexeme+"p0", 64)
 	if err != nil {
-		return Value{}, validationErrorf("invalid hex_float literal %q", lexeme)
-	}
-
-	fraction := 0.0
-	for index, r := range parts[1] {
-		digit, err := strconv.ParseInt(string(r), 16, 64)
-		if err != nil {
+		numberError, isNumberError := err.(*strconv.NumError)
+		if isNumberError && numberError.Err == strconv.ErrRange && math.IsInf(value, 1) && isFiniteHexFloatLiteral(parts[0], parts[1]) {
+			return Value{Kind: ValueHexFloat, Float: math.MaxFloat64}, nil
+		}
+		if !isNumberError || numberError.Err != strconv.ErrRange || !isFiniteFloat(value) {
 			return Value{}, validationErrorf("invalid hex_float literal %q", lexeme)
 		}
-		fraction += float64(digit) / math.Pow(16, float64(index+1))
 	}
+	if !isFiniteFloat(value) {
+		return Value{}, validationErrorf("invalid hex_float literal %q", lexeme)
+	}
+	return Value{Kind: ValueHexFloat, Float: value}, nil
+}
 
-	return Value{Kind: ValueHexFloat, Float: float64(whole) + fraction}, nil
+func isFiniteHexFloatLiteral(whole string, fraction string) bool {
+	whole = strings.TrimLeft(whole, "0")
+	if len(whole) < 256 {
+		return true
+	}
+	if len(whole) > 256 {
+		return false
+	}
+	if strings.Trim(whole, "Ff") != "" {
+		return true
+	}
+	return strings.Trim(fraction, "0") == ""
 }
 
 func parseStaticString(lexeme string) (Value, error) {
@@ -3063,10 +3089,16 @@ func stringifyValue(value Value) (string, error) {
 	case ValueInt:
 		return strconv.FormatInt(value.Int, 10), nil
 	case ValueFloat:
+		if !isFiniteFloat(value.Float) {
+			return "", validationErrorf("cannot format non-finite float")
+		}
 		return strconv.FormatFloat(value.Float, 'f', -1, 64), nil
 	case ValueHexInt:
 		return formatHexInt(value.Int), nil
 	case ValueHexFloat:
+		if !isFiniteFloat(value.Float) {
+			return "", validationErrorf("cannot format non-finite hex_float")
+		}
 		return formatHexFloat(value.Float), nil
 	case ValueBoolean:
 		return strconv.FormatBool(value.Boolean), nil
@@ -3085,64 +3117,38 @@ func formatHexInt(value int64) string {
 }
 
 func formatHexFloat(value float64) string {
-	if value == 0 {
-		return "0x0.0"
-	}
-
 	sign := ""
-	if value < 0 {
+	if math.Signbit(value) {
 		sign = "-"
-		value = -value
+		value = math.Abs(value)
+	}
+	if value == 0 {
+		return sign + "0x0.0"
 	}
 
-	whole := int64(value)
-	fraction := value - float64(whole)
-	wholeText := strings.ToUpper(strconv.FormatInt(whole, 16))
-	if fraction == 0 {
-		return sign + "0x" + wholeText + ".0"
+	exact := new(big.Rat).SetFloat64(value)
+	numerator := new(big.Int).Set(exact.Num())
+	denominatorPower := exact.Denom().BitLen() - 1
+	fractionalDigits := (denominatorPower + 3) / 4
+	numerator.Lsh(numerator, uint(4*fractionalDigits-denominatorPower))
+
+	if fractionalDigits == 0 {
+		return sign + "0x" + strings.ToUpper(numerator.Text(16)) + ".0"
 	}
 
-	digits := make([]byte, 0, 10)
-	for range 10 {
-		fraction *= 16
-		digit := int(fraction)
-		fraction -= float64(digit)
-		if digit < 10 {
-			digits = append(digits, byte('0'+digit))
-		} else {
-			digits = append(digits, byte('A'+digit-10))
-		}
+	scale := new(big.Int).Lsh(big.NewInt(1), uint(4*fractionalDigits))
+	whole := new(big.Int)
+	fraction := new(big.Int)
+	whole.QuoRem(numerator, scale, fraction)
+	fractionText := fraction.Text(16)
+	if padding := fractionalDigits - len(fractionText); padding > 0 {
+		fractionText = strings.Repeat("0", padding) + fractionText
 	}
-
-	if len(digits) == 10 {
-		roundDigit := digits[9]
-		digits = digits[:9]
-		if roundDigit >= '8' {
-			for index := len(digits) - 1; index >= 0; index-- {
-				if digits[index] == 'F' {
-					digits[index] = '0'
-					continue
-				}
-				if digits[index] == '9' {
-					digits[index] = 'A'
-				} else {
-					digits[index]++
-				}
-				goto trim
-			}
-			whole++
-			wholeText = strings.ToUpper(strconv.FormatInt(whole, 16))
-		}
+	fractionText = strings.TrimRight(fractionText, "0")
+	if fractionText == "" {
+		fractionText = "0"
 	}
-
-trim:
-	for len(digits) > 0 && digits[len(digits)-1] == '0' {
-		digits = digits[:len(digits)-1]
-	}
-	if len(digits) == 0 {
-		return sign + "0x" + wholeText + ".0"
-	}
-	return sign + "0x" + wholeText + "." + string(digits)
+	return sign + "0x" + strings.ToUpper(whole.Text(16)) + "." + strings.ToUpper(fractionText)
 }
 
 func evaluateMatch(expr ast.MatchExpression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
@@ -3229,6 +3235,12 @@ func evaluateMemberAccess(expr ast.MemberAccess, environment *valueEnvironment, 
 }
 
 func evaluatePrefix(expr ast.PrefixExpression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
+	if expr.Operator == lexer.TokenMinus {
+		if literal, ok := expr.Right.(ast.HexIntLiteral); ok {
+			return parseNegativeHexInt(literal.Lexeme)
+		}
+	}
+
 	right, err := evaluateExpression(expr.Right, environment, self, symbols, types, schemas, enums)
 	if err != nil {
 		return Value{}, err
@@ -3253,9 +3265,12 @@ func evaluatePrefix(expr ast.PrefixExpression, environment *valueEnvironment, se
 	case lexer.TokenMinus:
 		switch right.Kind {
 		case ValueInt, ValueHexInt:
+			if right.Int == math.MinInt64 {
+				return Value{}, validationErrorf("%s overflow", right.kindName())
+			}
 			return Value{Kind: right.Kind, Int: -right.Int}, nil
 		case ValueFloat, ValueHexFloat:
-			return Value{Kind: right.Kind, Float: -right.Float}, nil
+			return finiteFloatValue(right.Kind, -right.Float)
 		default:
 			return Value{}, validationErrorf("type mismatch: expected numeric after unary operator")
 		}
@@ -3348,34 +3363,33 @@ func evaluateHexNumeric(operator lexer.TokenType, left, right Value) (Value, err
 	switch operator {
 	case lexer.TokenPlus:
 		if left.Kind == ValueHexInt && right.Kind == ValueHexInt {
-			return Value{Kind: ValueHexInt, Int: left.Int + right.Int}, nil
+			return checkedHexIntBinary(left.Int, right.Int, func(left, right *big.Int) *big.Int {
+				return left.Add(left, right)
+			})
 		}
-		return Value{Kind: ValueHexFloat, Float: leftNumber + rightNumber}, nil
+		return finiteFloatValue(ValueHexFloat, leftNumber+rightNumber)
 	case lexer.TokenMinus:
 		if left.Kind == ValueHexInt && right.Kind == ValueHexInt {
-			return Value{Kind: ValueHexInt, Int: left.Int - right.Int}, nil
+			return checkedHexIntBinary(left.Int, right.Int, func(left, right *big.Int) *big.Int {
+				return left.Sub(left, right)
+			})
 		}
-		return Value{Kind: ValueHexFloat, Float: leftNumber - rightNumber}, nil
+		return finiteFloatValue(ValueHexFloat, leftNumber-rightNumber)
 	case lexer.TokenStar:
 		if left.Kind == ValueHexInt && right.Kind == ValueHexInt {
-			return Value{Kind: ValueHexInt, Int: left.Int * right.Int}, nil
+			return checkedHexIntProduct(left.Int, right.Int)
 		}
-		return Value{Kind: ValueHexFloat, Float: leftNumber * rightNumber}, nil
+		return finiteFloatValue(ValueHexFloat, leftNumber*rightNumber)
 	case lexer.TokenSlash:
 		if rightNumber == 0 {
 			return Value{}, validationErrorf("division by zero")
 		}
-		return Value{Kind: ValueHexFloat, Float: leftNumber / rightNumber}, nil
+		return finiteFloatValue(ValueHexFloat, leftNumber/rightNumber)
 	case lexer.TokenDoubleStar:
 		if left.Kind == ValueHexInt && right.Kind == ValueHexInt && right.Int >= 0 {
-			result, err := evaluateIntPower(left.Int, right.Int)
-			if err != nil {
-				return Value{}, err
-			}
-			result.Kind = ValueHexInt
-			return result, nil
+			return evaluateHexIntPower(left.Int, right.Int)
 		}
-		return Value{Kind: ValueHexFloat, Float: math.Pow(leftNumber, rightNumber)}, nil
+		return finiteFloatValue(ValueHexFloat, math.Pow(leftNumber, rightNumber))
 	default:
 		return Value{}, validationErrorf("unknown numeric operator")
 	}
@@ -3404,21 +3418,69 @@ func evaluateIntNumeric(operator lexer.TokenType, left, right int64) (Value, err
 func evaluateFloatNumeric(operator lexer.TokenType, left, right float64) (Value, error) {
 	switch operator {
 	case lexer.TokenPlus:
-		return Value{Kind: ValueFloat, Float: left + right}, nil
+		return finiteFloatValue(ValueFloat, left+right)
 	case lexer.TokenMinus:
-		return Value{Kind: ValueFloat, Float: left - right}, nil
+		return finiteFloatValue(ValueFloat, left-right)
 	case lexer.TokenStar:
-		return Value{Kind: ValueFloat, Float: left * right}, nil
+		return finiteFloatValue(ValueFloat, left*right)
 	case lexer.TokenSlash:
 		if right == 0 {
 			return Value{}, validationErrorf("division by zero")
 		}
-		return Value{Kind: ValueFloat, Float: left / right}, nil
+		return finiteFloatValue(ValueFloat, left/right)
 	case lexer.TokenDoubleStar:
-		return Value{Kind: ValueFloat, Float: math.Pow(left, right)}, nil
+		return finiteFloatValue(ValueFloat, math.Pow(left, right))
 	default:
 		return Value{}, validationErrorf("unknown numeric operator")
 	}
+}
+
+func checkedHexIntBinary(left int64, right int64, operation func(*big.Int, *big.Int) *big.Int) (Value, error) {
+	result := operation(big.NewInt(left), big.NewInt(right))
+	if !result.IsInt64() {
+		return Value{}, validationErrorf("hex_int overflow")
+	}
+	return Value{Kind: ValueHexInt, Int: result.Int64()}, nil
+}
+
+func checkedHexIntProduct(left int64, right int64) (Value, error) {
+	return checkedHexIntBinary(left, right, func(left, right *big.Int) *big.Int {
+		return left.Mul(left, right)
+	})
+}
+
+func evaluateHexIntPower(base int64, exponent int64) (Value, error) {
+	result := Value{Kind: ValueHexInt, Int: 1}
+	factor := base
+	for exponent > 0 {
+		if exponent&1 == 1 {
+			product, err := checkedHexIntProduct(result.Int, factor)
+			if err != nil {
+				return Value{}, err
+			}
+			result = product
+		}
+		exponent >>= 1
+		if exponent > 0 {
+			product, err := checkedHexIntProduct(factor, factor)
+			if err != nil {
+				return Value{}, err
+			}
+			factor = product.Int
+		}
+	}
+	return result, nil
+}
+
+func finiteFloatValue(kind ValueKind, value float64) (Value, error) {
+	if !isFiniteFloat(value) {
+		return Value{}, validationErrorf("non-finite %s result", Value{Kind: kind}.kindName())
+	}
+	return Value{Kind: kind, Float: value}, nil
+}
+
+func isFiniteFloat(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0)
 }
 
 func evaluateIntPower(base int64, exponent int64) (Value, error) {
@@ -3461,7 +3523,7 @@ func evaluateModulo(left, right Value) (Value, error) {
 	if rightNumber == 0 {
 		return Value{}, validationErrorf("division by zero")
 	}
-	return Value{Kind: ValueFloat, Float: math.Mod(leftNumber, rightNumber)}, nil
+	return finiteFloatValue(ValueFloat, math.Mod(leftNumber, rightNumber))
 }
 
 func evaluateShift(operator lexer.TokenType, left, right Value) (Value, error) {
@@ -3475,7 +3537,17 @@ func evaluateShift(operator lexer.TokenType, left, right Value) (Value, error) {
 		shift := uint(right.Int)
 		switch operator {
 		case lexer.TokenShiftLeft:
-			return Value{Kind: ValueHexInt, Int: left.Int << shift}, nil
+			if left.Int == 0 {
+				return Value{Kind: ValueHexInt}, nil
+			}
+			if shift >= 64 {
+				return Value{}, validationErrorf("hex_int overflow")
+			}
+			result := new(big.Int).Lsh(big.NewInt(left.Int), shift)
+			if !result.IsInt64() {
+				return Value{}, validationErrorf("hex_int overflow")
+			}
+			return Value{Kind: ValueHexInt, Int: result.Int64()}, nil
 		case lexer.TokenShiftRight:
 			return Value{Kind: ValueHexInt, Int: left.Int >> shift}, nil
 		case lexer.TokenShiftRightUnsigned:
@@ -4524,6 +4596,16 @@ func inferRecordLiteralType(expr ast.RecordLiteral, variables *variableRegistry,
 }
 
 func inferPrefixType(expr ast.PrefixExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
+	if expr.Operator == lexer.TokenMinus {
+		if literal, ok := expr.Right.(ast.HexIntLiteral); ok {
+			value, err := parseNegativeHexInt(literal.Lexeme)
+			if err != nil {
+				return valueType{}, err
+			}
+			return valueType{kind: ValueHexInt, exactValue: &value}, nil
+		}
+	}
+
 	rightType, err := inferExpressionType(expr.Right, variables, symbols, types, schemas, enums)
 	if err != nil {
 		return valueType{}, err
