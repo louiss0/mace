@@ -18,6 +18,7 @@ func TestAST(t *testing.T) {
 var _ = Describe("AST nodes", func() {
 	It("invokes expression node methods", func() {
 		expressions := []Expression{
+			GroupedExpression{Expression: IntLiteral{Lexeme: "1"}},
 			Identifier{Name: "name"},
 			MemberAccess{Target: Identifier{Name: "user"}, Name: "name"},
 			StringLiteral{Lexeme: "\"value\""},
@@ -71,7 +72,7 @@ var _ = Describe("AST nodes", func() {
 	})
 
 	It("covers all AST node methods", func() {
-		expressions := []Expression{Identifier{}, MemberAccess{}, StringLiteral{}, IntLiteral{}, FloatLiteral{}, HexIntLiteral{}, HexFloatLiteral{}, BooleanLiteral{}, NullLiteral{}, ArrayLiteral{}, RecordLiteral{}, PrefixExpression{}, InfixExpression{}, ConditionalExpression{}, SelfReference{}}
+		expressions := []Expression{GroupedExpression{}, Identifier{}, MemberAccess{}, StringLiteral{}, IntLiteral{}, FloatLiteral{}, HexIntLiteral{}, HexFloatLiteral{}, BooleanLiteral{}, NullLiteral{}, ArrayLiteral{}, RecordLiteral{}, PrefixExpression{}, InfixExpression{}, ConditionalExpression{}, SelfReference{}}
 		for _, expression := range expressions {
 			expression.expressionNode()
 		}

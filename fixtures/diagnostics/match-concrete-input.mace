@@ -1,0 +1,7 @@
+|===|
+string value = 'Mace';
+string selected = match (value) {
+  string => 'text',
+};
+|===|
+[output = 'data'] { selected, }

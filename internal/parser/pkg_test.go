@@ -350,6 +350,38 @@ var _ = Describe("Parser", func() {
 		Entry("grouped add then multiply", "(1 + 2) * 3"),
 	)
 
+	DescribeTable("allows groups that alter arithmetic precedence",
+		func(input string) {
+			_, err := parseExpressionInput(input)
+			tAssert.NoError(err)
+		},
+		Entry("left additive before multiplication", "(1 + 2) * 3"),
+		Entry("right additive before multiplication", "1 * (2 + 3)"),
+		Entry("right-associative subtraction", "1 - (2 - 3)"),
+		Entry("additive exponent", "2 ** (3 + 4)"),
+		Entry("left-associated exponent", "(2 ** 3) ** 4"),
+		Entry("prefix over addition", "-(1 + 2)"),
+	)
+
+	DescribeTable("rejects groups that do not alter arithmetic precedence",
+		func(input string) {
+			_, err := parseExpressionInput(input)
+			tAssert.ErrorContains(err, "parentheses may only alter arithmetic precedence")
+		},
+		Entry("top-level arithmetic", "(1 + 2)"),
+		Entry("stronger left arithmetic", "(1 * 2) + 3"),
+		Entry("stronger right arithmetic", "1 + (2 * 3)"),
+		Entry("redundant left addition", "(1 + 2) + 3"),
+		Entry("redundant left multiplication", "(1 * 2) * 3"),
+		Entry("grouped merge member access", "(base <> override).name"),
+		Entry("grouped record member access", `({ name: "Ada", }).name`),
+		Entry("grouped arithmetic member access", "(1 + 2).value"),
+		Entry("logical precedence", "(ready && enabled) || fallback"),
+		Entry("shift precedence", "(1 << 2) + 3"),
+		Entry("coalescing precedence", "(value ?? fallback) ?? other"),
+		Entry("conditional precedence", `(ready ? "yes" : "no") ? "one" : "two"`),
+	)
+
 	DescribeTable("parses right associative exponentiation",
 		func(input string) {
 			expression, err := parseExpressionInput(input)

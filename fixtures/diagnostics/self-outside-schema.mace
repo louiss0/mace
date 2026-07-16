@@ -1,0 +1,4 @@
+|===|
+alias Invalid: array<$self>;
+|===|
+[output = 'data'] {}

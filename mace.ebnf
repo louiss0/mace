@@ -116,7 +116,7 @@ postfix_suffix = ws0 , ( "." | "?." ) , ws0 , identifier ;
 self_reference = "$self" , "." , identifier , { "." , identifier } ;
 parsed_input_reference = "$" , identifier ;
 grouped_expression = "(" , ws0 , expression , ws0 , ")" ;
-(* Grouped expressions are restricted by static semantics to operator-precedence control. *)
+(* A grouped-expression candidate is valid only when it changes arithmetic precedence or associativity. *)
 array_literal = "[" , ws0 , [ expression , { ws0 , "," , ws0 , expression } , [ ws0 , "," ] ] , ws0 , "]" ;
 record_literal = "{" , ws0 , [ record_field , { ws0 , "," , ws0 , record_field } , [ ws0 , "," ] ] , ws0 , "}" ;
 record_field = identifier , ws0 , ":" , ws0 , expression , [ ws0 , inline_description ]

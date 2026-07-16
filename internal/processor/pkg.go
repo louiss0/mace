@@ -1713,16 +1713,8 @@ func validateOutputDirectiveStructure(output ast.OutputBlock) error {
 	if hasParse && hasParseFile {
 		return validationErrorf("parse and parse_file directives cannot be used together")
 	}
-	if !hasParse && !hasParseFile {
-		hasDataValidationDirective := false
-		for _, directive := range output.Directives {
-			if directive.Kind == ast.OutputDirectiveSchema || directive.Kind == ast.OutputDirectiveSchemaFile {
-				hasDataValidationDirective = true
-			}
-		}
-		if !hasOutput && !hasDataValidationDirective {
-			return validationErrorf("missing output directive")
-		}
+	if !hasOutput {
+		return validationErrorf("directive list must include an output directive")
 	}
 
 	return nil
@@ -1919,7 +1911,13 @@ func hasSchemaFile(directives []ast.OutputDirective) bool {
 }
 
 func validateDataOutputFields(fields []ast.OutputField, hasSchema bool, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
+	seen := make(map[string]struct{}, len(fields))
 	for _, field := range fields {
+		if _, exists := seen[field.Name]; exists {
+			return validationErrorf("duplicate output field %q", field.Name)
+		}
+		seen[field.Name] = struct{}{}
+
 		if !hasSchema && expressionContainsEmptyCollection(field.Value) {
 			return validationErrorf("empty collection output requires an output schema")
 		}
@@ -2767,6 +2765,8 @@ func coerceEvaluatedValueAgainstType(expression ast.Expression, value Value, exp
 
 func evaluateExpression(expression ast.Expression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
 	switch expr := expression.(type) {
+	case ast.GroupedExpression:
+		return evaluateExpression(expr.Expression, environment, self, symbols, types, schemas, enums)
 	case ast.Identifier:
 		value, ok := environment.Get(expr.Name)
 		if !ok {
@@ -3960,17 +3960,21 @@ func (t valueType) name() string {
 }
 
 func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
+	return resolveValueTypeWithAliases(typeRef, symbols, types, schemas, enums, map[string]struct{}{})
+}
+
+func resolveValueTypeWithAliases(typeRef ast.TypeReference, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any, aliases map[string]struct{}) (valueType, error) {
 	switch ref := typeRef.(type) {
 	case ast.PrimitiveType:
 		return primitiveValueType(ref.Name)
 	case ast.ArrayType:
-		element, err := resolveValueType(ref.Element, symbols, types, schemas, enums)
+		element, err := resolveValueTypeWithAliases(ref.Element, symbols, types, schemas, enums, aliases)
 		if err != nil {
 			return valueType{}, err
 		}
 		return valueType{kind: ValueArray, element: &element}, nil
 	case ast.RecordMapType:
-		value, err := resolveValueType(ref.Value, symbols, types, schemas, enums)
+		value, err := resolveValueTypeWithAliases(ref.Value, symbols, types, schemas, enums, aliases)
 		if err != nil {
 			return valueType{}, err
 		}
@@ -3978,11 +3982,11 @@ func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *ty
 	case ast.ChoiceType:
 		return resolveChoiceType(ref, types)
 	case ast.UnionType:
-		return resolveFusionValueType(ref, symbols, types, schemas, enums)
+		return resolveFusionValueType(ref, symbols, types, schemas, enums, aliases)
 	case ast.VariantType:
 		members := make([]valueType, 0, len(ref.Members))
 		for _, member := range ref.Members {
-			resolved, err := resolveValueType(member, symbols, types, schemas, enums)
+			resolved, err := resolveValueTypeWithAliases(member, symbols, types, schemas, enums, aliases)
 			if err != nil {
 				return valueType{}, err
 			}
@@ -3995,12 +3999,15 @@ func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *ty
 	case ast.RecordType:
 		return valueType{kind: ValueRecord, record: &ref}, nil
 	case ast.NamedType:
+		if _, exists := aliases[ref.Name]; exists {
+			return valueType{}, validationErrorf("cyclic type alias %q", ref.Name)
+		}
 		resolved, resolvedByAlias, err := types.Resolve(ref.Name)
 		if err != nil {
 			return valueType{}, err
 		}
 		if resolvedByAlias {
-			return resolveValueType(resolved, symbols, types, schemas, enums)
+			return resolveValueTypeWithAliases(resolved, symbols, types, schemas, enums, aliasesWith(aliases, ref.Name))
 		}
 		if symbols.IsSchema(ref.Name) || symbols.IsImport(ref.Name) {
 			record, ok := schemas.Get(ref.Name)
@@ -4015,13 +4022,22 @@ func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *ty
 	}
 }
 
-func resolveFusionValueType(reference ast.UnionType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
+func aliasesWith(aliases map[string]struct{}, name string) map[string]struct{} {
+	next := make(map[string]struct{}, len(aliases)+1)
+	for alias := range aliases {
+		next[alias] = struct{}{}
+	}
+	next[name] = struct{}{}
+	return next
+}
+
+func resolveFusionValueType(reference ast.UnionType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any, aliases map[string]struct{}) (valueType, error) {
 	members := make([]valueType, 0, len(reference.Members))
 	allChoices := true
 	allRecords := true
 
 	for _, member := range reference.Members {
-		resolved, err := resolveValueType(member, symbols, types, schemas, enums)
+		resolved, err := resolveValueTypeWithAliases(member, symbols, types, schemas, enums, aliases)
 		if err != nil {
 			return valueType{}, err
 		}
@@ -4056,7 +4072,7 @@ func resolveFusionValueType(reference ast.UnionType, symbols *symbolTable, types
 func validateVariantValueTypes(members []valueType) error {
 	members = flattenVariantValueTypes(members)
 
-	for _, member := range members {
+	for index, member := range members {
 		switch {
 		case len(member.choiceValues) > 0:
 		case member.kind == ValueArray:
@@ -4064,6 +4080,12 @@ func validateVariantValueTypes(members []valueType) error {
 		case member.kind == ValueString || member.kind == ValueInt || member.kind == ValueFloat || member.kind == ValueHexInt || member.kind == ValueHexFloat || member.kind == ValueBoolean:
 		default:
 			return validationErrorf("variant members must be primitives, arrays, or schemas")
+		}
+
+		for _, prior := range members[:index] {
+			if typesEqual(prior, member) {
+				return validationErrorf("duplicate variant member %s", member.name())
+			}
 		}
 	}
 
@@ -4269,6 +4291,8 @@ func resolveFusionChoiceValues(reference ast.TypeReference, types *typeRegistry)
 
 func inferExpressionType(expression ast.Expression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
 	switch expr := expression.(type) {
+	case ast.GroupedExpression:
+		return inferExpressionType(expr.Expression, variables, symbols, types, schemas, enums)
 	case ast.Identifier:
 		if variableType, ok := variables.Get(expr.Name); ok {
 			return variableType, nil

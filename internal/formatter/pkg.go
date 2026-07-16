@@ -400,6 +400,8 @@ func formatExpressionWithPrecedence(expression ast.Expression, parentPrecedence 
 
 func formatExpressionNode(expression ast.Expression, depth int) (string, int, error) {
 	switch typedExpression := expression.(type) {
+	case ast.GroupedExpression:
+		return formatExpressionNode(typedExpression.Expression, depth)
 	case ast.Identifier:
 		return typedExpression.Name, precedencePrimary, nil
 	case ast.MemberAccess:

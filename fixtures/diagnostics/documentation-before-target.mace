@@ -1,0 +1,7 @@
+|===|
+gen_doc Name {
+  summary: 'Declared too early',
+};
+alias Name: string;
+|===|
+[output = 'data'] {}

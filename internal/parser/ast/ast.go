@@ -35,6 +35,19 @@ type Expression interface {
 	expressionNode()
 }
 
+type GroupedExpression struct {
+	StartToken lexer.Token
+	Expression Expression
+}
+
+func (GroupedExpression) expressionNode() {
+	_ = 0
+}
+
+func (g GroupedExpression) Range() SourceRange {
+	return TokenRange(g.StartToken)
+}
+
 type Identifier struct {
 	Token lexer.Token
 	Name  string

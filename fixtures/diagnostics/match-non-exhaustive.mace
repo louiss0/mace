@@ -1,0 +1,7 @@
+|===|
+variant[string, int] value = 1;
+string selected = match (value) {
+  string => 'text',
+};
+|===|
+[output = 'data'] { selected, }

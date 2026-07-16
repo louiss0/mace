@@ -1,0 +1,5 @@
+|===|
+schema User: { name: string, };
+|===|
+[output = 'schema', schema = User]
+{ name: string, }

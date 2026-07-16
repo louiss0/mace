@@ -159,7 +159,7 @@ postfix_suffix = ws0 , ( &quot;.&quot; | &quot;?.&quot; ) , ws0 , identifier ;
 self_reference = &quot;$self&quot; , &quot;.&quot; , identifier , { &quot;.&quot; , identifier } ;
 parsed_input_reference = &quot;$&quot; , identifier ;
 grouped_expression = &quot;(&quot; , ws0 , expression , ws0 , &quot;)&quot; ;
-(* Grouped expressions are restricted by static semantics to operator-precedence control. *)
+(* A grouped-expression candidate is valid only when it changes arithmetic precedence or associativity. *)
 array_literal = &quot;[&quot; , ws0 , [ expression , { ws0 , &quot;,&quot; , ws0 , expression } , [ ws0 , &quot;,&quot; ] ] , ws0 , &quot;]&quot; ;
 record_literal = &quot;{&quot; , ws0 , [ record_field , { ws0 , &quot;,&quot; , ws0 , record_field } , [ ws0 , &quot;,&quot; ] ] , ws0 , &quot;}&quot; ;
 record_field = identifier , ws0 , &quot;:&quot; , ws0 , expression , [ ws0 , inline_description ]
@@ -333,15 +333,18 @@ operand to be a compatible record or array. Record merges are deep, arrays
 concatenate, and a scalar conflict takes the right value. A merge still must
 pass its eventual schema validation.
 
-Postfix member access may follow any primary expression where its resulting
-type supports access. Parentheses remain syntactically available but are only
-for mathematical&#x2f;operator precedence control: they MUST NOT be a general
-expression wrapper or be used to wrap records or other non-mathematical values
-solely to enable access. Thus `({ user: { name: &quot;Ada&quot; } }).user.name` is
-invalid.
+Postfix member access may follow any ungrouped primary expression where its
+resulting type supports access. The grammar recognizes a parenthesized
+expression as a grouped-expression candidate, but static semantics accept it
+only when it contains `+`, `-`, `*`, `/`, `%`, or `**` and changes the binding
+imposed by arithmetic precedence or associativity. Valid examples include
+`(1 + 2) * 3`, `1 - (2 - 3)`, and `(2 ** 3) ** 4`. Redundant groups such as
+`(1 + 2)` and `1 + (2 * 3)` are invalid. Parentheses MUST NOT group shifts,
+comparisons, merges, bitwise expressions, logical expressions, coalescing,
+conditionals, or values solely to enable access. Thus
+`({ user: { name: &quot;Ada&quot; } }).user.name` is invalid.
 
-`$self` is the current data-output record and can access only fields al
-ready
+`$self` is the current data-output record and can access only fields already
 evaluated. Parsed input references are separate: `$name`, `$user.name`, and
 `$user.address.street` refer to typed fields from validated runtime input. `$self` is available only during data-output construction.
 
@@ -393,10 +396,92 @@ inapplicable targets are errors.
 
 ## Diagnostics and security
 
-Processors report a specific diagnostic for an inconsistent script delimiter:
-`script block delimiters must match`. They report malformed field separators as
-specified above, and diagnose duplicate&#x2f;unknown directives, invalid path
-literals, path escape, missing runtime input, type errors, and schema errors.
+Processing is all-or-nothing. Every lexical, syntactic, static, resolution, or
+evaluation error terminates processing without a partial result. A diagnostic
+MUST identify the failing source construct where source location information is
+available. The message fragments below are normative; implementations MAY add
+context such as a declaration name, field name, expected type, actual type, or
+source position.
+
+Syntax and file-structure diagnostics include:
+
+- mismatched script delimiters: `script block delimiters must match`;
+- an unterminated or empty script block;
+- an import after another script declaration: `import declarations must appear
+  at top of script block`;
+- a malformed import, declaration, directive list, schema, output field, or
+  unexpected token;
+- a missing field separator: `expected ',' after field` or `expected ',' or
+  '}' after field`;
+- parentheses that do not alter arithmetic precedence: `parentheses may only
+  alter arithmetic precedence`;
+- a missing output block or multiple output blocks.
+
+Directive and import diagnostics include:
+
+- a bracketed directive list without exactly one `output` entry: `directive
+  list must include an output directive`;
+- a duplicate or unknown directive;
+- any `schema`, `schema_file`, `parse`, or `parse_file` directive used with
+  `output = 'schema'`;
+- an unknown selected schema, unusable schema file, or incompatible combination
+  of parse directives;
+- a path that does not end in `.mace`, cannot be read or parsed, or escapes the
+  canonical project root;
+- a circular import, duplicate imported name, unexposed imported name, wildcard
+  import, or local declaration that shadows an imported name;
+- required parse input that was not supplied or does not satisfy the selected
+  parse schema.
+
+Declaration, type, schema, and evaluation diagnostics include:
+
+- duplicate declarations, schema fields, output fields, choice members, or
+  equivalent variant members;
+- an unknown type reference, missing initializer, unknown value identifier, or
+  invalid `$self` reference;
+- an initializer or output value that is not assignable to its declared or
+  selected schema type;
+- a closed schema with a missing required field, unknown field, invalid optional
+  marker, or incompatible field value;
+- a mixed array, an untyped empty collection, or an empty collection in a data
+  output without an output schema;
+- an invalid fusion member, a fusion mixing record and choice domains, or a
+  conflicting record field in a fusion;
+- a cyclic type or choice alias;
+- a nested conditional expression;
+- an operator with invalid operand types, integer overflow, division by zero,
+  invalid shift or exponent, or a non-finite floating-point result;
+- interpolation of a non-scalar or null value;
+- a merge whose operands are not compatible records or arrays.
+
+Match diagnostics include each of the following distinct static errors:
+
+- matching a value that is not a `variant[...]` or `choice[...]`;
+- a missing pattern: `match expression must be exhaustive`;
+- a duplicate or overlapping pattern: `duplicate match pattern`;
+- a pattern that is not a member of the matched domain;
+- a literal pattern for a variant match: `variant match arms require a type
+  pattern`;
+- a type pattern for a choice match: `choice match arms require a literal
+  pattern`.
+
+Documentation diagnostics include duplicate documentation keys, unknown or
+inapplicable targets, documentation declared before its target, a `fields`
+entry outside `schema_doc`, an unknown documented schema field, conflicting
+inline and structured documentation, interpolation in output documentation, and
+an output documentation block without a directive list.
+
+Nullability and optional-access diagnostics include null in an array, record,
+output, comparison, or interpolation; unguarded member access on a nullable
+variable; plain member access on an optional field; access beyond the declared
+record depth; and use of a possibly absent optional-chain result without a
+coalescing fallback. The last case MUST report `possibly absent expressions
+must be resolved with '??' before use`.
+
+The files in `fixtures/diagnostics/` are the conformance examples for these
+errors. `internal/processor/processor_diagnostics_test.go` maps each fixture to
+its required diagnostic fragment and MUST be updated whenever a normative error
+is added or changed.
 
 Mace treats imports, file-loaded schemas, runtime input, documentation, strings,
 and emitted values as data, never executable code. Processors must reject

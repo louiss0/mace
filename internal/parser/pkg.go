@@ -222,7 +222,8 @@ func (p *Parser) consumeImportSeparator() error {
 }
 
 func (p *Parser) parseScriptBlock() (ast.ScriptBlock, error) {
-	if _, err := p.consume(lexer.TokenScriptDelimiter, "parser: expected script delimiter"); err != nil {
+	openingDelimiter, err := p.consume(lexer.TokenScriptDelimiter, "parser: expected script delimiter")
+	if err != nil {
 		return ast.ScriptBlock{}, err
 	}
 
@@ -251,8 +252,12 @@ func (p *Parser) parseScriptBlock() (ast.ScriptBlock, error) {
 		items = append(items, declaration)
 	}
 
-	if _, err := p.consume(lexer.TokenScriptDelimiter, "parser: expected closing script delimiter"); err != nil {
+	closingDelimiter, err := p.consume(lexer.TokenScriptDelimiter, "parser: expected closing script delimiter")
+	if err != nil {
 		return ast.ScriptBlock{}, err
+	}
+	if openingDelimiter.Lexeme != closingDelimiter.Lexeme {
+		return ast.ScriptBlock{}, p.unexpectedTokenError("parser: script block delimiters must match")
 	}
 
 	return ast.ScriptBlock{Imports: imports, Items: items}, nil
@@ -1045,6 +1050,13 @@ func (p *Parser) parseExpression(precedence int) (ast.Expression, error) {
 		}
 	}
 
+	if grouped, ok := left.(ast.GroupedExpression); ok {
+		if err := p.validateGroupedMathExpression(grouped, precedence); err != nil {
+			return nil, err
+		}
+		return grouped.Expression, nil
+	}
+
 	return left, nil
 }
 
@@ -1083,6 +1095,7 @@ func (p *Parser) parsePrefix(token lexer.Token) (ast.Expression, error) {
 	case lexer.TokenLBrace:
 		return p.parseRecordLiteral()
 	case lexer.TokenLParen:
+		startToken := p.current()
 		p.advance()
 		expression, err := p.parseExpression(precedenceLowest)
 		if err != nil {
@@ -1091,7 +1104,7 @@ func (p *Parser) parsePrefix(token lexer.Token) (ast.Expression, error) {
 		if _, err := p.consume(lexer.TokenRParen, "parser: expected ')' after expression"); err != nil {
 			return nil, err
 		}
-		return expression, nil
+		return ast.GroupedExpression{StartToken: startToken, Expression: expression}, nil
 	case lexer.TokenMatch:
 		return p.parseMatchExpression()
 	case lexer.TokenBang, lexer.TokenTilde, lexer.TokenPlus, lexer.TokenMinus:
@@ -1355,6 +1368,10 @@ func (p *Parser) mergeInlineDescriptions(context string, leading string, trailin
 
 func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token) (ast.Expression, error) {
 	if operator.Type == lexer.TokenDot || operator.Type == lexer.TokenOptionalDot {
+		if _, ok := left.(ast.GroupedExpression); ok {
+			return nil, p.invalidGroupedExpressionError(operator)
+		}
+
 		memberToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier after member access operator")
 		if err != nil {
 			return nil, err
@@ -1362,6 +1379,16 @@ func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token)
 		return ast.MemberAccess{Target: left, Name: memberToken.Lexeme, Optional: operator.Type == lexer.TokenOptionalDot}, nil
 	}
 
+	if grouped, ok := left.(ast.GroupedExpression); ok {
+		groupedPrecedence := groupedArithmeticPrecedence(grouped)
+		operatorPrecedence := p.precedenceFor(operator.Type)
+		changesPrecedence := groupedPrecedence < operatorPrecedence
+		changesExponentAssociativity := operator.Type == lexer.TokenDoubleStar && groupedPrecedence == precedenceExponent
+		if !isArithmeticOperator(operator.Type) || (!changesPrecedence && !changesExponentAssociativity) {
+			return nil, p.invalidGroupedExpressionError(grouped.StartToken)
+		}
+		left = grouped.Expression
+	}
 	precedence := p.precedenceFor(operator.Type)
 	rightPrecedence := precedence
 	if operator.Type == lexer.TokenDoubleStar {
@@ -1385,6 +1412,9 @@ func (p *Parser) parseConditionalExpression(left ast.Expression, operator lexer.
 		return nil, p.unexpectedTokenError("parser: expected '?' for conditional expression")
 	}
 
+	if grouped, ok := left.(ast.GroupedExpression); ok {
+		return nil, p.invalidGroupedExpressionError(grouped.StartToken)
+	}
 	if expressionContainsConditional(left) {
 		return nil, p.diagnosticError(operator, diagnostic.Code("mace.syntax.nested-conditional"), "parser: nested conditional expressions are not allowed")
 	}
@@ -1414,6 +1444,58 @@ func (p *Parser) parseConditionalExpression(left ast.Expression, operator lexer.
 		Then:      thenExpression,
 		Else:      elseExpression,
 	}, nil
+}
+
+func unwrapGroupedExpression(expression ast.Expression) ast.Expression {
+	for {
+		grouped, ok := expression.(ast.GroupedExpression)
+		if !ok {
+			return expression
+		}
+		expression = grouped.Expression
+	}
+}
+
+func (p *Parser) validateGroupedMathExpression(grouped ast.GroupedExpression, surroundingPrecedence int) error {
+	if surroundingPrecedence == precedenceLowest || groupedArithmeticPrecedence(grouped) > surroundingPrecedence {
+		return p.invalidGroupedExpressionError(grouped.StartToken)
+	}
+	return nil
+}
+
+func (p *Parser) invalidGroupedExpressionError(token lexer.Token) error {
+	return p.diagnosticError(
+		token,
+		diagnostic.Code("mace.syntax.invalid-grouped-expression"),
+		"parser: parentheses may only alter arithmetic precedence",
+	)
+}
+
+func groupedArithmeticPrecedence(grouped ast.GroupedExpression) int {
+	infix, ok := unwrapGroupedExpression(grouped.Expression).(ast.InfixExpression)
+	if !ok || !isArithmeticOperator(infix.Operator) {
+		return precedenceMember
+	}
+
+	switch infix.Operator {
+	case lexer.TokenPlus, lexer.TokenMinus:
+		return precedenceAdditive
+	case lexer.TokenStar, lexer.TokenSlash, lexer.TokenPercent:
+		return precedenceMultiplicative
+	case lexer.TokenDoubleStar:
+		return precedenceExponent
+	default:
+		return precedenceMember
+	}
+}
+
+func isArithmeticOperator(operator lexer.TokenType) bool {
+	switch operator {
+	case lexer.TokenPlus, lexer.TokenMinus, lexer.TokenStar, lexer.TokenSlash, lexer.TokenPercent, lexer.TokenDoubleStar:
+		return true
+	default:
+		return false
+	}
 }
 
 func expressionContainsConditional(expression ast.Expression) bool {
@@ -1511,6 +1593,9 @@ func (p *Parser) parseMatchPattern() (ast.MatchPattern, error) {
 }
 
 func (p *Parser) parseCoalesceExpression(left ast.Expression, operator lexer.Token) (ast.Expression, error) {
+	if grouped, ok := left.(ast.GroupedExpression); ok {
+		return nil, p.invalidGroupedExpressionError(grouped.StartToken)
+	}
 	right, err := p.parseExpression(precedenceCoalesce - 1)
 	if err != nil {
 		return nil, err

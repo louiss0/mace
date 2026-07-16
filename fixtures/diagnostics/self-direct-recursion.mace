@@ -1,0 +1,4 @@
+|===|
+schema Invalid: { self: $self, };
+|===|
+[output = 'data'] {}

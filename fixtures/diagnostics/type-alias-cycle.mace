@@ -1,0 +1,5 @@
+|===|
+alias First: Second;
+alias Second: First;
+|===|
+[output = 'data'] {}

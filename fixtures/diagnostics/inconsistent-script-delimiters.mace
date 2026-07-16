@@ -1,0 +1,4 @@
+|===|
+string value = 'invalid';
+|====|
+[output = 'data'] { value, }

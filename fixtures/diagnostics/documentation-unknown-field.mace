@@ -1,0 +1,7 @@
+|===|
+schema User: { name: string, };
+schema_doc User {
+  fields: { age: 'Unknown field', },
+};
+|===|
+[output = 'data'] {}

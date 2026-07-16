@@ -3,7 +3,6 @@ package processor
 import (
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -16,11 +15,8 @@ func wrapScriptWithOutput(script string) string {
 	return script + "\n[output = 'data'] {}"
 }
 
-var bareOutputExpressionPattern = regexp.MustCompile(`(?m)^(\s*[A-Za-z_][A-Za-z0-9_]*\??:\s*)(\$self\.[A-Za-z_][A-Za-z0-9_\.\[\]]*|[A-Za-z_][A-Za-z0-9_\.\[\]]*)(\s*[,;])$`)
-
 func wrapScriptWithOutputFields(script string, fields string) string {
 	normalizedFields := strings.ReplaceAll(fields, ";", ",")
-	normalizedFields = bareOutputExpressionPattern.ReplaceAllString(normalizedFields, `${1}(${2})${3}`)
 	return script + "\n[output = 'data']\n{\n" + normalizedFields + "\n}"
 }
 
@@ -128,8 +124,6 @@ func assertExpectedSchema(result Result, expected map[expectedSchemaField]Schema
 }
 
 func assertProcessedResult(input string, expected expectedValue) {
-	input = bareOutputExpressionPattern.ReplaceAllString(input, `${1}(${2})${3}`)
-
 	processor := New()
 	result, err := processor.ProcessInDir(input, "../..")
 	tAssert.NoError(err)

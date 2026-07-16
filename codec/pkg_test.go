@@ -86,7 +86,7 @@ int age = 27;
 [output = 'data']
 {
   name: "Ada",
-  profile: { age: (age), active: true, },
+  profile: { age: age, active: true, },
   scores: [1, 2, 3],
 }`)
 		tAssert.NoError(err)
@@ -232,9 +232,9 @@ hex_float whole = 0x2.0;
 |===|
 [output = 'data']
 {
-  mask: (mask),
-  ratio: (ratio),
-  whole: (whole),
+  mask: mask,
+  ratio: ratio,
+  whole: whole,
 }`)
 		tAssert.NoError(err)
 		tAssert.Equal(map[string]any{
@@ -268,7 +268,7 @@ string summary = "$(user.name): $(price * quantity)";
 |===|
 [output = 'data']
 {
-  summary: (summary),
+  summary: summary,
 }`)
 		tAssert.NoError(err)
 		tAssert.Equal(map[string]any{"summary": "Ada: 12"}, result.Data)

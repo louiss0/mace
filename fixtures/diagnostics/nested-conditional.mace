@@ -1,0 +1,5 @@
+|===|
+boolean enabled = true;
+string value = enabled ? enabled ? 'a' : 'b' : 'c';
+|===|
+[output = 'data'] { value, }

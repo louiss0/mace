@@ -92,7 +92,7 @@ Value fallback = %s;
 		Entry("conditional branch outside choice domain", `|===|
  boolean enabled = true;
  alias Fruit: choice["Apple", "Strawberry"];
- Fruit result = (enabled ? "Pear" : "Apple");
+Fruit result = enabled ? "Pear" : "Apple";
 |===|
 [output = 'data']
 {

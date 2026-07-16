@@ -36,7 +36,7 @@ string selected = ` + expression + `;
 		},
 		Entry("then branch", `true ? false ? "one" : "two" : "three"`),
 		Entry("else branch", `true ? "one" : false ? "two" : "three"`),
-		Entry("condition", `(true ? true : false) ? "one" : "two"`),
+		Entry("condition", `true ? true : false ? "one" : "two"`),
 	)
 
 	It("requires every inferred branch type in the declared variant", func() {

@@ -1,0 +1,4 @@
+|===|
+alias Status: choice['ready', 'ready'];
+|===|
+[output = 'data'] {}
