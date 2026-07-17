@@ -5,9 +5,8 @@
 Mace is a deterministic, strongly typed configuration language. A conforming
 processor produces either a fully valid data record or schema metadata, or an
 error; it never emits a partial result. Source is UTF-8 and string values may
-contain Unicode. Mace has no general `null` runtime value. The `null` literal
-is permitted only to initialize a `nullable` variable; it is not an ordinary
-value that can be emitted, stored in records or arrays, or compared.
+contain Unicode. The `null` literal is allowed only in data output. It omits
+its output field rather than creating a general runtime value.
 
 This RFC is normative. **[`mace.ebnf`](.&#x2f;mace.ebnf) is the canonical grammar
 source.** The grammar excerpt below is an exact copy of that file and MUST
@@ -479,10 +478,9 @@ entry outside `schema_doc`, an unknown documented schema field, conflicting
 inline and structured documentation, interpolation in output documentation, and
 an output documentation block without a directive list.
 
-Nullability and optional-access diagnostics include null in an array, record,
-output, comparison, or interpolation; unguarded member access on a nullable
-variable; plain member access on an optional field; access beyond the declared
-record depth; and use of a possibly absent optional-chain result without a
+Optional-access diagnostics include plain member access on an optional field,
+access beyond the declared record depth, and use of a possibly absent
+optional-chain result without a
 coalescing fallback. The last case MUST report `possibly absent expressions
 must be resolved with '??' before use`.
 
@@ -503,25 +501,16 @@ JSON, YAML, and TOML conversion is lossy with respect to comments, formatting,
 quoted&#x2f;non-identifier keys, duplicate keys, null as a normal runtime value, and
 non-record data roots. No conversion grants executable behavior.
 
-## Nullability
+## Null Output
 
-`nullable T name = null;` declares a variable that may be unavailable during
-evaluation. `null` is falsy. Before accessing a nullable variable, an
-expression MUST guard it with a truthiness condition; the true branch treats
-that variable as non-null.
-
-```mace
-user ? user.profile.address?.city ?? "" : ""
-```
-
-Using either `user.member` or `user?.member` without that guard is invalid.
-`null` cannot be placed in an array or record, emitted, imported, exported,
-compared, or interpolated.
+`null` is valid only in data output. It omits the corresponding output field;
+script variables, arrays, records, comparisons, and interpolation cannot use
+`null`.
 
 ## Optional member access
 
-`target?.member` is optional member access. Plain `.` is invalid when `target`
-is nullable or `member` is an optional schema field. Optional record map lookups
+`target?.member` is optional member access. Plain `.` is invalid when `member`
+is an optional schema field. Optional record map lookups
 also use `?.`; every optional step in a nested path requires `?.`. Optional
 member access produces an absent evaluation result when its member is absent.
 The result must be resolved with `??` before it is stored, emitted, or otherwise
