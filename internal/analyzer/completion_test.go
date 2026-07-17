@@ -239,7 +239,7 @@ string result = root.%s
 	It("completes schema variable fields in a truthy initializer branch", func() {
 		text := `|===|
 schema User: { name: string, email: string, };
-User user = null;
+User user = { name: "", email: "", };
 string result = user ? user.
 |===|
 [output = 'data']
@@ -263,7 +263,7 @@ string result = user ? user.
 	It("completes schema variable fields in a truthy branch", func() {
 		text := `|===|
 schema User: { name: string, email: string, };
-User user = null;
+User user = { name: "", email: "", };
 |===|
 [output = 'data']
 {
@@ -285,10 +285,10 @@ User user = null;
 		tAssert.Equal([]string{"email", "name"}, labels)
 	})
 
-	It("does not complete schema variable fields outside a truthy branch", func() {
+	It("completes schema variable fields outside a truthy branch", func() {
 		text := `|===|
 schema User: { name: string, email: string, };
-User user = null;
+User user = { name: "", email: "", };
 |===|
 [output = 'data']
 {
@@ -304,7 +304,10 @@ User user = null;
 
 		items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
 
-		tAssert.Empty(items)
+		labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
+			return item.Label
+		})
+		tAssert.Equal([]string{"email", "name"}, labels)
 	})
 
 	DescribeTable("scopes repeated schema keys in ternary initializers",

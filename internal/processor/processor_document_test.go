@@ -49,9 +49,6 @@ string first = 'Ada';
 string second = """Hello
 World""";
 |===|`)),
-		Entry("variable with null initializer", wrapScriptWithOutput(`|===|
-string env = null;
-|===|`)),
 		Entry("imports and script block", `|===|
 from 'fixtures/processor/imports/base.mace' import Name;
 Name user = "Ada";
@@ -153,7 +150,7 @@ from 'fixtures/processor/imports/base.mace' import User, User;
 		processor := New()
 		_, err := processor.ProcessFile("../../fixtures/diagnostics/shorthand-rejects-nullable-required-field.mace")
 		tAssert.Error(err)
-		tAssert.ErrorContains(err, "null can only be assigned to variables and optional schema fields")
+		tAssert.ErrorContains(err, "null is only allowed in output")
 	})
 
 	It("rejects output shorthand fixtures that reference missing variables", func() {

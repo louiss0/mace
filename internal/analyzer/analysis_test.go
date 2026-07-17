@@ -950,7 +950,7 @@ int count = "Ada";
 
 	It("does not report diagnostics for a used variable", func() {
 		snapshot := analyzeDocument(`|===|
-string env = null;
+string env = "configured";
 |===|
 [output = 'data'] { value: env, }`)
 
@@ -997,16 +997,13 @@ schema Package: { name: string, project: string, };
 		}
 	})
 
-	It("reports direct null output fields", func() {
+	It("accepts direct null output fields", func() {
 		snapshot := analyzeDocument(`[output = 'data']
 {
   value: null,
 }`)
 
-		if tAssert.Len(snapshot.diagnostics, 1) {
-			tAssert.Contains(snapshot.diagnostics[0].Message, "null can only be assigned to variables and optional schema fields")
-			tAssert.Equal(string(diagnosticTypeInvalidNullUsage), requireDiagnosticCode(snapshot.diagnostics[0]))
-		}
+		tAssert.Empty(snapshot.diagnostics)
 	})
 
 	It("reports empty script blocks as syntax errors", func() {

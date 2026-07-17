@@ -355,7 +355,7 @@ string selected = condition ? match (value) {
 |===|
 { selected, }`, "integer"),
 		Entry("with match at the colon", `|===|
-boolean condition = null;
+boolean condition = false;
 variant[string, int] value = 7;
 string selected = condition ? "fallback" : match (value) {
   string => "string",

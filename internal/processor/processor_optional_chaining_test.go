@@ -22,26 +22,6 @@ schema User: {
 };
 `
 
-	It("requires a truthiness check before accessing a record variable", func() {
-		_, err := New().Process(optionalChainDocument(userSchemas, `User user = {
-  records: { primary: "active", },
-};`, `
-  records: user.records,
-`))
-
-		requireOptionalFieldAccessError(err)
-	})
-
-	It("rejects optional chaining on a record variable", func() {
-		_, err := New().Process(optionalChainDocument(userSchemas, `User user = {
-  records: { primary: "active", },
-};`, `
-  records?: user?.records,
-`))
-
-		requireOptionalFieldAccessError(err)
-	})
-
 	It("requires optional chaining when accessing an optional property", func() {
 		_, err := New().Process(optionalChainDocument(userSchemas, `User user = { records: {}, };`, `
   profile: user.profile,
@@ -50,10 +30,10 @@ schema User: {
 		requireOptionalFieldAccessError(err)
 	})
 
-	It("uses the fallback when a record variable is null", func() {
+	It("uses the false conditional branch for a boolean condition", func() {
 		result, err := New().Process(optionalChainDocumentWithOutputSchema(
 			userSchemas,
-			`User user = null;`,
+			`User user = { records: {}, };`,
 			`schema Result: { records: record<string>, };`,
 			`
   records: user ? user.records : {},
@@ -222,14 +202,6 @@ string fallback = "missing";
 			_, err = inferExpressionType(optionalRecordPath(depth+1), variables, symbols, types, schemas, nil)
 			tAssert.ErrorContains(err, "cannot be accessed because its target is not a record")
 
-			_, err = New().Process(`|===|
-alias Packages: variant[` + nestedRecordMapTypeText(depth) + `, ` + nestedRecordMapTypeText(depth+1) + `];
-Packages packages = null;
-string fallback = "missing";
-|===|
-[output = 'data']
-{ value: packages ? ` + optionalRecordPathText(depth+1) + ` ?? fallback : fallback, }`)
-			tAssert.ErrorContains(err, "cannot be accessed because its target is not a record")
 		},
 		Entry("one level", 1),
 		Entry("two levels", 2),
