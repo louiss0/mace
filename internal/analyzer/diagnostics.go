@@ -162,7 +162,7 @@ func classifyProcessorDiagnostic(message string) diagnosticCode {
 		return diagnosticTypeInvalidUnaryOperator
 	case strings.Contains(message, "expected numeric operands") || strings.Contains(message, "expected int operands") || strings.Contains(message, "expected boolean operands") || strings.Contains(message, "incompatible equality comparison") || strings.Contains(message, "expected ") && strings.Contains(message, " operands"):
 		return diagnosticTypeInvalidBinaryOperator
-	case strings.Contains(message, "null can only be assigned to nullable variables and optional schema fields"):
+	case strings.Contains(message, "null is only allowed in output"):
 		return diagnosticTypeInvalidNullUsage
 	case strings.Contains(message, "type mismatch"):
 		return diagnosticTypeInitializerMismatch

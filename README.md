@@ -473,10 +473,8 @@ Add a license file if you intend to publish or distribute this project.
 
 ## Optional chaining
 
-Use `?.` for optional schema properties and record keys that may be absent. A
-nullable variable must first be guarded with a truthiness check; its true branch
-treats that variable as non-null. Resolve an optional access with `??` before
-placing it in output.
+Use `?.` for optional schema properties and record keys that may be absent.
+Resolve an optional access with `??` before placing it in output.
 
 ```mace
 city: user ? user.profile.address?.city ?? "" : "",
@@ -493,5 +491,5 @@ every variant member. For example,
 `variant[record<string>, record<record<string>>]` permits one optional lookup
 but rejects a second because the first member is already a `string`.
 
-Accessing a nullable variable with either `.` or `?.` without a truthiness check
-reports `mace.type.optional-field-access`.
+Accessing an optional schema field with `.` reports
+`mace.type.optional-field-access`.
