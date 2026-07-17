@@ -60,22 +60,23 @@ func newLSPServer() *Server {
 		documents: map[protocol.DocumentUri]document{},
 	}
 	server.handler = protocol.Handler{
-		Initialize:                 server.initialize,
-		Initialized:                server.initialized,
-		Shutdown:                   server.shutdown,
-		SetTrace:                   server.setTrace,
-		TextDocumentDidOpen:        server.didOpen,
-		TextDocumentDidChange:      server.didChange,
-		TextDocumentDidSave:        server.didSave,
-		TextDocumentDidClose:       server.didClose,
-		TextDocumentCompletion:     server.complete,
-		TextDocumentHover:          server.hover,
-		TextDocumentDefinition:     server.definition,
-		TextDocumentDocumentSymbol: server.documentSymbols,
-		TextDocumentCodeAction:     server.codeActions,
-		TextDocumentRename:         server.rename,
-		TextDocumentPrepareRename:  server.prepareRename,
-		TextDocumentFormatting:     server.formatDocument,
+		Initialize:                     server.initialize,
+		Initialized:                    server.initialized,
+		Shutdown:                       server.shutdown,
+		SetTrace:                       server.setTrace,
+		TextDocumentDidOpen:            server.didOpen,
+		TextDocumentDidChange:          server.didChange,
+		TextDocumentDidSave:            server.didSave,
+		TextDocumentDidClose:           server.didClose,
+		WorkspaceDidChangeWatchedFiles: server.didChangeWatchedFiles,
+		TextDocumentCompletion:         server.complete,
+		TextDocumentHover:              server.hover,
+		TextDocumentDefinition:         server.definition,
+		TextDocumentDocumentSymbol:     server.documentSymbols,
+		TextDocumentCodeAction:         server.codeActions,
+		TextDocumentRename:             server.rename,
+		TextDocumentPrepareRename:      server.prepareRename,
+		TextDocumentFormatting:         server.formatDocument,
 	}
 
 	return server
@@ -229,6 +230,31 @@ func (server *Server) didClose(context *glsp.Context, params *protocol.DidCloseT
 		URI:         params.TextDocument.URI,
 		Diagnostics: []protocol.Diagnostic{},
 	})
+	return nil
+}
+
+func (server *Server) didChangeWatchedFiles(context *glsp.Context, params *protocol.DidChangeWatchedFilesParams) error {
+	if params == nil || len(params.Changes) == 0 {
+		return nil
+	}
+
+	server.lock.Lock()
+	uris := make([]protocol.DocumentUri, 0, len(server.documents))
+	for uri, current := range server.documents {
+		path := documentPath(uri)
+		current.analysis = analyzer.AnalyzeDocumentAtInRoot(
+			current.text,
+			path,
+			server.importRootDir(path),
+		)
+		server.documents[uri] = current
+		uris = append(uris, uri)
+	}
+	server.lock.Unlock()
+
+	for _, uri := range uris {
+		server.publishDiagnostics(context, uri)
+	}
 	return nil
 }
 

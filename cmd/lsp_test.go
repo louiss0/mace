@@ -305,6 +305,26 @@ var _ = Describe("LSP server", func() {
 		tAssert.NoError(err)
 	})
 
+	It("reanalyzes open documents when watched Mace files change", func() {
+		didOpen(server, uri, `[output = 'data'] { value: 1 }`, nil)
+		notifications := []capturedNotification{}
+
+		_, validMethod, validParams, err := invoke(
+			server.Handler(),
+			protocol.MethodWorkspaceDidChangeWatchedFiles,
+			protocol.DidChangeWatchedFilesParams{
+				Changes: []protocol.FileEvent{{URI: uri, Type: protocol.FileChangeTypeChanged}},
+			},
+			&notifications,
+		)
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+		if tAssert.Len(notifications, 1) {
+			tAssert.Equal(protocol.ServerTextDocumentPublishDiagnostics, notifications[0].method)
+		}
+	})
+
 	It("updates the trace level", func() {
 
 		_, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodSetTrace, protocol.SetTraceParams{
