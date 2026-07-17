@@ -14,7 +14,6 @@ import (
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
 	"github.com/louiss0/mace/internal/diagnostic"
-	"github.com/louiss0/mace/internal/formatter"
 	"github.com/louiss0/mace/internal/lexer"
 	"github.com/louiss0/mace/internal/parser"
 	"github.com/louiss0/mace/internal/parser/ast"
@@ -325,10 +324,7 @@ func rangesEqual(left protocol.Range, right protocol.Range) bool {
 }
 
 func FormatDocument(snapshot Snapshot) (string, error) {
-	if snapshot.file == nil {
-		return "", errors.New("cannot format a document that did not parse")
-	}
-	return formatter.FormatFile(*snapshot.file)
+	return formatDocumentText(snapshot.text), nil
 }
 
 func DiagnosticFromError(err error) protocol.Diagnostic {
