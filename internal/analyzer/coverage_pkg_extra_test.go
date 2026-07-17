@@ -86,7 +86,8 @@ string value = "x";
 
 		_ = DiagnosticFromError(errors.New("error at 12:3"))
 		_ = DocumentPath(uri)
-		_ = FormatDocumentText(text)
+		_, _ = FormatDocument(manualSnapshot)
+		_, _ = FormatDocument(analysisSnapshot{})
 	})
 
 	It("covers document symbol and rename branches", func() {

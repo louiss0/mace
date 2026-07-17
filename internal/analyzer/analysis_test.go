@@ -377,7 +377,9 @@ string greeting = "hello";
 		edit, ok := Rename(text, snapshot, uri, protocol.Position{Line: 2, Character: 8}, "message")
 		tAssert.True(ok)
 		tAssert.NotNil(edit)
-		tAssert.NotEmpty(FormatDocumentText(text))
+		formatted, err := FormatDocument(snapshot)
+		tAssert.NoError(err)
+		tAssert.NotEmpty(formatted)
 		tAssert.NotEmpty(DiagnosticFromError(fmt.Errorf("parser: expected expression at 3:5")).Message)
 
 		completionSnapshot := AnalyzeCompletionContext(text, documentPath, protocol.Position{Line: 7, Character: 2})

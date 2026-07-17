@@ -3133,11 +3133,14 @@ string value = "Ada";
 		}
 
 		if tAssert.Len(edits, 1) {
-			tAssert.Equal(`[output = 'data']{result:1+2,}`, edits[0].NewText)
+			tAssert.Equal(`[output = 'data']
+{
+  result: 1 + 2
+}`, edits[0].NewText)
 		}
 	})
 
-	It("preserves existing spacing while resizing script delimiters", func() {
+	It("canonically formats script and output blocks", func() {
 		didOpen(server, uri, `|===|
 string display_name = "Ada";
 |===|
@@ -3169,7 +3172,18 @@ string display_name = "Ada";
 |============================|
 [output = 'data']
 {
-  result: [{ profile: { name: "Ada", }, }, { profile: { name: "Bob", }, }],
+  result: [
+    {
+      profile: {
+        name: "Ada"
+      }
+    },
+    {
+      profile: {
+        name: "Bob"
+      }
+    }
+  ]
 }`, edits[0].NewText)
 		}
 	})

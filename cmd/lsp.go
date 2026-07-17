@@ -305,7 +305,10 @@ func (server *Server) formatDocument(context *glsp.Context, params *protocol.Doc
 		return []protocol.TextEdit{}, nil
 	}
 
-	formatted := analyzer.FormatDocumentText(document.text)
+	formatted, err := analyzer.FormatDocument(document.analysis)
+	if err != nil {
+		return nil, err
+	}
 	return []protocol.TextEdit{
 		{
 			Range: protocol.Range{
