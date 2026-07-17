@@ -4072,9 +4072,6 @@ func expressionSummary(expression ast.Expression) string {
 
 func variableDeclarationDetail(declaration ast.VariableDeclaration) string {
 	detail := fmt.Sprintf("%s %s", typeReferenceDetail(declaration.Type), declaration.Name)
-	if declaration.Nullable {
-		detail = "nullable " + detail
-	}
 	if !declaration.HasValue {
 		return detail
 	}
@@ -4087,11 +4084,7 @@ func variableDeclarationDetailWithValue(declaration ast.VariableDeclaration, val
 }
 
 func variableDeclarationDetailWithoutValue(declaration ast.VariableDeclaration) string {
-	detail := fmt.Sprintf("%s %s", typeReferenceDetail(declaration.Type), declaration.Name)
-	if declaration.Nullable {
-		return "nullable " + detail
-	}
-	return detail
+	return fmt.Sprintf("%s %s", typeReferenceDetail(declaration.Type), declaration.Name)
 }
 
 func symbolHasRange(symbol semanticSymbol) bool {

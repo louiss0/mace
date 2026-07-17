@@ -47,7 +47,6 @@ var scriptKeywordCompletions = []completionDefinition{
 	{Label: "from", Kind: protocol.CompletionItemKindKeyword, Detail: "import declaration"},
 	{Label: "gen_doc", Kind: protocol.CompletionItemKindKeyword, Detail: "type or variable documentation declaration"},
 	{Label: "int", Kind: protocol.CompletionItemKindKeyword, Detail: "primitive type"},
-	{Label: "nullable", Kind: protocol.CompletionItemKindKeyword, Detail: "variable modifier"},
 	{Label: "null", Kind: protocol.CompletionItemKindKeyword, Detail: "null literal"},
 	{Label: "schema", Kind: protocol.CompletionItemKindKeyword, Detail: "schema declaration"},
 	{Label: "schema_doc", Kind: protocol.CompletionItemKindKeyword, Detail: "schema documentation declaration"},
@@ -2022,10 +2021,9 @@ func completionOutputSchemaName(file ast.File) (string, bool) {
 
 func buildCompletionModel(file ast.File, importBaseDir string, importRootDir string, cache map[string]completionModel) completionModel {
 	model := completionModel{
-		aliases:           map[string]ast.TypeReference{},
-		schemas:           map[string]ast.RecordType{},
-		variables:         map[string]ast.TypeReference{},
-		nullableVariables: map[string]bool{},
+		aliases:   map[string]ast.TypeReference{},
+		schemas:   map[string]ast.RecordType{},
+		variables: map[string]ast.TypeReference{},
 	}
 
 	for _, item := range fileScriptItems(file) {
@@ -2036,7 +2034,6 @@ func buildCompletionModel(file ast.File, importBaseDir string, importRootDir str
 			model.schemas[declaration.Name] = declaration.Type
 		case ast.VariableDeclaration:
 			model.variables[declaration.Name] = declaration.Type
-			model.nullableVariables[declaration.Name] = declaration.Nullable
 		}
 	}
 
@@ -2190,11 +2187,6 @@ func variableMemberCompletionRootType(model completionModel, path []string, guar
 	rootType, ok := model.variables[path[0]]
 	if !ok {
 		return nil, false, false
-	}
-	if model.nullableVariables[path[0]] {
-		if _, truthy := truthyNames[path[0]]; !truthy {
-			return nil, false, true
-		}
 	}
 
 	remainingPath := path[1:]
@@ -2643,10 +2635,9 @@ func importedCompletionModel(path string, importRootDir string, cache map[string
 	}
 
 	cache[path] = completionModel{
-		aliases:           map[string]ast.TypeReference{},
-		schemas:           map[string]ast.RecordType{},
-		variables:         map[string]ast.TypeReference{},
-		nullableVariables: map[string]bool{},
+		aliases:   map[string]ast.TypeReference{},
+		schemas:   map[string]ast.RecordType{},
+		variables: map[string]ast.TypeReference{},
 	}
 	model := buildCompletionModel(file, filepath.Dir(path), importRootDir, cache)
 	cache[path] = model
@@ -3019,10 +3010,9 @@ type directiveState struct {
 }
 
 type completionModel struct {
-	aliases           map[string]ast.TypeReference
-	schemas           map[string]ast.RecordType
-	variables         map[string]ast.TypeReference
-	nullableVariables map[string]bool
+	aliases   map[string]ast.TypeReference
+	schemas   map[string]ast.RecordType
+	variables map[string]ast.TypeReference
 }
 
 type completionChoice struct {

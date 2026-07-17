@@ -284,13 +284,13 @@ User user = { missing, };
 |===|
 [output = 'data']
 { user: user, }`, "missing required field \"name\""),
-		Entry("record shorthand rejects nullable values for required fields", `|===|
-nullable string name = null;
+		Entry("record shorthand rejects values for required fields", `|===|
+string name = null;
 schema User: { name: string, };
 User user = { name, };
 |===|
 [output = 'data']
-{ user: user, }`, "null can only be assigned to nullable variables and optional schema fields"),
+{ user: user, }`, "null can only be assigned to variables and optional schema fields"),
 	)
 
 	DescribeTable("requires context for empty collection output literals",
@@ -448,7 +448,7 @@ var _ = Describe("Data output helpers", func() {
 		symbols := newSymbolTable()
 		symbols.Add("record", symbolKindVariable)
 		symbols.Add("recordType", symbolKindType)
-		tAssert.Error(validateDataOutputExpression(ast.NullLiteral{}, symbols))
+			tAssert.NoError(validateDataOutputExpression(ast.NullLiteral{}, symbols))
 		tAssert.Error(validateDataOutputExpression(ast.Identifier{Name: "recordType"}, symbols))
 		tAssert.NoError(validateDataOutputExpression(ast.MemberAccess{Target: ast.Identifier{Name: "opt"}, Name: "name"}, symbols))
 		tAssert.NoError(validateDataOutputExpression(ast.ArrayLiteral{Elements: []ast.Expression{ast.Identifier{Name: "record"}}}, symbols))

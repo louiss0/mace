@@ -1827,7 +1827,7 @@ variant[string, int, boolean] selected_value = true ? "primary" : false ? 10 : t
 schema Address: { city?: string, };
 schema Profile: { address: Address, };
 schema User: { profile: Profile, };
-nullable User user = { profile: { address: { city: "Paris", }, }, };
+User user = { profile: { address: { city: "Paris", }, }, };
 string fallback = "";
 |===|
 [output = 'data']

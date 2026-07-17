@@ -236,10 +236,10 @@ string result = root.%s
 		Entry("fifteen nested schemas", 15),
 	)
 
-	It("completes nullable schema variable fields in a truthy initializer branch", func() {
+	It("completes schema variable fields in a truthy initializer branch", func() {
 		text := `|===|
 schema User: { name: string, email: string, };
-nullable User user = null;
+User user = null;
 string result = user ? user.
 |===|
 [output = 'data']
@@ -260,10 +260,10 @@ string result = user ? user.
 		tAssert.Equal([]string{"email", "name"}, labels)
 	})
 
-	It("completes nullable schema variable fields in a truthy branch", func() {
+	It("completes schema variable fields in a truthy branch", func() {
 		text := `|===|
 schema User: { name: string, email: string, };
-nullable User user = null;
+User user = null;
 |===|
 [output = 'data']
 {
@@ -285,10 +285,10 @@ nullable User user = null;
 		tAssert.Equal([]string{"email", "name"}, labels)
 	})
 
-	It("does not complete nullable schema variable fields outside a truthy branch", func() {
+	It("does not complete schema variable fields outside a truthy branch", func() {
 		text := `|===|
 schema User: { name: string, email: string, };
-nullable User user = null;
+User user = null;
 |===|
 [output = 'data']
 {

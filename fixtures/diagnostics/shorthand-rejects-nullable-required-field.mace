@@ -1,5 +1,5 @@
 |===|
-nullable string name = null;
+string name = null;
 schema User: { name: string, };
 User user = { name, };
 |===|

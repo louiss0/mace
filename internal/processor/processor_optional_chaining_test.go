@@ -22,8 +22,8 @@ schema User: {
 };
 `
 
-	It("requires a truthiness check before accessing a nullable record variable", func() {
-		_, err := New().Process(optionalChainDocument(userSchemas, `nullable User user = {
+	It("requires a truthiness check before accessing a record variable", func() {
+		_, err := New().Process(optionalChainDocument(userSchemas, `User user = {
   records: { primary: "active", },
 };`, `
   records: user.records,
@@ -32,8 +32,8 @@ schema User: {
 		requireOptionalFieldAccessError(err)
 	})
 
-	It("rejects optional chaining on a nullable record variable", func() {
-		_, err := New().Process(optionalChainDocument(userSchemas, `nullable User user = {
+	It("rejects optional chaining on a record variable", func() {
+		_, err := New().Process(optionalChainDocument(userSchemas, `User user = {
   records: { primary: "active", },
 };`, `
   records?: user?.records,
@@ -50,10 +50,10 @@ schema User: {
 		requireOptionalFieldAccessError(err)
 	})
 
-	It("uses the fallback when a nullable record variable is null", func() {
+	It("uses the fallback when a record variable is null", func() {
 		result, err := New().Process(optionalChainDocumentWithOutputSchema(
 			userSchemas,
-			`nullable User user = null;`,
+			`User user = null;`,
 			`schema Result: { records: record<string>, };`,
 			`
   records: user ? user.records : {},
@@ -64,10 +64,10 @@ schema User: {
 		assertExpectedValue(requireOutputValue(result, "records"), expectedValue{kind: ValueRecord, record: map[string]expectedValue{}})
 	})
 
-	It("allows a nullable record variable after a truthiness check", func() {
+	It("allows a record variable after a truthiness check", func() {
 		result, err := New().Process(optionalChainDocumentWithOutputSchema(
 			userSchemas,
-			`nullable User user = {
+			`User user = {
   records: { primary: "active", },
 };`,
 			`schema Result: { records: record<string>, };`,
@@ -224,7 +224,7 @@ string fallback = "missing";
 
 			_, err = New().Process(`|===|
 alias Packages: variant[` + nestedRecordMapTypeText(depth) + `, ` + nestedRecordMapTypeText(depth+1) + `];
-nullable Packages packages = null;
+Packages packages = null;
 string fallback = "missing";
 |===|
 [output = 'data']

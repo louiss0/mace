@@ -152,17 +152,6 @@ from './base.mace' import User:Person, Config;
 }`, output)
 	})
 
-	It("formats nullable declarations without initial values", func() {
-		line, err := formatDeclaration(ast.VariableDeclaration{
-			Nullable: true,
-			Type:     ast.PrimitiveType{Name: "string"},
-			Name:     "nickname",
-		})
-
-		tAssert.NoError(err)
-		tAssert.Equal("nullable string nickname;", line)
-	})
-
 	It("formats variable inline descriptions before semicolons", func() {
 		line, err := formatDeclaration(ast.VariableDeclaration{
 			HasValue:    true,

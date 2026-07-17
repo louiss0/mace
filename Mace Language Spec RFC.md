@@ -93,7 +93,7 @@ imported_identifier = identifier , [ ws0 , &quot;:&quot; , ws0 , identifier ] ;
 
 declaration = variable_declaration | type_declaration | schema_declaration
             | gen_doc_declaration | schema_doc_declaration ;
-variable_declaration = [ &quot;nullable&quot; , ws1 ] , type_reference , ws1 , identifier , ws0 , &quot;=&quot; , ws0 , expression , [ ws0 , inline_description ] , ws0 , &quot;;&quot; ;
+variable_declaration = type_reference , ws1 , identifier , ws0 , &quot;=&quot; , ws0 , expression , [ ws0 , inline_description ] , ws0 , &quot;;&quot; ;
 type_declaration = &quot;alias&quot; , ws1 , identifier , ws0 , &quot;:&quot; , ws0 , type_reference , [ ws0 , inline_description ] , ws0 , &quot;;&quot; ;
 schema_declaration = &quot;schema&quot; , ws1 , identifier , ws0 , &quot;:&quot; , ws0 , record_type , ws0 , &quot;;&quot; ;
 

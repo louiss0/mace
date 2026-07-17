@@ -1,6 +1,6 @@
 |===|
 schema User: { name: string, };
-nullable User user = null;
+User user = null;
 string name = user.name;
 |===|
 [output = 'data'] { name, }

@@ -1,5 +1,5 @@
 |===|
-nullable string value = null;
+string value = null;
 boolean invalid = value == null;
 |===|
 [output = 'data'] { invalid, }

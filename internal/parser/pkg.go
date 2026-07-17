@@ -278,12 +278,6 @@ func (p *Parser) parseDeclaration() (ast.Declaration, error) {
 }
 
 func (p *Parser) parseVariableDeclaration() (ast.Declaration, error) {
-	nullable := false
-	if p.current().Type == lexer.TokenNullable {
-		nullable = true
-		p.advance()
-	}
-
 	typeRef, err := p.parseTypeReference()
 	if err != nil {
 		return nil, err
@@ -314,7 +308,6 @@ func (p *Parser) parseVariableDeclaration() (ast.Declaration, error) {
 	}
 
 	return ast.VariableDeclaration{
-		Nullable:    nullable,
 		HasValue:    hasValue,
 		Type:        typeRef,
 		NameToken:   nameToken,

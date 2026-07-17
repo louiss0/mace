@@ -93,7 +93,7 @@ func invalidNullUsageError() error {
 		ErrorType,
 		CodeInvalidNullUsage,
 		DiagnosticFields{},
-		"null can only be assigned to nullable variables and optional schema fields",
+		"null is only allowed in output",
 	)
 }
 
@@ -200,7 +200,7 @@ func inferErrorCode(message string) ErrorCode {
 		return ErrorCode("mace.type.invalid-binary-operator")
 	case strings.Contains(message, "use optional chaining '?.'"):
 		return CodeOptionalFieldAccess
-	case strings.Contains(message, "null can only be assigned to nullable variables and optional schema fields"):
+	case strings.Contains(message, "null is only allowed in output"):
 		return CodeInvalidNullUsage
 	case strings.Contains(message, "type mismatch"):
 		return CodeTypeMismatch

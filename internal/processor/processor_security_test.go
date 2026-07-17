@@ -44,7 +44,7 @@ var _ = Describe("Security", func() {
 	It("treats runtime input strings as data, not paths", func() {
 		processor := NewWithInput(map[string]Value{"path": {Kind: ValueString, String: "./schema.mace"}})
 		result, err := processor.Process(`|===|
-nullable string path = "./schema.mace";
+string path = "./schema.mace";
 |===|
 [output = 'data']
 {

@@ -25,12 +25,11 @@ const serverName = "mace"
 var diagnosticPositionPattern = regexp.MustCompile(`at (\d+):(\d+)`)
 
 var keywordDocs = map[string]string{
-	"array":    "Declares an array type like `array<string>`.",
-	"choice":   "Declares a finite literal choice type like `choice[\"dev\", 1, true]`.",
-	"nullable": "Marks a variable as able to evaluate to `null`.",
-	"alias":    "Declares a reusable type alias.",
-	"fusion":   "Declares schema composition like `fusion[Profile, Audit]`.",
-	"variant":  "Declares a closed variant type like `variant[string, int]` or `variant[array<string>, array<int>]`.",
+	"array":   "Declares an array type like `array<string>`.",
+	"choice":  "Declares a finite literal choice type like `choice[\"dev\", 1, true]`.",
+	"alias":   "Declares a reusable type alias.",
+	"fusion":  "Declares schema composition like `fusion[Profile, Audit]`.",
+	"variant": "Declares a closed variant type like `variant[string, int]` or `variant[array<string>, array<int>]`.",
 }
 
 var directiveKeywordDocs = map[string]string{

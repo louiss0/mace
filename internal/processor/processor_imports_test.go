@@ -42,7 +42,7 @@ from 'fixtures/processor/imports/base.mace' import Internal;
 		tAssert.ErrorContains(err, "imported identifier")
 	})
 
-	It("treats destructured optional imports as nullable variables", func() {
+	It("treats destructured optional imports as variables", func() {
 		unguardedDocument := `|===|
 from 'fixtures/processor/imports/optional_profile.mace' import profile;
 |===|

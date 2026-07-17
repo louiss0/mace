@@ -339,14 +339,14 @@ string selected = false ? "fallback" : match (value) {
 { selected, }`, "integer"),
 	)
 
-	DescribeTable("evaluates nullable conditions before conditional match expressions",
+	DescribeTable("evaluates conditions before conditional match expressions",
 		func(source string, expected string) {
 			result, err := New().Process(source)
 			tAssert.NoError(err)
 			tAssert.Equal(expected, result.Output["selected"].String)
 		},
 		Entry("with match at the question mark", `|===|
-nullable boolean condition = true;
+boolean condition = true;
 variant[string, int] value = 7;
 string selected = condition ? match (value) {
   string => "string",
@@ -355,7 +355,7 @@ string selected = condition ? match (value) {
 |===|
 { selected, }`, "integer"),
 		Entry("with match at the colon", `|===|
-nullable boolean condition = null;
+boolean condition = null;
 variant[string, int] value = 7;
 string selected = condition ? "fallback" : match (value) {
   string => "string",

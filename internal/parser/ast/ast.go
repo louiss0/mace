@@ -333,7 +333,6 @@ type Declaration interface {
 }
 
 type VariableDeclaration struct {
-	Nullable    bool
 	HasValue    bool
 	Type        TypeReference
 	NameToken   lexer.Token

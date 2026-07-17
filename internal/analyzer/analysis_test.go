@@ -545,7 +545,7 @@ Catalog catalog = primary;
 		}
 	})
 
-	It("scopes every typed key in the nullable user fixture", func() {
+	It("scopes every typed key in the user fixture", func() {
 		fixturePath := filepath.Join("..", "..", "fixtures", "processor", "optional_chaining", "nullable_user.mace")
 		contents, err := os.ReadFile(fixturePath)
 		tAssert.NoError(err)
@@ -583,7 +583,7 @@ Catalog catalog = primary;
 			}
 		}
 
-		initializerStart := strings.Index(text, "nullable User user = {")
+		initializerStart := strings.Index(text, "User user = {")
 		tAssert.NotEqual(-1, initializerStart)
 		initializerCases := []struct {
 			needle   string
@@ -948,9 +948,9 @@ int count = "Ada";
 		}
 	})
 
-	It("does not report diagnostics for a used nullable variable", func() {
+	It("does not report diagnostics for a used variable", func() {
 		snapshot := analyzeDocument(`|===|
-nullable string env = null;
+string env = null;
 |===|
 [output = 'data'] { value: env, }`)
 
@@ -1004,7 +1004,7 @@ schema Package: { name: string, project: string, };
 }`)
 
 		if tAssert.Len(snapshot.diagnostics, 1) {
-			tAssert.Contains(snapshot.diagnostics[0].Message, "null can only be assigned to nullable variables and optional schema fields")
+			tAssert.Contains(snapshot.diagnostics[0].Message, "null can only be assigned to variables and optional schema fields")
 			tAssert.Equal(string(diagnosticTypeInvalidNullUsage), requireDiagnosticCode(snapshot.diagnostics[0]))
 		}
 	})
@@ -2242,7 +2242,7 @@ var _ = Describe("analyzer diagnostic coverage helpers", func() {
 		tAssert.Equal("single", stringLiteralMarkdown(ast.StringLiteral{Lexeme: `'single'`}))
 		tAssert.Equal(`"bad`, stringLiteralMarkdown(ast.StringLiteral{Lexeme: `"bad`}))
 		tAssert.Equal("one\n\ntwo", joinDocumentation("one", " ", "two"))
-		tAssert.Equal("nullable string maybe", variableDeclarationDetail(ast.VariableDeclaration{Nullable: true, Type: ast.PrimitiveType{Name: "string"}, Name: "maybe"}))
+		tAssert.Equal("string maybe", variableDeclarationDetail(ast.VariableDeclaration{Type: ast.PrimitiveType{Name: "string"}, Name: "maybe"}))
 		tAssert.Equal("string name = \"Ada\"", variableDeclarationDetail(ast.VariableDeclaration{HasValue: true, Type: ast.PrimitiveType{Name: "string"}, Name: "name", Value: ast.StringLiteral{Lexeme: `"Ada"`}}))
 
 		tAssert.Equal("unknown", summarizeValue(processor.Value{Kind: processor.ValueKind(999)}))

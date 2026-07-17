@@ -1292,28 +1292,6 @@ string greeting = "Hello" /# Rendered greeting;
 			}
 		})
 
-		It("parses nullable declarations with null initializers", func() {
-			input := `|===|
-nullable string env = null;
-|===|
-[output = 'data'] {}`
-
-			file, err := parseFileInput(input)
-			tAssert.NoError(err)
-
-			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 1) {
-				varDecl, ok := file.Script.Items[0].(ast.VariableDeclaration)
-				tAssert.True(ok)
-				if ok {
-					tAssert.True(varDecl.Nullable)
-					tAssert.Equal("env", varDecl.Name)
-					tAssert.True(varDecl.HasValue)
-					_, ok := varDecl.Value.(ast.NullLiteral)
-					tAssert.True(ok)
-				}
-			}
-		})
-
 		It("parses hex primitive type references", func() {
 			input := `|===|
 hex_int mask = 0xFF;
@@ -1839,7 +1817,7 @@ schema User: {
 			file, err := parseFileInput(`|===|
 from './shared.mace' import Name, User;
 alias Alias: string;
-nullable string env = null;
+string env = null;
 schema User: {
   name: string,
 };

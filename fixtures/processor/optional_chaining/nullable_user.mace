@@ -12,8 +12,8 @@ schema User: {
   profile: Profile,
 };
 
-nullable User missing_user = null;
-nullable User user = {
+User missing_user = null;
+User user = {
   records: { primary: "active", },
   profile: { address: { city: "Paris", }, },
 };

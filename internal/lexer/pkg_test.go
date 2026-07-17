@@ -83,7 +83,7 @@ var _ = Describe("Lexer", func() {
 			tAssert.NoError(err)
 			assertTokenSequence(tokens, expected)
 		},
-		Entry("keywords and identifiers", "from import alias type schema gen_doc schema_doc enum array fusion variant choice match record string int float hex_int hex_float boolean output schema_file parse parse_file data nullable in is null user_1", []expectedToken{
+		Entry("keywords and identifiers", "from import alias type schema gen_doc schema_doc enum array fusion variant choice match record string int float hex_int hex_float boolean output schema_file parse parse_file data in is null user_1", []expectedToken{
 			{tokenType: TokenFrom, lexeme: "from"},
 			{tokenType: TokenImport, lexeme: "import"},
 			{tokenType: TokenAliasKeyword, lexeme: "alias"},
@@ -109,7 +109,6 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenIdentifier, lexeme: "parse"},
 			{tokenType: TokenIdentifier, lexeme: "parse_file"},
 			{tokenType: TokenIdentifier, lexeme: "data"},
-			{tokenType: TokenNullable, lexeme: "nullable"},
 			{tokenType: TokenIn, lexeme: "in"},
 			{tokenType: TokenIdentifier, lexeme: "is"},
 			{tokenType: TokenNull, lexeme: "null"},

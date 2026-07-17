@@ -2,8 +2,8 @@
 alias Environment: choice["dev", "prod"];
 
 Environment environment = "prod";
-nullable boolean preferMatch = true;
-nullable boolean useFallback = null;
+boolean preferMatch = true;
+boolean useFallback = null;
 
 string fromQuestion = preferMatch ? match (environment) {
   "dev" => "development",

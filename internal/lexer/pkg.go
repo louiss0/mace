@@ -473,8 +473,6 @@ func keywordToken(lexeme string) (TokenType, bool) {
 		return TokenHexFloatType, true
 	case "boolean":
 		return TokenBooleanType, true
-	case "nullable":
-		return TokenNullable, true
 	case "in":
 		return TokenIn, true
 	case "null":

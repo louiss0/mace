@@ -49,8 +49,8 @@ string first = 'Ada';
 string second = """Hello
 World""";
 |===|`)),
-		Entry("nullable variable with null initializer", wrapScriptWithOutput(`|===|
-nullable string env = null;
+		Entry("variable with null initializer", wrapScriptWithOutput(`|===|
+string env = null;
 |===|`)),
 		Entry("imports and script block", `|===|
 from 'fixtures/processor/imports/base.mace' import Name;
@@ -149,11 +149,11 @@ from 'fixtures/processor/imports/base.mace' import User, User;
 		tAssert.ErrorContains(err, "missing required field \"name\"")
 	})
 
-	It("rejects record shorthand fixtures that use nullable values for required fields", func() {
+	It("rejects record shorthand fixtures that use values for required fields", func() {
 		processor := New()
 		_, err := processor.ProcessFile("../../fixtures/diagnostics/shorthand-rejects-nullable-required-field.mace")
 		tAssert.Error(err)
-		tAssert.ErrorContains(err, "null can only be assigned to nullable variables and optional schema fields")
+		tAssert.ErrorContains(err, "null can only be assigned to variables and optional schema fields")
 	})
 
 	It("rejects output shorthand fixtures that reference missing variables", func() {

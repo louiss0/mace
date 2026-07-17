@@ -1455,9 +1455,10 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 		if err != nil {
 			return err
 		}
-		expectedType.nullable = decl.Nullable
-
 		if decl.HasValue {
+			if expressionContainsNull(decl.Value) {
+				return invalidNullUsageError()
+			}
 			actualType, err := inferExpressionType(decl.Value, variables, symbols, types, schemas, enums)
 			if err != nil {
 				return err
@@ -1925,7 +1926,7 @@ func validateDataOutputFields(fields []ast.OutputField, hasSchema bool, variable
 		if err := validateDataOutputExpression(field.Value, symbols); err != nil {
 			return err
 		}
-		if err := validateNullableVariableAccess(field.Value, variables, symbols, types, schemas, enums); err != nil {
+		if err := validateExpressionPresence(field.Value, variables, symbols, types, schemas, enums, false); err != nil {
 			return err
 		}
 	}
@@ -1977,6 +1978,33 @@ func expressionContainsEmptyCollection(expression ast.Expression) bool {
 	}
 }
 
+func expressionContainsNull(expression ast.Expression) bool {
+	switch typed := expression.(type) {
+	case ast.NullLiteral:
+		return true
+	case ast.ArrayLiteral:
+		return lo.ContainsBy(typed.Elements, expressionContainsNull)
+	case ast.RecordLiteral:
+		return lo.ContainsBy(typed.Fields, func(field ast.RecordField) bool {
+			return expressionContainsNull(field.Value)
+		})
+	case ast.MemberAccess:
+		return expressionContainsNull(typed.Target)
+	case ast.MatchExpression:
+		return expressionContainsNull(typed.Value) || lo.ContainsBy(typed.Arms, func(arm ast.MatchArm) bool {
+			return expressionContainsNull(arm.Value)
+		})
+	case ast.PrefixExpression:
+		return expressionContainsNull(typed.Right)
+	case ast.InfixExpression:
+		return expressionContainsNull(typed.Left) || expressionContainsNull(typed.Right)
+	case ast.ConditionalExpression:
+		return expressionContainsNull(typed.Condition) || expressionContainsNull(typed.Then) || expressionContainsNull(typed.Else)
+	default:
+		return false
+	}
+}
+
 func isEmptyCollectionExpression(expression ast.Expression) bool {
 	switch typed := expression.(type) {
 	case ast.ArrayLiteral:
@@ -1986,10 +2014,6 @@ func isEmptyCollectionExpression(expression ast.Expression) bool {
 	default:
 		return false
 	}
-}
-
-func validateNullableVariableAccess(expression ast.Expression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
-	return validateExpressionPresence(expression, variables, symbols, types, schemas, enums, false)
 }
 
 func validateExpressionPresence(expression ast.Expression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any, allowAbsent bool) error {
@@ -2061,8 +2085,6 @@ func validateExpressionPresence(expression ast.Expression, variables *variableRe
 
 func validateDataOutputExpression(expression ast.Expression, symbols *symbolTable) error {
 	switch expr := expression.(type) {
-	case ast.NullLiteral:
-		return invalidNullUsageError()
 	case ast.Identifier:
 		if symbols.IsType(expr.Name) || symbols.IsSchema(expr.Name) {
 			return diagnosticErrorf(ErrorValue, CodeOutputValueDeclaration, DiagnosticFields{Name: expr.Name}, "output value %q cannot reference type or schema declaration", expr.Name)
@@ -2710,7 +2732,6 @@ func evaluateScript(items []ast.Declaration, environment *valueEnvironment, symb
 		if err != nil {
 			return err
 		}
-		expectedType.nullable = variable.Nullable
 		value, _ = coerceEvaluatedValueAgainstType(variable.Value, value, expectedType, environment, Value{}, symbols, types, schemas, enums)
 		if err := validateEvaluatedValueAgainstType(value, expectedType, symbols, types, schemas, enums); err != nil {
 			return err

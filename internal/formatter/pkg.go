@@ -162,18 +162,13 @@ func (f *formatter) writeLine(value string) {
 func formatDeclaration(declaration ast.Declaration) (string, error) {
 	switch typedDeclaration := declaration.(type) {
 	case ast.VariableDeclaration:
-		prefix := ""
-		if typedDeclaration.Nullable {
-			prefix += "nullable "
-		}
-
 		typeReference, err := formatTypeReference(typedDeclaration.Type)
 		if err != nil {
 			return "", err
 		}
 
 		if !typedDeclaration.HasValue {
-			return fmt.Sprintf("%s%s %s;", prefix, typeReference, typedDeclaration.Name), nil
+			return fmt.Sprintf("%s %s;", typeReference, typedDeclaration.Name), nil
 		}
 
 		value, err := formatExpressionWithDepth(typedDeclaration.Value, 0)
@@ -182,7 +177,7 @@ func formatDeclaration(declaration ast.Declaration) (string, error) {
 		}
 
 		description := formatInlineDescription(typedDeclaration.Description)
-		return fmt.Sprintf("%s%s %s = %s%s;", prefix, typeReference, typedDeclaration.Name, value, description), nil
+		return fmt.Sprintf("%s %s = %s%s;", typeReference, typedDeclaration.Name, value, description), nil
 	case ast.TypeDeclaration:
 		typeReference, err := formatTypeReference(typedDeclaration.Type)
 		if err != nil {

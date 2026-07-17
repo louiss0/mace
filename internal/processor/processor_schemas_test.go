@@ -12,9 +12,9 @@ import (
 )
 
 var _ = Describe("Schemas", func() {
-	It("accepts nullable primitive initializers", func() {
+	It("accepts primitive initializers", func() {
 		_, err := New().ProcessInDir(wrapScriptWithOutput(`|===|
-nullable string env = "dev";
+string env = "dev";
 |===|`), "../..")
 		tAssert.NoError(err)
 	})

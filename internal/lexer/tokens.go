@@ -31,7 +31,6 @@ const (
 	TokenParse
 	TokenParseFile
 	TokenData
-	TokenNullable
 	TokenIn
 	TokenNull
 
