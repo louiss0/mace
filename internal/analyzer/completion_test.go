@@ -2257,6 +2257,42 @@ from '../shared.mace' import base;
 			Entry("five fields", 5),
 		)
 
+		fourTypeOutputFields := []outputFieldInferenceCase{
+			{`[1, "one", true, 2.5]`, "array<variant[int, string, boolean, float]>"},
+			{`[0x2, 0x2.8, { name: "Ada" }, false]`, "array<variant[hex_int, hex_float, { name: string }, boolean]>"},
+			{`[[1, "nested"], { enabled: true }, 3.5, "three"]`, "array<variant[array<variant[int, string]>, { enabled: boolean }, float, string]>"},
+			{`[4, "four", 0x4, { ratio: 4.5 }]`, "array<variant[int, string, hex_int, { ratio: float }]>"},
+			{`[true, 5.5, 0x5.8, { count: 5 }]`, "array<variant[boolean, float, hex_float, { count: int }]>"},
+		}
+		DescribeTable("infers four-type variants across one through five output fields",
+			func(fieldCount int) {
+				assertOutputFieldInference(fourTypeOutputFields, fieldCount)
+			},
+			Entry("one field", 1),
+			Entry("two fields", 2),
+			Entry("three fields", 3),
+			Entry("four fields", 4),
+			Entry("five fields", 5),
+		)
+
+		fiveTypeOutputFields := []outputFieldInferenceCase{
+			{`[1, "one", true, 2.5, 0x1]`, "array<variant[int, string, boolean, float, hex_int]>"},
+			{`[0x2.8, { name: "Ada" }, false, 2, [1, "nested"]]`, "array<variant[hex_float, { name: string }, boolean, int, array<variant[int, string]>]>"},
+			{`[3.5, 0x3, { enabled: true }, "three", false]`, "array<variant[float, hex_int, { enabled: boolean }, string, boolean]>"},
+			{`[{ ratio: 4.5 }, 4, 0x4.8, true, [0x4, "four"]]`, "array<variant[{ ratio: float }, int, hex_float, boolean, array<variant[hex_int, string]>]>"},
+			{`[5, "five", 5.5, 0x5, { count: 5 }]`, "array<variant[int, string, float, hex_int, { count: int }]>"},
+		}
+		DescribeTable("infers five-type variants across one through five output fields",
+			func(fieldCount int) {
+				assertOutputFieldInference(fiveTypeOutputFields, fieldCount)
+			},
+			Entry("one field", 1),
+			Entry("two fields", 2),
+			Entry("three fields", 3),
+			Entry("four fields", 4),
+			Entry("five fields", 5),
+		)
+
 		type outputPrimitiveCase struct {
 			literal string
 			name    string
@@ -2323,6 +2359,55 @@ from '../shared.mace' import base;
 			Entry("ten levels", 10),
 			Entry("eleven levels", 11),
 			Entry("twelve levels", 12),
+		)
+
+		DescribeTable("infers matching nested record depths and field counts",
+			func(amount int) {
+				type inferredRecordField struct {
+					name     string
+					literal  string
+					expected string
+				}
+				arrayField := func(level, index int) inferredRecordField {
+					first := outputPrimitives[(level+index-2)%len(outputPrimitives)]
+					second := outputPrimitives[(level+index-1)%len(outputPrimitives)]
+					return inferredRecordField{
+						name:     fmt.Sprintf("items%d", index),
+						literal:  fmt.Sprintf("[%s, %s]", first.literal, second.literal),
+						expected: fmt.Sprintf("array<variant[%s, %s]>", first.name, second.name),
+					}
+				}
+				fields := lo.Map(lo.Range(amount), func(index int, _ int) inferredRecordField {
+					return arrayField(1, index+1)
+				})
+				literal := "{ " + strings.Join(lo.Map(fields, func(field inferredRecordField, _ int) string {
+					return field.name + ": " + field.literal
+				}), ", ") + " }"
+				expected := "{ " + strings.Join(lo.Map(fields, func(field inferredRecordField, _ int) string {
+					return field.name + ": " + field.expected
+				}), ", ") + " }"
+
+				for level := 2; level <= amount; level++ {
+					fields = lo.Map(lo.Range(amount-1), func(index int, _ int) inferredRecordField {
+						return arrayField(level, index+1)
+					})
+					literalFields := append([]string{"nested: " + literal}, lo.Map(fields, func(field inferredRecordField, _ int) string {
+						return field.name + ": " + field.literal
+					})...)
+					expectedFields := append([]string{"nested: " + expected}, lo.Map(fields, func(field inferredRecordField, _ int) string {
+						return field.name + ": " + field.expected
+					})...)
+					literal = "{ " + strings.Join(literalFields, ", ") + " }"
+					expected = "{ " + strings.Join(expectedFields, ", ") + " }"
+				}
+
+				assertNestedOutputRecordInference(literal, expected, completionModel{})
+			},
+			Entry("one record with one field", 1),
+			Entry("two records with two fields per level", 2),
+			Entry("three records with three fields per level", 3),
+			Entry("four records with four fields per level", 4),
+			Entry("five records with five fields per level", 5),
 		)
 
 		DescribeTable("recursively infers conditional types through fifteen ternaries",
