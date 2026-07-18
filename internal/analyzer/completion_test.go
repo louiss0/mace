@@ -2174,6 +2174,157 @@ from '../shared.mace' import base;
 			Entry("record variants", `[{ name: "Ada" }, { count: 2 }]`, "array<variant[{ name: string }, { count: int }]>"),
 		)
 
+		DescribeTable("infers nested output array variants through five levels",
+			func(output, expected string) {
+				file, err := parseFile(fmt.Sprintf("[output = 'data']\n{ value: %s, }", output))
+				tAssert.NoError(err)
+
+				fieldType, ok := completionOutputFieldType(file.Output.DataFields[0].Value, completionModel{})
+				tAssert.True(ok)
+				if ok {
+					tAssert.Equal(expected, typeReferenceDetail(fieldType))
+				}
+			},
+			Entry("one level", `[1, "one"]`, "array<variant[int, string]>"),
+			Entry("two levels", `[[true, 2.5], 1]`, "array<variant[array<variant[boolean, float]>, int]>"),
+			Entry("three levels", `[[[0x1, 0x1.8], "two"], false]`, "array<variant[array<variant[array<variant[hex_int, hex_float]>, string]>, boolean]>"),
+			Entry(
+				"four levels with a record containing every primitive",
+				`[[[[{ text: "four", count: 4, ratio: 4.5, mask: 0x4, fraction: 0x4.8, enabled: true }, "leaf"], 2], false], 3.5]`,
+				"array<variant[array<variant[array<variant[array<variant[{ text: string, count: int, ratio: float, mask: hex_int, fraction: hex_float, enabled: boolean }, string]>, int]>, boolean]>, float]>",
+			),
+			Entry(
+				"five levels with three variants per array",
+				`[[[[[1, "one", true], 2.5, 0x2], 0x2.8, "three"], false, 3], "outer", 4.5]`,
+				"array<variant[array<variant[array<variant[array<variant[array<variant[int, string, boolean]>, float, hex_int]>, hex_float, string]>, boolean, int]>, string, float]>",
+			),
+		)
+
+		type outputFieldInferenceCase struct {
+			output   string
+			expected string
+		}
+		assertOutputFieldInference := func(fields []outputFieldInferenceCase, fieldCount int) {
+			outputFields := lo.Map(fields[:fieldCount], func(field outputFieldInferenceCase, index int) string {
+				return fmt.Sprintf("value%d: %s", index+1, field.output)
+			})
+			file, err := parseFile(fmt.Sprintf("[output = 'data']\n{ %s, }", strings.Join(outputFields, ", ")))
+			tAssert.NoError(err)
+			tAssert.Len(file.Output.DataFields, fieldCount)
+
+			for index, field := range fields[:fieldCount] {
+				fieldType, ok := completionOutputFieldType(file.Output.DataFields[index].Value, completionModel{})
+				tAssert.True(ok)
+				if ok {
+					tAssert.Equal(field.expected, typeReferenceDetail(fieldType))
+				}
+			}
+		}
+
+		twoTypeOutputFields := []outputFieldInferenceCase{
+			{`[1, "one"]`, "array<variant[int, string]>"},
+			{`[true, 2.5]`, "array<variant[boolean, float]>"},
+			{`[0x2, 0x2.8]`, "array<variant[hex_int, hex_float]>"},
+			{`[{ name: "Ada" }, 1]`, "array<variant[{ name: string }, int]>"},
+			{`[[1, "nested"], { enabled: true }]`, "array<variant[array<variant[int, string]>, { enabled: boolean }]>"},
+		}
+		DescribeTable("infers two-type variants across one through five output fields",
+			func(fieldCount int) {
+				assertOutputFieldInference(twoTypeOutputFields, fieldCount)
+			},
+			Entry("one field", 1),
+			Entry("two fields", 2),
+			Entry("three fields", 3),
+			Entry("four fields", 4),
+			Entry("five fields", 5),
+		)
+
+		threeTypeOutputFields := []outputFieldInferenceCase{
+			{`[1, "one", true]`, "array<variant[int, string, boolean]>"},
+			{`[2.5, 0x2, 0x2.8]`, "array<variant[float, hex_int, hex_float]>"},
+			{`["three", false, { name: "Ada" }]`, "array<variant[string, boolean, { name: string }]>"},
+			{`[[1, "nested"], { enabled: true }, 4.5]`, "array<variant[array<variant[int, string]>, { enabled: boolean }, float]>"},
+			{`[0x5, 0x5.8, { count: 5 }]`, "array<variant[hex_int, hex_float, { count: int }]>"},
+		}
+		DescribeTable("infers three-type variants across one through five output fields",
+			func(fieldCount int) {
+				assertOutputFieldInference(threeTypeOutputFields, fieldCount)
+			},
+			Entry("one field", 1),
+			Entry("two fields", 2),
+			Entry("three fields", 3),
+			Entry("four fields", 4),
+			Entry("five fields", 5),
+		)
+
+		type outputPrimitiveCase struct {
+			literal string
+			name    string
+		}
+		outputPrimitives := []outputPrimitiveCase{
+			{`"text"`, "string"},
+			{"1", "int"},
+			{"2.5", "float"},
+			{"0x3", "hex_int"},
+			{"0x4.8", "hex_float"},
+			{"true", "boolean"},
+		}
+		nestedOutputRecord := func(depth int) (string, string) {
+			first := outputPrimitives[(depth-1)%len(outputPrimitives)]
+			second := outputPrimitives[depth%len(outputPrimitives)]
+			literal := fmt.Sprintf("{ value: %s, items: [%s, %s] }", first.literal, first.literal, second.literal)
+			expected := fmt.Sprintf("{ value: %s, items: array<variant[%s, %s]> }", first.name, first.name, second.name)
+			for level := 2; level <= depth; level++ {
+				first = outputPrimitives[(depth+level-2)%len(outputPrimitives)]
+				second = outputPrimitives[(depth+level-1)%len(outputPrimitives)]
+				literal = fmt.Sprintf("{ nested: %s, items: [%s, %s] }", literal, first.literal, second.literal)
+				expected = fmt.Sprintf("{ nested: %s, items: array<variant[%s, %s]> }", expected, first.name, second.name)
+			}
+			return literal, expected
+		}
+		assertNestedOutputRecordInference := func(literal, expected string, model completionModel) {
+			file, err := parseFile(fmt.Sprintf("[output = 'data']\n{ value: %s, }", literal))
+			tAssert.NoError(err)
+			fieldType, ok := completionOutputFieldType(file.Output.DataFields[0].Value, model)
+			tAssert.True(ok)
+			if ok {
+				tAssert.Equal(expected, typeReferenceDetail(fieldType))
+			}
+		}
+
+		profile := ast.RecordType{Fields: []ast.SchemaField{
+			{Name: "name", Type: ast.PrimitiveType{Name: "string"}},
+			{Name: "score", Type: ast.PrimitiveType{Name: "float"}},
+			{Name: "active", Type: ast.PrimitiveType{Name: "boolean"}},
+		}}
+		profileModel := completionModel{schemas: map[string]ast.RecordType{"Profile": profile}}
+		DescribeTable("infers three-key nested output records using schemas",
+			func(depth int) {
+				literal, expected := nestedOutputRecord(depth)
+				literal = strings.TrimSuffix(literal, " }") + ", profile: Profile }"
+				expected = strings.TrimSuffix(expected, " }") + ", profile: { name: string, score: float, active: boolean } }"
+				assertNestedOutputRecordInference(literal, expected, profileModel)
+			},
+			Entry("two levels", 2),
+			Entry("three levels", 3),
+			Entry("four levels", 4),
+			Entry("five levels", 5),
+			Entry("six levels", 6),
+		)
+
+		DescribeTable("infers two-key nested output records without schemas",
+			func(depth int) {
+				literal, expected := nestedOutputRecord(depth)
+				assertNestedOutputRecordInference(literal, expected, completionModel{})
+			},
+			Entry("seven levels", 7),
+			Entry("eight levels", 8),
+			Entry("nine levels", 9),
+			Entry("ten levels", 10),
+			Entry("eleven levels", 11),
+			Entry("twelve levels", 12),
+		)
+
 		DescribeTable("recursively infers conditional types through fifteen ternaries",
 			func(level int, expected string) {
 				alternatives := []ast.Expression{
