@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -68,6 +69,21 @@ func requireDiagnosticCode(diagnostic protocol.Diagnostic) string {
 }
 
 var _ = Describe("LSP analysis", func() {
+	It("stops completion analysis when its context is cancelled", func() {
+		requestContext, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		_, err := AnalyzeCompletionContextInRootContext(
+			requestContext,
+			`[output = 'data'] { value: 1, }`,
+			"document.mace",
+			".",
+			protocol.Position{},
+		)
+
+		tAssert.ErrorIs(err, context.Canceled)
+	})
+
 	It("covers literal and type helper functions", func() {
 		tAssert.NotEmpty(defaultLiteralForTypeName("string"))
 		tAssert.NotEmpty(defaultLiteralForTypeName("boolean"))

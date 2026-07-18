@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -77,6 +78,16 @@ func AnalyzeCompletionContext(text string, documentPath string, position protoco
 
 func AnalyzeCompletionContextInRoot(text string, documentPath string, importRootDir string, position protocol.Position) Snapshot {
 	return analyzeCompletionContextInRoot(text, documentPath, importRootDir, position)
+}
+
+func AnalyzeCompletionContextInRootContext(
+	context context.Context,
+	text string,
+	documentPath string,
+	importRootDir string,
+	position protocol.Position,
+) (Snapshot, error) {
+	return analyzeCompletionContextInRootContext(context, text, documentPath, importRootDir, position)
 }
 
 func HasParsedFile(snapshot Snapshot) bool {

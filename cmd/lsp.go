@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -28,6 +29,9 @@ type Server struct {
 	workspaceRootDir string
 	handler          protocol.Handler
 	lock             sync.RWMutex
+	activeRequests   map[jsonrpc2.ID]*activeRequest
+	requestContexts  map[*glsp.Context]*activeRequest
+	requestsLock     sync.Mutex
 }
 
 type document struct {
@@ -57,9 +61,12 @@ func newLSPCommand() *cobra.Command {
 
 func newLSPServer() *Server {
 	server := &Server{
-		documents: map[protocol.DocumentUri]document{},
+		documents:       map[protocol.DocumentUri]document{},
+		activeRequests:  map[jsonrpc2.ID]*activeRequest{},
+		requestContexts: map[*glsp.Context]*activeRequest{},
 	}
 	server.handler = protocol.Handler{
+		CancelRequest:                  server.cancelRequest,
 		Initialize:                     server.initialize,
 		Initialized:                    server.initialized,
 		Shutdown:                       server.shutdown,
@@ -87,14 +94,21 @@ func (server *Server) Handler() *protocol.Handler {
 }
 
 func (server *Server) RunStdio() error {
+	connectionContext, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	connection := jsonrpc2.NewConn(
-		context.Background(),
+		connectionContext,
 		jsonrpc2.NewBufferedStream(stdrwc{}, jsonrpc2.VSCodeObjectCodec{}),
-		jsonrpc2.HandlerWithError(server.handle).SuppressErrClosed(),
+		server.jsonRPCHandler(),
 	)
 
 	<-connection.DisconnectNotify()
 	return nil
+}
+
+func (server *Server) jsonRPCHandler() jsonrpc2.Handler {
+	handler := jsonrpc2.HandlerWithError(server.handle).SuppressErrClosed()
+	return concurrentRequestHandler{handler: handler}
 }
 
 func (server *Server) initialize(context *glsp.Context, params *protocol.InitializeParams) (any, error) {
@@ -258,26 +272,40 @@ func (server *Server) didChangeWatchedFiles(context *glsp.Context, params *proto
 	return nil
 }
 
-func (server *Server) complete(context *glsp.Context, params *protocol.CompletionParams) (any, error) {
-	document, ok := server.documentForPosition(params.TextDocument.URI, params.Position)
+func (server *Server) complete(glspContext *glsp.Context, params *protocol.CompletionParams) (any, error) {
+	requestContext := server.requestContext(glspContext)
+	document, ok, err := server.documentForPosition(requestContext, params.TextDocument.URI, params.Position)
+	if err != nil {
+		return nil, err
+	}
 	if !ok {
 		return []protocol.CompletionItem{}, nil
 	}
 
-	return analyzer.CompletionItems(document.text, document.analysis, params.TextDocument.URI, params.Position), nil
+	items := analyzer.CompletionItems(document.text, document.analysis, params.TextDocument.URI, params.Position)
+	return items, requestContext.Err()
 }
 
-func (server *Server) hover(context *glsp.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
-	document, ok := server.documentForPosition(params.TextDocument.URI, params.Position)
+func (server *Server) hover(glspContext *glsp.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
+	requestContext := server.requestContext(glspContext)
+	document, ok, err := server.documentForPosition(requestContext, params.TextDocument.URI, params.Position)
+	if err != nil {
+		return nil, err
+	}
 	if !ok {
 		return nil, nil
 	}
 
-	return analyzer.Hover(document.text, document.analysis, params.Position), nil
+	hover := analyzer.Hover(document.text, document.analysis, params.Position)
+	return hover, requestContext.Err()
 }
 
-func (server *Server) definition(context *glsp.Context, params *protocol.DefinitionParams) (any, error) {
-	document, ok := server.documentForPosition(params.TextDocument.URI, params.Position)
+func (server *Server) definition(glspContext *glsp.Context, params *protocol.DefinitionParams) (any, error) {
+	requestContext := server.requestContext(glspContext)
+	document, ok, err := server.documentForPosition(requestContext, params.TextDocument.URI, params.Position)
+	if err != nil {
+		return nil, err
+	}
 	if !ok {
 		return nil, nil
 	}
@@ -287,11 +315,15 @@ func (server *Server) definition(context *glsp.Context, params *protocol.Definit
 		return nil, nil
 	}
 
-	return location, nil
+	return location, requestContext.Err()
 }
 
-func (server *Server) prepareRename(context *glsp.Context, params *protocol.PrepareRenameParams) (any, error) {
-	document, ok := server.documentForPosition(params.TextDocument.URI, params.Position)
+func (server *Server) prepareRename(glspContext *glsp.Context, params *protocol.PrepareRenameParams) (any, error) {
+	requestContext := server.requestContext(glspContext)
+	document, ok, err := server.documentForPosition(requestContext, params.TextDocument.URI, params.Position)
+	if err != nil {
+		return nil, err
+	}
 	if !ok {
 		return nil, nil
 	}
@@ -300,11 +332,15 @@ func (server *Server) prepareRename(context *glsp.Context, params *protocol.Prep
 	if !ok {
 		return nil, nil
 	}
-	return rangeValue, nil
+	return rangeValue, requestContext.Err()
 }
 
-func (server *Server) rename(context *glsp.Context, params *protocol.RenameParams) (*protocol.WorkspaceEdit, error) {
-	document, ok := server.documentForPosition(params.TextDocument.URI, params.Position)
+func (server *Server) rename(glspContext *glsp.Context, params *protocol.RenameParams) (*protocol.WorkspaceEdit, error) {
+	requestContext := server.requestContext(glspContext)
+	document, ok, err := server.documentForPosition(requestContext, params.TextDocument.URI, params.Position)
+	if err != nil {
+		return nil, err
+	}
 	if !ok {
 		return nil, nil
 	}
@@ -313,19 +349,28 @@ func (server *Server) rename(context *glsp.Context, params *protocol.RenameParam
 	if !ok {
 		return nil, nil
 	}
-	return edit, nil
+	return edit, requestContext.Err()
 }
 
-func (server *Server) documentSymbols(context *glsp.Context, params *protocol.DocumentSymbolParams) (any, error) {
+func (server *Server) documentSymbols(glspContext *glsp.Context, params *protocol.DocumentSymbolParams) (any, error) {
+	requestContext := server.requestContext(glspContext)
+	if err := requestContext.Err(); err != nil {
+		return nil, err
+	}
 	document, ok := server.document(params.TextDocument.URI)
 	if !ok {
 		return []protocol.DocumentSymbol{}, nil
 	}
 
-	return analyzer.DocumentSymbols(document.text, document.analysis), nil
+	symbols := analyzer.DocumentSymbols(document.text, document.analysis)
+	return symbols, requestContext.Err()
 }
 
-func (server *Server) formatDocument(context *glsp.Context, params *protocol.DocumentFormattingParams) ([]protocol.TextEdit, error) {
+func (server *Server) formatDocument(glspContext *glsp.Context, params *protocol.DocumentFormattingParams) ([]protocol.TextEdit, error) {
+	requestContext := server.requestContext(glspContext)
+	if err := requestContext.Err(); err != nil {
+		return nil, err
+	}
 	document, ok := server.document(params.TextDocument.URI)
 	if !ok {
 		return []protocol.TextEdit{}, nil
@@ -333,6 +378,9 @@ func (server *Server) formatDocument(context *glsp.Context, params *protocol.Doc
 
 	formatted, err := analyzer.FormatDocument(document.analysis)
 	if err != nil {
+		return nil, err
+	}
+	if err := requestContext.Err(); err != nil {
 		return nil, err
 	}
 	return []protocol.TextEdit{
@@ -346,13 +394,18 @@ func (server *Server) formatDocument(context *glsp.Context, params *protocol.Doc
 	}, nil
 }
 
-func (server *Server) codeActions(context *glsp.Context, params *protocol.CodeActionParams) (any, error) {
+func (server *Server) codeActions(glspContext *glsp.Context, params *protocol.CodeActionParams) (any, error) {
+	requestContext := server.requestContext(glspContext)
+	if err := requestContext.Err(); err != nil {
+		return nil, err
+	}
 	document, ok := server.document(params.TextDocument.URI)
 	if !ok {
 		return []protocol.CodeAction{}, nil
 	}
 
-	return analyzer.CodeActions(document.analysis, params.TextDocument.URI, params.Range), nil
+	actions := analyzer.CodeActions(document.analysis, params.TextDocument.URI, params.Range)
+	return actions, requestContext.Err()
 }
 
 func (server *Server) publishDiagnostics(context *glsp.Context, uri protocol.DocumentUri) {
@@ -384,18 +437,35 @@ func (server *Server) document(uri protocol.DocumentUri) (document, bool) {
 	return document, ok
 }
 
-func (server *Server) documentForPosition(uri protocol.DocumentUri, position protocol.Position) (document, bool) {
+func (server *Server) documentForPosition(
+	requestContext context.Context,
+	uri protocol.DocumentUri,
+	position protocol.Position,
+) (document, bool, error) {
+	if err := requestContext.Err(); err != nil {
+		return document{}, false, err
+	}
 	document, ok := server.document(uri)
 	if !ok {
-		return document, false
+		return document, false, nil
 	}
 
 	if analyzer.HasParsedFile(document.analysis) {
-		return document, true
+		return document, true, requestContext.Err()
 	}
 
-	document.analysis = analyzer.AnalyzeCompletionContextInRoot(document.text, documentPath(uri), server.importRootDir(documentPath(uri)), position)
-	return document, true
+	analysis, err := analyzer.AnalyzeCompletionContextInRootContext(
+		requestContext,
+		document.text,
+		documentPath(uri),
+		server.importRootDir(documentPath(uri)),
+		position,
+	)
+	if err != nil {
+		return document, false, err
+	}
+	document.analysis = analysis
+	return document, true, nil
 }
 
 func documentPath(uri protocol.DocumentUri) string {
@@ -474,15 +544,20 @@ func positionFromIndex(text string, index int) protocol.Position {
 }
 
 func (server *Server) handle(
-	context context.Context,
+	requestContext context.Context,
 	connection *jsonrpc2.Conn,
 	request *jsonrpc2.Request,
 ) (any, error) {
 	glspContext := glsp.Context{
 		Method: request.Method,
 		Notify: func(method string, params any) {
-			_ = connection.Notify(context, method, params)
+			_ = connection.Notify(requestContext, method, params)
 		},
+	}
+	if !request.Notif {
+		var finishRequest func()
+		requestContext, finishRequest = server.registerRequest(requestContext, request.ID, &glspContext)
+		defer finishRequest()
 	}
 
 	if request.Params != nil {
@@ -493,8 +568,22 @@ func (server *Server) handle(
 	case protocol.MethodExit:
 		_, _, _, _ = server.handler.Handle(&glspContext)
 		return nil, connection.Close()
+	case protocol.MethodCancelRequest:
+		// GLSP v0.2.2 loses IntegerOrString values while unmarshalling.
+		if request.Params == nil {
+			return nil, &jsonrpc2.Error{Code: jsonrpc2.CodeInvalidParams}
+		}
+		id, ok := cancellationRequestIDFromJSON(*request.Params)
+		if !ok {
+			return nil, &jsonrpc2.Error{Code: jsonrpc2.CodeInvalidParams}
+		}
+		server.cancelRequestID(id)
+		return nil, nil
 	default:
 		result, validMethod, validParams, err := server.handler.Handle(&glspContext)
+		if errors.Is(requestContext.Err(), context.Canceled) || errors.Is(err, context.Canceled) {
+			return nil, requestCancellationError()
+		}
 		if !validMethod {
 			return nil, &jsonrpc2.Error{
 				Code:    jsonrpc2.CodeMethodNotFound,

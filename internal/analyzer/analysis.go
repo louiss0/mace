@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -674,17 +675,28 @@ func analyzeDocumentAt(text string, documentPath string) analysisSnapshot {
 }
 
 func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir string) analysisSnapshot {
+	snapshot, _ := analyzeDocumentAtInRootContext(context.Background(), text, documentPath, importRootDir)
+	return snapshot
+}
+
+func analyzeDocumentAtInRootContext(context context.Context, text string, documentPath string, importRootDir string) (analysisSnapshot, error) {
 	snapshot := analysisSnapshot{}
 	snapshot.importRootDir = importRootDir
 	snapshot.text = text
 	snapshot.documentURI = pathURI(documentPath)
+	if err := context.Err(); err != nil {
+		return snapshot, err
+	}
 
 	tokens, lexErr := lex(text)
 	if lexErr != nil {
 		snapshot.diagnostics = []protocol.Diagnostic{diagnosticFromError(lexErr)}
-		return snapshot
+		return snapshot, nil
 	}
 	snapshot.tokens = tokens
+	if err := context.Err(); err != nil {
+		return snapshot, err
+	}
 
 	file, parseErr := parseFile(text)
 	if parseErr != nil {
@@ -693,7 +705,10 @@ func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir str
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, scriptBlockStructureCodeActions(text, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, variableFixTextCodeActions(text, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, arrayTextCodeActions(text, documentPath)...)
-		return snapshot
+		return snapshot, nil
+	}
+	if err := context.Err(); err != nil {
+		return snapshot, err
 	}
 
 	snapshot.file = &file
@@ -705,13 +720,22 @@ func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir str
 	snapshot.symbols = collectSemanticSymbols(file, tokens, nil, documentPath)
 	snapshot.symbolIndex = indexSymbols(snapshot.symbols)
 	snapshot.declarations = declarationsFromSymbols(snapshot.symbols)
+	if err := context.Err(); err != nil {
+		return snapshot, err
+	}
 
 	fileDiagnostics, fileActions := analyzeFileStructure(text, file, tokens, documentPath)
 	snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, fileActions...)
 	parseDirectiveWarning, hasParseDirectiveWarning := parseDirectiveWarningDiagnostic(text, file)
+	if err := context.Err(); err != nil {
+		return snapshot, err
+	}
 
 	processorInstance := processor.New()
 	result, processErr := processorInstance.ProcessInScope(text, importBaseDir, importRootDir)
+	if err := context.Err(); err != nil {
+		return snapshot, err
+	}
 	if processErr != nil {
 		snapshot.diagnostics = append(snapshot.diagnostics, fileDiagnostics...)
 		if shouldIgnoreParseValidationError(file, processErr) {
@@ -719,7 +743,7 @@ func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir str
 			unusedDiagnostics, unusedActions := unusedDeclarationAnalysis(text, file, tokens, documentPath)
 			snapshot.diagnostics = append(snapshot.diagnostics, unusedDiagnostics...)
 			snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, unusedActions...)
-			return snapshot
+			return snapshot, nil
 		}
 		if semanticDiagnostic, ok := semanticDiagnosticFromError(file, tokens, processErr); ok {
 			snapshot.diagnostics = append(snapshot.diagnostics, semanticDiagnostic)
@@ -728,7 +752,7 @@ func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir str
 			snapshot.diagnostics = append(snapshot.diagnostics, diagnosticFromError(processErr))
 		}
 		snapshot.diagnostics = append(snapshot.diagnostics, lo.Ternary(hasParseDirectiveWarning, []protocol.Diagnostic{parseDirectiveWarning}, nil)...)
-		return snapshot
+		return snapshot, nil
 	}
 
 	snapshot.result = &result
@@ -742,7 +766,10 @@ func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir str
 	snapshot.diagnostics = append(snapshot.diagnostics, unusedDiagnostics...)
 	snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, unusedActions...)
 
-	return snapshot
+	if err := context.Err(); err != nil {
+		return snapshot, err
+	}
+	return snapshot, nil
 }
 
 func analyzeCompletionContext(text string, documentPath string, position protocol.Position) analysisSnapshot {
@@ -755,22 +782,36 @@ func analyzeCompletionContext(text string, documentPath string, position protoco
 }
 
 func analyzeCompletionContextInRoot(text string, documentPath string, importRootDir string, position protocol.Position) analysisSnapshot {
-	snapshot := analyzeDocumentAtInRoot(text, documentPath, importRootDir)
+	snapshot, _ := analyzeCompletionContextInRootContext(context.Background(), text, documentPath, importRootDir, position)
+	return snapshot
+}
+
+func analyzeCompletionContextInRootContext(
+	context context.Context,
+	text string,
+	documentPath string,
+	importRootDir string,
+	position protocol.Position,
+) (analysisSnapshot, error) {
+	snapshot, err := analyzeDocumentAtInRootContext(context, text, documentPath, importRootDir)
+	if err != nil {
+		return snapshot, err
+	}
 	if snapshot.file != nil {
-		return snapshot
+		return snapshot, nil
 	}
 
 	if file, ok := partialScriptFile(text, position); ok {
-		return recoveredSnapshot(text, documentPath, file)
+		return recoveredSnapshot(text, documentPath, file), context.Err()
 	}
 
 	linePrefix := currentLinePrefix(text, position)
 	file := completionFile(document{text: text}, linePrefix)
 	if file == nil {
-		return snapshot
+		return snapshot, context.Err()
 	}
 
-	return recoveredSnapshot(text, documentPath, *file)
+	return recoveredSnapshot(text, documentPath, *file), context.Err()
 }
 
 func recoveredSnapshot(text string, documentPath string, file ast.File) analysisSnapshot {

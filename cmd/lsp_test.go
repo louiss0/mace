@@ -82,6 +82,14 @@ func openEmptyDocument(server *Server, uri protocol.DocumentUri, notifications *
 	didOpen(server, uri, "", notifications)
 }
 
+func cancelID(id jsonrpc2.ID) protocol.IntegerOrString {
+	if id.IsString {
+		return protocol.IntegerOrString{Value: id.Str}
+	}
+
+	return protocol.IntegerOrString{Value: protocol.Integer(id.Num)}
+}
+
 func didChange(server *Server, uri protocol.DocumentUri, version int32, text string, notifications *[]capturedNotification) {
 	_, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentDidChange, protocol.DidChangeTextDocumentParams{
 		TextDocument: protocol.VersionedTextDocumentIdentifier{
@@ -303,6 +311,239 @@ var _ = Describe("LSP server", func() {
 		tAssert.True(validMethod)
 		tAssert.True(validParams)
 		tAssert.NoError(err)
+	})
+
+	It("accepts request cancellation notifications", func() {
+		_, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodCancelRequest, protocol.CancelParams{
+			ID: protocol.IntegerOrString{Value: protocol.Integer(42)},
+		}, nil)
+
+		tAssert.True(validMethod)
+		tAssert.True(validParams)
+		tAssert.NoError(err)
+	})
+
+	It("cancels running requests with integer and string ids", func() {
+		negativeID := protocol.Integer(-42)
+		for _, id := range []jsonrpc2.ID{
+			{Num: 42},
+			{Num: uint64(negativeID)},
+			{Str: "completion-42", IsString: true},
+		} {
+			started := make(chan struct{})
+			server.handler.TextDocumentHover = func(glspContext *glsp.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
+				requestContext := server.requestContext(glspContext)
+				close(started)
+				<-requestContext.Done()
+				return nil, requestContext.Err()
+			}
+
+			requestParams := json.RawMessage(`{}`)
+			result := make(chan error, 1)
+			go func(requestID jsonrpc2.ID) {
+				_, err := server.handle(context.Background(), nil, &jsonrpc2.Request{
+					Method: protocol.MethodTextDocumentHover,
+					Params: &requestParams,
+					ID:     requestID,
+				})
+				result <- err
+			}(id)
+
+			<-started
+			cancelParams, err := json.Marshal(protocol.CancelParams{ID: cancelID(id)})
+			tAssert.NoError(err)
+			cancelPayload := json.RawMessage(cancelParams)
+			_, err = server.handle(context.Background(), nil, &jsonrpc2.Request{
+				Method: protocol.MethodCancelRequest,
+				Params: &cancelPayload,
+				Notif:  true,
+			})
+			tAssert.NoError(err)
+
+			var rpcError *jsonrpc2.Error
+			tAssert.ErrorAs(<-result, &rpcError)
+			if rpcError != nil {
+				tAssert.Equal(int64(-32800), rpcError.Code)
+			}
+			tAssert.Zero(server.activeRequestCount())
+		}
+	})
+
+	It("ignores cancellation for unknown and completed requests", func() {
+		cancelPayload := json.RawMessage(`{"id":404}`)
+		_, err := server.handle(context.Background(), nil, &jsonrpc2.Request{
+			Method: protocol.MethodCancelRequest,
+			Params: &cancelPayload,
+			Notif:  true,
+		})
+		tAssert.NoError(err)
+
+		requestParams := json.RawMessage(`{}`)
+		_, err = server.handle(context.Background(), nil, &jsonrpc2.Request{
+			Method: protocol.MethodTextDocumentHover,
+			Params: &requestParams,
+			ID:     jsonrpc2.ID{Num: 404},
+		})
+		tAssert.NoError(err)
+		tAssert.Zero(server.activeRequestCount())
+
+		_, err = server.handle(context.Background(), nil, &jsonrpc2.Request{
+			Method: protocol.MethodCancelRequest,
+			Params: &cancelPayload,
+			Notif:  true,
+		})
+		tAssert.NoError(err)
+		tAssert.Zero(server.activeRequestCount())
+	})
+
+	It("removes active requests after handler failures", func() {
+		server.handler.TextDocumentHover = func(context *glsp.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
+			return nil, fmt.Errorf("hover failed")
+		}
+		requestParams := json.RawMessage(`{}`)
+
+		_, err := server.handle(context.Background(), nil, &jsonrpc2.Request{
+			Method: protocol.MethodTextDocumentHover,
+			Params: &requestParams,
+			ID:     jsonrpc2.ID{Num: 1},
+		})
+
+		tAssert.Error(err)
+		tAssert.Zero(server.activeRequestCount())
+	})
+
+	It("cancels concurrent requests independently", func() {
+		started := make(chan jsonrpc2.ID, 2)
+		release := make(chan struct{})
+		server.handler.TextDocumentHover = func(glspContext *glsp.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
+			requestContext := server.requestContext(glspContext)
+			requestID, ok := server.requestID(glspContext)
+			tAssert.True(ok)
+			started <- requestID
+			select {
+			case <-requestContext.Done():
+				return nil, requestContext.Err()
+			case <-release:
+				return &protocol.Hover{}, nil
+			}
+		}
+
+		requestParams := json.RawMessage(`{}`)
+		results := make(chan error, 2)
+		for _, id := range []jsonrpc2.ID{{Num: 1}, {Num: 2}} {
+			go func(requestID jsonrpc2.ID) {
+				_, err := server.handle(context.Background(), nil, &jsonrpc2.Request{
+					Method: protocol.MethodTextDocumentHover,
+					Params: &requestParams,
+					ID:     requestID,
+				})
+				results <- err
+			}(id)
+		}
+		<-started
+		<-started
+
+		cancelPayload := json.RawMessage(`{"id":1}`)
+		_, err := server.handle(context.Background(), nil, &jsonrpc2.Request{
+			Method: protocol.MethodCancelRequest,
+			Params: &cancelPayload,
+			Notif:  true,
+		})
+		tAssert.NoError(err)
+		close(release)
+
+		errors := []error{<-results, <-results}
+		cancelled := 0
+		succeeded := 0
+		for _, resultErr := range errors {
+			if resultErr == nil {
+				succeeded++
+				continue
+			}
+			var rpcError *jsonrpc2.Error
+			if tAssert.ErrorAs(resultErr, &rpcError) && rpcError.Code == -32800 {
+				cancelled++
+			}
+		}
+		tAssert.Equal(1, cancelled)
+		tAssert.Equal(1, succeeded)
+		tAssert.Zero(server.activeRequestCount())
+	})
+
+	It("allows request completion to race safely with cancellation", func() {
+		for iteration := 0; iteration < 50; iteration++ {
+			release := make(chan struct{})
+			started := make(chan struct{})
+			server.handler.TextDocumentHover = func(glspContext *glsp.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
+				requestContext := server.requestContext(glspContext)
+				close(started)
+				select {
+				case <-requestContext.Done():
+					return nil, requestContext.Err()
+				case <-release:
+					return &protocol.Hover{}, nil
+				}
+			}
+
+			requestParams := json.RawMessage(`{}`)
+			result := make(chan error, 1)
+			go func() {
+				_, err := server.handle(context.Background(), nil, &jsonrpc2.Request{
+					Method: protocol.MethodTextDocumentHover,
+					Params: &requestParams,
+					ID:     jsonrpc2.ID{Num: 7},
+				})
+				result <- err
+			}()
+			<-started
+
+			cancelPayload := json.RawMessage(`{"id":7}`)
+			cancelDone := make(chan struct{})
+			go func() {
+				_, _ = server.handle(context.Background(), nil, &jsonrpc2.Request{
+					Method: protocol.MethodCancelRequest,
+					Params: &cancelPayload,
+					Notif:  true,
+				})
+				close(cancelDone)
+			}()
+			close(release)
+
+			err := <-result
+			<-cancelDone
+			if err != nil {
+				var rpcError *jsonrpc2.Error
+				tAssert.ErrorAs(err, &rpcError)
+				if rpcError != nil {
+					tAssert.Equal(requestCancelledCode, rpcError.Code)
+				}
+			}
+			tAssert.Zero(server.activeRequestCount())
+		}
+	})
+
+	It("does not respond to cancellation notifications", func() {
+		serverSide, clientSide := net.Pipe()
+		connection := jsonrpc2.NewConn(
+			context.Background(),
+			jsonrpc2.NewBufferedStream(serverSide, jsonrpc2.VSCodeObjectCodec{}),
+			server.jsonRPCHandler(),
+		)
+		defer func() { _ = connection.Close() }()
+		defer func() { _ = clientSide.Close() }()
+
+		payload := `{"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id":"unknown"}}`
+		_, err := fmt.Fprintf(clientSide, "Content-Length: %d\r\n\r\n%s", len(payload), payload)
+		tAssert.NoError(err)
+		tAssert.NoError(clientSide.SetReadDeadline(time.Now().Add(200 * time.Millisecond)))
+
+		buffer := make([]byte, 1)
+		_, err = clientSide.Read(buffer)
+		var networkError net.Error
+		tAssert.ErrorAs(err, &networkError)
+		if networkError != nil {
+			tAssert.True(networkError.Timeout())
+		}
 	})
 
 	It("reanalyzes open documents when watched Mace files change", func() {
