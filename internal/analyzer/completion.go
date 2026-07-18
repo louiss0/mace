@@ -2492,6 +2492,13 @@ func completionOutputFieldType(expression ast.Expression, model completionModel)
 		if !ok {
 			return nil, false
 		}
+		for _, element := range typed.Elements[1:] {
+			inferredType, found := completionOutputFieldType(element, model)
+			if !found {
+				return nil, false
+			}
+			elementType = mergedConditionalCompletionType(elementType, inferredType, model)
+		}
 		return ast.ArrayType{Element: elementType}, true
 	case ast.RecordLiteral:
 		fields := lo.Map(typed.Fields, func(field ast.RecordField, _ int) ast.SchemaField {

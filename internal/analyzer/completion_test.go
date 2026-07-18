@@ -2156,6 +2156,24 @@ from '../shared.mace' import base;
 			}
 		})
 
+		DescribeTable("infers every output array element",
+			func(output, expected string) {
+				file, err := parseFile(fmt.Sprintf("[output = 'data']\n{ value: %s, }", output))
+				tAssert.NoError(err)
+
+				fieldType, ok := completionOutputFieldType(file.Output.DataFields[0].Value, completionModel{})
+				tAssert.True(ok)
+				if ok {
+					tAssert.Equal(expected, typeReferenceDetail(fieldType))
+				}
+			},
+			Entry("string then int", `["one", 2]`, "array<variant[string, int]>"),
+			Entry("int then string", `[1, "two"]`, "array<variant[int, string]>"),
+			Entry("primitive variants", `["one", 2, 3.5, true]`, "array<variant[string, int, float, boolean]>"),
+			Entry("nested array variants", `[[1], ["two"]]`, "array<variant[array<int>, array<string>]>"),
+			Entry("record variants", `[{ name: "Ada" }, { count: 2 }]`, "array<variant[{ name: string }, { count: int }]>"),
+		)
+
 		DescribeTable("recursively infers conditional types through fifteen ternaries",
 			func(level int, expected string) {
 				alternatives := []ast.Expression{
