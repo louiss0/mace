@@ -75,7 +75,6 @@ var _ = Describe("Strings", func() {
 		tAssert.Equal("User", valueType{kind: ValueRecord, schemaName: "User"}.name())
 		tAssert.Contains(valueType{members: []valueType{{kind: ValueString}, {kind: ValueInt}}}.name(), "variant[")
 		tAssert.Contains(valueType{choiceValues: []Value{{Kind: ValueString, String: "Ada"}}}.name(), "choice[")
-		tAssert.Equal("nullable int", valueType{kind: ValueInt, nullable: true}.name())
 
 		stringValue, err := stringifyValue(Value{Kind: ValueString, String: "Ada"})
 		tAssert.NoError(err)

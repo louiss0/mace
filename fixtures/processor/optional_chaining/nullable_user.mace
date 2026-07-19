@@ -12,17 +12,20 @@ schema User: {
   profile: Profile,
 };
 
-nullable User missing_user = null;
-nullable User user = {
+User missing_user = null;
+User user = {
   records: { primary: "active", },
   profile: { address: { city: "Paris", }, },
 };
 string fallback = "";
+
+
+
 |===================================================|
 
-[output = data]
+[output = 'data']
 {
-  fallback_records: missing_user ? missing_user.records : {},
-  records: user ? user.records : {},
-  city: user ? user.profile.address?.city ?? fallback : ""
+  fallback: missing_user ? missing_user.records?.primary ?? "" : "",
+  records: user ? user.records : { primary: 'inactive' },
+  city: user ? user.profile.address?.city ?? fallback : 3
 }

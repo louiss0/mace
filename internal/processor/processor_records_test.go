@@ -7,16 +7,47 @@ import (
 )
 
 var _ = Describe("Record maps", func() {
+	It("processes kebab-case declarations, references, and record keys", func() {
+		result, err := New().Process(`|===|
+schema user-profile: {
+  display-name: string,
+};
+user-profile current-user = {
+  display-name: "Ada",
+};
+string greeting-message = current-user.display-name;
+|===|
+[output = 'data']
+{
+  greeting-message,
+  user-profile: {
+    display-name: current-user.display-name,
+    nested-record: {
+      record-key: greeting-message,
+    },
+  },
+}`)
+
+		tAssert.NoError(err)
+		assertExpectedValue(requireOutputValue(result, "greeting-message"), expectedValue{kind: ValueString, string: "Ada"})
+		assertExpectedValue(requireOutputValue(result, "user-profile"), expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+			"display-name": {kind: ValueString, string: "Ada"},
+			"nested-record": {kind: ValueRecord, record: map[string]expectedValue{
+				"record-key": {kind: ValueString, string: "Ada"},
+			}},
+		}})
+	})
+
 	It("preserves multiple record entries and resolves their member values", func() {
 		result, err := New().Process(`|===|
-type Dependencies: record<string>;
+alias Dependencies: record<string>;
 Dependencies dependencies = {
   pi_prompt_guard: "^1.0.0",
   pi_prompt_form: "^1.0.0",
   pi_prompt: "^1.0.0",
 };
 |===|
-[output = data]
+[output = 'data']
 {
   dependencies: dependencies,
   form: dependencies.pi_prompt_form,
@@ -33,17 +64,17 @@ Dependencies dependencies = {
 
 	It("rejects record entries that do not match their value type", func() {
 		_, err := New().Process(`|===|
-type Dependencies: record<string>;
+alias Dependencies: record<string>;
 Dependencies dependencies = { pi_prompt_guard: 1, };
 |===|
-[output = data]
+[output = 'data']
 { dependencies: dependencies, }`)
 
 		tAssert.ErrorContains(err, "type mismatch")
 	})
 
 	It("evaluates inline record literals", func() {
-		result, err := New().Process(`[output = data] { result: { name: "Ada", age: 30, }, }`)
+		result, err := New().Process(`[output = 'data'] { result: { name: "Ada", age: 30, }, }`)
 		tAssert.NoError(err)
 		assertExpectedValue(result.Output["result"], expectedValue{kind: ValueRecord, record: map[string]expectedValue{
 			"name": {kind: ValueString, string: "Ada"},
@@ -55,10 +86,10 @@ Dependencies dependencies = { pi_prompt_guard: 1, };
 		func(declarations string, valueType string, literal string) {
 			_, err := New().Process(fmt.Sprintf(`|===|
 %s
-type Packages: record<%s>;
+alias Packages: record<%s>;
 Packages packages = %s;
 |===|
-[output = data]
+[output = 'data']
 { packages: packages, }`, declarations, valueType, literal))
 
 			tAssert.NoError(err)
@@ -78,16 +109,16 @@ Packages packages = %s;
 		Entry("fusion", `
 schema Service: { name: string, };
 schema Versioned: { version: int, };
-type Deployment: fusion[Service, Versioned];`, "Deployment", `{ api: { name: "api", version: 1, }, }`),
+alias Deployment: fusion[Service, Versioned];`, "Deployment", `{ api: { name: "api", version: 1, }, }`),
 	)
 
 	DescribeTable("accepts every primitive variant combination as record values",
 		func(valueType string, literal string) {
 			_, err := New().Process(fmt.Sprintf(`|===|
-type Values: record<variant[%s]>;
+alias Values: record<variant[%s]>;
 Values values = %s;
 |===|
-[output = data]
+[output = 'data']
 { values: values, }`, valueType, literal))
 
 			tAssert.NoError(err)
@@ -114,10 +145,10 @@ Values values = %s;
 			valueType := recordMapTypeText(depth, "string")
 			literal := nestedRecordMapLiteralText(depth, `"enabled"`)
 			_, err := New().Process(fmt.Sprintf(`|===|
-type Packages: %s;
+alias Packages: %s;
 Packages packages = %s;
 |===|
-[output = data]
+[output = 'data']
 { packages: packages, }`, valueType, literal))
 
 			tAssert.NoError(err)
@@ -139,10 +170,10 @@ Packages packages = %s;
 			valueType := alternatingRecordArrayTypeText(depth, startsWithRecord)
 			literal := alternatingRecordArrayLiteralText(depth, startsWithRecord, `"enabled"`)
 			_, err := New().Process(fmt.Sprintf(`|===|
-type Packages: %s;
+alias Packages: %s;
 Packages packages = %s;
 |===|
-[output = data]
+[output = 'data']
 { packages: packages, }`, valueType, literal))
 
 			tAssert.NoError(err)
@@ -174,10 +205,10 @@ Packages packages = %s;
 			valueType := recordMapTypeText(depth, "string")
 			literal := nestedRecordMapLiteralText(depth, `"enabled"`)
 			_, err := New().Process(fmt.Sprintf(`|===|
-type Packages: variant[%s, %s];
+alias Packages: variant[%s, %s];
 Packages packages = %s;
 |===|
-[output = data]
+[output = 'data']
 { packages: packages, }`, valueType, recordMapTypeText(depth+1, "string"), literal))
 
 			tAssert.NoError(err)

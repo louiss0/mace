@@ -21,13 +21,13 @@ A reusable schema exposed as part of the public contract.
   },
 };
 
-type UserID: string /# A stable user identifier;
+alias UserID: string /# A stable user identifier;
 
-type Status: choice["Active", "Disabled"];
+alias Status: choice["Active", "Disabled"];
 
 
 |=========================================================|
-[output = schema]
+[output = 'schema']
 """
 # Public User Contract
 

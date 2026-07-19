@@ -22,10 +22,10 @@ var _ = Describe("Security", func() {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch r.URL.Path {
 			case "/schema.mace":
-				_, _ = io.WriteString(w, `[output = schema]
+				_, _ = io.WriteString(w, `[output = 'schema']
 { Foo: Foo, }`)
 			case "/nested/schema.mace":
-				_, _ = io.WriteString(w, `[output = schema]
+				_, _ = io.WriteString(w, `[output = 'schema']
 { Nested: Nested, }`)
 			default:
 				w.WriteHeader(http.StatusNotFound)
@@ -44,9 +44,9 @@ var _ = Describe("Security", func() {
 	It("treats runtime input strings as data, not paths", func() {
 		processor := NewWithInput(map[string]Value{"path": {Kind: ValueString, String: "./schema.mace"}})
 		result, err := processor.Process(`|===|
-nullable string path = "./schema.mace";
+string path = "./schema.mace";
 |===|
-[output = data]
+[output = 'data']
 {
   path: path,
 }`)

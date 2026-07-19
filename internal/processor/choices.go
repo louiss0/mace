@@ -28,7 +28,7 @@ func resolveChoiceValues(members []ast.Expression, types *typeRegistry, seen map
 		for _, value := range resolved {
 			key, _ := scalarValueKey(value)
 			if _, exists := seenValues[key]; exists {
-				continue
+				return nil, validationErrorf("duplicate choice member %s", scalarValueDisplay(value))
 			}
 			seenValues[key] = struct{}{}
 			values = append(values, value)
@@ -40,30 +40,6 @@ func resolveChoiceValues(members []ast.Expression, types *typeRegistry, seen map
 
 func resolveChoiceMemberValues(member ast.Expression, types *typeRegistry, seen map[string]struct{}) ([]Value, error) {
 	switch typed := member.(type) {
-	case ast.Identifier:
-		if _, exists := seen[typed.Name]; exists {
-			return nil, validationErrorf("cyclic choice alias %q", typed.Name)
-		}
-
-		resolved, ok, err := types.Resolve(typed.Name)
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			return nil, validationErrorf("unknown choice member %q", typed.Name)
-		}
-
-		choice, ok := resolved.(ast.ChoiceType)
-		if !ok {
-			return nil, validationErrorf("choice member %q must resolve to a choice type", typed.Name)
-		}
-
-		nextSeen := map[string]struct{}{}
-		for name := range seen {
-			nextSeen[name] = struct{}{}
-		}
-		nextSeen[typed.Name] = struct{}{}
-		return resolveChoiceValues(choice.Members, types, nextSeen)
 	case ast.StringLiteral:
 		value, err := parseStaticString(typed.Lexeme)
 		if err != nil {
@@ -97,7 +73,7 @@ func resolveChoiceMemberValues(member ast.Expression, types *typeRegistry, seen 
 	case ast.BooleanLiteral:
 		return []Value{{Kind: ValueBoolean, Boolean: typed.Value}}, nil
 	default:
-		return nil, validationErrorf("choice members must be literals or choice names")
+		return nil, validationErrorf("choice members must be literals; use fusion to merge choice types")
 	}
 }
 

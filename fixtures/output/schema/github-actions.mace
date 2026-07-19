@@ -1,5 +1,5 @@
 
-[output = schema]
+[output = 'schema']
 {
   workflow_name: string,
   runner: string,

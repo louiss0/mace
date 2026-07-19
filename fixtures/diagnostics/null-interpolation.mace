@@ -1,0 +1,5 @@
+|===|
+string value = null;
+string invalid = "$(value)";
+|===|
+[output = 'data'] { invalid, }

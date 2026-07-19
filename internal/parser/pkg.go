@@ -18,9 +18,7 @@ const (
 	precedenceBitwiseOr
 	precedenceBitwiseXor
 	precedenceBitwiseAnd
-	precedenceMerge
 	precedenceEquality
-	precedenceTypeTest
 	precedenceRelational
 	precedenceShift
 	precedenceAdditive
@@ -136,7 +134,7 @@ func (p *Parser) parseImportDeclaration() (ast.ImportDeclaration, error) {
 		return ast.ImportDeclaration{}, err
 	}
 
-	pathToken, err := p.consume(lexer.TokenString, "parser: expected string literal in import")
+	pathToken, err := p.consumeStaticPath("parser: expected static single-quoted path in import")
 	if err != nil {
 		return ast.ImportDeclaration{}, err
 	}
@@ -223,7 +221,8 @@ func (p *Parser) consumeImportSeparator() error {
 }
 
 func (p *Parser) parseScriptBlock() (ast.ScriptBlock, error) {
-	if _, err := p.consume(lexer.TokenScriptDelimiter, "parser: expected script delimiter"); err != nil {
+	openingDelimiter, err := p.consume(lexer.TokenScriptDelimiter, "parser: expected script delimiter")
+	if err != nil {
 		return ast.ScriptBlock{}, err
 	}
 
@@ -252,8 +251,12 @@ func (p *Parser) parseScriptBlock() (ast.ScriptBlock, error) {
 		items = append(items, declaration)
 	}
 
-	if _, err := p.consume(lexer.TokenScriptDelimiter, "parser: expected closing script delimiter"); err != nil {
+	closingDelimiter, err := p.consume(lexer.TokenScriptDelimiter, "parser: expected closing script delimiter")
+	if err != nil {
 		return ast.ScriptBlock{}, err
+	}
+	if openingDelimiter.Lexeme != closingDelimiter.Lexeme {
+		return ast.ScriptBlock{}, p.unexpectedTokenError("parser: script block delimiters must match")
 	}
 
 	return ast.ScriptBlock{Imports: imports, Items: items}, nil
@@ -261,7 +264,7 @@ func (p *Parser) parseScriptBlock() (ast.ScriptBlock, error) {
 
 func (p *Parser) parseDeclaration() (ast.Declaration, error) {
 	switch p.current().Type {
-	case lexer.TokenTypeKeyword:
+	case lexer.TokenAliasKeyword:
 		return p.parseTypeDeclaration()
 	case lexer.TokenSchema:
 		return p.parseSchemaDeclaration()
@@ -275,12 +278,6 @@ func (p *Parser) parseDeclaration() (ast.Declaration, error) {
 }
 
 func (p *Parser) parseVariableDeclaration() (ast.Declaration, error) {
-	nullable := false
-	if p.current().Type == lexer.TokenNullable {
-		nullable = true
-		p.advance()
-	}
-
 	typeRef, err := p.parseTypeReference()
 	if err != nil {
 		return nil, err
@@ -311,7 +308,6 @@ func (p *Parser) parseVariableDeclaration() (ast.Declaration, error) {
 	}
 
 	return ast.VariableDeclaration{
-		Nullable:    nullable,
 		HasValue:    hasValue,
 		Type:        typeRef,
 		NameToken:   nameToken,
@@ -322,7 +318,7 @@ func (p *Parser) parseVariableDeclaration() (ast.Declaration, error) {
 }
 
 func (p *Parser) parseTypeDeclaration() (ast.Declaration, error) {
-	if _, err := p.consume(lexer.TokenTypeKeyword, "parser: expected 'type'"); err != nil {
+	if _, err := p.consume(lexer.TokenAliasKeyword, "parser: expected 'alias'"); err != nil {
 		return nil, err
 	}
 
@@ -634,30 +630,29 @@ func (p *Parser) parseOutputDirective() ([]ast.OutputDirective, error) {
 }
 
 func (p *Parser) parseDirectivePair() (ast.OutputDirective, error) {
-	switch p.current().Type {
-	case lexer.TokenOutput:
+	switch p.current().Lexeme {
+	case "output":
 		p.advance()
 		if _, err := p.consume(lexer.TokenAssign, "parser: expected '=' after output directive"); err != nil {
 			return ast.OutputDirective{}, err
 		}
 
-		valueToken := p.current()
-		if valueToken.Type != lexer.TokenData && valueToken.Type != lexer.TokenSchema {
-			return ast.OutputDirective{}, p.unexpectedTokenError("parser: expected 'data' or 'schema' in output directive")
+		valueToken, err := p.consumeStaticPath("parser: expected 'data' or 'schema' string in output directive")
+		if err != nil {
+			return ast.OutputDirective{}, err
 		}
-		p.advance()
-
-		return ast.OutputDirective{
-			Kind:  ast.OutputDirectiveOutput,
-			Value: valueToken.Lexeme,
-		}, nil
-	case lexer.TokenSchemaFile:
+		mode := strings.Trim(valueToken.Lexeme, `'`)
+		if mode != "data" && mode != "schema" {
+			return ast.OutputDirective{}, p.unexpectedTokenError("parser: expected \"data\" or \"schema\" in output directive")
+		}
+		return ast.OutputDirective{Kind: ast.OutputDirectiveOutput, Value: mode}, nil
+	case "schema_file":
 		p.advance()
 		if _, err := p.consume(lexer.TokenAssign, "parser: expected '=' after schema_file directive"); err != nil {
 			return ast.OutputDirective{}, err
 		}
 
-		pathToken, err := p.consume(lexer.TokenString, "parser: expected string literal in schema_file directive")
+		pathToken, err := p.consumeStaticPath("parser: expected static single-quoted path in schema_file directive")
 		if err != nil {
 			return ast.OutputDirective{}, err
 		}
@@ -666,7 +661,7 @@ func (p *Parser) parseDirectivePair() (ast.OutputDirective, error) {
 			Kind:  ast.OutputDirectiveSchemaFile,
 			Value: pathToken.Lexeme,
 		}, nil
-	case lexer.TokenParse:
+	case "parse":
 		p.advance()
 		if _, err := p.consume(lexer.TokenAssign, "parser: expected '=' after parse directive"); err != nil {
 			return ast.OutputDirective{}, err
@@ -681,13 +676,13 @@ func (p *Parser) parseDirectivePair() (ast.OutputDirective, error) {
 			Kind:  ast.OutputDirectiveParse,
 			Value: nameToken.Lexeme,
 		}, nil
-	case lexer.TokenParseFile:
+	case "parse_file":
 		p.advance()
 		if _, err := p.consume(lexer.TokenAssign, "parser: expected '=' after parse_file directive"); err != nil {
 			return ast.OutputDirective{}, err
 		}
 
-		pathToken, err := p.consume(lexer.TokenString, "parser: expected string literal in parse_file directive")
+		pathToken, err := p.consumeStaticPath("parser: expected static single-quoted path in parse_file directive")
 		if err != nil {
 			return ast.OutputDirective{}, err
 		}
@@ -696,7 +691,7 @@ func (p *Parser) parseDirectivePair() (ast.OutputDirective, error) {
 			Kind:  ast.OutputDirectiveParseFile,
 			Value: pathToken.Lexeme,
 		}, nil
-	case lexer.TokenSchema:
+	case "schema":
 		p.advance()
 		if _, err := p.consume(lexer.TokenAssign, "parser: expected '=' after schema directive"); err != nil {
 			return ast.OutputDirective{}, err
@@ -714,6 +709,15 @@ func (p *Parser) parseDirectivePair() (ast.OutputDirective, error) {
 	default:
 		return ast.OutputDirective{}, p.unexpectedTokenError("parser: expected directive pair")
 	}
+}
+
+func (p *Parser) consumeStaticPath(message string) (lexer.Token, error) {
+	token := p.current()
+	if token.Type != lexer.TokenString || len(token.Lexeme) < 2 || token.Lexeme[0] != '\'' || token.Lexeme[len(token.Lexeme)-1] != '\'' || strings.ContainsAny(token.Lexeme, "\\\r\n") || strings.Contains(token.Lexeme, "$(") {
+		return lexer.Token{}, p.unexpectedTokenError(message)
+	}
+	p.advance()
+	return token, nil
 }
 
 func (p *Parser) parseOutputField() (ast.OutputField, error) {
@@ -831,7 +835,7 @@ func (p *Parser) parseFieldHeader(context string) (lexer.Token, string, bool, er
 
 func isFieldNameToken(tokenType lexer.TokenType) bool {
 	switch tokenType {
-	case lexer.TokenIdentifier, lexer.TokenTypeKeyword, lexer.TokenSchema, lexer.TokenOutput, lexer.TokenParse, lexer.TokenParseFile, lexer.TokenSchemaFile, lexer.TokenData, lexer.TokenFrom, lexer.TokenImport, lexer.TokenRecord:
+	case lexer.TokenIdentifier, lexer.TokenAliasKeyword, lexer.TokenSchema, lexer.TokenOutput, lexer.TokenParse, lexer.TokenParseFile, lexer.TokenSchemaFile, lexer.TokenData, lexer.TokenFrom, lexer.TokenImport, lexer.TokenRecord:
 		return true
 	default:
 		return false
@@ -889,6 +893,9 @@ func (p *Parser) parseTypeReference() (ast.TypeReference, error) {
 				break
 			}
 			p.advance()
+			if p.current().Type == lexer.TokenRBracket {
+				break
+			}
 		}
 		if _, err := p.consume(lexer.TokenRBracket, "parser: expected ']' after fusion type"); err != nil {
 			return nil, err
@@ -920,7 +927,7 @@ func (p *Parser) parseTypeReference() (ast.TypeReference, error) {
 		return p.parseChoiceType()
 	case lexer.TokenLBrace:
 		return p.parseRecordType()
-	case lexer.TokenIdentifier, lexer.TokenTypeKeyword:
+	case lexer.TokenIdentifier, lexer.TokenAliasKeyword:
 		token := p.current()
 		p.advance()
 		return ast.NamedType{Token: token, Name: token.Lexeme}, nil
@@ -978,11 +985,11 @@ func (p *Parser) parseChoiceMember() (ast.Expression, error) {
 	case lexer.TokenBoolean:
 		p.advance()
 		return ast.BooleanLiteral{Token: token, Value: token.Lexeme == "true"}, nil
-	case lexer.TokenIdentifier, lexer.TokenTypeKeyword, lexer.TokenRecord:
+	case lexer.TokenIdentifier, lexer.TokenAliasKeyword, lexer.TokenRecord:
 		p.advance()
 		return ast.Identifier{Token: token, Name: token.Lexeme}, nil
 	default:
-		return nil, p.unexpectedTokenError("parser: expected literal or choice name")
+		return nil, p.unexpectedTokenError("parser: expected choice literal or name")
 	}
 }
 
@@ -1026,8 +1033,6 @@ func (p *Parser) parseExpression(precedence int) (ast.Expression, error) {
 			left, err = p.parseConditionalExpression(left, operator)
 		case lexer.TokenCoalesce:
 			left, err = p.parseCoalesceExpression(left, operator)
-		case lexer.TokenIs:
-			left, err = p.parseTypeTestExpression(left, operator)
 		default:
 			left, err = p.parseInfixExpression(left, operator)
 		}
@@ -1037,12 +1042,19 @@ func (p *Parser) parseExpression(precedence int) (ast.Expression, error) {
 		}
 	}
 
+	if grouped, ok := left.(ast.GroupedExpression); ok {
+		if err := p.validateGroupedMathExpression(grouped, precedence); err != nil {
+			return nil, err
+		}
+		return grouped.Expression, nil
+	}
+
 	return left, nil
 }
 
 func (p *Parser) parsePrefix(token lexer.Token) (ast.Expression, error) {
 	switch token.Type {
-	case lexer.TokenIdentifier, lexer.TokenTypeKeyword, lexer.TokenRecord:
+	case lexer.TokenIdentifier, lexer.TokenAliasKeyword, lexer.TokenRecord:
 		p.advance()
 		return ast.Identifier{Token: token, Name: token.Lexeme}, nil
 	case lexer.TokenString:
@@ -1075,6 +1087,7 @@ func (p *Parser) parsePrefix(token lexer.Token) (ast.Expression, error) {
 	case lexer.TokenLBrace:
 		return p.parseRecordLiteral()
 	case lexer.TokenLParen:
+		startToken := p.current()
 		p.advance()
 		expression, err := p.parseExpression(precedenceLowest)
 		if err != nil {
@@ -1083,7 +1096,9 @@ func (p *Parser) parsePrefix(token lexer.Token) (ast.Expression, error) {
 		if _, err := p.consume(lexer.TokenRParen, "parser: expected ')' after expression"); err != nil {
 			return nil, err
 		}
-		return expression, nil
+		return ast.GroupedExpression{StartToken: startToken, Expression: expression}, nil
+	case lexer.TokenMatch:
+		return p.parseMatchExpression()
 	case lexer.TokenBang, lexer.TokenTilde, lexer.TokenPlus, lexer.TokenMinus:
 		p.advance()
 		right, err := p.parseExpression(precedencePrefix)
@@ -1167,6 +1182,9 @@ func (p *Parser) parseArrayLiteral() (ast.Expression, error) {
 				break
 			}
 			p.advance()
+			if p.current().Type == lexer.TokenRBracket {
+				break
+			}
 		}
 	}
 
@@ -1342,6 +1360,10 @@ func (p *Parser) mergeInlineDescriptions(context string, leading string, trailin
 
 func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token) (ast.Expression, error) {
 	if operator.Type == lexer.TokenDot || operator.Type == lexer.TokenOptionalDot {
+		if _, ok := left.(ast.GroupedExpression); ok {
+			return nil, p.invalidGroupedExpressionError(operator)
+		}
+
 		memberToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier after member access operator")
 		if err != nil {
 			return nil, err
@@ -1349,6 +1371,16 @@ func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token)
 		return ast.MemberAccess{Target: left, Name: memberToken.Lexeme, Optional: operator.Type == lexer.TokenOptionalDot}, nil
 	}
 
+	if grouped, ok := left.(ast.GroupedExpression); ok {
+		groupedPrecedence := groupedArithmeticPrecedence(grouped)
+		operatorPrecedence := p.precedenceFor(operator.Type)
+		changesPrecedence := groupedPrecedence < operatorPrecedence
+		changesExponentAssociativity := operator.Type == lexer.TokenDoubleStar && groupedPrecedence == precedenceExponent
+		if !isArithmeticOperator(operator.Type) || (!changesPrecedence && !changesExponentAssociativity) {
+			return nil, p.invalidGroupedExpressionError(grouped.StartToken)
+		}
+		left = grouped.Expression
+	}
 	precedence := p.precedenceFor(operator.Type)
 	rightPrecedence := precedence
 	if operator.Type == lexer.TokenDoubleStar {
@@ -1367,43 +1399,36 @@ func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token)
 	}, nil
 }
 
-func (p *Parser) parseTypeTestExpression(left ast.Expression, operator lexer.Token) (ast.Expression, error) {
-	if _, chained := left.(ast.TypeTestExpression); chained {
-		return nil, p.diagnosticError(operator, diagnostic.Code("mace.syntax.invalid-is-type"), "parser: chained 'is' expressions are not allowed")
-	}
-	if p.current().Type == lexer.TokenEOF {
-		return nil, p.diagnosticError(p.current(), diagnostic.Code("mace.syntax.is-missing-type"), "parser: expected type reference after 'is'")
-	}
-
-	targetType, err := p.parseTypeReference()
-	if err != nil {
-		return nil, p.diagnosticError(p.current(), diagnostic.Code("mace.syntax.invalid-is-type"), "parser: expected valid type reference after 'is'")
-	}
-
-	return ast.TypeTestExpression{
-		Expression: left,
-		TargetType: targetType,
-		EndToken:   p.tokens[p.position-1],
-	}, nil
-}
-
 func (p *Parser) parseConditionalExpression(left ast.Expression, operator lexer.Token) (ast.Expression, error) {
 	if operator.Type != lexer.TokenQuestion {
 		return nil, p.unexpectedTokenError("parser: expected '?' for conditional expression")
 	}
 
-	thenExpression, err := p.parseExpression(precedenceLowest)
+	if grouped, ok := left.(ast.GroupedExpression); ok {
+		return nil, p.invalidGroupedExpressionError(grouped.StartToken)
+	}
+	if expressionContainsConditional(left) {
+		return nil, p.diagnosticError(operator, diagnostic.Code("mace.syntax.nested-conditional"), "parser: nested conditional expressions are not allowed")
+	}
+
+	thenExpression, err := p.parseExpression(precedenceTernary)
 	if err != nil {
 		return nil, err
+	}
+	if p.current().Type == lexer.TokenQuestion {
+		return nil, p.diagnosticError(p.current(), diagnostic.Code("mace.syntax.nested-conditional"), "parser: nested conditional expressions are not allowed")
 	}
 
 	if _, err := p.consume(lexer.TokenColon, "parser: expected ':' in conditional expression"); err != nil {
 		return nil, err
 	}
 
-	elseExpression, err := p.parseExpression(precedenceTernary - 1)
+	elseExpression, err := p.parseExpression(precedenceTernary)
 	if err != nil {
 		return nil, err
+	}
+	if expressionContainsConditional(thenExpression) || expressionContainsConditional(elseExpression) {
+		return nil, p.diagnosticError(operator, diagnostic.Code("mace.syntax.nested-conditional"), "parser: nested conditional expressions are not allowed")
 	}
 
 	return ast.ConditionalExpression{
@@ -1413,7 +1438,156 @@ func (p *Parser) parseConditionalExpression(left ast.Expression, operator lexer.
 	}, nil
 }
 
+func unwrapGroupedExpression(expression ast.Expression) ast.Expression {
+	for {
+		grouped, ok := expression.(ast.GroupedExpression)
+		if !ok {
+			return expression
+		}
+		expression = grouped.Expression
+	}
+}
+
+func (p *Parser) validateGroupedMathExpression(grouped ast.GroupedExpression, surroundingPrecedence int) error {
+	if surroundingPrecedence == precedenceLowest || groupedArithmeticPrecedence(grouped) > surroundingPrecedence {
+		return p.invalidGroupedExpressionError(grouped.StartToken)
+	}
+	return nil
+}
+
+func (p *Parser) invalidGroupedExpressionError(token lexer.Token) error {
+	return p.diagnosticError(
+		token,
+		diagnostic.Code("mace.syntax.invalid-grouped-expression"),
+		"parser: parentheses may only alter arithmetic precedence",
+	)
+}
+
+func groupedArithmeticPrecedence(grouped ast.GroupedExpression) int {
+	infix, ok := unwrapGroupedExpression(grouped.Expression).(ast.InfixExpression)
+	if !ok || !isArithmeticOperator(infix.Operator) {
+		return precedenceMember
+	}
+
+	switch infix.Operator {
+	case lexer.TokenPlus, lexer.TokenMinus:
+		return precedenceAdditive
+	case lexer.TokenStar, lexer.TokenSlash, lexer.TokenPercent:
+		return precedenceMultiplicative
+	case lexer.TokenDoubleStar:
+		return precedenceExponent
+	default:
+		return precedenceMember
+	}
+}
+
+func isArithmeticOperator(operator lexer.TokenType) bool {
+	switch operator {
+	case lexer.TokenPlus, lexer.TokenMinus, lexer.TokenStar, lexer.TokenSlash, lexer.TokenPercent, lexer.TokenDoubleStar:
+		return true
+	default:
+		return false
+	}
+}
+
+func expressionContainsConditional(expression ast.Expression) bool {
+	switch typed := expression.(type) {
+	case ast.ConditionalExpression:
+		return true
+	case ast.ArrayLiteral:
+		for _, element := range typed.Elements {
+			if expressionContainsConditional(element) {
+				return true
+			}
+		}
+	case ast.RecordLiteral:
+		for _, field := range typed.Fields {
+			if expressionContainsConditional(field.Value) {
+				return true
+			}
+		}
+	case ast.MemberAccess:
+		return expressionContainsConditional(typed.Target)
+	case ast.PrefixExpression:
+		return expressionContainsConditional(typed.Right)
+	case ast.InfixExpression:
+		return expressionContainsConditional(typed.Left) || expressionContainsConditional(typed.Right)
+	case ast.MatchExpression:
+		if expressionContainsConditional(typed.Value) {
+			return true
+		}
+		for _, arm := range typed.Arms {
+			if expressionContainsConditional(arm.Value) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (p *Parser) parseMatchExpression() (ast.Expression, error) {
+	matchToken, err := p.consume(lexer.TokenMatch, "parser: expected 'match'")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := p.consume(lexer.TokenLParen, "parser: expected '(' after 'match'"); err != nil {
+		return nil, err
+	}
+	value, err := p.parseExpression(precedenceLowest)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := p.consume(lexer.TokenRParen, "parser: expected ')' after match value"); err != nil {
+		return nil, err
+	}
+	if _, err := p.consume(lexer.TokenLBrace, "parser: expected '{' before match arms"); err != nil {
+		return nil, err
+	}
+
+	arms := []ast.MatchArm{}
+	for p.current().Type != lexer.TokenRBrace && !p.isAtEnd() {
+		pattern, err := p.parseMatchPattern()
+		if err != nil {
+			return nil, err
+		}
+		if _, err := p.consume(lexer.TokenArrow, "parser: expected '=>' after match pattern"); err != nil {
+			return nil, err
+		}
+		armValue, err := p.parseExpression(precedenceLowest)
+		if err != nil {
+			return nil, err
+		}
+		arms = append(arms, ast.MatchArm{Pattern: pattern, Value: armValue})
+		if p.current().Type != lexer.TokenComma {
+			return nil, p.unexpectedTokenError("parser: expected ',' after match arm")
+		}
+		p.advance()
+	}
+	endToken, err := p.consume(lexer.TokenRBrace, "parser: expected '}' after match arms")
+	if err != nil {
+		return nil, err
+	}
+	if len(arms) == 0 {
+		return nil, p.diagnosticError(endToken, diagnostic.Code("mace.syntax.empty-match"), "parser: match expression requires at least one arm")
+	}
+	return ast.MatchExpression{MatchToken: matchToken, Value: value, Arms: arms, EndToken: endToken}, nil
+}
+
+func (p *Parser) parseMatchPattern() (ast.MatchPattern, error) {
+	switch p.current().Type {
+	case lexer.TokenString, lexer.TokenInt, lexer.TokenFloat, lexer.TokenHexInt, lexer.TokenHexFloat, lexer.TokenBoolean:
+		literal, err := p.parsePrefix(p.current())
+		return ast.MatchPattern{Literal: literal}, err
+	default:
+		typeReference, err := p.parseTypeReference()
+		return ast.MatchPattern{Type: typeReference}, err
+	}
+}
+
 func (p *Parser) parseCoalesceExpression(left ast.Expression, operator lexer.Token) (ast.Expression, error) {
+	if grouped, ok := left.(ast.GroupedExpression); ok {
+		return nil, p.invalidGroupedExpressionError(grouped.StartToken)
+	}
 	right, err := p.parseExpression(precedenceCoalesce - 1)
 	if err != nil {
 		return nil, err
@@ -1479,11 +1653,7 @@ func (p *Parser) precedenceFor(tokenType lexer.TokenType) int {
 		return precedenceBitwiseAnd
 	case lexer.TokenEqualEqual, lexer.TokenNotEqual:
 		return precedenceEquality
-	case lexer.TokenIs:
-		return precedenceTypeTest
-	case lexer.TokenMerge:
-		return precedenceMerge
-	case lexer.TokenLess, lexer.TokenLessEqual, lexer.TokenGreater, lexer.TokenGreaterEqual, lexer.TokenIn:
+	case lexer.TokenLess, lexer.TokenLessEqual, lexer.TokenGreater, lexer.TokenGreaterEqual:
 		return precedenceRelational
 	case lexer.TokenShiftLeft, lexer.TokenShiftRight, lexer.TokenShiftRightUnsigned:
 		return precedenceShift

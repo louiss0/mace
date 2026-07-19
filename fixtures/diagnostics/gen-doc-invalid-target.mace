@@ -1,8 +1,9 @@
 |===|
-type Status: string;
+schema User: { name: string, };
+User profile = { name: 'Ada', };
 
-gen_doc Status {
+gen_doc profile {
   summary: "Invalid target.",
 };
 |===|
-[output = data] {}
+[output = 'data'] {}

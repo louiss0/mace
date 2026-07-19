@@ -19,7 +19,7 @@ schema InlineConfig: {
   content: string,
 };
 
-type Config: variant[
+alias Config: variant[
   LocalConfig,
   RemoteConfig,
   EnvironmentConfig,
@@ -72,13 +72,19 @@ string inlineSource =
   inlineConfig is SecretConfig ? inlineConfig.secret :
   inlineConfig is InlineConfig ? inlineConfig.content :
   "unknown";
+
+  LocalConfig trueLocalConfig = {path: "", };
+
+  //string parse_file = trueLocalConfig.path ;
+
 |===|
 
-[output = data]
+[output = 'data']
 {
   local: localSource,
   remote: remoteSource,
   environment: environmentSource,
   secret: secretSource,
   inline: inlineSource,
+  foo: trueLocalConfig.path,
 }

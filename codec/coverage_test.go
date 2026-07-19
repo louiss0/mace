@@ -102,7 +102,7 @@ func TestCodecCoveragePackageBranches(t *testing.T) {
 	_, err = ParseFileWithInput(filepath.Join(t.TempDir(), "missing.mace"), nil)
 	require.Error(t, err)
 	require.Error(t, UnmarshalWithInput("bad", nil, map[string]any{}))
-	require.Error(t, UnmarshalWithInput("[output = data]\nstring data = \"x\";", nil, (*map[string]any)(nil)))
+	require.Error(t, UnmarshalWithInput("[output = 'data']\nstring data = \"x\";", nil, (*map[string]any)(nil)))
 	require.Error(t, func() error { _, e := MarshalOutput("x"); return e }())
 	_, err = ImportJSONFile(filepath.Join(t.TempDir(), "missing.json"))
 	require.Error(t, err)
@@ -330,7 +330,7 @@ func TestCodecCoverageRemainingBranches(t *testing.T) {
 	require.False(t, isMaceIdentifier(""))
 	_ = CheckYAML("bad-key: 1\nseq: !seq [1]\n")
 
-	require.Error(t, UnmarshalWithInput("[output = data]\nstring data = \"x\";", nil, nil))
+	require.Error(t, UnmarshalWithInput("[output = 'data']\nstring data = \"x\";", nil, nil))
 	_, err = MarshalOutput(make(chan int))
 	require.Error(t, err)
 	_, err = parseImportedJSON("{} [")

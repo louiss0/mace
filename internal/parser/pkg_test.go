@@ -1,13 +1,12 @@
 package parser
 
 import (
-	"errors"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/louiss0/mace/internal/diagnostic"
 	"github.com/louiss0/mace/internal/lexer"
 	"github.com/louiss0/mace/internal/parser/ast"
 )
@@ -135,15 +134,6 @@ func requireInfix(expression ast.Expression, operator lexer.TokenType) ast.Infix
 	return infix
 }
 
-func requireTypeTest(expression ast.Expression) ast.TypeTestExpression {
-	typeTest, ok := expression.(ast.TypeTestExpression)
-	tAssert.True(ok)
-	if !ok {
-		return ast.TypeTestExpression{}
-	}
-	return typeTest
-}
-
 func requireConditional(expression ast.Expression) ast.ConditionalExpression {
 	conditional, ok := expression.(ast.ConditionalExpression)
 	tAssert.True(ok)
@@ -205,6 +195,9 @@ var _ = Describe("Parser", func() {
 		Entry("hex float literal", "0x2.8", func(expression ast.Expression) {
 			requireHexFloatLiteral(expression, "0x2.8")
 		}),
+		Entry("long hex float literal", "0x"+strings.Repeat("F", 256)+".0", func(expression ast.Expression) {
+			requireHexFloatLiteral(expression, "0x"+strings.Repeat("F", 256)+".0")
+		}),
 		Entry("float literal", "3.14", func(expression ast.Expression) {
 			literal, ok := expression.(ast.FloatLiteral)
 			tAssert.True(ok)
@@ -228,79 +221,11 @@ var _ = Describe("Parser", func() {
 		}),
 	)
 
-	DescribeTable("parses type-test targets as type references",
-		func(input string, assertTarget func(ast.TypeReference)) {
-			expression, err := parseExpressionInput(input)
-			tAssert.NoError(err)
-			typeTest := requireTypeTest(expression)
-			requireIdentifier(typeTest.Expression, "value")
-			assertTarget(typeTest.TargetType)
-		},
-		Entry("primitive", "value is string", func(target ast.TypeReference) {
-			primitive, ok := target.(ast.PrimitiveType)
-			tAssert.True(ok)
-			tAssert.Equal("string", primitive.Name)
-		}),
-		Entry("schema", "value is LocalConfig", func(target ast.TypeReference) {
-			named, ok := target.(ast.NamedType)
-			tAssert.True(ok)
-			tAssert.Equal("LocalConfig", named.Name)
-		}),
-		Entry("array", "value is array<string>", func(target ast.TypeReference) {
-			array, ok := target.(ast.ArrayType)
-			tAssert.True(ok)
-			_, primitive := array.Element.(ast.PrimitiveType)
-			tAssert.True(primitive)
-		}),
-	)
-
-	It("preserves type-test operands and source range", func() {
-		expression, err := parseExpressionInput("record.value is string")
+	It("treats is as an ordinary identifier", func() {
+		expression, err := parseExpressionInput("is")
 		tAssert.NoError(err)
-		typeTest := requireTypeTest(expression)
-		requireMemberAccess(typeTest.Expression, "record", "value")
-		tAssert.Equal(ast.SourcePosition{Line: 1, Column: 1}, typeTest.Range().Start)
-		tAssert.Equal(ast.SourcePosition{Line: 1, Column: 23}, typeTest.Range().End)
+		requireIdentifier(expression, "is")
 	})
-
-	It("rejects indexing syntax", func() {
-		_, err := parseExpressionInput("values[0] is string")
-
-		tAssert.Error(err)
-	})
-
-	It("applies type-test precedence", func() {
-		expression, err := parseExpressionInput("condition && value is string == true")
-		tAssert.NoError(err)
-		logical := requireInfix(expression, lexer.TokenAndAnd)
-		requireIdentifier(logical.Left, "condition")
-		equality := requireInfix(logical.Right, lexer.TokenEqualEqual)
-		requireTypeTest(equality.Left)
-	})
-
-	It("binds relational expressions before type tests", func() {
-		expression, err := parseExpressionInput("1 < 2 is boolean")
-		tAssert.NoError(err)
-		typeTest := requireTypeTest(expression)
-		requireInfix(typeTest.Expression, lexer.TokenLess)
-	})
-
-	DescribeTable("rejects invalid type-test targets",
-		func(input string, expectedCode diagnostic.Code) {
-			_, err := parseExpressionInput(input)
-			tAssert.Error(err)
-			var syntaxError diagnostic.Error
-			tAssert.True(errors.As(err, &syntaxError))
-			tAssert.Equal(expectedCode, syntaxError.Code)
-		},
-		Entry("missing target", "value is", diagnostic.Code("mace.syntax.is-missing-type")),
-		Entry("string target", "value is \"string\"", diagnostic.Code("mace.syntax.invalid-is-type")),
-		Entry("numeric target", "value is 42", diagnostic.Code("mace.syntax.invalid-is-type")),
-		Entry("missing operand", "is string", diagnostic.Code("mace.syntax.missing-expression")),
-		Entry("malformed array", "value is array<string", diagnostic.Code("mace.syntax.invalid-is-type")),
-		Entry("malformed variant", "value is variant[string, int", diagnostic.Code("mace.syntax.invalid-is-type")),
-		Entry("chained test", "value is string is boolean", diagnostic.Code("mace.syntax.invalid-is-type")),
-	)
 
 	It("rejects trailing tokens after an expression", func() {
 		_, err := parseExpressionInput("{ a: 1, } garbage")
@@ -403,18 +328,6 @@ var _ = Describe("Parser", func() {
 		Entry("add with multiply", "1 + 2 * 3"),
 	)
 
-	DescribeTable("parses merge expressions",
-		func(input string) {
-			expression, err := parseExpressionInput(input)
-			tAssert.NoError(err)
-
-			root := requireInfix(expression, lexer.TokenMerge)
-			requireIdentifier(root.Left, "base")
-			requireIdentifier(root.Right, "override")
-		},
-		Entry("structural merge", "base <> override"),
-	)
-
 	DescribeTable("parses grouped expressions",
 		func(input string) {
 			expression, err := parseExpressionInput(input)
@@ -427,6 +340,37 @@ var _ = Describe("Parser", func() {
 			requireIntLiteral(root.Right, "3")
 		},
 		Entry("grouped add then multiply", "(1 + 2) * 3"),
+	)
+
+	DescribeTable("allows groups that alter arithmetic precedence",
+		func(input string) {
+			_, err := parseExpressionInput(input)
+			tAssert.NoError(err)
+		},
+		Entry("left additive before multiplication", "(1 + 2) * 3"),
+		Entry("right additive before multiplication", "1 * (2 + 3)"),
+		Entry("right-associative subtraction", "1 - (2 - 3)"),
+		Entry("additive exponent", "2 ** (3 + 4)"),
+		Entry("left-associated exponent", "(2 ** 3) ** 4"),
+		Entry("prefix over addition", "-(1 + 2)"),
+	)
+
+	DescribeTable("rejects groups that do not alter arithmetic precedence",
+		func(input string) {
+			_, err := parseExpressionInput(input)
+			tAssert.ErrorContains(err, "parentheses may only alter arithmetic precedence")
+		},
+		Entry("top-level arithmetic", "(1 + 2)"),
+		Entry("stronger left arithmetic", "(1 * 2) + 3"),
+		Entry("stronger right arithmetic", "1 + (2 * 3)"),
+		Entry("redundant left addition", "(1 + 2) + 3"),
+		Entry("redundant left multiplication", "(1 * 2) * 3"),
+		Entry("grouped record member access", `({ name: "Ada", }).name`),
+		Entry("grouped arithmetic member access", "(1 + 2).value"),
+		Entry("logical precedence", "(ready && enabled) || fallback"),
+		Entry("shift precedence", "(1 << 2) + 3"),
+		Entry("coalescing precedence", "(value ?? fallback) ?? other"),
+		Entry("conditional precedence", `(ready ? "yes" : "no") ? "one" : "two"`),
 	)
 
 	DescribeTable("parses right associative exponentiation",
@@ -444,22 +388,37 @@ var _ = Describe("Parser", func() {
 		Entry("double star associates right", "2 ** 3 ** 4"),
 	)
 
-	DescribeTable("parses conditional expressions",
+	It("parses one conditional level", func() {
+		expression, err := parseExpressionInput("a ? b : c")
+		tAssert.NoError(err)
+
+		root := requireConditional(expression)
+		requireIdentifier(root.Condition, "a")
+		requireIdentifier(root.Then, "b")
+		requireIdentifier(root.Else, "c")
+	})
+
+	DescribeTable("rejects nested conditional expressions",
 		func(input string) {
-			expression, err := parseExpressionInput(input)
-			tAssert.NoError(err)
-
-			root := requireConditional(expression)
-			requireIdentifier(root.Condition, "a")
-			requireIdentifier(root.Then, "b")
-
-			elseConditional := requireConditional(root.Else)
-			requireIdentifier(elseConditional.Condition, "c")
-			requireIdentifier(elseConditional.Then, "d")
-			requireIdentifier(elseConditional.Else, "e")
+			_, err := parseExpressionInput(input)
+			tAssert.Error(err)
 		},
-		Entry("nested ternary", "a ? b : c ? d : e"),
+		Entry("nested then branch", "a ? b ? c : d : e"),
+		Entry("nested else branch", "a ? b : c ? d : e"),
+		Entry("nested condition", "(a ? b : c) ? d : e"),
 	)
+
+	It("parses variant and choice match arms", func() {
+		expression, err := parseExpressionInput(`match (value) { string => "text", int => "number", }`)
+		tAssert.NoError(err)
+
+		matched, ok := expression.(ast.MatchExpression)
+		tAssert.True(ok)
+		requireIdentifier(matched.Value, "value")
+		tAssert.Len(matched.Arms, 2)
+		tAssert.IsType(ast.PrimitiveType{}, matched.Arms[0].Pattern.Type)
+		requireStringLiteral(matched.Arms[1].Value, `"number"`)
+	})
 
 	It("parses coalescing inside a conditional branch", func() {
 		expression, err := parseExpressionInput("user ? user.profile.address?.city ?? fallback : fallback")
@@ -488,7 +447,6 @@ var _ = Describe("Parser", func() {
 		Entry("self reference requires dot", "$self"),
 		Entry("self reference requires first identifier", "$self."),
 		Entry("self reference requires later identifier", "$self.user."),
-		Entry("array literal rejects trailing comma", "[1,]"),
 		Entry("record literal requires field separator", "{ name \"Ada\" }"),
 		Entry("conditional requires colon", "ready ? yes"),
 		Entry("conditional requires then expression", "ready ? : no"),
@@ -501,26 +459,6 @@ var _ = Describe("Parser", func() {
 		Entry("infix expression requires right operand", "1 +"),
 		Entry("grouped expression rejects missing expression", "()"),
 	)
-
-	It("parses normal expressions as merge operands", func() {
-		expression, err := parseExpressionInput("base.value <> overrides")
-		tAssert.NoError(err)
-
-		root := requireInfix(expression, lexer.TokenMerge)
-		requireMemberAccess(root.Left, "base", "value")
-		requireIdentifier(root.Right, "overrides")
-	})
-
-	It("parses chained merge expressions", func() {
-		expression, err := parseExpressionInput("base <> middle <> override")
-		tAssert.NoError(err)
-
-		root := requireInfix(expression, lexer.TokenMerge)
-		requireIdentifier(root.Right, "override")
-		left := requireInfix(root.Left, lexer.TokenMerge)
-		requireIdentifier(left.Left, "base")
-		requireIdentifier(left.Right, "middle")
-	})
 
 	It("covers parser helper edge branches directly", func() {
 		tAssert.True(New(nil).isAtEnd())
@@ -561,7 +499,7 @@ var _ = Describe("Parser", func() {
 		tAssert.ErrorContains(err, "expected '['")
 
 		_, err = New(tokens).parseTypeDeclaration()
-		tAssert.ErrorContains(err, "expected 'type'")
+		tAssert.ErrorContains(err, "expected 'alias'")
 
 		_, err = New(tokens).parseSchemaDeclaration()
 		tAssert.ErrorContains(err, "expected 'schema'")
@@ -611,12 +549,10 @@ var _ = Describe("Parser", func() {
 			lexer.TokenAmpersand:          precedenceBitwiseAnd,
 			lexer.TokenEqualEqual:         precedenceEquality,
 			lexer.TokenNotEqual:           precedenceEquality,
-			lexer.TokenMerge:              precedenceMerge,
 			lexer.TokenLess:               precedenceRelational,
 			lexer.TokenLessEqual:          precedenceRelational,
 			lexer.TokenGreater:            precedenceRelational,
 			lexer.TokenGreaterEqual:       precedenceRelational,
-			lexer.TokenIn:                 precedenceRelational,
 			lexer.TokenShiftLeft:          precedenceShift,
 			lexer.TokenShiftRight:         precedenceShift,
 			lexer.TokenShiftRightUnsigned: precedenceShift,
@@ -645,27 +581,27 @@ var _ = Describe("Parser", func() {
 				_, err := p.parseImportDeclaration()
 				return err
 			}},
-			{`from "./base.mace" name`, func(p *Parser) error {
+			{`from './base.mace' name`, func(p *Parser) error {
 				_, err := p.parseImportDeclaration()
 				return err
 			}},
-			{`from "./base.mace" import-`, func(p *Parser) error {
+			{`from './base.mace' import-`, func(p *Parser) error {
 				_, err := p.parseImportDeclaration()
 				return err
 			}},
-			{`from "./base.mace" import-as Base`, func(p *Parser) error {
+			{`from './base.mace' import-as Base`, func(p *Parser) error {
 				_, err := p.parseImportDeclaration()
 				return err
 			}},
-			{`from "./base.mace" import User:`, func(p *Parser) error {
+			{`from './base.mace' import User:`, func(p *Parser) error {
 				_, err := p.parseImportDeclaration()
 				return err
 			}},
-			{`from "./base.mace" import User, Config:`, func(p *Parser) error {
+			{`from './base.mace' import User, Config:`, func(p *Parser) error {
 				_, err := p.parseImportDeclaration()
 				return err
 			}},
-			{`from "./base.mace" import ;`, func(p *Parser) error {
+			{`from './base.mace' import ;`, func(p *Parser) error {
 				_, err := p.parseImportDeclaration()
 				return err
 			}},
@@ -677,7 +613,7 @@ var _ = Describe("Parser", func() {
 			tAssert.Error(item.call(New(tokens)))
 		}
 
-		tokens, err := lexInput(`from "./base.mace" import User |===|`)
+		tokens, err := lexInput(`from './base.mace' import User |===|`)
 		tAssert.NoError(err)
 		_, err = New(tokens).parseImportDeclaration()
 		tAssert.NoError(err)
@@ -700,7 +636,7 @@ var _ = Describe("Parser", func() {
 				_, err := p.parseVariableDeclaration()
 				return err
 			}},
-			{`type Name: string`, func(p *Parser) error {
+			{`alias Name: string`, func(p *Parser) error {
 				_, err := p.parseTypeDeclaration()
 				return err
 			}},
@@ -786,6 +722,16 @@ var _ = Describe("Parser", func() {
 		}
 	})
 
+	It("parses array literals with a trailing comma", func() {
+		expression, err := parseExpressionInput(`[{ name: "Ada", },]`)
+		tAssert.NoError(err)
+		array, ok := expression.(ast.ArrayLiteral)
+		tAssert.True(ok)
+		if ok {
+			tAssert.Len(array.Elements, 1)
+		}
+	})
+
 	It("covers parser directive helper errors directly", func() {
 		cases := []string{
 			`output data`,
@@ -793,8 +739,8 @@ var _ = Describe("Parser", func() {
 			`parse Runtime`,
 			`parse_file "./runtime.mace"`,
 			`schema User`,
-			`[output = data, ]`,
-			`[output = data`,
+			`[output = 'data', ]`,
+			`[output = 'data'`,
 		}
 
 		for _, input := range cases {
@@ -892,13 +838,13 @@ extra`)
 			_, err = New(scriptTokens).ParseScriptBlock()
 			tAssert.ErrorContains(err, "unexpected token after script block")
 
-			outputTokens, err := lexInput(`[output = data] {} extra`)
+			outputTokens, err := lexInput(`[output = 'data'] {} extra`)
 			tAssert.NoError(err)
 
 			_, err = New(outputTokens).ParseOutputBlock()
 			tAssert.ErrorContains(err, "unexpected token after output block")
 
-			_, err = parseFileInput(`[output = data] {} extra`)
+			_, err = parseFileInput(`[output = 'data'] {} extra`)
 			tAssert.ErrorContains(err, "unexpected token after output block")
 		})
 
@@ -914,7 +860,7 @@ string name = "Ada";`)
 			_, err = New(scriptTokens).ParseScriptBlock()
 			tAssert.ErrorContains(err, "expected closing script delimiter")
 
-			outputTokens, err := lexInput(`[output = data]`)
+			outputTokens, err := lexInput(`[output = 'data']`)
 			tAssert.NoError(err)
 			_, err = New(outputTokens).ParseOutputBlock()
 			tAssert.ErrorContains(err, "expected '{' to start output block")
@@ -942,7 +888,7 @@ string name = "Ada";
 			tAssert.NoError(err)
 			tAssert.Len(script.Items, 1)
 
-			outputTokens, err := lexInput(`[output = data]
+			outputTokens, err := lexInput(`[output = 'data']
 { name: "Ada", }`)
 			tAssert.NoError(err)
 			output, err := New(outputTokens).ParseOutputBlock()
@@ -952,10 +898,10 @@ string name = "Ada";
 
 		It("parses import-as declarations and import aliases", func() {
 			input := `|===|
-from "./base.mace" import-as Base;
-from "./shared.mace" import User:Person, Config:Settings;
+from './base.mace' import-as Base;
+from './shared.mace' import User:Person, Config:Settings;
 |===|
-[output = data] {}`
+[output = 'data'] {}`
 
 			file, err := parseFileInput(input)
 			tAssert.NoError(err)
@@ -972,8 +918,26 @@ from "./shared.mace" import User:Person, Config:Settings;
 			}
 		})
 
+		It("parses kebab-case import names and aliases", func() {
+			input := `|===|
+from './values.mace' import display-name;
+from './profile.mace' import DisplayName:display-name;
+from './shared.mace' import-as shared-data;
+|===|
+[output = 'data'] {}`
+
+			file, err := parseFileInput(input)
+			tAssert.NoError(err)
+
+			if tAssert.Len(file.Imports, 3) {
+				tAssert.Equal([]ast.ImportedIdentifier{{Name: "display-name"}}, file.Imports[0].Identifiers)
+				tAssert.Equal([]ast.ImportedIdentifier{{Name: "DisplayName", Alias: "display-name"}}, file.Imports[1].Identifiers)
+				tAssert.Equal("shared-data", file.Imports[2].ImportAs.Name)
+			}
+		})
+
 		It("parses all output directive kinds", func() {
-			file, err := parseFileInput(`[output = data, schema = User, schema_file = "./schema.mace", parse = Runtime, parse_file = "./runtime.mace"] {}`)
+			file, err := parseFileInput(`[output = 'data', schema = User, schema_file = './schema.mace', parse = Runtime, parse_file = './runtime.mace'] {}`)
 			tAssert.NoError(err)
 
 			if tAssert.Len(file.Output.Directives, 5) {
@@ -990,32 +954,32 @@ from "./shared.mace" import User:Person, Config:Settings;
 				`|===|
 import "./base.mace" User;
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
 from import User;
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
-from "./base.mace" import- nope Base;
+from './base.mace' import- nope Base;
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
-from "./base.mace" import-as;
+from './base.mace' import-as;
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
-from "./base.mace" import User:
+from './base.mace' import User:
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
-from "./base.mace" import User,;
+from './base.mace' import User,;
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
-from "./base.mace" import User
+from './base.mace' import User
 string name = "Ada";
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 			}
 
 			for _, input := range cases {
@@ -1027,40 +991,40 @@ string name = "Ada";
 		It("rejects imports after declarations and missing script closers", func() {
 			_, err := parseFileInput(`|===|
 string name = "Ada";
-from "./base.mace" import User;
+from './base.mace' import User;
 |===|
-[output = data] {}`)
+[output = 'data'] {}`)
 			tAssert.ErrorContains(err, "import declarations must appear at top")
 
 			_, err = parseFileInput(`|===|
 string name = "Ada";
-[output = data] {}`)
+[output = 'data'] {}`)
 			tAssert.Error(err)
 		})
 
 		It("returns an error for an empty script block", func() {
 			_, err := parseFileInput(`|===|
 |===|
-[output = data]
+[output = 'data']
 {}`)
 			tAssert.Error(err)
 			tAssert.Contains(err.Error(), "empty script block")
 		})
 		It("parses script imports, declarations, and output block", func() {
 			input := `|===|
-from "base.mace" import User, Config;
-type Name: string;
+from 'base.mace' import User, Config;
+alias Name: string;
 schema User: { name: string, age?: int, };
 string user = "Ada";
 |===|
-[output = data, schema = User]
+[output = 'data', schema = User]
 { name: user, }`
 
 			file, err := parseFileInput(input)
 			tAssert.NoError(err)
 
 			if tAssert.Len(file.Imports, 1) {
-				tAssert.Equal("\"base.mace\"", file.Imports[0].Path.Lexeme)
+				tAssert.Equal("'base.mace'", file.Imports[0].Path.Lexeme)
 				tAssert.Equal([]ast.ImportedIdentifier{{Name: "User"}, {Name: "Config"}}, file.Imports[0].Identifiers)
 			}
 
@@ -1127,7 +1091,7 @@ string user = "Ada";
 
 		It("ignores line and block comment content while parsing", func() {
 			input := `|===|
-from "base.mace" import User; // trailing import comment
+from 'base.mace' import User; // trailing import comment
 // line comment before declarations
 schema Profile: {
   // line comment before field
@@ -1143,7 +1107,7 @@ Profile current = {
   age?: 30, // trailing field comment
 };
 |===|
-[output = data]
+[output = 'data']
 {
   // line comment before output field
   result: current.name, // trailing output comment
@@ -1186,9 +1150,9 @@ Profile current = {
 		It("ignores block comments that wrap script and output blocks", func() {
 			input := `/*
 |===|
-type Hidden: string;
+alias Hidden: string;
 |===|
-[output = data]
+[output = 'data']
 {
   hidden: "ignore me",
 }
@@ -1196,7 +1160,7 @@ type Hidden: string;
 |===|
 string visible = "ok";
 |===|
-[output = data]
+[output = 'data']
 {
   result: visible,
 }`
@@ -1217,15 +1181,15 @@ string visible = "ok";
 
 		It("ignores block comments that wrap script imports", func() {
 			input := `/*
-from "./ignored.mace" import Ignored;
+from './ignored.mace' import Ignored;
 */
 |===|
-from "./base.mace" import User;
+from './base.mace' import User;
 /*
-from "./also_ignored.mace" import AlsoIgnored;
+from './also_ignored.mace' import AlsoIgnored;
 */
 |===|
-[output = data]
+[output = 'data']
 {
   result: 1,
 }`
@@ -1233,14 +1197,14 @@ from "./also_ignored.mace" import AlsoIgnored;
 			file, err := parseFileInput(input)
 			tAssert.NoError(err)
 			if tAssert.Len(file.Imports, 1) {
-				tAssert.Equal("\"./base.mace\"", file.Imports[0].Path.Lexeme)
+				tAssert.Equal("'./base.mace'", file.Imports[0].Path.Lexeme)
 				tAssert.Equal([]ast.ImportedIdentifier{{Name: "User"}}, file.Imports[0].Identifiers)
 			}
 		})
 
 		It("rejects top-level imports", func() {
-			_, err := parseFileInput(`from "./base.mace" import User;
-[output = data]
+			_, err := parseFileInput(`from './base.mace' import User;
+[output = 'data']
 { result: 1, }`)
 
 			tAssert.Error(err)
@@ -1250,17 +1214,17 @@ from "./also_ignored.mace" import AlsoIgnored;
 		It("ignores block comments around type and schema declarations", func() {
 			input := `|===|
 /*
-type Hidden: string;
+alias Hidden: string;
 schema HiddenUser: {
   name: string,
 };
 */
-type Name: string;
+alias Name: string;
 schema User: {
   name: Name,
 };
 |===|
-[output = data]
+[output = 'data']
 {
   result: "ok",
 }`
@@ -1296,7 +1260,7 @@ schema_doc User {
   summary: "Visible doc",
 };
 |===|
-[output = schema]
+[output = 'schema']
 {
   user: User,
 }`
@@ -1313,7 +1277,7 @@ schema_doc User {
 		})
 
 		It("ignores block comments inside output fields", func() {
-			input := `[output = data]
+			input := `[output = 'data']
 {
   subtotal: 129.99 * 3,
 /*
@@ -1334,7 +1298,7 @@ schema_doc User {
 			file, err := parseFileInput(`|===|
 string greeting = "Hello" /# Rendered greeting;
 |===|
-[output = data] {}`)
+[output = 'data'] {}`)
 			tAssert.NoError(err)
 			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 1) {
 				varDecl, ok := file.Script.Items[0].(ast.VariableDeclaration)
@@ -1345,34 +1309,12 @@ string greeting = "Hello" /# Rendered greeting;
 			}
 		})
 
-		It("parses nullable declarations with null initializers", func() {
-			input := `|===|
-nullable string env = null;
-|===|
-[output = data] {}`
-
-			file, err := parseFileInput(input)
-			tAssert.NoError(err)
-
-			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 1) {
-				varDecl, ok := file.Script.Items[0].(ast.VariableDeclaration)
-				tAssert.True(ok)
-				if ok {
-					tAssert.True(varDecl.Nullable)
-					tAssert.Equal("env", varDecl.Name)
-					tAssert.True(varDecl.HasValue)
-					_, ok := varDecl.Value.(ast.NullLiteral)
-					tAssert.True(ok)
-				}
-			}
-		})
-
 		It("parses hex primitive type references", func() {
 			input := `|===|
 hex_int mask = 0xFF;
 hex_float ratio = 0x2.8;
 |===|
-[output = schema]
+[output = 'schema']
 {
   mask: hex_int,
   ratio: hex_float,
@@ -1422,9 +1364,9 @@ hex_float ratio = 0x2.8;
 
 		It("parses variant type references", func() {
 			input := `|===|
-type Value: variant[string, int];
+alias Value: variant[string, int];
 |===|
-[output = data] {}`
+[output = 'data'] {}`
 
 			file, err := parseFileInput(input)
 			tAssert.NoError(err)
@@ -1447,9 +1389,9 @@ type Value: variant[string, int];
 
 		It("parses array members in variant type references", func() {
 			input := `|===|
-type Value: variant[array<string>, array<int>];
+alias Value: variant[array<string>, array<int>];
 |===|
-[output = data] {}`
+[output = 'data'] {}`
 
 			file, err := parseFileInput(input)
 			tAssert.NoError(err)
@@ -1472,9 +1414,9 @@ type Value: variant[array<string>, array<int>];
 
 		It("parses fusion type references", func() {
 			input := `|===|
-type Value: fusion[Profile, Audit];
+alias Value: fusion[Profile, Audit];
 |===|
-[output = data] {}`
+[output = 'data'] {}`
 
 			file, err := parseFileInput(input)
 			tAssert.NoError(err)
@@ -1497,9 +1439,9 @@ type Value: fusion[Profile, Audit];
 
 		It("parses nested array type references without spacing between closers", func() {
 			input := `|===|
-type Matrix: array<array<int>>;
+alias Matrix: array<array<int>>;
 |===|
-[output = data] {}`
+[output = 'data'] {}`
 
 			file, err := parseFileInput(input)
 			tAssert.NoError(err)
@@ -1525,25 +1467,23 @@ type Matrix: array<array<int>>;
 			}
 		})
 
-		It("parses choice types with literals and choice aliases", func() {
+		It("parses choice types with scalar literals", func() {
 			input := `|===|
- type Environment: choice["dev", "prod"];
- type Mode: choice[Environment, 1, true, 1.5, 0xFF, 0x2.8, record];
+ alias Mode: choice["dev", 1, true, 1.5, 0xFF, 0x2.8];
 |===|
-[output = data] {}`
+[output = 'data'] {}`
 
 			file, err := parseFileInput(input)
 			tAssert.NoError(err)
 
-			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 2) {
-				choiceDecl, ok := file.Script.Items[1].(ast.TypeDeclaration)
+			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 1) {
+				choiceDecl, ok := file.Script.Items[0].(ast.TypeDeclaration)
 				tAssert.True(ok)
 				if ok {
 					choiceType, ok := choiceDecl.Type.(ast.ChoiceType)
 					tAssert.True(ok)
-					if ok && tAssert.Len(choiceType.Members, 7) {
-						_, ok = choiceType.Members[0].(ast.Identifier)
-						tAssert.True(ok)
+					if ok && tAssert.Len(choiceType.Members, 6) {
+						requireStringLiteral(choiceType.Members[0], `"dev"`)
 						requireIntLiteral(choiceType.Members[1], "1")
 						booleanLiteral, ok := choiceType.Members[2].(ast.BooleanLiteral)
 						tAssert.True(ok)
@@ -1557,7 +1497,6 @@ type Matrix: array<array<int>>;
 						}
 						requireHexIntLiteral(choiceType.Members[4], "0xFF")
 						requireHexFloatLiteral(choiceType.Members[5], "0x2.8")
-						requireIdentifier(choiceType.Members[6], "record")
 					}
 				}
 			}
@@ -1565,10 +1504,10 @@ type Matrix: array<array<int>>;
 
 		It("parses record map and inline record type references", func() {
 			file, err := parseFileInput(`|===|
-type Lookup: record<string>;
-type Inline: { name: string, };
+alias Lookup: record<string>;
+alias Inline: { name: string, };
 |===|
-[output = schema]
+[output = 'schema']
 {
   values: record<int>,
   inline: { enabled: boolean, },
@@ -1603,58 +1542,58 @@ type Inline: { name: string, };
 				`|===|
 string = "Ada";
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
 type : string;
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
 type Name string;
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
-type Name: ;
+alias Name: ;
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema : {};
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema User {};
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema User: { name string, };
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema User: { name: string,
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema_doc {
 };
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema_doc User
 };
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema_doc User {
   summary: "One",
   summary: "Two",
 };
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema_doc User {
   unknown: "Nope",
 };
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema_doc User {
   fields: {
@@ -1663,52 +1602,52 @@ schema_doc User {
   },
 };
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`[output data] {}`,
 				`[output = nope] {}`,
 				`[schema_file = User] {}`,
 				`[parse = "Runtime"] {}`,
 				`[parse_file = Runtime] {}`,
 				`[schema = "User"] {}`,
-				`[output = data] "single line doc" {}`,
-				`[output = data] { name "Ada", }`,
-				`[output = schema] { name string, }`,
-				`[output = schema] { name: , }`,
-				`[output = schema] { name: string /# first, /# second }`,
+				`[output = 'data'] "single line doc" {}`,
+				`[output = 'data'] { name "Ada", }`,
+				`[output = 'schema'] { name string, }`,
+				`[output = 'schema'] { name: , }`,
+				`[output = 'schema'] { name: string /# first, /# second }`,
 				`|===|
-type Names: array;
+alias Names: array;
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
-type Names: array<string;
+alias Names: array<string;
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
-type Names: record;
+alias Names: record;
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
-type Names: fusion;
+alias Names: fusion;
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
-type Names: variant[string,];
+alias Names: variant[string,];
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
-type Names: choice;
+alias Names: choice;
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
-type Names: choice[null];
+alias Names: choice[null];
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema_doc User {
   summary: 1,
 };
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema_doc User {
   fields: {
@@ -1716,7 +1655,7 @@ schema_doc User {
   },
 };
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema_doc User {
   fields: {
@@ -1724,19 +1663,19 @@ schema_doc User {
   }
 };
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema_doc User {
   summary: "User",
 }
 |===|
-[output = data] {}`,
+[output = 'data'] {}`,
 				`|===|
 schema_doc User {
   summary: "User",
 };
 |===|
-[output = data]`,
+[output = 'data']`,
 			}
 
 			for _, input := range cases {
@@ -1762,7 +1701,7 @@ schema_doc User {
 string name = "Ada";
 { name: string, } user = { name, };
 |===|
-[output = data]
+[output = 'data']
 { name, user, }`)
 			tAssert.NoError(err)
 
@@ -1795,7 +1734,7 @@ string name = "Ada";
 		})
 
 		It("parses schema-mode output blocks as schema fields", func() {
-			file, err := parseFileInput(`[output = schema]
+			file, err := parseFileInput(`[output = 'schema']
 {
   name: string,
   age?: int,
@@ -1836,7 +1775,7 @@ schema User: {
   age?: int, /# Age after separator
 };
 |===|
-[output = data]
+[output = 'data']
 {
   user: {
     name: "Ada" /# Record name before separator,
@@ -1869,7 +1808,7 @@ schema User: {
 		})
 
 		It("parses output schema field descriptions before and after separators", func() {
-			file, err := parseFileInput(`[output = schema]
+			file, err := parseFileInput(`[output = 'schema']
 {
   name: string /# Name before separator,
   age?: int, /# Age after separator
@@ -1883,7 +1822,7 @@ schema User: {
 		})
 
 		It("rejects duplicate inline descriptions on the same field", func() {
-			_, err := parseFileInput(`[output = schema]
+			_, err := parseFileInput(`[output = 'schema']
 {
   name: string /# First description, /# Second description
 }`)
@@ -1893,9 +1832,9 @@ schema User: {
 
 		It("parses comma separators across declarations", func() {
 			file, err := parseFileInput(`|===|
-from "./shared.mace" import Name, User;
-type Alias: string;
-nullable string env = null;
+from './shared.mace' import Name, User;
+alias Alias: string;
+string env = null;
 schema User: {
   name: string,
 };
@@ -1903,7 +1842,7 @@ gen_doc Alias {
   summary: "Alias docs.",
 };
 |===|
-[output = data] {
+[output = 'data'] {
   result: env,
 }`)
 			tAssert.NoError(err)
@@ -1913,7 +1852,7 @@ gen_doc Alias {
 		})
 
 		It("parses output inline doc blocks", func() {
-			input := `[output = schema]
+			input := `[output = 'schema']
 """
 # Public User Output
 """
@@ -1934,7 +1873,7 @@ schema User: {
   name: string,
 };
 
-type Status: choice["Active"];
+alias Status: choice["Active"];
 
 schema_doc User {
   summary: "Represents a user.",
@@ -1947,7 +1886,7 @@ gen_doc Status {
   summary: "Represents a status choice.",
 };
 |===|
-[output = schema]
+[output = 'schema']
 { user: User, status: Status }`
 
 			file, err := parseFileInput(input)
@@ -1977,7 +1916,7 @@ gen_doc Status {
 
 		It("rejects fields entries in gen_doc declarations", func() {
 			input := `|===|
-type Name: string;
+alias Name: string;
 
 gen_doc Name {
   fields: {
@@ -1985,7 +1924,7 @@ gen_doc Name {
   },
 };
 |===|
-[output = data]
+[output = 'data']
 {}`
 
 			_, err := parseFileInput(input)
@@ -2017,7 +1956,7 @@ Hover should surface this documentation.
   },
 };
 |===|
-[output = schema]
+[output = 'schema']
 """
 # User Output
 """

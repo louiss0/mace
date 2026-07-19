@@ -1,5 +1,5 @@
 // Anonymous schema output for workflow-shaped data
-[output = schema]
+[output = 'schema']
 {
   name: string,
   on: array<string>,

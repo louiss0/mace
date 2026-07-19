@@ -1,11 +1,13 @@
 package analyzer
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf16"
 
@@ -24,12 +26,11 @@ const serverName = "mace"
 var diagnosticPositionPattern = regexp.MustCompile(`at (\d+):(\d+)`)
 
 var keywordDocs = map[string]string{
-	"array":    "Declares an array type like `array<string>`.",
-	"choice":   "Declares a finite literal choice type like `choice[\"dev\", 1, true]`.",
-	"nullable": "Marks a variable as able to evaluate to `null`.",
-	"type":     "Declares a reusable type alias.",
-	"fusion":   "Declares schema composition like `fusion[Profile, Audit]`.",
-	"variant":  "Declares a closed variant type like `variant[string, int]` or `variant[array<string>, array<int>]`.",
+	"array":   "Declares an array type like `array<string>`.",
+	"choice":  "Declares a finite literal choice type like `choice[\"dev\", 1, true]`.",
+	"alias":   "Declares a reusable type alias.",
+	"fusion":  "Declares schema composition like `fusion[Profile, Audit]`.",
+	"variant": "Declares a closed variant type like `variant[string, int]` or `variant[array<string>, array<int>]`.",
 }
 
 var directiveKeywordDocs = map[string]string{
@@ -77,6 +78,16 @@ func AnalyzeCompletionContext(text string, documentPath string, position protoco
 
 func AnalyzeCompletionContextInRoot(text string, documentPath string, importRootDir string, position protocol.Position) Snapshot {
 	return analyzeCompletionContextInRoot(text, documentPath, importRootDir, position)
+}
+
+func AnalyzeCompletionContextInRootContext(
+	context context.Context,
+	text string,
+	documentPath string,
+	importRootDir string,
+	position protocol.Position,
+) (Snapshot, error) {
+	return analyzeCompletionContextInRootContext(context, text, documentPath, importRootDir, position)
 }
 
 func HasParsedFile(snapshot Snapshot) bool {
@@ -323,8 +334,8 @@ func rangesEqual(left protocol.Range, right protocol.Range) bool {
 		left.End.Character == right.End.Character
 }
 
-func FormatDocumentText(text string) string {
-	return formatDocumentText(text)
+func FormatDocument(snapshot Snapshot) (string, error) {
+	return formatDocumentText(snapshot.text), nil
 }
 
 func DiagnosticFromError(err error) protocol.Diagnostic {
@@ -481,6 +492,18 @@ func parseExpression(text string) (ast.Expression, error) {
 	}
 
 	return parser.New(tokens).ParseExpression()
+}
+
+func unquoteMaceString(value string) (string, error) {
+	if len(value) >= 2 && value[0] == '\'' && value[len(value)-1] == '\'' {
+		return value[1 : len(value)-1], nil
+	}
+
+	return strconv.Unquote(value)
+}
+
+func quoteMaceString(value string) string {
+	return "'" + value + "'"
 }
 
 func lex(text string) ([]lexer.Token, error) {

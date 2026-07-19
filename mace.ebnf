@@ -13,7 +13,8 @@ unicode_letter = ? any Unicode character in category Letter ? ;
 unicode_digit = ? any Unicode character in category Number, decimal digit ? ;
 digit = "0"…"9" ;
 hex_digit = digit | "a"…"f" | "A"…"F" ;
-identifier = unicode_letter , { unicode_letter | unicode_digit | "_" } ;
+identifier_part = unicode_letter | unicode_digit | "_" ;
+identifier = unicode_letter , { identifier_part } , { "-" , identifier_part , { identifier_part } } ;
 
 inline_description = "/#" , ws0 , description_text ;
 description_text = ? text up to, but not including, a comma or line terminator ? ;
@@ -28,9 +29,9 @@ block_part = ? any character sequence not containing '"""' or the start of "$(" 
 escape_sequence = "\\" , ( "\\" | "'" | '"' | "n" | "r" | "t" | unicode_escape ) ;
 unicode_escape = "u" , hex_digit , hex_digit , hex_digit , hex_digit
                | "U" , hex_digit , hex_digit , hex_digit , hex_digit , hex_digit , hex_digit , hex_digit , hex_digit ;
-(* A path literal is single-line double-quoted text with no escapes or interpolation. *)
-path_literal = '"' , { path_character } , '"' ;
-path_character = ? any character except ", a line terminator, or the start of "$(" ? ;
+(* A path literal is single-line single-quoted text with no escapes or interpolation. *)
+path_literal = "'" , { path_character } , "'" ;
+path_character = ? any character except ', a line terminator, or a backslash ? ;
 
 int_literal = digit , { digit } ;
 float_literal = digit , { digit } , "." , digit , { digit } ;
@@ -45,14 +46,14 @@ script_block = script_delimiter , ws0 , { import_declaration , ws0 } , { declara
 script_delimiter = "|" , "=" , "=" , "=" , { "=" } , "|" ;
 (* The opening and closing script_delimiter must have the same number of '=' characters. *)
 
-import_declaration = "from" , ws1 , path_literal , ws1 , "import" , ws1 , import_list , ws0 , ";" ;
+import_declaration = "from" , ws1 , path_literal , ws1 , ( "import" , ws1 , import_list | "import-as" , ws1 , identifier ) , ws0 , ";" ;
 import_list = imported_identifier , { ws0 , "," , ws0 , imported_identifier } ;
 imported_identifier = identifier , [ ws0 , ":" , ws0 , identifier ] ;
 
 declaration = variable_declaration | type_declaration | schema_declaration
             | gen_doc_declaration | schema_doc_declaration ;
-variable_declaration = [ "nullable" , ws1 ] , type_reference , ws1 , identifier , ws0 , "=" , ws0 , expression , [ ws0 , inline_description ] , ws0 , ";" ;
-type_declaration = "type" , ws1 , identifier , ws0 , ":" , ws0 , type_reference , [ ws0 , inline_description ] , ws0 , ";" ;
+variable_declaration = type_reference , ws1 , identifier , ws0 , "=" , ws0 , expression , [ ws0 , inline_description ] , ws0 , ";" ;
+type_declaration = "alias" , ws1 , identifier , ws0 , ":" , ws0 , type_reference , [ ws0 , inline_description ] , ws0 , ";" ;
 schema_declaration = "schema" , ws1 , identifier , ws0 , ":" , ws0 , record_type , ws0 , ";" ;
 
 gen_doc_declaration = "gen_doc" , ws1 , identifier , ws0 , "{" , ws0 , [ gen_doc_entry , { ws0 , "," , ws0 , gen_doc_entry } , [ ws0 , "," ] ] , ws0 , "}" , ws0 , ";" ;
@@ -76,12 +77,12 @@ self_type_reference = "$self" ;
 fusion_type = "fusion" , ws0 , "[" , ws0 , type_reference , { ws0 , "," , ws0 , type_reference } , [ ws0 , "," ] , ws0 , "]" ;
 variant_type = "variant" , ws0 , "[" , ws0 , type_reference , { ws0 , "," , ws0 , type_reference } , [ ws0 , "," ] , ws0 , "]" ;
 choice_type = "choice" , ws0 , "[" , ws0 , choice_member , { ws0 , "," , ws0 , choice_member } , [ ws0 , "," ] , ws0 , "]" ;
-choice_member = string_literal | int_literal | float_literal | hex_int_literal | hex_float_literal | boolean_literal | identifier ;
+choice_member = string_literal | int_literal | float_literal | hex_int_literal | hex_float_literal | boolean_literal ;
 
 (* OUTPUT *)
 output_block = [ output_directive_list , ws0 , [ block_string , ws0 ] ] , "{" , ws0 , [ output_field , { ws0 , "," , ws0 , output_field } , [ ws0 , "," ] ] , ws0 , "}" ;
 output_directive_list = "[" , ws0 , directive_pair , { ws0 , "," , ws0 , directive_pair } , ws0 , "]" ;
-directive_pair = "output" , ws0 , "=" , ws0 , ( "data" | "schema" )
+directive_pair = "output" , ws0 , "=" , ws0 , ( "'data'" | "'schema'" )
                | "schema" , ws0 , "=" , ws0 , identifier
                | "schema_file" , ws0 , "=" , ws0 , path_literal
                | "parse" , ws0 , "=" , ws0 , identifier
@@ -95,17 +96,14 @@ schema_output_field = identifier , [ "?" ] , ws0 , ":" , ws0 , type_reference , 
 
 (* EXPRESSIONS *)
 expression = conditional_expression ;
-conditional_expression = coalescing_expression , [ ws0 , "?" , ws0 , expression , ws0 , ":" , ws0 , conditional_expression ] ;
+conditional_expression = coalescing_expression , [ ws0 , "?" , ws0 , coalescing_expression , ws0 , ":" , ws0 , coalescing_expression ] ;
 coalescing_expression = logical_or_expression , [ ws0 , "??" , ws0 , coalescing_expression ] ;
 logical_or_expression = logical_and_expression , { ws0 , "||" , ws0 , logical_and_expression } ;
 logical_and_expression = bitwise_or_expression , { ws0 , "&&" , ws0 , bitwise_or_expression } ;
 bitwise_or_expression = bitwise_xor_expression , { ws0 , "|" , ws0 , bitwise_xor_expression } ;
 bitwise_xor_expression = bitwise_and_expression , { ws0 , "^" , ws0 , bitwise_and_expression } ;
-bitwise_and_expression = merge_expression , { ws0 , "&" , ws0 , merge_expression } ;
-merge_expression = equality_expression , { ws0 , "<>" , ws0 , equality_expression } ;
-equality_expression = type_test_expression , { ws0 , ( "==" | "!=" ) , ws0 , type_test_expression } ;
-type_test_expression = relational_expression , [ ws1 , "is" , ws1 , type_reference ] ;
-(* Type tests are non-chainable; their right operand is a type reference, not an expression. *)
+bitwise_and_expression = equality_expression , { ws0 , "&" , ws0 , equality_expression } ;
+equality_expression = relational_expression , { ws0 , ( "==" | "!=" ) , ws0 , relational_expression } ;
 relational_expression = shift_expression , { ws0 , ( "<" | "<=" | ">" | ">=" ) , ws0 , shift_expression } ;
 shift_expression = additive_expression , { ws0 , ( "<<" | ">>" | ">>>" ) , ws0 , additive_expression } ;
 additive_expression = multiplicative_expression , { ws0 , ( "+" | "-" ) , ws0 , multiplicative_expression } ;
@@ -113,15 +111,18 @@ multiplicative_expression = exponent_expression , { ws0 , ( "*" | "/" | "%" ) , 
 exponent_expression = unary_expression , [ ws0 , "**" , ws0 , exponent_expression ] ;
 unary_expression = ( "!" | "~" | "+" | "-" ) , ws0 , unary_expression | postfix_expression ;
 postfix_expression = primary_atom , { postfix_suffix } ;
-primary_atom = identifier | self_reference | parsed_input_reference | int_literal | float_literal | hex_int_literal | hex_float_literal | string_literal | boolean_literal | null_literal | array_literal | record_literal | grouped_expression ;
+primary_atom = identifier | self_reference | parsed_input_reference | int_literal | float_literal | hex_int_literal | hex_float_literal | string_literal | boolean_literal | null_literal | array_literal | record_literal | match_expression | grouped_expression ;
 postfix_suffix = ws0 , ( "." | "?." ) , ws0 , identifier ;
 self_reference = "$self" , "." , identifier , { "." , identifier } ;
 parsed_input_reference = "$" , identifier ;
 grouped_expression = "(" , ws0 , expression , ws0 , ")" ;
-(* Grouped expressions are restricted by static semantics to operator-precedence control. *)
+(* A grouped-expression candidate is valid only when it changes arithmetic precedence or associativity. *)
 array_literal = "[" , ws0 , [ expression , { ws0 , "," , ws0 , expression } , [ ws0 , "," ] ] , ws0 , "]" ;
 record_literal = "{" , ws0 , [ record_field , { ws0 , "," , ws0 , record_field } , [ ws0 , "," ] ] , ws0 , "}" ;
 record_field = identifier , ws0 , ":" , ws0 , expression , [ ws0 , inline_description ]
              | identifier , [ ws0 , inline_description ] ;
+match_expression = "match" , ws0 , "(" , ws0 , expression , ws0 , ")" , ws0 , "{" , ws0 , match_arm , { ws0 , match_arm } , ws0 , "}" ;
+match_arm = match_pattern , ws0 , "=>" , ws0 , expression , ws0 , "," ;
+match_pattern = type_reference | choice_member ;
 
 interpolation = "$" , "(" , expression , ")" ;

@@ -1,0 +1,5 @@
+|===|
+alias First: fusion[Second];
+alias Second: fusion[First];
+|===|
+[output = 'data'] {}

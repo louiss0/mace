@@ -96,7 +96,7 @@ var _ = Describe("CLI", func() {
 			path := writeMaceFile(`|===|
 int value = 1;
 |===|
-[output = data]
+[output = 'data']
 { value: value, }`)
 
 			file, err := parseFile(path)
@@ -111,7 +111,7 @@ int value = 1;
 			_, err := lex("@")
 			tAssert.ErrorContains(err, "unexpected character")
 
-			path := writeTempFile("broken.mace", `[output = data]
+			path := writeTempFile("broken.mace", `[output = 'data']
 { name: }`)
 			_, err = parseFile(path)
 			tAssert.Error(err)
@@ -215,7 +215,7 @@ int value = 1;
 			path := writeMaceFile(`|===|
 int base = 2 + 2;
 |===|
-[output = data]
+[output = 'data']
 {
   base: base,
   profile: { name: "Ada", active: true, },
@@ -244,12 +244,14 @@ int base = 2 + 2;
 hex_int mask = 0xFF;
 hex_float ratio = 0x2.8;
 hex_float whole = 0x2.0;
+hex_float precise = 0x1.0000000000001;
 |===|
-[output = data]
+[output = 'data']
 {
   mask: mask,
   ratio: ratio,
   whole: whole,
+  precise: precise,
 }`)
 
 			var stdout bytes.Buffer
@@ -263,6 +265,7 @@ hex_float whole = 0x2.0;
 			tAssert.Equal("", stderr.String())
 			tAssert.JSONEq(`{
   "mask": "0xFF",
+  "precise": "0x1.0000000000001",
   "ratio": "0x2.8",
   "whole": "0x2.0"
 }`, stdout.String())
@@ -272,7 +275,7 @@ hex_float whole = 0x2.0;
 			path := writeMaceFile(`|===|
 schema Runtime: { env: string, };
 |===|
-[output = data, parse = Runtime]
+[output = 'data', parse = Runtime]
 {
   ok: true,
 }`)
@@ -295,7 +298,7 @@ schema Runtime: { env: string, };
 			path := writeMaceFile(`|===|
 schema Runtime: { env: string, };
 |===|
-[output = data, parse = Runtime]
+[output = 'data', parse = Runtime]
 {
   ok: true,
 }`)
@@ -316,7 +319,7 @@ schema Runtime: { env: string, };
 			path := writeMaceFile(`|===|
 schema Runtime: { env: string, };
 |===|
-[output = data, parse = Runtime]
+[output = 'data', parse = Runtime]
 {
   ok: true,
 }`)
@@ -356,7 +359,7 @@ schema Runtime: { env: string, };
 
 			contents, err := os.ReadFile(outputPath)
 			tAssert.NoError(err)
-			tAssert.Equal(`[output = data]
+			tAssert.Equal(`[output = 'data']
 {
   enabled: true,
   name: "Ada",
@@ -391,7 +394,7 @@ schema Runtime: { env: string, };
 
 			contents, err := os.ReadFile(outputPath)
 			tAssert.NoError(err)
-			tAssert.Equal(`[output = schema]
+			tAssert.Equal(`[output = 'schema']
 {
   age?: int,
   name: string
@@ -437,7 +440,7 @@ schema Runtime: { env: string, };
 
 			contents, err := os.ReadFile(outputPath)
 			tAssert.NoError(err)
-			tAssert.Equal(`[output = data]
+			tAssert.Equal(`[output = 'data']
 {
   name: "Ada"
 }`, string(contents))
@@ -463,7 +466,7 @@ schema Runtime: { env: string, };
 
 			contents, err := os.ReadFile(outputPath)
 			tAssert.NoError(err)
-			tAssert.Equal(`[output = data]
+			tAssert.Equal(`[output = 'data']
 {
   name: "Ada"
 }`, string(contents))
@@ -699,7 +702,7 @@ schema Runtime: { env: string, };
 
 	Describe("nodes", func() {
 		It("prints the parsed node structure", func() {
-			path := writeMaceFile(`[output = data] { result: 1 + 2, }`)
+			path := writeMaceFile(`[output = 'data'] { result: 1 + 2, }`)
 
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer
@@ -719,7 +722,7 @@ schema Runtime: { env: string, };
 			path := writeMaceFile(`|===|
 Unknown value = 1;
 |===|
-[output = data]
+[output = 'data']
 {
   result: 1,
 }`)
@@ -755,10 +758,10 @@ Unknown value = 1;
 	Describe("output", func() {
 		It("prints canonical Mace source from the parsed file", func() {
 			path := writeMaceFile(`|===|
-from "./base.mace" import User;
+from './base.mace' import User;
 schema User: { name: string, age?: int, };
 |===|
-[output = data, schema = User]
+[output = 'data', schema = User]
 { name: "Ada", age: 1 + 2 * 3, }`)
 
 			var stdout bytes.Buffer
@@ -771,13 +774,13 @@ schema User: { name: string, age?: int, };
 			tAssert.NoError(err)
 			tAssert.Equal("", stderr.String())
 			tAssert.Equal(`|===============================|
-from "./base.mace" import User;
+from './base.mace' import User;
 schema User: {
   name: string,
   age?: int
 }
 |===============================|
-[output = data, schema = User]
+[output = 'data', schema = User]
 {
   name: "Ada",
   age: 1 + 2 * 3
@@ -799,7 +802,7 @@ schema User: {
 		})
 
 		It("fails when the output file is malformed", func() {
-			path := writeTempFile("broken.mace", `[output = data]
+			path := writeTempFile("broken.mace", `[output = 'data']
 { name: }`)
 
 			var stdout bytes.Buffer
@@ -820,7 +823,7 @@ schema User: {
 				return "", os.ErrInvalid
 			}
 
-			path := writeMaceFile(`[output = data]
+			path := writeMaceFile(`[output = 'data']
 { name: "Ada", }`)
 
 			var stdout bytes.Buffer

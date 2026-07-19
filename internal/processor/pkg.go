@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
@@ -27,9 +28,10 @@ type Processor struct {
 }
 
 type Result struct {
-	File   ast.File
-	Output map[string]Value
-	Schema map[SchemaField]SchemaType
+	File      ast.File
+	Output    map[string]Value
+	Schema    map[SchemaField]SchemaType
+	Variables map[string]Value
 }
 
 type ScriptResult struct {
@@ -340,7 +342,7 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 		}
 		schema, _ := evaluateSchemaOutput(outputBlock, outputContext.types)
 
-		return Result{File: file, Output: map[string]Value{}, Schema: schema}, nil
+		return Result{File: file, Output: map[string]Value{}, Schema: schema, Variables: outputContext.environment.Values()}, nil
 	}
 
 	if err := p.applyParsedOutputInput(outputBlock, &outputContext); err != nil {
@@ -369,7 +371,7 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 		}
 	}
 
-	return Result{File: file, Output: output, Schema: map[SchemaField]SchemaType{}}, nil
+	return Result{File: file, Output: output, Schema: map[SchemaField]SchemaType{}, Variables: outputContext.environment.Values()}, nil
 }
 
 func validateSchemaOutputScriptVariables(file ast.File) error {
@@ -1453,9 +1455,10 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 		if err != nil {
 			return err
 		}
-		expectedType.nullable = decl.Nullable
-
 		if decl.HasValue {
+			if expressionContainsNull(decl.Value) {
+				return invalidNullUsageError()
+			}
 			actualType, err := inferExpressionType(decl.Value, variables, symbols, types, schemas, enums)
 			if err != nil {
 				return err
@@ -1520,10 +1523,7 @@ func validateTypeReference(typeRef ast.TypeReference, symbols *symbolTable, type
 	case ast.RecordMapType:
 		return validateTypeReference(ref.Value, symbols, types, schemas, enums)
 	case ast.UnionType:
-		_, err := resolveUnionRecordType(ref, symbols, types, schemas)
-		if err != nil && strings.Contains(err.Error(), "fusion members must be schemas") {
-			return validationErrorf("fusion members must be schemas")
-		}
+		_, err := resolveValueType(ref, symbols, types, schemas, enums)
 		return err
 	case ast.VariantType:
 		for _, member := range ref.Members {
@@ -1715,16 +1715,8 @@ func validateOutputDirectiveStructure(output ast.OutputBlock) error {
 	if hasParse && hasParseFile {
 		return validationErrorf("parse and parse_file directives cannot be used together")
 	}
-	if !hasParse && !hasParseFile {
-		hasDataValidationDirective := false
-		for _, directive := range output.Directives {
-			if directive.Kind == ast.OutputDirectiveSchema || directive.Kind == ast.OutputDirectiveSchemaFile {
-				hasDataValidationDirective = true
-			}
-		}
-		if !hasOutput && !hasDataValidationDirective {
-			return validationErrorf("missing output directive")
-		}
+	if !hasOutput {
+		return validationErrorf("directive list must include an output directive")
 	}
 
 	return nil
@@ -1921,20 +1913,20 @@ func hasSchemaFile(directives []ast.OutputDirective) bool {
 }
 
 func validateDataOutputFields(fields []ast.OutputField, hasSchema bool, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
+	seen := make(map[string]struct{}, len(fields))
 	for _, field := range fields {
-		if !hasSchema && conditionalContainsEmptyCollection(field.Value) {
-			fieldType, err := inferExpressionType(field.Value, variables, symbols, types, schemas, enums)
-			if err != nil {
-				return err
-			}
-			if len(fieldType.members) > 0 {
-				return validationErrorf("ambiguous conditional with an empty collection requires an output schema")
-			}
+		if _, exists := seen[field.Name]; exists {
+			return validationErrorf("duplicate output field %q", field.Name)
+		}
+		seen[field.Name] = struct{}{}
+
+		if !hasSchema && expressionContainsEmptyCollection(field.Value) {
+			return validationErrorf("empty collection output requires an output schema")
 		}
 		if err := validateDataOutputExpression(field.Value, symbols); err != nil {
 			return err
 		}
-		if err := validateNullableVariableAccess(field.Value, variables, symbols, types, schemas, enums); err != nil {
+		if err := validateExpressionPresence(field.Value, variables, symbols, types, schemas, enums, false); err != nil {
 			return err
 		}
 	}
@@ -1948,13 +1940,69 @@ func conditionalRequiresCollectionContext(expression ast.Expression, expressionT
 
 func conditionalContainsEmptyCollection(expression ast.Expression) bool {
 	conditional, ok := expression.(ast.ConditionalExpression)
-	if !ok {
-		return false
-	}
-	if isEmptyCollectionExpression(conditional.Then) || isEmptyCollectionExpression(conditional.Else) {
+	return ok && (expressionContainsEmptyCollection(conditional.Then) ||
+		expressionContainsEmptyCollection(conditional.Else))
+}
+
+func expressionContainsEmptyCollection(expression ast.Expression) bool {
+	if isEmptyCollectionExpression(expression) {
 		return true
 	}
-	return conditionalContainsEmptyCollection(conditional.Then) || conditionalContainsEmptyCollection(conditional.Else)
+
+	switch typed := expression.(type) {
+	case ast.ArrayLiteral:
+		return lo.ContainsBy(typed.Elements, expressionContainsEmptyCollection)
+	case ast.RecordLiteral:
+		return lo.ContainsBy(typed.Fields, func(field ast.RecordField) bool {
+			return expressionContainsEmptyCollection(field.Value)
+		})
+	case ast.MemberAccess:
+		return expressionContainsEmptyCollection(typed.Target)
+	case ast.PrefixExpression:
+		return expressionContainsEmptyCollection(typed.Right)
+	case ast.InfixExpression:
+		return expressionContainsEmptyCollection(typed.Left) || expressionContainsEmptyCollection(typed.Right)
+	case ast.MatchExpression:
+		if expressionContainsEmptyCollection(typed.Value) {
+			return true
+		}
+		return lo.ContainsBy(typed.Arms, func(arm ast.MatchArm) bool {
+			return expressionContainsEmptyCollection(arm.Value)
+		})
+	case ast.ConditionalExpression:
+		return expressionContainsEmptyCollection(typed.Condition) ||
+			expressionContainsEmptyCollection(typed.Then) ||
+			expressionContainsEmptyCollection(typed.Else)
+	default:
+		return false
+	}
+}
+
+func expressionContainsNull(expression ast.Expression) bool {
+	switch typed := expression.(type) {
+	case ast.NullLiteral:
+		return true
+	case ast.ArrayLiteral:
+		return lo.ContainsBy(typed.Elements, expressionContainsNull)
+	case ast.RecordLiteral:
+		return lo.ContainsBy(typed.Fields, func(field ast.RecordField) bool {
+			return expressionContainsNull(field.Value)
+		})
+	case ast.MemberAccess:
+		return expressionContainsNull(typed.Target)
+	case ast.MatchExpression:
+		return expressionContainsNull(typed.Value) || lo.ContainsBy(typed.Arms, func(arm ast.MatchArm) bool {
+			return expressionContainsNull(arm.Value)
+		})
+	case ast.PrefixExpression:
+		return expressionContainsNull(typed.Right)
+	case ast.InfixExpression:
+		return expressionContainsNull(typed.Left) || expressionContainsNull(typed.Right)
+	case ast.ConditionalExpression:
+		return expressionContainsNull(typed.Condition) || expressionContainsNull(typed.Then) || expressionContainsNull(typed.Else)
+	default:
+		return false
+	}
 }
 
 func isEmptyCollectionExpression(expression ast.Expression) bool {
@@ -1968,10 +2016,6 @@ func isEmptyCollectionExpression(expression ast.Expression) bool {
 	}
 }
 
-func validateNullableVariableAccess(expression ast.Expression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
-	return validateExpressionPresence(expression, variables, symbols, types, schemas, enums, false)
-}
-
 func validateExpressionPresence(expression ast.Expression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any, allowAbsent bool) error {
 	switch expr := expression.(type) {
 	case ast.MemberAccess:
@@ -1983,12 +2027,22 @@ func validateExpressionPresence(expression ast.Expression, variables *variableRe
 			return possiblyAbsentValueError()
 		}
 		return validateExpressionPresence(expr.Target, variables, symbols, types, schemas, enums, true)
-	case ast.TypeTestExpression:
-		_, err := inferTypeTestType(expr, variables, symbols, types, schemas, enums)
-		if err != nil {
+	case ast.MatchExpression:
+		if _, err := inferMatchType(expr, variables, symbols, types, schemas, enums); err != nil {
 			return err
 		}
-		return validateExpressionPresence(expr.Expression, variables, symbols, types, schemas, enums, false)
+		if err := validateExpressionPresence(expr.Value, variables, symbols, types, schemas, enums, false); err != nil {
+			return err
+		}
+		for _, arm := range expr.Arms {
+			armVariables, err := matchArmVariables(expr.Value, arm.Pattern, variables, symbols, types, schemas, enums)
+			if err != nil {
+				return err
+			}
+			if err := validateExpressionPresence(arm.Value, armVariables, symbols, types, schemas, enums, false); err != nil {
+				return err
+			}
+		}
 	case ast.ArrayLiteral:
 		for _, element := range expr.Elements {
 			if err := validateExpressionPresence(element, variables, symbols, types, schemas, enums, false); err != nil {
@@ -2030,44 +2084,57 @@ func validateExpressionPresence(expression ast.Expression, variables *variableRe
 }
 
 func validateDataOutputExpression(expression ast.Expression, symbols *symbolTable) error {
+	return validateDataOutputExpressionPosition(expression, symbols, true)
+}
+
+func validateDataOutputExpressionPosition(expression ast.Expression, symbols *symbolTable, isFieldRoot bool) error {
 	switch expr := expression.(type) {
 	case ast.NullLiteral:
-		return invalidNullUsageError()
+		if !isFieldRoot {
+			return validationErrorf("null is only allowed in output")
+		}
 	case ast.Identifier:
 		if symbols.IsType(expr.Name) || symbols.IsSchema(expr.Name) {
 			return diagnosticErrorf(ErrorValue, CodeOutputValueDeclaration, DiagnosticFields{Name: expr.Name}, "output value %q cannot reference type or schema declaration", expr.Name)
 		}
 	case ast.MemberAccess:
-		return validateDataOutputExpression(expr.Target, symbols)
-	case ast.TypeTestExpression:
-		return validateDataOutputExpression(expr.Expression, symbols)
+		return validateDataOutputExpressionPosition(expr.Target, symbols, false)
+	case ast.MatchExpression:
+		if err := validateDataOutputExpressionPosition(expr.Value, symbols, false); err != nil {
+			return err
+		}
+		for _, arm := range expr.Arms {
+			if err := validateDataOutputExpressionPosition(arm.Value, symbols, false); err != nil {
+				return err
+			}
+		}
 	case ast.ArrayLiteral:
 		for _, element := range expr.Elements {
-			if err := validateDataOutputExpression(element, symbols); err != nil {
+			if err := validateDataOutputExpressionPosition(element, symbols, false); err != nil {
 				return err
 			}
 		}
 	case ast.RecordLiteral:
 		for _, field := range expr.Fields {
-			if err := validateDataOutputExpression(field.Value, symbols); err != nil {
+			if err := validateDataOutputExpressionPosition(field.Value, symbols, false); err != nil {
 				return err
 			}
 		}
 	case ast.PrefixExpression:
-		return validateDataOutputExpression(expr.Right, symbols)
+		return validateDataOutputExpressionPosition(expr.Right, symbols, false)
 	case ast.InfixExpression:
-		if err := validateDataOutputExpression(expr.Left, symbols); err != nil {
+		if err := validateDataOutputExpressionPosition(expr.Left, symbols, false); err != nil {
 			return err
 		}
-		return validateDataOutputExpression(expr.Right, symbols)
+		return validateDataOutputExpressionPosition(expr.Right, symbols, false)
 	case ast.ConditionalExpression:
-		if err := validateDataOutputExpression(expr.Condition, symbols); err != nil {
+		if err := validateDataOutputExpressionPosition(expr.Condition, symbols, false); err != nil {
 			return err
 		}
-		if err := validateDataOutputExpression(expr.Then, symbols); err != nil {
+		if err := validateDataOutputExpressionPosition(expr.Then, symbols, false); err != nil {
 			return err
 		}
-		return validateDataOutputExpression(expr.Else, symbols)
+		return validateDataOutputExpressionPosition(expr.Else, symbols, false)
 	}
 
 	return nil
@@ -2108,13 +2175,6 @@ func validateOutputSchema(schemaName string, items []ast.OutputField, variables 
 				return validationErrorf("unknown identifier %q", item.Name)
 			}
 		}
-		actualType, err := inferExpressionType(item.Value, variables, symbols, types, schemas, enums)
-		if err != nil {
-			return err
-		}
-		if err := ensureAssignable(expectedType, actualType); err != nil {
-			return err
-		}
 		if err := validateExpressionAgainstType(item.Value, expectedType, variables, symbols, types, schemas, enums); err != nil {
 			return err
 		}
@@ -2132,6 +2192,9 @@ func validateOutputSchema(schemaName string, items []ast.OutputField, variables 
 func validateExpressionAgainstType(expression ast.Expression, expectedType valueType, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
 	if _, ok := expression.(ast.NullLiteral); ok && expectedType.nullable {
 		return nil
+	}
+	if match, ok := expression.(ast.MatchExpression); ok {
+		return validateMatchAgainstType(match, expectedType, variables, symbols, types, schemas, enums)
 	}
 	if len(expectedType.members) > 0 {
 		return validateExpressionAgainstVariantMembers(expression, expectedType.members, variables, symbols, types, schemas, enums)
@@ -2169,6 +2232,12 @@ func validateExpressionAgainstType(expression ast.Expression, expectedType value
 			}
 		case ast.ConditionalExpression:
 			return validateConditionalAgainstType(typed, expectedType, variables, symbols, types, schemas, enums)
+		default:
+			actualType, err := inferExpressionType(expression, variables, symbols, types, schemas, enums)
+			if err != nil {
+				return err
+			}
+			return ensureAssignable(expectedType, actualType)
 		}
 	case ValueRecord:
 		if expectedType.element != nil {
@@ -2181,6 +2250,12 @@ func validateExpressionAgainstType(expression ast.Expression, expectedType value
 				}
 			case ast.ConditionalExpression:
 				return validateConditionalAgainstType(typed, expectedType, variables, symbols, types, schemas, enums)
+			default:
+				actualType, err := inferExpressionType(expression, variables, symbols, types, schemas, enums)
+				if err != nil {
+					return err
+				}
+				return ensureAssignable(expectedType, actualType)
 			}
 			return nil
 		}
@@ -2195,6 +2270,28 @@ func validateExpressionAgainstType(expression ast.Expression, expectedType value
 			return nil
 		case ast.ConditionalExpression:
 			return validateConditionalAgainstType(typed, expectedType, variables, symbols, types, schemas, enums)
+		default:
+			actualType, err := inferExpressionType(expression, variables, symbols, types, schemas, enums)
+			if err != nil {
+				return err
+			}
+			return ensureAssignable(expectedType, actualType)
+		}
+	}
+	return nil
+}
+
+func validateMatchAgainstType(expression ast.MatchExpression, expectedType valueType, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
+	if _, err := inferMatchType(expression, variables, symbols, types, schemas, enums); err != nil {
+		return err
+	}
+	for _, arm := range expression.Arms {
+		armVariables, err := matchArmVariables(expression.Value, arm.Pattern, variables, symbols, types, schemas, enums)
+		if err != nil {
+			return err
+		}
+		if err := validateExpressionAgainstType(arm.Value, expectedType, armVariables, symbols, types, schemas, enums); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -2230,6 +2327,9 @@ func validateExpressionAgainstVariantMembers(expression ast.Expression, members 
 	actualType, err := inferExpressionType(expression, variables, symbols, types, schemas, enums)
 	if err != nil {
 		return err
+	}
+	if len(actualType.members) > 0 {
+		return ensureAssignable(valueType{members: members}, actualType)
 	}
 
 	matchCount := countVariantChoiceMatchesForExpression(expression, actualType, members, variables, symbols, types, schemas, enums)
@@ -2640,7 +2740,6 @@ func evaluateScript(items []ast.Declaration, environment *valueEnvironment, symb
 		if err != nil {
 			return err
 		}
-		expectedType.nullable = variable.Nullable
 		value, _ = coerceEvaluatedValueAgainstType(variable.Value, value, expectedType, environment, Value{}, symbols, types, schemas, enums)
 		if err := validateEvaluatedValueAgainstType(value, expectedType, symbols, types, schemas, enums); err != nil {
 			return err
@@ -2696,6 +2795,8 @@ func coerceEvaluatedValueAgainstType(expression ast.Expression, value Value, exp
 
 func evaluateExpression(expression ast.Expression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
 	switch expr := expression.(type) {
+	case ast.GroupedExpression:
+		return evaluateExpression(expr.Expression, environment, self, symbols, types, schemas, enums)
 	case ast.Identifier:
 		value, ok := environment.Get(expr.Name)
 		if !ok {
@@ -2712,8 +2813,8 @@ func evaluateExpression(expression ast.Expression, environment *valueEnvironment
 		return value, nil
 	case ast.MemberAccess:
 		return evaluateMemberAccess(expr, environment, self, symbols, types, schemas, enums)
-	case ast.TypeTestExpression:
-		return evaluateTypeTest(expr, environment, self, symbols, types, schemas, enums)
+	case ast.MatchExpression:
+		return evaluateMatch(expr, environment, self, symbols, types, schemas, enums)
 	case ast.IntLiteral:
 		return parseInt(expr.Lexeme)
 	case ast.FloatLiteral:
@@ -2755,7 +2856,7 @@ func parseInt(lexeme string) (Value, error) {
 
 func parseFloat(lexeme string) (Value, error) {
 	value, err := strconv.ParseFloat(lexeme, 64)
-	if err != nil {
+	if err != nil || !isFiniteFloat(value) {
 		return Value{}, validationErrorf("invalid float literal %q", lexeme)
 	}
 	return Value{Kind: ValueFloat, Float: value}, nil
@@ -2770,28 +2871,53 @@ func parseHexInt(lexeme string) (Value, error) {
 	return Value{Kind: ValueHexInt, Int: value}, nil
 }
 
+func parseNegativeHexInt(lexeme string) (Value, error) {
+	trimmed := strings.TrimPrefix(strings.TrimPrefix(lexeme, "0x"), "0X")
+	magnitude, err := strconv.ParseUint(trimmed, 16, 64)
+	if err != nil || magnitude > uint64(math.MaxInt64)+1 {
+		return Value{}, validationErrorf("invalid hex_int literal %q", "-"+lexeme)
+	}
+	if magnitude == uint64(math.MaxInt64)+1 {
+		return Value{Kind: ValueHexInt, Int: math.MinInt64}, nil
+	}
+	return Value{Kind: ValueHexInt, Int: -int64(magnitude)}, nil
+}
+
 func parseHexFloat(lexeme string) (Value, error) {
 	trimmed := strings.TrimPrefix(strings.TrimPrefix(lexeme, "0x"), "0X")
 	parts := strings.Split(trimmed, ".")
-	if len(parts) != 2 {
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return Value{}, validationErrorf("invalid hex_float literal %q", lexeme)
 	}
 
-	whole, err := strconv.ParseInt(parts[0], 16, 64)
+	value, err := strconv.ParseFloat(lexeme+"p0", 64)
 	if err != nil {
-		return Value{}, validationErrorf("invalid hex_float literal %q", lexeme)
-	}
-
-	fraction := 0.0
-	for index, r := range parts[1] {
-		digit, err := strconv.ParseInt(string(r), 16, 64)
-		if err != nil {
+		numberError, isNumberError := err.(*strconv.NumError)
+		if isNumberError && numberError.Err == strconv.ErrRange && math.IsInf(value, 1) && isFiniteHexFloatLiteral(parts[0], parts[1]) {
+			return Value{Kind: ValueHexFloat, Float: math.MaxFloat64}, nil
+		}
+		if !isNumberError || numberError.Err != strconv.ErrRange || !isFiniteFloat(value) {
 			return Value{}, validationErrorf("invalid hex_float literal %q", lexeme)
 		}
-		fraction += float64(digit) / math.Pow(16, float64(index+1))
 	}
+	if !isFiniteFloat(value) {
+		return Value{}, validationErrorf("invalid hex_float literal %q", lexeme)
+	}
+	return Value{Kind: ValueHexFloat, Float: value}, nil
+}
 
-	return Value{Kind: ValueHexFloat, Float: float64(whole) + fraction}, nil
+func isFiniteHexFloatLiteral(whole string, fraction string) bool {
+	whole = strings.TrimLeft(whole, "0")
+	if len(whole) < 256 {
+		return true
+	}
+	if len(whole) > 256 {
+		return false
+	}
+	if strings.Trim(whole, "Ff") != "" {
+		return true
+	}
+	return strings.Trim(fraction, "0") == ""
 }
 
 func parseStaticString(lexeme string) (Value, error) {
@@ -2992,10 +3118,16 @@ func stringifyValue(value Value) (string, error) {
 	case ValueInt:
 		return strconv.FormatInt(value.Int, 10), nil
 	case ValueFloat:
+		if !isFiniteFloat(value.Float) {
+			return "", validationErrorf("cannot format non-finite float")
+		}
 		return strconv.FormatFloat(value.Float, 'f', -1, 64), nil
 	case ValueHexInt:
 		return formatHexInt(value.Int), nil
 	case ValueHexFloat:
+		if !isFiniteFloat(value.Float) {
+			return "", validationErrorf("cannot format non-finite hex_float")
+		}
 		return formatHexFloat(value.Float), nil
 	case ValueBoolean:
 		return strconv.FormatBool(value.Boolean), nil
@@ -3014,77 +3146,68 @@ func formatHexInt(value int64) string {
 }
 
 func formatHexFloat(value float64) string {
-	if value == 0 {
-		return "0x0.0"
-	}
-
 	sign := ""
-	if value < 0 {
+	if math.Signbit(value) {
 		sign = "-"
-		value = -value
+		value = math.Abs(value)
+	}
+	if value == 0 {
+		return sign + "0x0.0"
 	}
 
-	whole := int64(value)
-	fraction := value - float64(whole)
-	wholeText := strings.ToUpper(strconv.FormatInt(whole, 16))
-	if fraction == 0 {
-		return sign + "0x" + wholeText + ".0"
+	exact := new(big.Rat).SetFloat64(value)
+	numerator := new(big.Int).Set(exact.Num())
+	denominatorPower := exact.Denom().BitLen() - 1
+	fractionalDigits := (denominatorPower + 3) / 4
+	numerator.Lsh(numerator, uint(4*fractionalDigits-denominatorPower))
+
+	if fractionalDigits == 0 {
+		return sign + "0x" + strings.ToUpper(numerator.Text(16)) + ".0"
 	}
 
-	digits := make([]byte, 0, 10)
-	for range 10 {
-		fraction *= 16
-		digit := int(fraction)
-		fraction -= float64(digit)
-		if digit < 10 {
-			digits = append(digits, byte('0'+digit))
-		} else {
-			digits = append(digits, byte('A'+digit-10))
-		}
+	scale := new(big.Int).Lsh(big.NewInt(1), uint(4*fractionalDigits))
+	whole := new(big.Int)
+	fraction := new(big.Int)
+	whole.QuoRem(numerator, scale, fraction)
+	fractionText := fraction.Text(16)
+	if padding := fractionalDigits - len(fractionText); padding > 0 {
+		fractionText = strings.Repeat("0", padding) + fractionText
 	}
-
-	if len(digits) == 10 {
-		roundDigit := digits[9]
-		digits = digits[:9]
-		if roundDigit >= '8' {
-			for index := len(digits) - 1; index >= 0; index-- {
-				if digits[index] == 'F' {
-					digits[index] = '0'
-					continue
-				}
-				if digits[index] == '9' {
-					digits[index] = 'A'
-				} else {
-					digits[index]++
-				}
-				goto trim
-			}
-			whole++
-			wholeText = strings.ToUpper(strconv.FormatInt(whole, 16))
-		}
+	fractionText = strings.TrimRight(fractionText, "0")
+	if fractionText == "" {
+		fractionText = "0"
 	}
-
-trim:
-	for len(digits) > 0 && digits[len(digits)-1] == '0' {
-		digits = digits[:len(digits)-1]
-	}
-	if len(digits) == 0 {
-		return sign + "0x" + wholeText + ".0"
-	}
-	return sign + "0x" + wholeText + "." + string(digits)
+	return sign + "0x" + strings.ToUpper(whole.Text(16)) + "." + strings.ToUpper(fractionText)
 }
 
-func evaluateTypeTest(expr ast.TypeTestExpression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
-	value, err := evaluateExpression(expr.Expression, environment, self, symbols, types, schemas, enums)
+func evaluateMatch(expr ast.MatchExpression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
+	matched, err := evaluateExpression(expr.Value, environment, self, symbols, types, schemas, enums)
 	if err != nil {
 		return Value{}, err
 	}
-	targetType, err := resolveValueType(expr.TargetType, symbols, types, schemas, enums)
-	if err != nil {
-		return Value{}, err
+
+	for _, arm := range expr.Arms {
+		if arm.Pattern.Type != nil {
+			patternType, err := resolveValueType(arm.Pattern.Type, symbols, types, schemas, enums)
+			if err != nil {
+				return Value{}, err
+			}
+			if validateEvaluatedValueAgainstType(matched, patternType, symbols, types, schemas, enums) == nil {
+				return evaluateExpression(arm.Value, environment, self, symbols, types, schemas, enums)
+			}
+			continue
+		}
+
+		patternValues, err := resolveChoiceMemberValues(arm.Pattern.Literal, types, map[string]struct{}{})
+		if err != nil {
+			return Value{}, err
+		}
+		if len(patternValues) == 1 && choiceContainsValue(patternValues, matched) {
+			return evaluateExpression(arm.Value, environment, self, symbols, types, schemas, enums)
+		}
 	}
-	matches := validateEvaluatedValueAgainstType(value, targetType, symbols, types, schemas, enums) == nil
-	return Value{Kind: ValueBoolean, Boolean: matches}, nil
+
+	return Value{}, validationErrorf("match expression has no matching arm")
 }
 
 func evaluateMemberAccess(expr ast.MemberAccess, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
@@ -3141,6 +3264,12 @@ func evaluateMemberAccess(expr ast.MemberAccess, environment *valueEnvironment, 
 }
 
 func evaluatePrefix(expr ast.PrefixExpression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
+	if expr.Operator == lexer.TokenMinus {
+		if literal, ok := expr.Right.(ast.HexIntLiteral); ok {
+			return parseNegativeHexInt(literal.Lexeme)
+		}
+	}
+
 	right, err := evaluateExpression(expr.Right, environment, self, symbols, types, schemas, enums)
 	if err != nil {
 		return Value{}, err
@@ -3165,9 +3294,12 @@ func evaluatePrefix(expr ast.PrefixExpression, environment *valueEnvironment, se
 	case lexer.TokenMinus:
 		switch right.Kind {
 		case ValueInt, ValueHexInt:
+			if right.Int == math.MinInt64 {
+				return Value{}, validationErrorf("%s overflow", right.kindName())
+			}
 			return Value{Kind: right.Kind, Int: -right.Int}, nil
 		case ValueFloat, ValueHexFloat:
-			return Value{Kind: right.Kind, Float: -right.Float}, nil
+			return finiteFloatValue(right.Kind, -right.Float)
 		default:
 			return Value{}, validationErrorf("type mismatch: expected numeric after unary operator")
 		}
@@ -3199,10 +3331,6 @@ func evaluateInfix(expr ast.InfixExpression, environment *valueEnvironment, self
 	switch expr.Operator {
 	case lexer.TokenPlus, lexer.TokenMinus, lexer.TokenStar, lexer.TokenSlash, lexer.TokenDoubleStar:
 		return evaluateNumeric(expr.Operator, left, right)
-	case lexer.TokenIn:
-		return evaluateContains(left, right)
-	case lexer.TokenMerge:
-		return evaluateMerge(left, right)
 	case lexer.TokenPercent:
 		return evaluateModulo(left, right)
 	case lexer.TokenShiftLeft, lexer.TokenShiftRight, lexer.TokenShiftRightUnsigned:
@@ -3230,83 +3358,6 @@ func evaluateCoalesce(expr ast.InfixExpression, environment *valueEnvironment, s
 	return evaluateExpression(expr.Right, environment, self, symbols, types, schemas, enums)
 }
 
-func evaluateContains(left, right Value) (Value, error) {
-	if left.Kind != ValueString || right.Kind != ValueRecord {
-		return Value{}, validationErrorf("type mismatch: expected string key and record value for 'in'")
-	}
-
-	_, exists := right.Record[left.String]
-	return Value{Kind: ValueBoolean, Boolean: exists}, nil
-}
-
-func evaluateMerge(left, right Value) (Value, error) {
-	if left.Kind != right.Kind {
-		return Value{}, validationErrorf("type mismatch: merge operands must have the same type")
-	}
-
-	switch left.Kind {
-	case ValueRecord:
-		return Value{Kind: ValueRecord, Record: mergeRecords(left.Record, right.Record), Type: mergeValueType(left, right)}, nil
-	case ValueArray:
-		if !arrayMergeTypesMatch(left, right) {
-			return Value{}, validationErrorf("type mismatch: merge operands must have the same type")
-		}
-		merged := make([]Value, 0, len(left.Array)+len(right.Array))
-		merged = append(merged, left.Array...)
-		merged = append(merged, right.Array...)
-		return Value{Kind: ValueArray, Array: merged, Type: mergeValueType(left, right)}, nil
-	default:
-		return Value{}, validationErrorf("type mismatch: merge operands must be records or arrays")
-	}
-}
-
-func arrayMergeTypesMatch(left, right Value) bool {
-	if left.Type != nil && right.Type != nil {
-		return typesEqual(*left.Type, *right.Type)
-	}
-
-	leftType := valueTypeFromValue(left)
-	rightType := valueTypeFromValue(right)
-	if leftType.element == nil || rightType.element == nil {
-		return true
-	}
-	if leftType.element.kind == ValueUnknown || rightType.element.kind == ValueUnknown {
-		return true
-	}
-	return typesEqual(*leftType.element, *rightType.element)
-}
-
-func mergeValueType(left, right Value) *valueType {
-	if left.Type != nil && right.Type != nil && typesEqual(*left.Type, *right.Type) {
-		return left.Type
-	}
-	return nil
-}
-
-func mergeRecords(left, right map[string]Value) map[string]Value {
-	merged := make(map[string]Value, len(left)+len(right))
-	for name, value := range left {
-		merged[name] = value
-	}
-	for name, value := range right {
-		if leftValue, exists := merged[name]; exists && leftValue.Kind == value.Kind {
-			switch value.Kind {
-			case ValueRecord:
-				merged[name] = Value{Kind: ValueRecord, Record: mergeRecords(leftValue.Record, value.Record)}
-				continue
-			case ValueArray:
-				array := make([]Value, 0, len(leftValue.Array)+len(value.Array))
-				array = append(array, leftValue.Array...)
-				array = append(array, value.Array...)
-				merged[name] = Value{Kind: ValueArray, Array: array}
-				continue
-			}
-		}
-		merged[name] = value
-	}
-	return merged
-}
-
 func evaluateNumeric(operator lexer.TokenType, left, right Value) (Value, error) {
 	if !isNumericValue(left) || !isNumericValue(right) {
 		return Value{}, validationErrorf("type mismatch: expected numeric operands for operator")
@@ -3330,34 +3381,33 @@ func evaluateHexNumeric(operator lexer.TokenType, left, right Value) (Value, err
 	switch operator {
 	case lexer.TokenPlus:
 		if left.Kind == ValueHexInt && right.Kind == ValueHexInt {
-			return Value{Kind: ValueHexInt, Int: left.Int + right.Int}, nil
+			return checkedHexIntBinary(left.Int, right.Int, func(left, right *big.Int) *big.Int {
+				return left.Add(left, right)
+			})
 		}
-		return Value{Kind: ValueHexFloat, Float: leftNumber + rightNumber}, nil
+		return finiteFloatValue(ValueHexFloat, leftNumber+rightNumber)
 	case lexer.TokenMinus:
 		if left.Kind == ValueHexInt && right.Kind == ValueHexInt {
-			return Value{Kind: ValueHexInt, Int: left.Int - right.Int}, nil
+			return checkedHexIntBinary(left.Int, right.Int, func(left, right *big.Int) *big.Int {
+				return left.Sub(left, right)
+			})
 		}
-		return Value{Kind: ValueHexFloat, Float: leftNumber - rightNumber}, nil
+		return finiteFloatValue(ValueHexFloat, leftNumber-rightNumber)
 	case lexer.TokenStar:
 		if left.Kind == ValueHexInt && right.Kind == ValueHexInt {
-			return Value{Kind: ValueHexInt, Int: left.Int * right.Int}, nil
+			return checkedHexIntProduct(left.Int, right.Int)
 		}
-		return Value{Kind: ValueHexFloat, Float: leftNumber * rightNumber}, nil
+		return finiteFloatValue(ValueHexFloat, leftNumber*rightNumber)
 	case lexer.TokenSlash:
 		if rightNumber == 0 {
 			return Value{}, validationErrorf("division by zero")
 		}
-		return Value{Kind: ValueHexFloat, Float: leftNumber / rightNumber}, nil
+		return finiteFloatValue(ValueHexFloat, leftNumber/rightNumber)
 	case lexer.TokenDoubleStar:
 		if left.Kind == ValueHexInt && right.Kind == ValueHexInt && right.Int >= 0 {
-			result, err := evaluateIntPower(left.Int, right.Int)
-			if err != nil {
-				return Value{}, err
-			}
-			result.Kind = ValueHexInt
-			return result, nil
+			return evaluateHexIntPower(left.Int, right.Int)
 		}
-		return Value{Kind: ValueHexFloat, Float: math.Pow(leftNumber, rightNumber)}, nil
+		return finiteFloatValue(ValueHexFloat, math.Pow(leftNumber, rightNumber))
 	default:
 		return Value{}, validationErrorf("unknown numeric operator")
 	}
@@ -3386,21 +3436,69 @@ func evaluateIntNumeric(operator lexer.TokenType, left, right int64) (Value, err
 func evaluateFloatNumeric(operator lexer.TokenType, left, right float64) (Value, error) {
 	switch operator {
 	case lexer.TokenPlus:
-		return Value{Kind: ValueFloat, Float: left + right}, nil
+		return finiteFloatValue(ValueFloat, left+right)
 	case lexer.TokenMinus:
-		return Value{Kind: ValueFloat, Float: left - right}, nil
+		return finiteFloatValue(ValueFloat, left-right)
 	case lexer.TokenStar:
-		return Value{Kind: ValueFloat, Float: left * right}, nil
+		return finiteFloatValue(ValueFloat, left*right)
 	case lexer.TokenSlash:
 		if right == 0 {
 			return Value{}, validationErrorf("division by zero")
 		}
-		return Value{Kind: ValueFloat, Float: left / right}, nil
+		return finiteFloatValue(ValueFloat, left/right)
 	case lexer.TokenDoubleStar:
-		return Value{Kind: ValueFloat, Float: math.Pow(left, right)}, nil
+		return finiteFloatValue(ValueFloat, math.Pow(left, right))
 	default:
 		return Value{}, validationErrorf("unknown numeric operator")
 	}
+}
+
+func checkedHexIntBinary(left int64, right int64, operation func(*big.Int, *big.Int) *big.Int) (Value, error) {
+	result := operation(big.NewInt(left), big.NewInt(right))
+	if !result.IsInt64() {
+		return Value{}, validationErrorf("hex_int overflow")
+	}
+	return Value{Kind: ValueHexInt, Int: result.Int64()}, nil
+}
+
+func checkedHexIntProduct(left int64, right int64) (Value, error) {
+	return checkedHexIntBinary(left, right, func(left, right *big.Int) *big.Int {
+		return left.Mul(left, right)
+	})
+}
+
+func evaluateHexIntPower(base int64, exponent int64) (Value, error) {
+	result := Value{Kind: ValueHexInt, Int: 1}
+	factor := base
+	for exponent > 0 {
+		if exponent&1 == 1 {
+			product, err := checkedHexIntProduct(result.Int, factor)
+			if err != nil {
+				return Value{}, err
+			}
+			result = product
+		}
+		exponent >>= 1
+		if exponent > 0 {
+			product, err := checkedHexIntProduct(factor, factor)
+			if err != nil {
+				return Value{}, err
+			}
+			factor = product.Int
+		}
+	}
+	return result, nil
+}
+
+func finiteFloatValue(kind ValueKind, value float64) (Value, error) {
+	if !isFiniteFloat(value) {
+		return Value{}, validationErrorf("non-finite %s result", Value{Kind: kind}.kindName())
+	}
+	return Value{Kind: kind, Float: value}, nil
+}
+
+func isFiniteFloat(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0)
 }
 
 func evaluateIntPower(base int64, exponent int64) (Value, error) {
@@ -3443,7 +3541,7 @@ func evaluateModulo(left, right Value) (Value, error) {
 	if rightNumber == 0 {
 		return Value{}, validationErrorf("division by zero")
 	}
-	return Value{Kind: ValueFloat, Float: math.Mod(leftNumber, rightNumber)}, nil
+	return finiteFloatValue(ValueFloat, math.Mod(leftNumber, rightNumber))
 }
 
 func evaluateShift(operator lexer.TokenType, left, right Value) (Value, error) {
@@ -3457,7 +3555,17 @@ func evaluateShift(operator lexer.TokenType, left, right Value) (Value, error) {
 		shift := uint(right.Int)
 		switch operator {
 		case lexer.TokenShiftLeft:
-			return Value{Kind: ValueHexInt, Int: left.Int << shift}, nil
+			if left.Int == 0 {
+				return Value{Kind: ValueHexInt}, nil
+			}
+			if shift >= 64 {
+				return Value{}, validationErrorf("hex_int overflow")
+			}
+			result := new(big.Int).Lsh(big.NewInt(left.Int), shift)
+			if !result.IsInt64() {
+				return Value{}, validationErrorf("hex_int overflow")
+			}
+			return Value{Kind: ValueHexInt, Int: result.Int64()}, nil
 		case lexer.TokenShiftRight:
 			return Value{Kind: ValueHexInt, Int: left.Int >> shift}, nil
 		case lexer.TokenShiftRightUnsigned:
@@ -3872,17 +3980,21 @@ func (t valueType) name() string {
 }
 
 func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
+	return resolveValueTypeWithAliases(typeRef, symbols, types, schemas, enums, map[string]struct{}{})
+}
+
+func resolveValueTypeWithAliases(typeRef ast.TypeReference, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any, aliases map[string]struct{}) (valueType, error) {
 	switch ref := typeRef.(type) {
 	case ast.PrimitiveType:
 		return primitiveValueType(ref.Name)
 	case ast.ArrayType:
-		element, err := resolveValueType(ref.Element, symbols, types, schemas, enums)
+		element, err := resolveValueTypeWithAliases(ref.Element, symbols, types, schemas, enums, aliases)
 		if err != nil {
 			return valueType{}, err
 		}
 		return valueType{kind: ValueArray, element: &element}, nil
 	case ast.RecordMapType:
-		value, err := resolveValueType(ref.Value, symbols, types, schemas, enums)
+		value, err := resolveValueTypeWithAliases(ref.Value, symbols, types, schemas, enums, aliases)
 		if err != nil {
 			return valueType{}, err
 		}
@@ -3890,15 +4002,11 @@ func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *ty
 	case ast.ChoiceType:
 		return resolveChoiceType(ref, types)
 	case ast.UnionType:
-		record, err := resolveUnionRecordType(ref, symbols, types, schemas)
-		if err != nil {
-			return valueType{}, err
-		}
-		return valueType{kind: ValueRecord, record: &record}, nil
+		return resolveFusionValueType(ref, symbols, types, schemas, enums, aliases)
 	case ast.VariantType:
 		members := make([]valueType, 0, len(ref.Members))
 		for _, member := range ref.Members {
-			resolved, err := resolveValueType(member, symbols, types, schemas, enums)
+			resolved, err := resolveValueTypeWithAliases(member, symbols, types, schemas, enums, aliases)
 			if err != nil {
 				return valueType{}, err
 			}
@@ -3911,12 +4019,15 @@ func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *ty
 	case ast.RecordType:
 		return valueType{kind: ValueRecord, record: &ref}, nil
 	case ast.NamedType:
+		if _, exists := aliases[ref.Name]; exists {
+			return valueType{}, validationErrorf("cyclic type alias %q", ref.Name)
+		}
 		resolved, resolvedByAlias, err := types.Resolve(ref.Name)
 		if err != nil {
 			return valueType{}, err
 		}
 		if resolvedByAlias {
-			return resolveValueType(resolved, symbols, types, schemas, enums)
+			return resolveValueTypeWithAliases(resolved, symbols, types, schemas, enums, aliasesWith(aliases, ref.Name))
 		}
 		if symbols.IsSchema(ref.Name) || symbols.IsImport(ref.Name) {
 			record, ok := schemas.Get(ref.Name)
@@ -3931,10 +4042,57 @@ func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *ty
 	}
 }
 
+func aliasesWith(aliases map[string]struct{}, name string) map[string]struct{} {
+	next := make(map[string]struct{}, len(aliases)+1)
+	for alias := range aliases {
+		next[alias] = struct{}{}
+	}
+	next[name] = struct{}{}
+	return next
+}
+
+func resolveFusionValueType(reference ast.UnionType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any, aliases map[string]struct{}) (valueType, error) {
+	members := make([]valueType, 0, len(reference.Members))
+	allChoices := true
+	allRecords := true
+
+	for _, member := range reference.Members {
+		resolved, err := resolveValueTypeWithAliases(member, symbols, types, schemas, enums, aliases)
+		if err != nil {
+			return valueType{}, err
+		}
+		members = append(members, resolved)
+		allChoices = allChoices && len(resolved.choiceValues) > 0
+		allRecords = allRecords && resolved.kind == ValueRecord
+	}
+
+	if allChoices {
+		values := make([]Value, 0)
+		for _, member := range members {
+			for _, value := range member.choiceValues {
+				if !choiceContainsValue(values, value) {
+					values = append(values, value)
+				}
+			}
+		}
+		return valueType{choiceValues: values}, nil
+	}
+
+	if allRecords {
+		record, err := resolveUnionRecordType(reference, symbols, types, schemas)
+		if err != nil {
+			return valueType{}, err
+		}
+		return valueType{kind: ValueRecord, record: &record}, nil
+	}
+
+	return valueType{}, validationErrorf("fusion members must be schemas or choices")
+}
+
 func validateVariantValueTypes(members []valueType) error {
 	members = flattenVariantValueTypes(members)
 
-	for _, member := range members {
+	for index, member := range members {
 		switch {
 		case len(member.choiceValues) > 0:
 		case member.kind == ValueArray:
@@ -3942,6 +4100,12 @@ func validateVariantValueTypes(members []valueType) error {
 		case member.kind == ValueString || member.kind == ValueInt || member.kind == ValueFloat || member.kind == ValueHexInt || member.kind == ValueHexFloat || member.kind == ValueBoolean:
 		default:
 			return validationErrorf("variant members must be primitives, arrays, or schemas")
+		}
+
+		for _, prior := range members[:index] {
+			if typesEqual(prior, member) {
+				return validationErrorf("duplicate variant member %s", member.name())
+			}
 		}
 	}
 
@@ -4069,6 +4233,11 @@ func schemaTypeFromTypeReference(typeRef ast.TypeReference, types *typeRegistry)
 		}
 		return SchemaType{Kind: SchemaTypeRecordMap, Element: &value}, nil
 	case ast.UnionType:
+		if values, ok, err := resolveFusionChoiceValues(ref, types); err != nil {
+			return SchemaType{}, err
+		} else if ok {
+			return SchemaType{Kind: SchemaTypeNamed, Name: choiceTypeName(values)}, nil
+		}
 		members := make([]SchemaType, 0, len(ref.Members))
 		for _, member := range ref.Members {
 			resolved, err := schemaTypeFromTypeReference(member, types)
@@ -4107,8 +4276,43 @@ func schemaTypeFromTypeReference(typeRef ast.TypeReference, types *typeRegistry)
 	}
 }
 
+func resolveFusionChoiceValues(reference ast.TypeReference, types *typeRegistry) ([]Value, bool, error) {
+	switch typed := reference.(type) {
+	case ast.ChoiceType:
+		resolved, err := resolveChoiceType(typed, types)
+		if err != nil {
+			return nil, false, err
+		}
+		return resolved.choiceValues, true, nil
+	case ast.UnionType:
+		values := make([]Value, 0)
+		for _, member := range typed.Members {
+			memberValues, ok, err := resolveFusionChoiceValues(member, types)
+			if err != nil || !ok {
+				return nil, false, err
+			}
+			for _, value := range memberValues {
+				if !choiceContainsValue(values, value) {
+					values = append(values, value)
+				}
+			}
+		}
+		return values, true, nil
+	case ast.NamedType:
+		resolved, ok, err := types.Resolve(typed.Name)
+		if err != nil || !ok {
+			return nil, false, err
+		}
+		return resolveFusionChoiceValues(resolved, types)
+	default:
+		return nil, false, nil
+	}
+}
+
 func inferExpressionType(expression ast.Expression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
 	switch expr := expression.(type) {
+	case ast.GroupedExpression:
+		return inferExpressionType(expr.Expression, variables, symbols, types, schemas, enums)
 	case ast.Identifier:
 		if variableType, ok := variables.Get(expr.Name); ok {
 			return variableType, nil
@@ -4139,8 +4343,8 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 			return valueType{}, optionalFieldAccessError(expr.Name)
 		}
 		return inferMemberAccessType(targetType, expr, symbols, types, schemas, enums)
-	case ast.TypeTestExpression:
-		return inferTypeTestType(expr, variables, symbols, types, schemas, enums)
+	case ast.MatchExpression:
+		return inferMatchType(expr, variables, symbols, types, schemas, enums)
 	case ast.IntLiteral:
 		value, err := parseInt(expr.Lexeme)
 		if err != nil {
@@ -4194,19 +4398,115 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 	}
 }
 
-func inferTypeTestType(expr ast.TypeTestExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
-	sourceType, err := inferExpressionType(expr.Expression, variables, symbols, types, schemas, enums)
+func inferMatchType(expr ast.MatchExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
+	matchedType, err := inferExpressionType(expr.Value, variables, symbols, types, schemas, enums)
 	if err != nil {
 		return valueType{}, err
 	}
-	targetType, err := resolveValueType(expr.TargetType, symbols, types, schemas, enums)
-	if err != nil {
+	if len(matchedType.members) == 0 && len(matchedType.choiceValues) == 0 {
+		return valueType{}, validationErrorf("match input must be a variant or choice")
+	}
+	if err := validateMatchPatterns(expr.Arms, matchedType, symbols, types, schemas, enums); err != nil {
 		return valueType{}, err
 	}
-	if _, _, matched := narrowValueType(sourceType, targetType); !matched {
-		return valueType{}, impossibleNarrowingError(expr, sourceType.name(), targetType.name())
+
+	var result valueType
+	for index, arm := range expr.Arms {
+		armVariables, err := matchArmVariables(expr.Value, arm.Pattern, variables, symbols, types, schemas, enums)
+		if err != nil {
+			return valueType{}, err
+		}
+		armType, err := inferExpressionType(arm.Value, armVariables, symbols, types, schemas, enums)
+		if err != nil {
+			return valueType{}, err
+		}
+		if index == 0 {
+			result = armType
+			continue
+		}
+		result = unifyConditionalTypes(result, armType)
 	}
-	return valueType{kind: ValueBoolean}, nil
+	return result, nil
+}
+
+func validateMatchPatterns(arms []ast.MatchArm, matchedType valueType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
+	if len(matchedType.members) > 0 {
+		matchedMembers := flattenVariantValueTypes(matchedType.members)
+		seen := make([]valueType, 0, len(arms))
+		for _, arm := range arms {
+			if arm.Pattern.Type == nil {
+				return validationErrorf("variant match arms require a type pattern")
+			}
+			patternType, err := resolveValueType(arm.Pattern.Type, symbols, types, schemas, enums)
+			if err != nil {
+				return err
+			}
+			patternMembers := []valueType{patternType}
+			if len(patternType.members) > 0 {
+				patternMembers = flattenVariantValueTypes(patternType.members)
+			}
+			for _, patternMember := range patternMembers {
+				if !containsValueType(matchedMembers, patternMember) {
+					return validationErrorf("match pattern %s is not a member of %s", patternType.name(), matchedType.name())
+				}
+				if containsValueType(seen, patternMember) {
+					return validationErrorf("duplicate match pattern %s", patternMember.name())
+				}
+				seen = append(seen, patternMember)
+			}
+		}
+		if len(seen) != len(matchedMembers) {
+			return validationErrorf("match expression must be exhaustive for %s", matchedType.name())
+		}
+		return nil
+	}
+
+	seen := []Value{}
+	for _, arm := range arms {
+		if arm.Pattern.Literal == nil {
+			return validationErrorf("choice match arms require a literal pattern")
+		}
+		values, err := resolveChoiceMemberValues(arm.Pattern.Literal, types, map[string]struct{}{})
+		if err != nil {
+			return err
+		}
+		pattern := values[0]
+		if !choiceContainsValue(matchedType.choiceValues, pattern) {
+			return validationErrorf("match pattern %s is not a member of %s", scalarValueDisplay(pattern), matchedType.name())
+		}
+		if choiceContainsValue(seen, pattern) {
+			return validationErrorf("duplicate match pattern %s", scalarValueDisplay(pattern))
+		}
+		seen = append(seen, pattern)
+	}
+	if len(seen) != len(matchedType.choiceValues) {
+		return validationErrorf("match expression must be exhaustive for %s", matchedType.name())
+	}
+	return nil
+}
+
+func matchArmVariables(expression ast.Expression, pattern ast.MatchPattern, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (*variableRegistry, error) {
+	if pattern.Type == nil {
+		return variables, nil
+	}
+	path, stable := stableExpressionPath(expression)
+	if !stable {
+		return variables, nil
+	}
+	patternType, err := resolveValueType(pattern.Type, symbols, types, schemas, enums)
+	if err != nil {
+		return nil, err
+	}
+
+	narrowed := variables.Clone()
+	narrowed.Add(path, patternType)
+	return narrowed, nil
+}
+
+func containsValueType(types []valueType, candidate valueType) bool {
+	return lo.ContainsBy(types, func(existing valueType) bool {
+		return typesEqual(existing, candidate)
+	})
 }
 
 func inferMemberAccessType(targetType valueType, expr ast.MemberAccess, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
@@ -4315,6 +4615,16 @@ func inferRecordLiteralType(expr ast.RecordLiteral, variables *variableRegistry,
 }
 
 func inferPrefixType(expr ast.PrefixExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
+	if expr.Operator == lexer.TokenMinus {
+		if literal, ok := expr.Right.(ast.HexIntLiteral); ok {
+			value, err := parseNegativeHexInt(literal.Lexeme)
+			if err != nil {
+				return valueType{}, err
+			}
+			return valueType{kind: ValueHexInt, exactValue: &value}, nil
+		}
+	}
+
 	rightType, err := inferExpressionType(expr.Right, variables, symbols, types, schemas, enums)
 	if err != nil {
 		return valueType{}, err
@@ -4358,13 +4668,6 @@ func inferInfixType(expr ast.InfixExpression, variables *variableRegistry, symbo
 	switch expr.Operator {
 	case lexer.TokenPlus, lexer.TokenMinus, lexer.TokenStar, lexer.TokenSlash, lexer.TokenDoubleStar:
 		return inferNumericBinary(expr.Operator, leftType, rightType)
-	case lexer.TokenIn:
-		if leftType.kind != ValueString || rightType.kind != ValueRecord {
-			return valueType{}, validationErrorf("type mismatch: expected string key and record value for 'in'")
-		}
-		return valueType{kind: ValueBoolean}, nil
-	case lexer.TokenMerge:
-		return inferMergeType(leftType, rightType)
 	case lexer.TokenPercent:
 		if !leftType.isNumeric() || !rightType.isNumeric() {
 			return valueType{}, validationErrorf("type mismatch: expected numeric operands for '%%'")
@@ -4468,16 +4771,6 @@ func coalesceOperands(expression ast.Expression) []ast.Expression {
 
 	operands := []ast.Expression{infix.Left}
 	return append(operands, coalesceOperands(infix.Right)...)
-}
-
-func inferMergeType(leftType, rightType valueType) (valueType, error) {
-	if leftType.kind != ValueRecord && leftType.kind != ValueArray {
-		return valueType{}, validationErrorf("type mismatch: merge operands must be records or arrays")
-	}
-	if !typesEqual(leftType, rightType) {
-		return valueType{}, validationErrorf("type mismatch: merge operands must have the same type")
-	}
-	return leftType, nil
 }
 
 func inferNumericBinary(operator lexer.TokenType, leftType, rightType valueType) (valueType, error) {
@@ -4601,33 +4894,6 @@ func widenedValueType(input valueType) valueType {
 }
 
 func conditionalVariables(condition ast.Expression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (*variableRegistry, *variableRegistry, error) {
-	if typeTest, ok := condition.(ast.TypeTestExpression); ok {
-		path, stable := stableExpressionPath(typeTest.Expression)
-		if !stable {
-			return variables, variables, nil
-		}
-		sourceType, err := inferExpressionType(typeTest.Expression, variables, symbols, types, schemas, enums)
-		if err != nil {
-			return nil, nil, err
-		}
-		targetType, err := resolveValueType(typeTest.TargetType, symbols, types, schemas, enums)
-		if err != nil {
-			return nil, nil, err
-		}
-		matchedType, remainingType, matched := narrowValueType(sourceType, targetType)
-		if !matched {
-			return nil, nil, impossibleNarrowingError(typeTest, sourceType.name(), targetType.name())
-		}
-
-		thenVariables := variables.Clone()
-		thenVariables.Add(path, matchedType)
-		elseVariables := variables.Clone()
-		if !isUnknownValueType(remainingType) {
-			elseVariables.Add(path, remainingType)
-		}
-		return thenVariables, elseVariables, nil
-	}
-
 	identifier, ok := condition.(ast.Identifier)
 	if !ok {
 		return variables, variables, nil
@@ -4641,53 +4907,6 @@ func conditionalVariables(condition ast.Expression, variables *variableRegistry,
 	variableType.nullable = false
 	narrowed.Add(identifier.Name, variableType)
 	return narrowed, variables, nil
-}
-
-func narrowValueType(sourceType valueType, targetType valueType) (valueType, valueType, bool) {
-	sourceMembers := flattenVariantValueTypes(sourceType.members)
-	if len(sourceMembers) == 0 {
-		presentType := sourceType
-		presentType.nullable = false
-		sourceMembers = []valueType{presentType}
-	}
-
-	matchedMembers := make([]valueType, 0, len(sourceMembers))
-	remainingMembers := make([]valueType, 0, len(sourceMembers))
-	for _, member := range sourceMembers {
-		matchingChoiceValues := lo.Filter(targetType.choiceValues, func(value Value, _ int) bool {
-			return len(member.choiceValues) == 0 && member.exactValue == nil && value.Kind == member.kind
-		})
-		if len(matchingChoiceValues) > 0 {
-			matchedMembers = appendUniqueValueType(matchedMembers, valueType{choiceValues: matchingChoiceValues})
-			remainingMembers = appendUniqueValueType(remainingMembers, member)
-			continue
-		}
-
-		if ensureAssignable(targetType, member) == nil {
-			matchedMembers = appendUniqueValueType(matchedMembers, member)
-		} else {
-			remainingMembers = appendUniqueValueType(remainingMembers, member)
-		}
-	}
-	if len(matchedMembers) == 0 {
-		return valueType{}, valueType{}, false
-	}
-	if sourceType.nullable {
-		remainingMembers = appendUniqueValueType(remainingMembers, valueType{kind: ValueNull})
-	}
-
-	return simplifiedVariantType(matchedMembers), simplifiedVariantType(remainingMembers), true
-}
-
-func simplifiedVariantType(members []valueType) valueType {
-	switch len(members) {
-	case 0:
-		return valueType{kind: ValueUnknown}
-	case 1:
-		return members[0]
-	default:
-		return valueType{members: members}
-	}
 }
 
 func stableExpressionPath(expression ast.Expression) (string, bool) {
@@ -4844,13 +5063,40 @@ func ensureAssignable(expectedType, actualType valueType) error {
 }
 
 func appendUniqueValueType(types []valueType, next valueType) []valueType {
-	for _, existing := range types {
-		if typesEqual(existing, next) {
+	for index, existing := range types {
+		if merged, ok := mergeInferredValueTypes(existing, next); ok {
+			types[index] = merged
 			return types
 		}
 	}
 
 	return append(types, next)
+}
+
+func mergeInferredValueTypes(left valueType, right valueType) (valueType, bool) {
+	if typesEqual(left, right) {
+		return left, true
+	}
+	if isUnknownInferredValueType(left) {
+		return right, true
+	}
+	if isUnknownInferredValueType(right) {
+		return left, true
+	}
+	if left.kind != ValueArray || right.kind != ValueArray || left.element == nil || right.element == nil {
+		return valueType{}, false
+	}
+
+	element, ok := mergeInferredValueTypes(*left.element, *right.element)
+	if !ok {
+		return valueType{}, false
+	}
+
+	return valueType{kind: ValueArray, element: &element}, true
+}
+
+func isUnknownInferredValueType(value valueType) bool {
+	return value.kind == ValueUnknown && len(value.members) == 0 && len(value.choiceValues) == 0
 }
 
 type symbolKind int

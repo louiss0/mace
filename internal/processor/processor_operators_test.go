@@ -1,6 +1,9 @@
 package processor
 
 import (
+	"math"
+	"strings"
+
 	"github.com/louiss0/mace/internal/lexer"
 	"github.com/louiss0/mace/internal/parser/ast"
 	. "github.com/onsi/ginkgo/v2"
@@ -11,96 +14,153 @@ var _ = Describe("Operators", func() {
 		func(input string, expected expectedValue) {
 			assertProcessedResult(input, expected)
 		},
-		Entry("unary plus", `[output = data] { result: +7, }`, expectedValue{kind: ValueInt, int64: 7}),
-		Entry("unary minus", `[output = data] { result: -5, }`, expectedValue{kind: ValueInt, int64: -5}),
-		Entry("logical not", `[output = data] { result: !false, }`, expectedValue{kind: ValueBoolean, bool: true}),
-		Entry("bitwise not", `[output = data] { result: ~1, }`, expectedValue{kind: ValueInt, int64: ^int64(1)}),
-		Entry("hex unary minus", `[output = data] { result: -0xA, }`, expectedValue{kind: ValueHexInt, string: "-0xA"}),
-		Entry("addition", `[output = data] { result: 1 + 2, }`, expectedValue{kind: ValueInt, int64: 3}),
-		Entry("hex addition", `[output = data] { result: 0x0F + 0x01, }`, expectedValue{kind: ValueHexInt, string: "0x10"}),
-		Entry("subtraction", `[output = data] { result: 5 - 3, }`, expectedValue{kind: ValueInt, int64: 2}),
-		Entry("multiplication", `[output = data] { result: 2 * 3, }`, expectedValue{kind: ValueInt, int64: 6}),
-		Entry("hex multiplication overflow", `[output = data] { result: 0x4000000000000000 * 0x2, }`, expectedValue{kind: ValueHexInt, string: "-0x8000000000000000"}),
-		Entry("division", `[output = data] { result: 8 / 2, }`, expectedValue{kind: ValueInt, int64: 4}),
-		Entry("hex division", `[output = data] { result: 0x05 / 0x02, }`, expectedValue{kind: ValueHexFloat, string: "0x2.8"}),
-		Entry("modulo", `[output = data] { result: 9 % 4, }`, expectedValue{kind: ValueInt, int64: 1}),
-		Entry("hex modulo", `[output = data] { result: 0x05 % 0x02, }`, expectedValue{kind: ValueHexInt, string: "0x1"}),
-		Entry("mixed modulo", `[output = data] { result: 9 % 2.5, }`, expectedValue{kind: ValueFloat, float: 1.5}),
-		Entry("exponentiation", `[output = data] { result: 2 ** 3, }`, expectedValue{kind: ValueInt, int64: 8}),
-		Entry("shift left", `[output = data] { result: 1 << 3, }`, expectedValue{kind: ValueInt, int64: 8}),
-		Entry("shift right", `[output = data] { result: 8 >> 1, }`, expectedValue{kind: ValueInt, int64: 4}),
-		Entry("unsigned shift right", `[output = data] { result: 8 >>> 1, }`, expectedValue{kind: ValueInt, int64: 4}),
-		Entry("hex shift left", `[output = data] { result: 0x01 << 0x04, }`, expectedValue{kind: ValueHexInt, string: "0x10"}),
-		Entry("less than", `[output = data] { result: 1 < 2, }`, expectedValue{kind: ValueBoolean, bool: true}),
-		Entry("hex greater than", `[output = data] { result: 0x10 > 0x0F, }`, expectedValue{kind: ValueBoolean, bool: true}),
-		Entry("less than or equal", `[output = data] { result: 2 <= 2, }`, expectedValue{kind: ValueBoolean, bool: true}),
-		Entry("greater than", `[output = data] { result: 3 > 2, }`, expectedValue{kind: ValueBoolean, bool: true}),
-		Entry("greater than or equal", `[output = data] { result: 2 >= 2, }`, expectedValue{kind: ValueBoolean, bool: true}),
-		Entry("equal", `[output = data] { result: 3 == 3, }`, expectedValue{kind: ValueBoolean, bool: true}),
-		Entry("not equal", `[output = data] { result: 3 != 4, }`, expectedValue{kind: ValueBoolean, bool: true}),
-		Entry("bitwise and", `[output = data] { result: 6 & 3, }`, expectedValue{kind: ValueInt, int64: 2}),
-		Entry("bitwise xor", `[output = data] { result: 5 ^ 3, }`, expectedValue{kind: ValueInt, int64: 6}),
-		Entry("bitwise or", `[output = data] { result: 5 | 2, }`, expectedValue{kind: ValueInt, int64: 7}),
-		Entry("hex bitwise or", `[output = data] { result: 0x0F | 0x10, }`, expectedValue{kind: ValueHexInt, string: "0x1F"}),
-		Entry("logical and", `[output = data] { result: true && false, }`, expectedValue{kind: ValueBoolean, bool: false}),
-		Entry("logical or", `[output = data] { result: true || false, }`, expectedValue{kind: ValueBoolean, bool: true}),
-		Entry("ternary", `[output = data] { result: true ? 1 : 2, }`, expectedValue{kind: ValueInt, int64: 1}),
-		Entry("array merge", `[output = data] { result: [1, 2] <> [3, 4], }`, expectedValue{kind: ValueArray, array: []expectedValue{
-			{kind: ValueInt, int64: 1},
-			{kind: ValueInt, int64: 2},
-			{kind: ValueInt, int64: 3},
-			{kind: ValueInt, int64: 4},
-		}}),
-		Entry("variant array merge", `|===|
-type Scalar: variant[string, int];
-array<Scalar> left = [1];
-array<Scalar> right = ["x"];
-|===|
-[output = data] { result: left <> right, }`, expectedValue{kind: ValueArray, array: []expectedValue{
-			{kind: ValueInt, int64: 1},
-			{kind: ValueString, string: "x"},
-		}}),
-		Entry("record merge", `[output = data] { result: { name: "Ada", nested: { left: 1, shared: 1, }, tags: [1], } <> { age: 30, nested: { shared: 2, right: 3, }, tags: [2], }, }`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{
-			"name": {kind: ValueString, string: "Ada"},
-			"age":  {kind: ValueInt, int64: 30},
-			"nested": {kind: ValueRecord, record: map[string]expectedValue{
-				"left":   {kind: ValueInt, int64: 1},
-				"shared": {kind: ValueInt, int64: 2},
-				"right":  {kind: ValueInt, int64: 3},
-			}},
-			"tags": {kind: ValueArray, array: []expectedValue{
-				{kind: ValueInt, int64: 1},
-				{kind: ValueInt, int64: 2},
-			}},
-		}}),
+		Entry("unary plus", `[output = 'data'] { result: +7, }`, expectedValue{kind: ValueInt, int64: 7}),
+		Entry("unary minus", `[output = 'data'] { result: -5, }`, expectedValue{kind: ValueInt, int64: -5}),
+		Entry("logical not", `[output = 'data'] { result: !false, }`, expectedValue{kind: ValueBoolean, bool: true}),
+		Entry("bitwise not", `[output = 'data'] { result: ~1, }`, expectedValue{kind: ValueInt, int64: ^int64(1)}),
+		Entry("hex unary minus", `[output = 'data'] { result: -0xA, }`, expectedValue{kind: ValueHexInt, string: "-0xA"}),
+		Entry("addition", `[output = 'data'] { result: 1 + 2, }`, expectedValue{kind: ValueInt, int64: 3}),
+		Entry("hex addition", `[output = 'data'] { result: 0x0F + 0x01, }`, expectedValue{kind: ValueHexInt, string: "0x10"}),
+		Entry("subtraction", `[output = 'data'] { result: 5 - 3, }`, expectedValue{kind: ValueInt, int64: 2}),
+		Entry("multiplication", `[output = 'data'] { result: 2 * 3, }`, expectedValue{kind: ValueInt, int64: 6}),
+		Entry("division", `[output = 'data'] { result: 8 / 2, }`, expectedValue{kind: ValueInt, int64: 4}),
+		Entry("hex division", `[output = 'data'] { result: 0x05 / 0x02, }`, expectedValue{kind: ValueHexFloat, string: "0x2.8"}),
+		Entry("modulo", `[output = 'data'] { result: 9 % 4, }`, expectedValue{kind: ValueInt, int64: 1}),
+		Entry("hex modulo", `[output = 'data'] { result: 0x05 % 0x02, }`, expectedValue{kind: ValueHexInt, string: "0x1"}),
+		Entry("mixed modulo", `[output = 'data'] { result: 9 % 2.5, }`, expectedValue{kind: ValueFloat, float: 1.5}),
+		Entry("exponentiation", `[output = 'data'] { result: 2 ** 3, }`, expectedValue{kind: ValueInt, int64: 8}),
+		Entry("shift left", `[output = 'data'] { result: 1 << 3, }`, expectedValue{kind: ValueInt, int64: 8}),
+		Entry("shift right", `[output = 'data'] { result: 8 >> 1, }`, expectedValue{kind: ValueInt, int64: 4}),
+		Entry("unsigned shift right", `[output = 'data'] { result: 8 >>> 1, }`, expectedValue{kind: ValueInt, int64: 4}),
+		Entry("hex shift left", `[output = 'data'] { result: 0x01 << 0x04, }`, expectedValue{kind: ValueHexInt, string: "0x10"}),
+		Entry("less than", `[output = 'data'] { result: 1 < 2, }`, expectedValue{kind: ValueBoolean, bool: true}),
+		Entry("hex greater than", `[output = 'data'] { result: 0x10 > 0x0F, }`, expectedValue{kind: ValueBoolean, bool: true}),
+		Entry("less than or equal", `[output = 'data'] { result: 2 <= 2, }`, expectedValue{kind: ValueBoolean, bool: true}),
+		Entry("greater than", `[output = 'data'] { result: 3 > 2, }`, expectedValue{kind: ValueBoolean, bool: true}),
+		Entry("greater than or equal", `[output = 'data'] { result: 2 >= 2, }`, expectedValue{kind: ValueBoolean, bool: true}),
+		Entry("equal", `[output = 'data'] { result: 3 == 3, }`, expectedValue{kind: ValueBoolean, bool: true}),
+		Entry("not equal", `[output = 'data'] { result: 3 != 4, }`, expectedValue{kind: ValueBoolean, bool: true}),
+		Entry("bitwise and", `[output = 'data'] { result: 6 & 3, }`, expectedValue{kind: ValueInt, int64: 2}),
+		Entry("bitwise xor", `[output = 'data'] { result: 5 ^ 3, }`, expectedValue{kind: ValueInt, int64: 6}),
+		Entry("bitwise or", `[output = 'data'] { result: 5 | 2, }`, expectedValue{kind: ValueInt, int64: 7}),
+		Entry("hex bitwise or", `[output = 'data'] { result: 0x0F | 0x10, }`, expectedValue{kind: ValueHexInt, string: "0x1F"}),
+		Entry("logical and", `[output = 'data'] { result: true && false, }`, expectedValue{kind: ValueBoolean, bool: false}),
+		Entry("logical or", `[output = 'data'] { result: true || false, }`, expectedValue{kind: ValueBoolean, bool: true}),
+		Entry("ternary", `[output = 'data'] { result: true ? 1 : 2, }`, expectedValue{kind: ValueInt, int64: 1}),
+		Entry("arithmetic precedence", `[output = 'data'] { result: 1 + 2 * 3 - 4, }`, expectedValue{kind: ValueInt, int64: 3}),
+		Entry("shift and additive precedence", `[output = 'data'] { result: 1 + 2 << 2, }`, expectedValue{kind: ValueInt, int64: 12}),
+		Entry("bitwise precedence", `[output = 'data'] { result: 7 & 3 ^ 1 | 8, }`, expectedValue{kind: ValueInt, int64: 10}),
+		Entry("comparison and logic precedence", `[output = 'data'] { result: 1 < 2 && 3 > 2 || false, }`, expectedValue{kind: ValueBoolean, bool: true}),
+		Entry("conditional with logical expression", `[output = 'data'] { result: false || true ? 5 : 2, }`, expectedValue{kind: ValueInt, int64: 5}),
 	)
 
-	DescribeTable("returns mixed operator results",
-		func(input string, expected expectedValue) {
-			assertProcessedResult(input, expected)
+	DescribeTable("rejects overflowing hex_int operations",
+		func(expression string) {
+			_, err := New().Process(`[output = 'data'] { result: ` + expression + `, }`)
+			tAssert.ErrorContains(err, "hex_int overflow")
 		},
-		Entry("arithmetic precedence", `[output = data] { result: 1 + 2 * 3 - 4, }`, expectedValue{kind: ValueInt, int64: 3}),
-		Entry("shift and additive precedence", `[output = data] { result: 1 + 2 << 2, }`, expectedValue{kind: ValueInt, int64: 12}),
-		Entry("bitwise precedence", `[output = data] { result: 7 & 3 ^ 1 | 8, }`, expectedValue{kind: ValueInt, int64: 10}),
-		Entry("comparison and logic precedence", `[output = data] { result: 1 < 2 && 3 > 2 || false, }`, expectedValue{kind: ValueBoolean, bool: true}),
-		Entry("conditional with logical expression", `[output = data] { result: false || true ? 5 : 2, }`, expectedValue{kind: ValueInt, int64: 5}),
+		Entry("addition", "0x7FFFFFFFFFFFFFFF + 0x1"),
+		Entry("subtraction", "-0x8000000000000000 - 0x1"),
+		Entry("multiplication", "0x4000000000000000 * 0x2"),
+		Entry("exponentiation", "0x2 ** 0x3F"),
+		Entry("left shift", "0x4000000000000000 << 0x2"),
 	)
 
-	DescribeTable("rejects invalid merge expressions",
-		func(input string, expected string) {
-			processor := New()
-			_, err := processor.ProcessInDir(input, "../..")
-			tAssert.Error(err)
-			tAssert.Contains(err.Error(), expected)
+	It("accepts the signed hex_int boundaries", func() {
+		result, err := New().Process(`[output = 'data'] {
+  maximum: 0x7FFFFFFFFFFFFFFF,
+  minimum: -0x8000000000000000,
+}`)
+		tAssert.NoError(err)
+		tAssert.Equal(int64(math.MaxInt64), result.Output["maximum"].Int)
+		tAssert.Equal(int64(math.MinInt64), result.Output["minimum"].Int)
+	})
+
+	DescribeTable("rejects hex_int literals outside the signed range",
+		func(literal string) {
+			_, err := New().Process(`[output = 'data'] { result: ` + literal + `, }`)
+			tAssert.ErrorContains(err, "invalid hex_int literal")
 		},
-		Entry("different kinds", `[output = data] { result: { name: "Ada", } <> [1], }`, "merge operands must have the same type"),
-		Entry("primitive operands", `[output = data] { result: 1 <> 2, }`, "merge operands must be records or arrays"),
-		Entry("different array element types", `|===|
-array<int> left = [1];
-array<string> right = ["two"];
-|===|
-[output = data] { result: left <> right, }`, "merge operands must have the same type"),
+		Entry("positive minimum magnitude", "0x8000000000000000"),
+		Entry("larger positive magnitude", "0x10000000000000000"),
+		Entry("negative beyond minimum", "-0x8000000000000001"),
 	)
+
+	It("parses and round-trips finite fixed-point hex_float values", func() {
+		maximumLiteral := "0x" + strings.Repeat("F", 256) + ".0"
+		result, err := New().Process(`[output = 'data'] {
+  ordinary: 0x1.8,
+  uppercase: 0xA.F,
+  precise: 0x1.0000000000001,
+  large: 0x10000000000000000.0,
+  maximum: ` + maximumLiteral + `,
+  negative_maximum: -` + maximumLiteral + `,
+}`)
+		tAssert.NoError(err)
+		tAssert.Equal(1.5, result.Output["ordinary"].Float)
+		tAssert.Equal(10.9375, result.Output["uppercase"].Float)
+		tAssert.Equal(math.Float64bits(1+math.Ldexp(1, -52)), math.Float64bits(result.Output["precise"].Float))
+		tAssert.Equal(math.Float64bits(math.Ldexp(1, 64)), math.Float64bits(result.Output["large"].Float))
+		tAssert.Equal(math.Float64bits(math.MaxFloat64), math.Float64bits(result.Output["maximum"].Float))
+		tAssert.Equal(math.Float64bits(-math.MaxFloat64), math.Float64bits(result.Output["negative_maximum"].Float))
+
+		for _, name := range []string{"precise", "large", "maximum", "negative_maximum"} {
+			formatted, formatErr := FormatScalarValue(result.Output[name])
+			tAssert.NoError(formatErr)
+			roundTrip, parseErr := New().Process(`[output = 'data'] { result: ` + formatted + `, }`)
+			tAssert.NoError(parseErr)
+			tAssert.Equal(math.Float64bits(result.Output[name].Float), math.Float64bits(roundTrip.Output["result"].Float))
+		}
+	})
+
+	It("rejects a hex_float literal that rounds to infinity", func() {
+		literal := "0x1" + strings.Repeat("0", 256) + ".0"
+		_, err := New().Process(`[output = 'data'] { result: ` + literal + `, }`)
+		tAssert.ErrorContains(err, "invalid hex_float literal")
+	})
+
+	DescribeTable("rejects non-finite hex_float arithmetic",
+		func(operator lexer.TokenType, left float64, right float64) {
+			_, err := evaluateHexNumeric(operator, Value{Kind: ValueHexFloat, Float: left}, Value{Kind: ValueHexFloat, Float: right})
+			tAssert.ErrorContains(err, "non-finite hex_float result")
+		},
+		Entry("addition", lexer.TokenPlus, math.MaxFloat64, math.MaxFloat64),
+		Entry("subtraction", lexer.TokenMinus, math.MaxFloat64, -math.MaxFloat64),
+		Entry("multiplication", lexer.TokenStar, math.MaxFloat64, 2.0),
+		Entry("division", lexer.TokenSlash, math.MaxFloat64, math.SmallestNonzeroFloat64),
+		Entry("exponentiation", lexer.TokenDoubleStar, math.MaxFloat64, 2.0),
+	)
+
+	It("preserves negative zero as a hex_float", func() {
+		result, err := New().Process(`[output = 'data'] { result: -0x0.0, }`)
+		tAssert.NoError(err)
+		tAssert.True(math.Signbit(result.Output["result"].Float))
+		formatted, err := FormatScalarValue(result.Output["result"])
+		tAssert.NoError(err)
+		tAssert.Equal("-0x0.0", formatted)
+	})
+
+	It("round-trips representative finite float64 bit patterns", func() {
+		values := []float64{
+			0,
+			math.Copysign(0, -1),
+			math.SmallestNonzeroFloat64,
+			-math.SmallestNonzeroFloat64,
+			math.SmallestNonzeroFloat64 * 17,
+			math.Pi,
+			math.Nextafter(1, 2),
+			math.MaxFloat64,
+			-math.MaxFloat64,
+		}
+
+		for _, value := range values {
+			formatted, err := FormatScalarValue(Value{Kind: ValueHexFloat, Float: value})
+			tAssert.NoError(err)
+			result, err := New().Process(`[output = 'data'] { result: ` + formatted + `, }`)
+			tAssert.NoError(err)
+			tAssert.Equal(math.Float64bits(value), math.Float64bits(result.Output["result"].Float))
+		}
+	})
 
 	DescribeTable("returns math results",
 		func(file string, expected expectedValue) {
@@ -154,7 +214,7 @@ float float_value = 1.5 + 2.5;
 hex_int hex_int_value = 0x10 + 0x1;
 hex_float hex_float_value = 0x1.8 + 0x0.8;
 |===|
-[output = data]
+[output = 'data']
 {
   int_value,
   float_value,
@@ -335,7 +395,7 @@ var _ = Describe("Operator helpers", func() {
 		tAssert.Equal(ast.StringLiteral{Lexeme: `"null"`}, expression(Value{Kind: ValueNull}))
 	})
 
-	It("formats scalar values and evaluates member/prefix/merge helpers", func() {
+	It("formats scalar values and evaluates member and prefix helpers", func() {
 		formatValue := stringifyValue
 		formatted, err := formatValue(Value{Kind: ValueString, String: "Ada"})
 		tAssert.NoError(err)
@@ -378,21 +438,6 @@ var _ = Describe("Operator helpers", func() {
 		tAssert.Equal(ValueHexFloat, prefix.Kind)
 		tAssert.Equal(-1.5, prefix.Float)
 
-		contains, err := evaluateContains(Value{Kind: ValueString, String: "name"}, Value{Kind: ValueRecord, Record: map[string]Value{
-			"name": {Kind: ValueString, String: "Ada"},
-		}})
-		tAssert.NoError(err)
-		tAssert.True(contains.Boolean)
-
-		merged, err := evaluateMerge(
-			Value{Kind: ValueArray, Array: []Value{{Kind: ValueString, String: "Ada"}}},
-			Value{Kind: ValueArray, Array: []Value{{Kind: ValueString, String: "Bob"}}},
-		)
-		tAssert.NoError(err)
-		tAssert.Len(merged.Array, 2)
-
-		_, err = evaluateMerge(Value{Kind: ValueString}, Value{Kind: ValueString})
-		tAssert.ErrorContains(err, "records or arrays")
 	})
 
 	It("evaluates numeric helper operations", func() {
@@ -506,9 +551,6 @@ var _ = Describe("Operator helpers", func() {
 		_, err = parseHexFloat("bad")
 		tAssert.Error(err)
 
-		tAssert.True(arrayMergeTypesMatch(Value{Kind: ValueArray, Array: []Value{{Kind: ValueInt, Int: 1}}}, Value{Kind: ValueArray, Array: []Value{{Kind: ValueInt, Int: 2}}}))
-		tAssert.False(arrayMergeTypesMatch(Value{Kind: ValueArray, Array: []Value{{Kind: ValueInt, Int: 1}}}, Value{Kind: ValueArray, Array: []Value{{Kind: ValueString, String: "a"}}}))
-
 		_, err = resolveUnionRecordType(ast.UnionType{Members: []ast.TypeReference{ast.PrimitiveType{Name: "string"}}}, newSymbolTable(), newTypeRegistry(), newSchemaRegistry())
 		tAssert.ErrorContains(err, "fusion members must be schemas")
 	})
@@ -561,7 +603,7 @@ int base = 1;
 		tAssert.NoError(err)
 
 		scriptResult := ScriptResult{}
-		_, err = processor.processOutputInput(`[output = data] { result: 1, }`, scriptResult, ".")
+		_, err = processor.processOutputInput(`[output = 'data'] { result: 1, }`, scriptResult, ".")
 		tAssert.NoError(err)
 
 		_, err = evaluateExpression(ast.Identifier{Name: "missing"}, newValueEnvironment(), Value{}, newSymbolTable(), newTypeRegistry(), newSchemaRegistry(), nil)
@@ -581,11 +623,8 @@ int base = 1;
 		symbols.Add("User", symbolKindSchema)
 		tAssert.NoError(validateExpressionAgainstType(ast.StringLiteral{Lexeme: `"Ada"`}, valueType{choiceValues: []Value{{Kind: ValueString, String: "Ada"}, {Kind: ValueString, String: "Bea"}}}, variables, symbols, types, schemas, nil))
 		tAssert.NoError(validateEvaluatedValueAgainstType(Value{Kind: ValueString, String: "Ada"}, valueType{choiceValues: []Value{{Kind: ValueString, String: "Ada"}}}, symbols, types, schemas, nil))
-		tAssert.NoError(validateDataOutputExpression(ast.ConditionalExpression{Condition: ast.InfixExpression{Operator: lexer.TokenIn, Left: ast.StringLiteral{Lexeme: `"age"`}, Right: ast.Identifier{Name: "record"}}, Then: ast.MemberAccess{Target: ast.Identifier{Name: "age"}, Name: "missing"}, Else: ast.Identifier{Name: "record"}}, symbols))
 		tAssert.NoError(validateOutputSchema("User", []ast.OutputField{{Name: "name", Value: ast.StringLiteral{Lexeme: `"Ada"`}}}, variables, symbols, types, schemas, nil))
 		var numericErr error
-		_, numericErr = inferMergeType(valueType{kind: ValueRecord}, valueType{kind: ValueRecord})
-		tAssert.NoError(numericErr)
 		for _, item := range []struct {
 			operator    lexer.TokenType
 			left, right Value
@@ -664,7 +703,7 @@ hex_float a = 0x2.8;
 hex_float b = 0x0.8;
 hex_float c = a % b;
 |===|`), "requires hex_int operands"),
-		Entry("hex and decimal comparison", `[output = data] { result: 0x10 > 16, }`, "expected operands from the same numeric family"),
-		Entry("hex bitwise not", `[output = data] { result: ~0x0F, }`, "expected int after '~'"),
+		Entry("hex and decimal comparison", `[output = 'data'] { result: 0x10 > 16, }`, "expected operands from the same numeric family"),
+		Entry("hex bitwise not", `[output = 'data'] { result: ~0x0F, }`, "expected int after '~'"),
 	)
 })

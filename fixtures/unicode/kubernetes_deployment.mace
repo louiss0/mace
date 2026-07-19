@@ -1,5 +1,5 @@
 // Languages: Chinese, Japanese, Latin, and Greek keys are intentionally mixed in kubernetes_deployment.
-[output = data]
+[output = 'data']
 {
   despliegue: {
     名前: "mace_api",
@@ -21,7 +21,7 @@
   }, {
     名前: "sidecar",
     imagen: "mace/log_shipper:1.0",
-    puertos: [],
+    puertos: [8081],
   }],
   策略: {
     tipo: "rolling",

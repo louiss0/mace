@@ -1,7 +1,7 @@
 |==================================================|
-type ShippingMethod: choice["standard", "express", "overnight"];
-type PackageTier: choice[1, 2, 3];
-type SignatureRequired: choice[true, false];
+alias ShippingMethod: choice["standard", "express", "overnight"];
+alias PackageTier: choice[1, 2, 3];
+alias SignatureRequired: choice[true, false];
 
 schema Shipment: {
   order_id: string,
@@ -18,7 +18,7 @@ Shipment shipment = {
 };
 |==================================================|
 
-[output = data]
+[output = 'data']
 {
   result: shipment,
 }

@@ -1,0 +1,35 @@
+|===|
+schema LocalConfig: {
+  path: string,
+};
+
+schema RemoteConfig: {
+  url: string,
+};
+
+schema InlineConfig: {
+  content: string,
+};
+
+alias ExternalConfig: variant[LocalConfig, RemoteConfig];
+alias Config: variant[LocalConfig, RemoteConfig, InlineConfig];
+
+Config remote = { url: "https://example.com/mace" };
+Config inline = { content: "inline configuration" };
+
+string remoteKind = match (remote) {
+  ExternalConfig => "external",
+  InlineConfig => "inline",
+};
+
+string inlineSource = match (inline) {
+  ExternalConfig => "external",
+  InlineConfig => inline.content,
+};
+|===|
+
+[output = 'data']
+{
+  remote_kind: remoteKind,
+  inline_source: inlineSource,
+}

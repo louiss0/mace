@@ -1,5 +1,5 @@
 |===|
-from "./base.mace" import Name;
-from "./other.mace" import Name;
+from './support/import-source.mace' import Exposed;
+from './support/import-source.mace' import Exposed;
 |===|
-[output = data] {}
+[output = 'data'] {}

@@ -2,16 +2,16 @@
 record<record<string>> packages = {
   codefixer: { cn_efs: "enabled", },
 };
-type PackagesAtDepth1: variant[record<string>, record<record<string>>];
-type PackagesAtDepth2: variant[record<record<string>>, record<record<record<string>>>];
-type PackagesAtDepth3: variant[record<record<record<string>>>, record<record<record<record<string>>>>];
-type PackagesAtDepth4: variant[record<record<record<record<string>>>>, record<record<record<record<record<string>>>>>];
-type PackagesAtDepth5: variant[record<record<record<record<record<string>>>>>, record<record<record<record<record<record<string>>>>>>];
-type PackagesAtDepth6: variant[record<record<record<record<record<record<string>>>>>>, record<record<record<record<record<record<record<string>>>>>>>];
-type PackagesAtDepth7: variant[record<record<record<record<record<record<record<string>>>>>>>, record<record<record<record<record<record<record<record<string>>>>>>>>];
-type PackagesAtDepth8: variant[record<record<record<record<record<record<record<record<string>>>>>>>>, record<record<record<record<record<record<record<record<record<string>>>>>>>>>];
-type PackagesAtDepth9: variant[record<record<record<record<record<record<record<record<record<string>>>>>>>>>, record<record<record<record<record<record<record<record<record<record<string>>>>>>>>>>];
-type PackagesAtDepth10: variant[record<record<record<record<record<record<record<record<record<record<string>>>>>>>>>>, record<record<record<record<record<record<record<record<record<record<record<string>>>>>>>>>>>];
+alias PackagesAtDepth1: variant[record<string>, record<record<string>>];
+alias PackagesAtDepth2: variant[record<record<string>>, record<record<record<string>>>];
+alias PackagesAtDepth3: variant[record<record<record<string>>>, record<record<record<record<string>>>>];
+alias PackagesAtDepth4: variant[record<record<record<record<string>>>>, record<record<record<record<record<string>>>>>];
+alias PackagesAtDepth5: variant[record<record<record<record<record<string>>>>>, record<record<record<record<record<record<string>>>>>>];
+alias PackagesAtDepth6: variant[record<record<record<record<record<record<string>>>>>>, record<record<record<record<record<record<record<string>>>>>>>];
+alias PackagesAtDepth7: variant[record<record<record<record<record<record<record<string>>>>>>>, record<record<record<record<record<record<record<record<string>>>>>>>>];
+alias PackagesAtDepth8: variant[record<record<record<record<record<record<record<record<string>>>>>>>>, record<record<record<record<record<record<record<record<record<string>>>>>>>>>];
+alias PackagesAtDepth9: variant[record<record<record<record<record<record<record<record<record<string>>>>>>>>>, record<record<record<record<record<record<record<record<record<record<string>>>>>>>>>>];
+alias PackagesAtDepth10: variant[record<record<record<record<record<record<record<record<record<record<string>>>>>>>>>>, record<record<record<record<record<record<record<record<record<record<record<string>>>>>>>>>>>];
 
 PackagesAtDepth1 packages_at_depth_1 = {foo: "val"};
 PackagesAtDepth2 packages_at_depth_2 = {foo: {foo: "val"}};
@@ -27,7 +27,7 @@ PackagesAtDepth10 packages_at_depth_10 = {foo: {foo: {foo: {foo: {foo: {foo: {fo
 string fallback = "missing";
 |===================================================|
 
-[output = data]
+[output = 'data']
 {
   present: packages?.codefixer?.cn_efs ?? fallback,
   missing: packages?.codefixer?.missing ?? fallback,

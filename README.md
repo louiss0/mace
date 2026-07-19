@@ -18,7 +18,7 @@ is documented in [the formal specification](.&#x2f;docs&#x2f;src&#x2f;content&#x
 
 ## Features
 
-- Typed script declarations for `type`, `schema`, and variables
+- Typed script declarations for `alias`, `schema`, and variables
 - Literal `choice[...]` types for user-selectable value domains
 - Choice-aware editor completions for literal domains and variants
 - Deterministic expression evaluation
@@ -47,7 +47,7 @@ Example:
 |===|
 from &quot;.&#x2f;shared.mace&quot; import User:ProfileUser;
 
-type Environment: choice[&quot;dev&quot;, &quot;prod&quot;];
+alias Environment: choice[&quot;dev&quot;, &quot;prod&quot;];
 
 Environment env = &quot;prod&quot;;
 ProfileUser current = {
@@ -56,7 +56,7 @@ ProfileUser current = {
 };
 |===|
 
-[output = data]
+[output = 'data']
 {
   env: env,
   current: current
@@ -68,7 +68,7 @@ not rename the exported key in the imported file.
 
 Mace supports:
 
-- `:` for type declarations (`type`, `schema`)
+- `:` for alias declarations (`alias`, `schema`)
 - `=` for variable initializers
 - primitive types: `string`, `int`, `float`, `hex_int`, `hex_float`, `boolean`
 - arrays: `array&lt;T&gt;`
@@ -80,7 +80,7 @@ Mace supports:
 - schemas
 - literal `choice[...]` aliases with mixed scalar members, reusable choice aliases,
   and variant-friendly autocomplete
-- record, array, arithmetic, logical, merge, and conditional expressions
+- record, array, arithmetic, logical, and conditional expressions
 - record and data output field shorthand: `{ name, }` expands to `{ name: name, }`, and it works for strings, numbers, arrays, nested records, and output blocks
 - output fields evaluate expressions directly; parentheses are for grouping math and other expressions
 - commas separate record, schema, and output fields; semicolons terminate declarations and statements
@@ -91,18 +91,6 @@ Fusion and variant types are first-class across the language, including named
 aliases, output schema validation, imports, formatter output, and editor
 tooling.
 
-Structural merge with `&lt;&gt;` combines identifier, object literal, or array literal
-operands of the same mergeable type. Records merge deeply, colliding scalar
-fields use the right-hand value, and colliding nested records or arrays merge
-recursively. Arrays concatenate in left-to-right order.
-
-```mace
-[output = data]
-{
-  result: { profile: { name: &quot;Ada&quot; }; tags: [&quot;base&quot;]; }
-    &lt;&gt; { profile: { active: true }; tags: [&quot;override&quot;]; }
-}
-```
 
 Mace treats variants as closed alternatives: values must match exactly one
 member, record members reject unknown fields, and record values may not
@@ -110,13 +98,13 @@ combine fields from different variant branches.
 
 ```mace
 |===|
-type Identity: variant[string, int];
-type Values: variant[array&lt;string&gt;, array&lt;int&gt;];
+alias Identity: variant[string, int];
+alias Values: variant[array&lt;string&gt;, array&lt;int&gt;];
 Identity primary = &quot;Ada&quot;;
 Identity fallback = 42;
 Values tags = [&quot;api&quot;, &quot;web&quot;];
 |===|
-[output = data]
+[output = 'data']
 {
   primary: primary,
   fallback: fallback,
@@ -131,29 +119,29 @@ record shape.
 |===|
 schema Profile: { name: string };
 schema Audit: { created_at: string };
-type User: fusion[Profile, Audit];
+alias User: fusion[Profile, Audit];
 User value = {
   name: &quot;Ada&quot;,
   created_at: &quot;2026-04-08&quot;
 };
 |===|
-[output = data]
+[output = 'data']
 {
   value: value
 }
 ```
 
 Choices define finite literal domains directly in the type system.
-Choice aliases can be reused, nested, and embedded inside variants.
+Choice aliases can be merged with `fusion[...]` and embedded inside variants.
 
 ```mace
 |===|
-type Access: choice[&quot;read&quot;, &quot;write&quot;];
-type Feature: choice[&quot;write&quot;, &quot;execute&quot;];
-type Permission: choice[Access, Feature];
+alias Access: choice[&quot;read&quot;, &quot;write&quot;];
+alias Feature: choice[&quot;write&quot;, &quot;execute&quot;];
+alias Permission: fusion[Access, Feature];
 Permission value = &quot;execute&quot;;
 |===|
-[output = data]
+[output = 'data']
 {
   value: value
 }
@@ -162,6 +150,14 @@ Permission value = &quot;execute&quot;;
 Hexadecimal values stay distinct from decimal numerics. When emitted through
 `mace json`, `hex_int` and `hex_float` values are serialized as strings such as
 `&quot;0xFF&quot;` and `&quot;0x2.8&quot;` so their hexadecimal spelling is preserved.
+`hex_int` is signed 64-bit; arithmetic and overflowing left shifts fail rather
+than wrap, and its minimum value is written `-0x8000000000000000`.
+`hex_float` accepts arbitrarily long fixed-point hexadecimal components and is
+serialized as an exact, uppercase, fixed-point binary64 expansion with a
+required fractional component. This makes every finite value round-trip
+without precision loss. The largest finite literal is reproducibly constructed
+as `&quot;0x&quot; + strings.Repeat(&quot;F&quot;, 256) + &quot;.0&quot;` and represents
+`math.MaxFloat64`.
 
 For the exact rules and currently supported syntax, see
 [the formal specification](.&#x2f;docs&#x2f;src&#x2f;content&#x2f;docs&#x2f;reference&#x2f;spec.mdx).
@@ -222,7 +218,7 @@ Example input:
 schema Runtime: { env: string; };
 int base = 2 + 2;
 |===|
-[output = data, parse = Runtime]
+[output = 'data', parse = Runtime]
 {
   env: $env,
   base: base
@@ -367,7 +363,7 @@ import (
 )
 
 func main() {
-	result, err := codec.Parse(`[output = data]
+	result, err := codec.Parse(`[output = 'data']
 {
   name: &quot;Ada&quot;,
   enabled: true
@@ -386,7 +382,7 @@ func main() {
 result, err := codec.ParseWithInput(`|===|
 schema Runtime: { env: string; };
 |===|
-[output = data, parse = Runtime]
+[output = 'data', parse = Runtime]
 {
   env: $env
 }`, map[string]any{
@@ -403,7 +399,7 @@ type Config struct {
 }
 
 var config Config
-err := codec.Unmarshal(`[output = data]
+err := codec.Unmarshal(`[output = 'data']
 {
   name: &quot;Ada&quot;;
   enabled: true;
@@ -477,10 +473,8 @@ Add a license file if you intend to publish or distribute this project.
 
 ## Optional chaining
 
-Use `?.` for optional schema properties and record keys that may be absent. A
-nullable variable must first be guarded with a truthiness check; its true branch
-treats that variable as non-null. Resolve an optional access with `??` before
-placing it in output.
+Use `?.` for optional schema properties and record keys that may be absent.
+Resolve an optional access with `??` before placing it in output.
 
 ```mace
 city: user ? user.profile.address?.city ?? "" : "",
@@ -497,5 +491,5 @@ every variant member. For example,
 `variant[record<string>, record<record<string>>]` permits one optional lookup
 but rejects a second because the first member is already a `string`.
 
-Accessing a nullable variable with either `.` or `?.` without a truthiness check
-reports `mace.type.optional-field-access`.
+Accessing an optional schema field with `.` reports
+`mace.type.optional-field-access`.

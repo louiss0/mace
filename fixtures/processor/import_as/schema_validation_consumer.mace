@@ -1,8 +1,8 @@
 |==========================================|
-from "package_json.mace" import-as Package
+from 'package_json.mace' import-as Package
 |==========================================|
 
-[output = data, schema = Package]
+[output = 'data', schema = Package]
 {
   name: "mace",
   version: "1.0.0",

@@ -1,0 +1,4 @@
+|===|
+schema User: { name: string, name: string, };
+|===|
+[output = 'data'] {}

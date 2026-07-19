@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/louiss0/mace/internal/diagnostic"
-	"github.com/louiss0/mace/internal/parser/ast"
 )
 
 type ErrorKind string
@@ -31,7 +30,6 @@ const (
 	CodeImportFileFailedParse        ErrorCode = "mace.import.file-failed-to-parse"
 	CodeImportFileNotFound           ErrorCode = "mace.import.file-not-found"
 	CodeInternal                     ErrorCode = "mace.internal"
-	CodeImpossibleNarrowing          ErrorCode = "mace.type.impossible-narrowing"
 	CodeInvalidNullUsage             ErrorCode = "mace.type.invalid-null-usage"
 	CodeInvalidOutputSchemaField     ErrorCode = "mace.type.invalid-output-schema-field"
 	CodeMissingRequiredField         ErrorCode = "mace.type.record-does-not-match-schema"
@@ -79,16 +77,6 @@ func diagnosticErrorf(kind ErrorKind, code ErrorCode, fields DiagnosticFields, f
 	}
 }
 
-func impossibleNarrowingError(expression ast.TypeTestExpression, source string, target string) error {
-	return DiagnosticError{
-		Kind:    ErrorType,
-		Code:    CodeImpossibleNarrowing,
-		Message: fmt.Sprintf("processor: type %q has no member compatible with %q", source, target),
-		Range:   diagnostic.FromASTRange(expression.Range()),
-		Fields:  DiagnosticFields{Actual: source, Expected: target},
-	}
-}
-
 func typeMismatchError(expected string, actual string) error {
 	return diagnosticErrorf(
 		ErrorType,
@@ -105,7 +93,7 @@ func invalidNullUsageError() error {
 		ErrorType,
 		CodeInvalidNullUsage,
 		DiagnosticFields{},
-		"null can only be assigned to nullable variables and optional schema fields",
+		"null is only allowed in output",
 	)
 }
 
@@ -208,11 +196,11 @@ func inferErrorCode(message string) ErrorCode {
 		return CodeInvalidOutputSchemaField
 	case strings.Contains(message, "expected boolean after '!'") || strings.Contains(message, "expected int after '~'") || strings.Contains(message, "expected numeric after unary operator"):
 		return ErrorCode("mace.type.invalid-unary-operator")
-	case strings.Contains(message, "expected numeric operands") || strings.Contains(message, "expected int operands") || strings.Contains(message, "expected boolean operands") || strings.Contains(message, "incompatible equality comparison") || strings.Contains(message, "merge operands") || strings.Contains(message, "expected ") && strings.Contains(message, " operands"):
+	case strings.Contains(message, "expected numeric operands") || strings.Contains(message, "expected int operands") || strings.Contains(message, "expected boolean operands") || strings.Contains(message, "incompatible equality comparison") || strings.Contains(message, "expected ") && strings.Contains(message, " operands"):
 		return ErrorCode("mace.type.invalid-binary-operator")
 	case strings.Contains(message, "use optional chaining '?.'"):
 		return CodeOptionalFieldAccess
-	case strings.Contains(message, "null can only be assigned to nullable variables and optional schema fields"):
+	case strings.Contains(message, "null is only allowed in output"):
 		return CodeInvalidNullUsage
 	case strings.Contains(message, "type mismatch"):
 		return CodeTypeMismatch
@@ -233,7 +221,7 @@ func inferErrorKind(message string) ErrorKind {
 		return ErrorDirective
 	case strings.Contains(message, "declaration") || strings.Contains(message, "type alias"):
 		return ErrorDeclaration
-	case strings.Contains(message, "operator") || strings.Contains(message, "operands") || strings.Contains(message, "division by zero") || strings.Contains(message, "exponent") || strings.Contains(message, "shift count"):
+	case strings.Contains(message, "operator") || strings.Contains(message, "operands") || strings.Contains(message, "overflow") || strings.Contains(message, "division by zero") || strings.Contains(message, "exponent") || strings.Contains(message, "shift count") || strings.Contains(message, "non-finite"):
 		return ErrorOperator
 	case strings.Contains(message, "type mismatch") || strings.Contains(message, "unknown type") || strings.Contains(message, "type reference"):
 		return ErrorType

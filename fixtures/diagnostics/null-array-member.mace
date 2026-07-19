@@ -1,0 +1,4 @@
+|===|
+array<string> values = [null];
+|===|
+[output = 'data'] { values, }

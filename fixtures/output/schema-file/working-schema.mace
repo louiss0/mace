@@ -3,7 +3,7 @@ schema User: {
   name: string,
 };
 |===|
-[output = schema]
+[output = 'schema']
 {
   User: User,
 }

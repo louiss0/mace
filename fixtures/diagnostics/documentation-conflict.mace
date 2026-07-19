@@ -1,0 +1,7 @@
+|===|
+alias Name: string /# Inline documentation;
+gen_doc Name {
+  summary: 'Structured documentation',
+};
+|===|
+[output = 'data'] {}

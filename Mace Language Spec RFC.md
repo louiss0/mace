@@ -5,9 +5,8 @@
 Mace is a deterministic, strongly typed configuration language. A conforming
 processor produces either a fully valid data record or schema metadata, or an
 error; it never emits a partial result. Source is UTF-8 and string values may
-contain Unicode. Mace has no general `null` runtime value. The `null` literal
-is permitted only to initialize a `nullable` variable; it is not an ordinary
-value that can be emitted, stored in records or arrays, or compared.
+contain Unicode. The `null` literal is allowed only in data output. It omits
+its output field rather than creating a general runtime value.
 
 This RFC is normative. **[`mace.ebnf`](.&#x2f;mace.ebnf) is the canonical grammar
 source.** The grammar excerpt below is an exact copy of that file and MUST
@@ -23,10 +22,13 @@ affect evaluation.
 ## Lexical rules
 
 Identifiers are case-sensitive and consist of a Unicode letter followed by zero
-or more Unicode letters, Unicode decimal digits, or `_`. Casing styles are
-non-normative: tools may warn about unusual casing, but must accept every
-identifier satisfying that lexical rule. `is` is a reserved keyword and is
-never split from a containing identifier such as `island` or `isReady`.
+or more Unicode letters, Unicode decimal digits, `_`, or joined `-` segments.
+A hyphen belongs to an identifier only when followed immediately by another
+identifier character. Casing styles are non-normative: tools may warn about
+unusual casing, but must accept every identifier satisfying that lexical rule.
+`match` is a reserved keyword and is never split from a containing identifier
+such as `matcher` or `matching`. Because `total-discount` is one identifier,
+subtraction must separate `-` from adjacent identifiers with whitespace.
 
 Line endings are LF, CRLF, or CR; CRLF is one newline. `&#x2f;&#x2f;` comments run to a
 line ending or EOF. `&#x2f;*` comments run to the next `*&#x2f;`, may span lines, and do
@@ -55,7 +57,8 @@ unicode_letter = ? any Unicode character in category Letter ? ;
 unicode_digit = ? any Unicode character in category Number, decimal digit ? ;
 digit = &quot;0&quot;…&quot;9&quot; ;
 hex_digit = digit | &quot;a&quot;…&quot;f&quot; | &quot;A&quot;…&quot;F&quot; ;
-identifier = unicode_letter , { unicode_letter | unicode_digit | &quot;_&quot; } ;
+identifier_part = unicode_letter | unicode_digit | &quot;_&quot; ;
+identifier = unicode_letter , { identifier_part } , { &quot;-&quot; , identifier_part , { identifier_part } } ;
 
 inline_description = &quot;&#x2f;#&quot; , ws0 , description_text ;
 description_text = ? text up to, but not including, a comma or line terminator ? ;
@@ -87,14 +90,14 @@ script_block = script_delimiter , ws0 , { import_declaration , ws0 } , { declara
 script_delimiter = &quot;|&quot; , &quot;=&quot; , &quot;=&quot; , &quot;=&quot; , { &quot;=&quot; } , &quot;|&quot; ;
 (* The opening and closing script_delimiter must have the same number of &#x27;=&#x27; characters. *)
 
-import_declaration = &quot;from&quot; , ws1 , path_literal , ws1 , &quot;import&quot; , ws1 , import_list , ws0 , &quot;;&quot; ;
+import_declaration = &quot;from&quot; , ws1 , path_literal , ws1 , ( &quot;import&quot; , ws1 , import_list | &quot;import-as&quot; , ws1 , identifier ) , ws0 , &quot;;&quot; ;
 import_list = imported_identifier , { ws0 , &quot;,&quot; , ws0 , imported_identifier } ;
 imported_identifier = identifier , [ ws0 , &quot;:&quot; , ws0 , identifier ] ;
 
 declaration = variable_declaration | type_declaration | schema_declaration
             | gen_doc_declaration | schema_doc_declaration ;
-variable_declaration = [ &quot;nullable&quot; , ws1 ] , type_reference , ws1 , identifier , ws0 , &quot;=&quot; , ws0 , expression , [ ws0 , inline_description ] , ws0 , &quot;;&quot; ;
-type_declaration = &quot;type&quot; , ws1 , identifier , ws0 , &quot;:&quot; , ws0 , type_reference , [ ws0 , inline_description ] , ws0 , &quot;;&quot; ;
+variable_declaration = type_reference , ws1 , identifier , ws0 , &quot;=&quot; , ws0 , expression , [ ws0 , inline_description ] , ws0 , &quot;;&quot; ;
+type_declaration = &quot;alias&quot; , ws1 , identifier , ws0 , &quot;:&quot; , ws0 , type_reference , [ ws0 , inline_description ] , ws0 , &quot;;&quot; ;
 schema_declaration = &quot;schema&quot; , ws1 , identifier , ws0 , &quot;:&quot; , ws0 , record_type , ws0 , &quot;;&quot; ;
 
 gen_doc_declaration = &quot;gen_doc&quot; , ws1 , identifier , ws0 , &quot;{&quot; , ws0 , [ gen_doc_entry , { ws0 , &quot;,&quot; , ws0 , gen_doc_entry } , [ ws0 , &quot;,&quot; ] ] , ws0 , &quot;}&quot; , ws0 , &quot;;&quot; ;
@@ -118,7 +121,7 @@ self_type_reference = &quot;$self&quot; ;
 fusion_type = &quot;fusion&quot; , ws0 , &quot;[&quot; , ws0 , type_reference , { ws0 , &quot;,&quot; , ws0 , type_reference } , [ ws0 , &quot;,&quot; ] , ws0 , &quot;]&quot; ;
 variant_type = &quot;variant&quot; , ws0 , &quot;[&quot; , ws0 , type_reference , { ws0 , &quot;,&quot; , ws0 , type_reference } , [ ws0 , &quot;,&quot; ] , ws0 , &quot;]&quot; ;
 choice_type = &quot;choice&quot; , ws0 , &quot;[&quot; , ws0 , choice_member , { ws0 , &quot;,&quot; , ws0 , choice_member } , [ ws0 , &quot;,&quot; ] , ws0 , &quot;]&quot; ;
-choice_member = string_literal | int_literal | float_literal | hex_int_literal | hex_float_literal | boolean_literal | identifier ;
+choice_member = string_literal | int_literal | float_literal | hex_int_literal | hex_float_literal | boolean_literal ;
 
 (* OUTPUT *)
 output_block = [ output_directive_list , ws0 , [ block_string , ws0 ] ] , &quot;{&quot; , ws0 , [ output_field , { ws0 , &quot;,&quot; , ws0 , output_field } , [ ws0 , &quot;,&quot; ] ] , ws0 , &quot;}&quot; ;
@@ -138,17 +141,14 @@ schema_output_field = identifier , [ &quot;?&quot; ] , ws0 , &quot;:&quot; , ws0
 
 (* EXPRESSIONS *)
 expression = conditional_expression ;
-conditional_expression = coalescing_expression , [ ws0 , &quot;?&quot; , ws0 , expression , ws0 , &quot;:&quot; , ws0 , conditional_expression ] ;
+conditional_expression = coalescing_expression , [ ws0 , &quot;?&quot; , ws0 , coalescing_expression , ws0 , &quot;:&quot; , ws0 , coalescing_expression ] ;
 coalescing_expression = logical_or_expression , [ ws0 , &quot;??&quot; , ws0 , coalescing_expression ] ;
 logical_or_expression = logical_and_expression , { ws0 , &quot;||&quot; , ws0 , logical_and_expression } ;
 logical_and_expression = bitwise_or_expression , { ws0 , &quot;&amp;&amp;&quot; , ws0 , bitwise_or_expression } ;
 bitwise_or_expression = bitwise_xor_expression , { ws0 , &quot;|&quot; , ws0 , bitwise_xor_expression } ;
 bitwise_xor_expression = bitwise_and_expression , { ws0 , &quot;^&quot; , ws0 , bitwise_and_expression } ;
-bitwise_and_expression = merge_expression , { ws0 , &quot;&amp;&quot; , ws0 , merge_expression } ;
-merge_expression = equality_expression , { ws0 , &quot;&lt;&gt;&quot; , ws0 , equality_expression } ;
-equality_expression = type_test_expression , { ws0 , ( &quot;==&quot; | &quot;!=&quot; ) , ws0 , type_test_expression } ;
-type_test_expression = relational_expression , [ ws1 , &quot;is&quot; , ws1 , type_reference ] ;
-(* Type tests are non-chainable; their right operand is a type reference, not an expression. *)
+bitwise_and_expression = equality_expression , { ws0 , &quot;&amp;&quot; , ws0 , equality_expression } ;
+equality_expression = relational_expression , { ws0 , ( &quot;==&quot; | &quot;!=&quot; ) , ws0 , relational_expression } ;
 relational_expression = shift_expression , { ws0 , ( &quot;&lt;&quot; | &quot;&lt;=&quot; | &quot;&gt;&quot; | &quot;&gt;=&quot; ) , ws0 , shift_expression } ;
 shift_expression = additive_expression , { ws0 , ( &quot;&lt;&lt;&quot; | &quot;&gt;&gt;&quot; | &quot;&gt;&gt;&gt;&quot; ) , ws0 , additive_expression } ;
 additive_expression = multiplicative_expression , { ws0 , ( &quot;+&quot; | &quot;-&quot; ) , ws0 , multiplicative_expression } ;
@@ -156,16 +156,19 @@ multiplicative_expression = exponent_expression , { ws0 , ( &quot;*&quot; | &quo
 exponent_expression = unary_expression , [ ws0 , &quot;**&quot; , ws0 , exponent_expression ] ;
 unary_expression = ( &quot;!&quot; | &quot;~&quot; | &quot;+&quot; | &quot;-&quot; ) , ws0 , unary_expression | postfix_expression ;
 postfix_expression = primary_atom , { postfix_suffix } ;
-primary_atom = identifier | self_reference | parsed_input_reference | int_literal | float_literal | hex_int_literal | hex_float_literal | string_literal | boolean_literal | null_literal | array_literal | record_literal | grouped_expression ;
+primary_atom = identifier | self_reference | parsed_input_reference | int_literal | float_literal | hex_int_literal | hex_float_literal | string_literal | boolean_literal | null_literal | array_literal | record_literal | match_expression | grouped_expression ;
 postfix_suffix = ws0 , ( &quot;.&quot; | &quot;?.&quot; ) , ws0 , identifier ;
 self_reference = &quot;$self&quot; , &quot;.&quot; , identifier , { &quot;.&quot; , identifier } ;
 parsed_input_reference = &quot;$&quot; , identifier ;
 grouped_expression = &quot;(&quot; , ws0 , expression , ws0 , &quot;)&quot; ;
-(* Grouped expressions are restricted by static semantics to operator-precedence control. *)
+(* A grouped-expression candidate is valid only when it changes arithmetic precedence or associativity. *)
 array_literal = &quot;[&quot; , ws0 , [ expression , { ws0 , &quot;,&quot; , ws0 , expression } , [ ws0 , &quot;,&quot; ] ] , ws0 , &quot;]&quot; ;
 record_literal = &quot;{&quot; , ws0 , [ record_field , { ws0 , &quot;,&quot; , ws0 , record_field } , [ ws0 , &quot;,&quot; ] ] , ws0 , &quot;}&quot; ;
 record_field = identifier , ws0 , &quot;:&quot; , ws0 , expression , [ ws0 , inline_description ]
              | identifier , [ ws0 , inline_description ] ;
+match_expression = &quot;match&quot; , ws0 , &quot;(&quot; , ws0 , expression , ws0 , &quot;)&quot; , ws0 , &quot;{&quot; , ws0 , match_arm , { ws0 , match_arm } , ws0 , &quot;}&quot; ;
+match_arm = match_pattern , ws0 , &quot;=&gt;&quot; , ws0 , expression , ws0 , &quot;,&quot; ;
+match_pattern = type_reference | choice_member ;
 
 interpolation = &quot;$&quot; , &quot;(&quot; , expression , &quot;)&quot; ;
 ```
@@ -178,14 +181,16 @@ directives are errors.
 
 | Output mode | `schema` | `schema_file` | `parse` | `parse_file` |
 | --- | --- | --- | --- | --- |
-| omitted &#x2f; `output = data` | allowed | allowed | allowed | allowed |
-| `output = schema` | forbidden | forbidden | forbidden | forbidden |
+| omitted &#x2f; `output = 'data'` | allowed | allowed | allowed | allowed |
+| `output = 'schema'` | forbidden | forbidden | forbidden | forbidden |
 
 In data mode, `schema` selects the schema used to validate the produced output,
 and `parse` selects the schema used to validate host runtime input. These roles
 are distinct. `schema` and `schema_file` may be combined; `parse` and
 `parse_file` may be combined. A file directive contributes declarations from
-its file, while the corresponding named directive selects the active schema.
+its file. Without `schema`, a `schema_file` directive uses the referenced
+file's schema output body as the active output shape; when both directives are
+present, `schema` selects the named schema.
 
 In schema mode the same `{ ... }` output body is interpreted as schema fields:
 its right sides are type references and `?` is permitted. In data mode its right
@@ -202,32 +207,53 @@ field` or `expected &#x27;,&#x27; or &#x27;}&#x27; after field`, never suggest `
 
 The primitive types are `string`, `int`, `float`, `hex_int`, `hex_float`, and
 `boolean`. `int` is signed 64-bit. `float` is IEEE-754 binary64. `hex_int` has
-the same signed 64-bit range as `int` and `hex_float` uses binary64 storage,
-but both hexadecimal types are distinct from the decimal family. NaN and
-infinity have no literal syntax. Integer overflow, division by zero, and any
+the same exact range as `int`, from -2^63 through 2^63 - 1. The minimum
+`hex_int` is written `-0x8000000000000000`; the positive literal
+`0x8000000000000000` is out of range. Hexadecimal integer addition,
+subtraction, multiplication, non-negative integer exponentiation, unary
+negation, and left shift MUST produce an evaluation error rather than wrap
+when their mathematical result is outside that range.
+
+`hex_float` uses binary64 storage, but both hexadecimal types are distinct
+from the decimal family. A `hex_float` literal remains fixed-point:
+`0x<hex-digits>.<hex-digits>`, with arbitrarily long non-empty whole and
+fractional components and no scientific notation. Literal conversion rounds
+to the nearest binary64 value. Magnitudes through 2^1024 - 1 are accepted;
+values in the upper binary64 rounding interval produce `math.MaxFloat64`, and
+larger magnitudes are errors. Thus the largest finite positive Mace literal is
+`"0x" + strings.Repeat("F", 256) + ".0"`, representing
+`math.MaxFloat64 = (2 - 2^-52) * 2^1023 = 2^1024 - 2^971`.
+
+Canonical `hex_float` output uses uppercase hexadecimal digits, fixed-point
+notation, an exact binary64 expansion, and a required fractional component.
+Trailing fractional zeroes are removed, but `.0` remains for integer-valued
+floats. Parsing canonical output MUST reproduce the identical binary64 bit
+pattern, including negative zero. NaN, infinity, division by zero, and any
 operation producing a non-finite float are evaluation errors. `int &#x2f; int`
 truncates toward zero. Hexadecimal fractional digits are powers of 16, so
-`0xA.F` is `10.9375`; hexadecimal scientific notation is not supported.
-Decimal and hexadecimal values never mix implicitly. `hex_int &#x2f; hex_int`
-returns `hex_float`; `~` accepts only decimal `int`.
+`0xA.F` is `10.9375`. Decimal and hexadecimal values never mix implicitly.
+`hex_int &#x2f; hex_int` returns `hex_float`; `~` accepts only decimal `int`.
 
 Arrays are homogeneous unless their element type is a permitting `variant`.
 `record&lt;T&gt;` describes a record whose values conform to `T`. `[]` requires an expected array type because it has no inferable element type.
-`{}` is an empty record and is valid only for an empty or all-optional schema,
-a compatible inline record type, or an unconstrained data-output context. Empty
-schemas are valid.
+`{}` is an empty record and requires an expected empty, all-optional, compatible
+inline, or otherwise known record type. Every empty collection literal in a
+data output requires an output shape supplied through `schema` or `schema_file`,
+even when another conditional branch has a known collection type. Empty schemas
+are valid.
 
-Conditional branch types are inferred recursively. Branches of the same type
-produce that type. Different branch types produce a flattened, deduplicated
-`variant[...]` containing every type returned by nested conditionals, and the
-receiving variable or output schema MUST accept every inferred member. A schema
-and a populated `record&lt;T&gt;` remain distinct variant members.
+Conditional branches of the same type produce that type. Different branch
+types produce a deduplicated `variant[...]`, and the receiving variable or
+output schema MUST accept every inferred member. A conditional expression MUST
+NOT contain another conditional expression in its condition or either branch.
+A schema and a populated `record&lt;T&gt;` remain distinct variant members.
 
 When a conditional combines an empty array or empty record with a different
 branch type, the empty collection has no inferable member type. In a data output,
-that conditional MUST be validated by an output schema. In a variable
-initializer, the variable declaration MUST use an explicit `variant[...]` type
-that supplies the collection type. For example:
+that conditional MUST be validated by an output shape supplied through the
+`schema` or `schema_file` directive. In a variable initializer, the variable
+declaration MUST use an explicit type that supplies the collection type. For
+example:
 
 ```mace
 |===|
@@ -235,13 +261,14 @@ boolean enabled = true;
 variant[string, array<string>] value = enabled ? "configured" : [];
 schema Result: { value: variant[string, array<string>], };
 |===|
-[output = data, schema = Result]
+[output = 'data', schema = Result]
 { value: enabled ? "configured" : [], }
 ```
 
 An untyped data-output conditional such as `{ value: enabled ? "configured" : [], }`
-is a static error. A conditional between a known record and `{}` retains the
-known record type and does not require a variant.
+is a static error. Direct and nested empty collections in schema-less data
+outputs are also static errors, including conditionals between a known
+`record&lt;T&gt;` value and `{}`.
 
 A `record_type` is valid wherever a type reference is accepted, including type
 aliases, arrays, schema fields, variants, and fusions. Schemas are closed:
@@ -249,16 +276,19 @@ required fields must be present, optional fields may be omitted, and unknown
 fields are rejected. Optionality is a record-shape property only; it cannot
 annotate a runtime record or data-output field.
 
-A fusion member must resolve to a record type: a named schema, a type alias to
-a record, an inline record type, or another valid fusion. For equal field names,
+A fusion member must resolve consistently to either a record type or a choice
+type. Record members may be named schemas, record aliases, inline record types,
+or other record fusions. Choice members may be choice aliases, inline choices,
+or other choice fusions; their resolved literal domains are deduplicated. A
+fusion cannot mix records and choices. For equal record field names,
 equal resolved types are compatible. Required plus optional yields required;
 optional plus optional yields optional. Different resolved types conflict. A
 fusion never silently creates a variant.
 
-Choice members are scalar literals or identifiers resolving to choices. A
-literal repeated directly within one choice is an error. Values repeated only
-through composed aliases are deduplicated in the resolved domain. Choice alias
-cycles are errors.
+Choice members are scalar literals. A literal repeated directly within one
+choice is an error. Use `fusion[...]` to compose choice aliases; values repeated
+through the fusion are deduplicated in the resolved domain. Choice alias cycles
+are errors.
 
 Variant identity is the unordered set of resolved members, so member order does
 not matter and duplicate equivalent members are invalid. A value normally must
@@ -268,63 +298,41 @@ suggested values while `string` permits additional values. Implementations must
 not use first-match behavior, and must accept a value assignable to at least one
 member.
 
-### Type tests and branch-local narrowing
+### Match expressions
 
-`expression is Type` is a boolean type test. Its right operand MUST be a type
-reference; literals and runtime expressions are invalid there. A type test may
-appear wherever a boolean expression is accepted, but it narrows a stable
-identifier or member path only when it directly controls a conditional
-expression. Parentheses around that direct condition do not change this rule.
-Negated tests and booleans stored in variables do not carry narrowing.
+`match` accepts only a value whose static type resolves to a `variant[...]` or
+`choice[...]`. The matched expression is evaluated exactly once. A variant arm
+uses a type-reference pattern; a choice arm uses one scalar literal from the
+choice domain. A variant type-reference pattern may cover one or more resolved
+members of the source variant. Pattern member sets MUST be disjoint.
 
-For a source `variant[A, B, C]`, the true branch retains, in declaration order,
-all source members assignable to the resolved target type. The false branch
-removes those members. A one-member result is simplified to that member, and
-aliases are resolved before overlap is calculated. Nested conditionals build on
-the environment of their containing branch. The declared symbol type is never
-mutated, and neither branch environment survives the conditional expression.
+Every source variant member or choice literal MUST be covered exactly once.
+Missing, duplicate, incompatible, or extra patterns are static errors, so a
+match expression has no default arm. Each arm ends with a comma, including the
+last arm.
 
-```mace
-variant[string, int, boolean] value = 7;
-string result = value is string
-    ? value
-    : value is int
-        ? "$(value)"
-        : value ? "true" : "false";
-```
-
-A nullable value behaves as its present type plus absence for narrowing:
-`nullable string` tested with `is string` is `string` in the true branch, while
-an absent runtime value makes the test false. A non-nullable concrete value may
-be tested against its own type and the result is statically known to be true.
-An incompatible concrete test, or a variant test whose target overlaps no
-remaining member, is a static `mace.type.impossible-narrowing` error rather than
-a constant false. This also rejects a repeated test for a member already removed
-by an enclosing false branch.
-
-Schemas retain closed, nominal branch types. Runtime schema conformance checks
-required and optional fields, nested field types, and rejects unknown fields;
-it does not select a schema merely because host values share a map
-representation. Existing exact-one-member variant validation still applies.
-Arrays compare resolved element types. Choice targets denote their complete
-finite literal domain, not equality with one choice member.
+Patterns do not create a value binding or extract fields. When the matched
+expression is a stable variable or member path, that existing path is narrowed
+to the arm pattern while the arm result is checked.
 
 ```mace
-schema LocalConfig: { path: string, };
-schema RemoteConfig: { url: string, };
-type Name: string;
-variant[LocalConfig, RemoteConfig] config = { path: "/tmp", };
-variant[array<string>, Name] payload = ["first"];
+variant[string, int] value = 7;
+string result = match (value) {
+    string => "text",
+    int => "number",
+};
 
-string source = config is LocalConfig ? config.path : config.url;
-boolean hasStringItems = payload is array<string>;
+choice["dev", "prod"] environment = "prod";
+int workers = match (environment) {
+    "dev" => 1,
+    "prod" => 4,
+};
 ```
 
-At runtime, `is` evaluates its left operand once and returns true exactly when
-the value conforms to the resolved target under the same primitive, choice,
-array, and closed-schema rules used by assignment validation. Decimal and
-hexadecimal numeric families remain distinct. Type tests do not weaken or
-bypass variant ambiguity diagnostics.
+Arm result types are combined using the same rules as conditional branches:
+equal results retain their type and distinct results form a flattened,
+deduplicated variant. Runtime member selection uses the same primitive, choice,
+array, and closed-schema conformance rules as assignment validation.
 
 Pure alias cycles are invalid. Within a schema or inline record type, `$self`
 means the enclosing schema type and may be used only as a structurally guarded
@@ -335,25 +343,20 @@ terminate on finite values.
 
 ## Expressions and evaluation
 
-Operator precedence, highest to lowest, is postfix access; unary; exponent;
-multiplication&#x2f;division&#x2f;modulo; addition&#x2f;subtraction; shifts; relational;
-type test `is`; equality; merge `&lt;&gt;`; bitwise AND; XOR; OR; logical AND;
-logical OR; and `?:`.
-Merge operands are ordinary expressions, enabling `base &lt;&gt; overrides` and
-`base &lt;&gt; defaults &lt;&gt; local`, but static checking requires each evaluated
-operand to be a compatible record or array. Record merges are deep, arrays
-concatenate, and a scalar conflict takes the right value. A merge still must
-pass its eventual schema validation.
+Operator precedence, highest to lowest, is postfix access; unary; exponent;`r`nmultiplication&#x2f;division&#x2f;modulo; addition&#x2f;subtraction; shifts; relational;`r`nequality; bitwise AND; XOR; OR; logical AND; logical OR; and `?:`.
 
-Postfix member access may follow any primary expression where its resulting
-type supports access. Parentheses remain syntactically available but are only
-for mathematical&#x2f;operator precedence control: they MUST NOT be a general
-expression wrapper or be used to wrap records or other non-mathematical values
-solely to enable access. Thus `({ user: { name: &quot;Ada&quot; } }).user.name` is
-invalid.
+Postfix member access may follow any ungrouped primary expression where its
+resulting type supports access. The grammar recognizes a parenthesized
+expression as a grouped-expression candidate, but static semantics accept it
+only when it contains `+`, `-`, `*`, `/`, `%`, or `**` and changes the binding
+imposed by arithmetic precedence or associativity. Valid examples include
+`(1 + 2) * 3`, `1 - (2 - 3)`, and `(2 ** 3) ** 4`. Redundant groups such as
+`(1 + 2)` and `1 + (2 * 3)` are invalid. Parentheses MUST NOT group shifts,
+comparisons, bitwise expressions, logical expressions, coalescing,
+conditionals, or values solely to enable access. Thus
+`({ user: { name: &quot;Ada&quot; } }).user.name` is invalid.
 
-`$self` is the current data-output record and can access only fields al
-ready
+`$self` is the current data-output record and can access only fields already
 evaluated. Parsed input references are separate: `$name`, `$user.name`, and
 `$user.address.street` refer to typed fields from validated runtime input. `$self` is available only during data-output construction.
 
@@ -405,10 +408,90 @@ inapplicable targets are errors.
 
 ## Diagnostics and security
 
-Processors report a specific diagnostic for an inconsistent script delimiter:
-`script block delimiters must match`. They report malformed field separators as
-specified above, and diagnose duplicate&#x2f;unknown directives, invalid path
-literals, path escape, missing runtime input, type errors, and schema errors.
+Processing is all-or-nothing. Every lexical, syntactic, static, resolution, or
+evaluation error terminates processing without a partial result. A diagnostic
+MUST identify the failing source construct where source location information is
+available. The message fragments below are normative; implementations MAY add
+context such as a declaration name, field name, expected type, actual type, or
+source position.
+
+Syntax and file-structure diagnostics include:
+
+- mismatched script delimiters: `script block delimiters must match`;
+- an unterminated or empty script block;
+- an import after another script declaration: `import declarations must appear
+  at top of script block`;
+- a malformed import, declaration, directive list, schema, output field, or
+  unexpected token;
+- a missing field separator: `expected ',' after field` or `expected ',' or
+  '}' after field`;
+- parentheses that do not alter arithmetic precedence: `parentheses may only
+  alter arithmetic precedence`;
+- a missing output block or multiple output blocks.
+
+Directive and import diagnostics include:
+
+- a bracketed directive list without exactly one `output` entry: `directive
+  list must include an output directive`;
+- a duplicate or unknown directive;
+- any `schema`, `schema_file`, `parse`, or `parse_file` directive used with
+  `output = 'schema'`;
+- an unknown selected schema, unusable schema file, or incompatible combination
+  of parse directives;
+- a path that does not end in `.mace`, cannot be read or parsed, or escapes the
+  canonical project root;
+- a circular import, duplicate imported name, unexposed imported name, wildcard
+  import, or local declaration that shadows an imported name;
+- required parse input that was not supplied or does not satisfy the selected
+  parse schema.
+
+Declaration, type, schema, and evaluation diagnostics include:
+
+- duplicate declarations, schema fields, output fields, choice members, or
+  equivalent variant members;
+- an unknown type reference, missing initializer, unknown value identifier, or
+  invalid `$self` reference;
+- an initializer or output value that is not assignable to its declared or
+  selected schema type;
+- a closed schema with a missing required field, unknown field, invalid optional
+  marker, or incompatible field value;
+- a mixed array, an untyped empty collection, or an empty collection in a data
+  output without an output schema;
+- an invalid fusion member, a fusion mixing record and choice domains, or a
+  conflicting record field in a fusion;
+- a cyclic type or choice alias;
+- a nested conditional expression;
+- an operator with invalid operand types, integer overflow, division by zero,
+  invalid shift or exponent, or a non-finite floating-point result;
+- interpolation of a non-scalar or null value;
+
+Match diagnostics include each of the following distinct static errors:
+
+- matching a value that is not a `variant[...]` or `choice[...]`;
+- a missing pattern: `match expression must be exhaustive`;
+- a duplicate or overlapping pattern: `duplicate match pattern`;
+- a pattern that is not a member of the matched domain;
+- a literal pattern for a variant match: `variant match arms require a type
+  pattern`;
+- a type pattern for a choice match: `choice match arms require a literal
+  pattern`.
+
+Documentation diagnostics include duplicate documentation keys, unknown or
+inapplicable targets, documentation declared before its target, a `fields`
+entry outside `schema_doc`, an unknown documented schema field, conflicting
+inline and structured documentation, interpolation in output documentation, and
+an output documentation block without a directive list.
+
+Optional-access diagnostics include plain member access on an optional field,
+access beyond the declared record depth, and use of a possibly absent
+optional-chain result without a
+coalescing fallback. The last case MUST report `possibly absent expressions
+must be resolved with '??' before use`.
+
+The files in `fixtures/diagnostics/` are the conformance examples for these
+errors. `internal/processor/processor_diagnostics_test.go` maps each fixture to
+its required diagnostic fragment and MUST be updated whenever a normative error
+is added or changed.
 
 Mace treats imports, file-loaded schemas, runtime input, documentation, strings,
 and emitted values as data, never executable code. Processors must reject
@@ -422,25 +505,16 @@ JSON, YAML, and TOML conversion is lossy with respect to comments, formatting,
 quoted&#x2f;non-identifier keys, duplicate keys, null as a normal runtime value, and
 non-record data roots. No conversion grants executable behavior.
 
-## Nullability
+## Null Output
 
-`nullable T name = null;` declares a variable that may be unavailable during
-evaluation. `null` is falsy. Before accessing a nullable variable, an
-expression MUST guard it with a truthiness condition; the true branch treats
-that variable as non-null.
-
-```mace
-user ? user.profile.address?.city ?? "" : ""
-```
-
-Using either `user.member` or `user?.member` without that guard is invalid.
-`null` cannot be placed in an array or record, emitted, imported, exported,
-compared, or interpolated.
+`null` is valid only in data output. It omits the corresponding output field;
+script variables, arrays, records, comparisons, and interpolation cannot use
+`null`.
 
 ## Optional member access
 
-`target?.member` is optional member access. Plain `.` is invalid when `target`
-is nullable or `member` is an optional schema field. Optional record map lookups
+`target?.member` is optional member access. Plain `.` is invalid when `member`
+is an optional schema field. Optional record map lookups
 also use `?.`; every optional step in a nested path requires `?.`. Optional
 member access produces an absent evaluation result when its member is absent.
 The result must be resolved with `??` before it is stored, emitted, or otherwise

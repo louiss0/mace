@@ -1,9 +1,9 @@
 |========================================|
-type Name: string;
+alias Name: string;
 schema User: { name: Name, age?: int, };
 schema Envelope: { result: User, };
 |========================================|
-[output=schema]
+[output='schema']
 {
   result: User,
 }

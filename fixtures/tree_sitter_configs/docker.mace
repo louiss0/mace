@@ -29,7 +29,7 @@ Service app = {
   environment: ["NODE_ENV=production", "PORT=3000"],
 };
 |====================================================|
-[schema=DockerConfig]
+[output = 'data', schema = DockerConfig]
 {
   version: "3.9",
   services: [app],

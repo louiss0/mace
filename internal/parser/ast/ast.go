@@ -35,6 +35,19 @@ type Expression interface {
 	expressionNode()
 }
 
+type GroupedExpression struct {
+	StartToken lexer.Token
+	Expression Expression
+}
+
+func (GroupedExpression) expressionNode() {
+	_ = 0
+}
+
+func (g GroupedExpression) Range() SourceRange {
+	return TokenRange(g.StartToken)
+}
+
 type Identifier struct {
 	Token lexer.Token
 	Name  string
@@ -218,26 +231,37 @@ func (i InfixExpression) Range() SourceRange {
 	return i.Left.Range()
 }
 
-type TypeTestExpression struct {
-	Expression Expression
-	TargetType TypeReference
-	EndToken   lexer.Token
-}
-
-func (TypeTestExpression) expressionNode() {
-	_ = 0
-}
-
-func (t TypeTestExpression) Range() SourceRange {
-	sourceRange := t.Expression.Range()
-	sourceRange.End = TokenRange(t.EndToken).End
-	return sourceRange
-}
-
 type ConditionalExpression struct {
 	Condition Expression
 	Then      Expression
 	Else      Expression
+}
+
+type MatchPattern struct {
+	Type    TypeReference
+	Literal Expression
+}
+
+type MatchArm struct {
+	Pattern MatchPattern
+	Value   Expression
+}
+
+type MatchExpression struct {
+	MatchToken lexer.Token
+	Value      Expression
+	Arms       []MatchArm
+	EndToken   lexer.Token
+}
+
+func (MatchExpression) expressionNode() {
+	_ = 0
+}
+
+func (m MatchExpression) Range() SourceRange {
+	sourceRange := TokenRange(m.MatchToken)
+	sourceRange.End = TokenRange(m.EndToken).End
+	return sourceRange
 }
 
 func (ConditionalExpression) expressionNode() {
@@ -309,7 +333,6 @@ type Declaration interface {
 }
 
 type VariableDeclaration struct {
-	Nullable    bool
 	HasValue    bool
 	Type        TypeReference
 	NameToken   lexer.Token

@@ -1,8 +1,8 @@
 |============================================|
-type Age: int;
+alias Age: int;
 schema Profile: { age: Age, bio?: string, };
 |============================================|
-[output = schema]
+[output = 'schema']
 {
   Age: Age,
   Profile: Profile,

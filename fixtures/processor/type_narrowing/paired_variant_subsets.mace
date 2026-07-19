@@ -29,9 +29,9 @@ schema Member4: {
   },
 };
 
-type EvenValue: variant[Member0, Member1, Member2, Member3];
-type EvenPair0: variant[Member0, Member1];
-type EvenPair1: variant[Member2, Member3];
+alias EvenValue: variant[Member0, Member1, Member2, Member3];
+alias EvenPair0: variant[Member0, Member1];
+alias EvenPair1: variant[Member2, Member3];
 
 EvenValue evenValue0 = { field0: { value: "member-0" } };
 EvenValue evenValue1 = { field1: { value: "member-1" } };
@@ -51,9 +51,9 @@ string evenResult3 = evenValue3 is EvenPair0
   ? "pair-0"
   : evenValue3 is EvenPair1 ? "pair-1" : "unmatched";
 
-type OddValue: variant[Member0, Member1, Member2, Member3, Member4];
-type OddPair0: variant[Member0, Member1];
-type OddPair1: variant[Member2, Member3];
+alias OddValue: variant[Member0, Member1, Member2, Member3, Member4];
+alias OddPair0: variant[Member0, Member1];
+alias OddPair1: variant[Member2, Member3];
 
 OddValue oddValue0 = { field0: { value: "member-0" } };
 OddValue oddValue1 = { field1: { value: "member-1" } };
@@ -78,7 +78,7 @@ string oddResult4 = oddValue4 is OddPair0
   : oddValue4 is OddPair1 ? "pair-1" : oddValue4.field4.value;
 |===|
 
-[output = data]
+[output = 'data']
 {
   even0: evenResult0,
   even1: evenResult1,

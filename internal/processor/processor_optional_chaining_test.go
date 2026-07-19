@@ -22,26 +22,6 @@ schema User: {
 };
 `
 
-	It("requires a truthiness check before accessing a nullable record variable", func() {
-		_, err := New().Process(optionalChainDocument(userSchemas, `nullable User user = {
-  records: { primary: "active", },
-};`, `
-  records: user.records,
-`))
-
-		requireOptionalFieldAccessError(err)
-	})
-
-	It("rejects optional chaining on a nullable record variable", func() {
-		_, err := New().Process(optionalChainDocument(userSchemas, `nullable User user = {
-  records: { primary: "active", },
-};`, `
-  records?: user?.records,
-`))
-
-		requireOptionalFieldAccessError(err)
-	})
-
 	It("requires optional chaining when accessing an optional property", func() {
 		_, err := New().Process(optionalChainDocument(userSchemas, `User user = { records: {}, };`, `
   profile: user.profile,
@@ -50,39 +30,36 @@ schema User: {
 		requireOptionalFieldAccessError(err)
 	})
 
-	It("uses the fallback when a nullable record variable is null", func() {
-		result, err := New().Process(optionalChainDocument(userSchemas, `nullable User user = null;`, `
+	It("uses the false conditional branch for a boolean condition", func() {
+		result, err := New().Process(optionalChainDocumentWithOutputSchema(
+			userSchemas,
+			`User user = { records: {}, };`,
+			`schema Result: { records: record<string>, };`,
+			`
   records: user ? user.records : {},
-`))
+`,
+		))
 
 		tAssert.NoError(err)
 		assertExpectedValue(requireOutputValue(result, "records"), expectedValue{kind: ValueRecord, record: map[string]expectedValue{}})
 	})
 
-	It("allows a nullable record variable after a truthiness check", func() {
-		result, err := New().Process(optionalChainDocument(userSchemas, `nullable User user = {
+	It("allows a record variable after a truthiness check", func() {
+		result, err := New().Process(optionalChainDocumentWithOutputSchema(
+			userSchemas,
+			`User user = {
   records: { primary: "active", },
-};`, `
+};`,
+			`schema Result: { records: record<string>, };`,
+			`
   records: user ? user.records : {},
-`))
+`,
+		))
 
 		tAssert.NoError(err)
 		assertExpectedValue(requireOutputValue(result, "records"), expectedValue{kind: ValueRecord, record: map[string]expectedValue{
 			"primary": {kind: ValueString, string: "active"},
 		}})
-	})
-
-	It("processes the nullable user fixture", func() {
-		fixture, err := filepath.Abs("../../fixtures/processor/optional_chaining/nullable_user.mace")
-		tAssert.NoError(err)
-		result, err := New().ProcessFile(fixture)
-
-		tAssert.NoError(err)
-		assertExpectedValue(requireOutputValue(result, "fallback_records"), expectedValue{kind: ValueRecord, record: map[string]expectedValue{}})
-		assertExpectedValue(requireOutputValue(result, "records"), expectedValue{kind: ValueRecord, record: map[string]expectedValue{
-			"primary": {kind: ValueString, string: "active"},
-		}})
-		tAssert.Equal("Paris", requireOutputValue(result, "city").String)
 	})
 
 	It("requires every optional property in a nested chain to be guarded", func() {
@@ -139,7 +116,7 @@ string fallback = "";`, `
 		_, err := New().Process(`|===|
 record<string> packages = {};
 |===|
-[output = data]
+[output = 'data']
 { value: packages.codefixer.cn_efs, }`)
 
 		tAssert.ErrorContains(err, `member "cn_efs" cannot be accessed because its target is not a record`)
@@ -150,7 +127,7 @@ record<string> packages = {};
 record<record<string>> packages = {};
 string fallback = "missing";
 |===|
-[output = data]
+[output = 'data']
 { value: packages?.codefixer.cn_efs ?? fallback, }`)
 
 		requireOptionalFieldAccessError(err)
@@ -163,7 +140,7 @@ record<record<string>> packages = {
 };
 string fallback = "missing";
 |===|
-[output = data]
+[output = 'data']
 {
   present: packages?.codefixer?.cn_efs ?? fallback,
   missing: packages?.codefixer?.missing ?? fallback,
@@ -188,7 +165,7 @@ string fallback = "missing";
 record<` + valueType + `> packages = {};
 string fallback = "missing";
 |===|
-[output = data]
+[output = 'data']
 { value: packages?.codefixer?.cn_efs ?? fallback, }`)
 
 			tAssert.ErrorContains(err, "cannot be accessed because its target is not a record")
@@ -225,14 +202,6 @@ string fallback = "missing";
 			_, err = inferExpressionType(optionalRecordPath(depth+1), variables, symbols, types, schemas, nil)
 			tAssert.ErrorContains(err, "cannot be accessed because its target is not a record")
 
-			_, err = New().Process(`|===|
-type Packages: variant[` + nestedRecordMapTypeText(depth) + `, ` + nestedRecordMapTypeText(depth+1) + `];
-nullable Packages packages = null;
-string fallback = "missing";
-|===|
-[output = data]
-{ value: packages ? ` + optionalRecordPathText(depth+1) + ` ?? fallback : fallback, }`)
-			tAssert.ErrorContains(err, "cannot be accessed because its target is not a record")
 		},
 		Entry("one level", 1),
 		Entry("two levels", 2),
@@ -264,24 +233,18 @@ func optionalRecordPath(depth int) ast.Expression {
 	return expression
 }
 
-func nestedRecordMapTypeText(depth int) string {
-	valueType := "string"
-	for range depth {
-		valueType = "record<" + valueType + ">"
-	}
-	return valueType
-}
-
-func optionalRecordPathText(depth int) string {
-	path := "packages"
-	for range depth {
-		path += "?.value"
-	}
-	return path
-}
-
 func optionalChainDocument(schemas string, declaration string, fields string) string {
-	return schemas + declaration + "\n|===|\n[output = data]\n{\n" + fields + "\n}"
+	return schemas + declaration + "\n|===|\n[output = 'data']\n{\n" + fields + "\n}"
+}
+
+func optionalChainDocumentWithOutputSchema(
+	schemas string,
+	declaration string,
+	outputSchema string,
+	fields string,
+) string {
+	return schemas + declaration + "\n" + outputSchema +
+		"\n|===|\n[output = 'data', schema = Result]\n{\n" + fields + "\n}"
 }
 
 func requireOptionalFieldAccessError(err error) {

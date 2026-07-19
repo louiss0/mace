@@ -10,7 +10,7 @@ const (
 
 	TokenFrom
 	TokenImport
-	TokenTypeKeyword
+	TokenAliasKeyword
 	TokenSchema
 	TokenGenDoc
 	TokenSchemaDoc
@@ -18,6 +18,7 @@ const (
 	TokenUnion
 	TokenVariant
 	TokenChoice
+	TokenMatch
 	TokenRecord
 	TokenStringType
 	TokenIntType
@@ -30,9 +31,6 @@ const (
 	TokenParse
 	TokenParseFile
 	TokenData
-	TokenNullable
-	TokenIn
-	TokenIs
 	TokenNull
 
 	TokenString
@@ -43,6 +41,7 @@ const (
 	TokenBoolean
 
 	TokenAssign
+	TokenArrow
 	TokenSemicolon
 	TokenComma
 	TokenColon
@@ -62,7 +61,6 @@ const (
 
 	TokenLess
 	TokenLessEqual
-	TokenMerge
 	TokenGreater
 	TokenGreaterEqual
 	TokenEqualEqual

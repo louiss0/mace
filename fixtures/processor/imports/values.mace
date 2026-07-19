@@ -2,7 +2,7 @@
 int count = 3;
 int hidden = 9;
 |===============|
-[output = data]
+[output = 'data']
 {
   count: count,
 }

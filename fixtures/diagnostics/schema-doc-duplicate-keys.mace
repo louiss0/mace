@@ -6,4 +6,4 @@ schema_doc User {
   summary: "Two",
 };
 |===|
-[output = data] {}
+[output = 'data'] {}

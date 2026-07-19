@@ -66,7 +66,6 @@ var _ = Describe("FormatFile", func() {
 		Entry("double star", lexer.TokenDoubleStar, "**", precedenceExponent),
 		Entry("less", lexer.TokenLess, "<", precedenceRelational),
 		Entry("less equal", lexer.TokenLessEqual, "<=", precedenceRelational),
-		Entry("merge", lexer.TokenMerge, "<>", precedenceMerge),
 		Entry("greater", lexer.TokenGreater, ">", precedenceRelational),
 		Entry("greater equal", lexer.TokenGreaterEqual, ">=", precedenceRelational),
 		Entry("equal equal", lexer.TokenEqualEqual, "==", precedenceEquality),
@@ -91,41 +90,41 @@ var _ = Describe("FormatFile", func() {
 		Entry("unknown", lexer.TokenEOF, ""),
 	)
 
-	It("formats member type tests with their precedence", func() {
-		tokens, err := lexFormatterExpression("condition && config.value is string == true")
+	It("formats match expressions", func() {
+		tokens, err := lexFormatterExpression(`match (value) { string => "text", int => "number", }`)
 		tAssert.NoError(err)
 		expression, err := parser.New(tokens).ParseExpression()
 		tAssert.NoError(err)
 		formatted, err := formatExpressionWithDepth(expression, 0)
 		tAssert.NoError(err)
-		tAssert.Equal("condition && config.value is string == true", formatted)
+		tAssert.Equal("match (value) {\n  string => \"text\",\n  int => \"number\",\n}", formatted)
 	})
 
 	It("formats imports, script declarations, and output", func() {
 		file, err := parseMaceFile(`|===|
-from "./base.mace" import User, Config;
-type Name: string;
-type Fruit: choice["Apple", "strawberry"];
+from './base.mace' import User, Config;
+alias Name: string;
+alias Fruit: choice["Apple", "strawberry"];
 schema User: { name: string, age?: int, };
 string user = "Ada";
 |===|
-[output = data, schema = User]
+[output = 'data', schema = User]
 { name: user, age: 1 + 2 * 3, }`)
 		tAssert.NoError(err)
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
-		tAssert.Equal(`|==========================================|
-from "./base.mace" import User, Config;
-type Name: string;
-type Fruit: choice["Apple", "strawberry"];
+		tAssert.Equal(`|===========================================|
+from './base.mace' import User, Config;
+alias Name: string;
+alias Fruit: choice["Apple", "strawberry"];
 schema User: {
   name: string,
   age?: int
 }
 string user = "Ada";
-|==========================================|
-[output = data, schema = User]
+|===========================================|
+[output = 'data', schema = User]
 {
   name: user,
   age: 1 + 2 * 3
@@ -134,9 +133,9 @@ string user = "Ada";
 
 	It("formats import aliases and optional output fields", func() {
 		file, err := parseMaceFile(`|===|
-from "./base.mace" import User:Person, Config;
+from './base.mace' import User:Person, Config;
 |===|
-[output = data]
+[output = 'data']
 {
   display_name?: "Ada" /# Optional display name,
 }`)
@@ -145,23 +144,12 @@ from "./base.mace" import User:Person, Config;
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
 		tAssert.Equal(`|==============================================|
-from "./base.mace" import User:Person, Config;
+from './base.mace' import User:Person, Config;
 |==============================================|
-[output = data]
+[output = 'data']
 {
   display_name?: "Ada" /# Optional display name
 }`, output)
-	})
-
-	It("formats nullable declarations without initial values", func() {
-		line, err := formatDeclaration(ast.VariableDeclaration{
-			Nullable: true,
-			Type:     ast.PrimitiveType{Name: "string"},
-			Name:     "nickname",
-		})
-
-		tAssert.NoError(err)
-		tAssert.Equal("nullable string nickname;", line)
 	})
 
 	It("formats variable inline descriptions before semicolons", func() {
@@ -179,72 +167,72 @@ from "./base.mace" import User:Person, Config;
 
 	It("formats import-as declarations", func() {
 		file, err := parseMaceFile(`|===|
-from "./base.mace" import-as Base;
+from './base.mace' import-as Base;
 |===|
-[output = data]
+[output = 'data']
 { result: Base.name, }`)
 		tAssert.NoError(err)
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
 		tAssert.Equal(`|==================================|
-from "./base.mace" import-as Base;
+from './base.mace' import-as Base;
 |==================================|
-[output = data]
+[output = 'data']
 {
   result: Base.name
 }`, output)
 	})
 
 	It("formats empty data and schema output blocks", func() {
-		dataFile, err := parseMaceFile(`[output = data] {}`)
+		dataFile, err := parseMaceFile(`[output = 'data'] {}`)
 		tAssert.NoError(err)
 
 		dataOutput, err := FormatFile(dataFile)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = data]
+		tAssert.Equal(`[output = 'data']
 {}`, dataOutput)
 
-		schemaFile, err := parseMaceFile(`[output = schema] {}`)
+		schemaFile, err := parseMaceFile(`[output = 'schema'] {}`)
 		tAssert.NoError(err)
 
 		schemaOutput, err := FormatFile(schemaFile)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = schema]
+		tAssert.Equal(`[output = 'schema']
 {}`, schemaOutput)
 	})
 
 	It("formats record map type references", func() {
 		file, err := parseMaceFile(`|===|
-type Dependencies: record<string>;
+alias Dependencies: record<string>;
 record<string> deps = { foo: "bar", };
 |===|
-[output = schema]
+[output = 'schema']
 { dependencies: record<string>, }`)
 		tAssert.NoError(err)
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
-		tAssert.Equal(`|==================================|
-type Dependencies: record<string>;
+		tAssert.Equal(`|===================================|
+alias Dependencies: record<string>;
 record<string> deps = {
   foo: "bar"
 };
-|==================================|
-[output = schema]
+|===================================|
+[output = 'schema']
 {
   dependencies: record<string>
 }`, output)
 	})
 
 	It("formats all output directive kinds", func() {
-		file, err := parseMaceFile(`[output = data, schema_file = "./schemas.mace", parse = Runtime, parse_file = "./input.mace"]
+		file, err := parseMaceFile(`[output = 'data', schema_file = './schemas.mace', parse = Runtime, parse_file = './input.mace']
 { result: "ok", }`)
 		tAssert.NoError(err)
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = data, schema_file = "./schemas.mace", parse = Runtime, parse_file = "./input.mace"]
+		tAssert.Equal(`[output = 'data', schema_file = './schemas.mace', parse = Runtime, parse_file = './input.mace']
 {
   result: "ok"
 }`, output)
@@ -252,20 +240,20 @@ record<string> deps = {
 
 	It("formats choice type declarations", func() {
 		file, err := parseMaceFile(`|===|
- type Environment: choice["dev", "prod"];
- type Mode: choice[Environment, 1, true];
+ alias Environment: choice["dev", "prod"];
+ alias Mode: fusion[Environment, choice[1, true]];
 |===|
-[output = data]
+[output = 'data']
 { value: "dev", }`)
 		tAssert.NoError(err)
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
-		tAssert.Equal(`|========================================|
-type Environment: choice["dev", "prod"];
-type Mode: choice[Environment, 1, true];
-|========================================|
-[output = data]
+		tAssert.Equal(`|=================================================|
+alias Environment: choice["dev", "prod"];
+alias Mode: fusion[Environment, choice[1, true]];
+|=================================================|
+[output = 'data']
 {
   value: "dev"
 }`, output)
@@ -281,7 +269,7 @@ schema_doc User {
   },
 };
 |===|
-[output = data] { result: "ok", }`)
+[output = 'data'] { result: "ok", }`)
 		tAssert.NoError(err)
 
 		output, err := FormatFile(file)
@@ -295,7 +283,7 @@ schema_doc User {
   },
 };
 |==========================|
-[output = data]
+[output = 'data']
 {
   result: "ok"
 }`, output)
@@ -303,27 +291,27 @@ schema_doc User {
 
 	It("formats script imports without duplicating flattened file imports", func() {
 		file, err := parseMaceFile(`|===|
-from "./shared.mace" import User;
+from './shared.mace' import User;
 string name = "Ada";
 |===|
-[output = data]
+[output = 'data']
 { result: name, }`)
 		tAssert.NoError(err)
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
 		tAssert.Equal(`|=================================|
-from "./shared.mace" import User;
+from './shared.mace' import User;
 string name = "Ada";
 |=================================|
-[output = data]
+[output = 'data']
 {
   result: name
 }`, output)
 	})
 
 	It("formats booleans, self references, prefixes, and comparisons", func() {
-		file, err := parseMaceFile(`[output = data]
+		file, err := parseMaceFile(`[output = 'data']
 {
   enabled: true,
   disabled: false,
@@ -336,7 +324,7 @@ string name = "Ada";
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = data]
+		tAssert.Equal(`[output = 'data']
 {
   enabled: true,
   disabled: false,
@@ -357,7 +345,7 @@ schema_doc User {
 """,
 };
 |===|
-[output = schema]
+[output = 'schema']
 """
 # Public User Output
 """
@@ -377,7 +365,7 @@ schema_doc User {
 """,
 };
 |================================|
-[output = schema]
+[output = 'schema']
 """
 # Public User Output
 """
@@ -387,14 +375,14 @@ schema_doc User {
 	})
 
 	It("preserves expression semantics with parentheses", func() {
-		file, err := parseMaceFile(`[output = data] { result: ((1 + 2) * (3 - 4 ? 5 : 6)), }`)
+		file, err := parseMaceFile(`[output = 'data'] { result: (1 + 2) * (3 - 4), }`)
 		tAssert.NoError(err)
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = data]
+		tAssert.Equal(`[output = 'data']
 {
-  result: (1 + 2) * (3 - 4 ? 5 : 6)
+  result: (1 + 2) * (3 - 4)
 }`, output)
 	})
 
@@ -410,7 +398,7 @@ schema_doc User {
 	})
 
 	It("keeps arrays and nested records expanded instead of collapsing them", func() {
-		file, err := parseMaceFile(`[output = data]
+		file, err := parseMaceFile(`[output = 'data']
 {
   result: [{ profile: { name: "Ada", }, }, { profile: { name: "Bob", }, }],
 }`)
@@ -418,7 +406,7 @@ schema_doc User {
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = data]
+		tAssert.Equal(`[output = 'data']
 {
   result: [
     {
@@ -436,7 +424,7 @@ schema_doc User {
 	})
 
 	It("formats schema-mode output blocks with type references", func() {
-		file, err := parseMaceFile(`[output = schema]
+		file, err := parseMaceFile(`[output = 'schema']
 {
   name: string,
   tags?: array<string>,
@@ -445,7 +433,7 @@ schema_doc User {
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
-		tAssert.Equal(`[output = schema]
+		tAssert.Equal(`[output = 'schema']
 {
   name: string,
   tags?: array<string>
@@ -454,9 +442,9 @@ schema_doc User {
 
 	It("formats variant type references", func() {
 		file, err := parseMaceFile(`|===|
-type Value: variant[string, int];
+alias Value: variant[string, int];
 |===|
-[output = schema]
+[output = 'schema']
 {
   value: variant[string, int],
 }`)
@@ -464,10 +452,10 @@ type Value: variant[string, int];
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
-		tAssert.Equal(`|=================================|
-type Value: variant[string, int];
-|=================================|
-[output = schema]
+		tAssert.Equal(`|==================================|
+alias Value: variant[string, int];
+|==================================|
+[output = 'schema']
 {
   value: variant[string, int]
 }`, output)
@@ -478,7 +466,7 @@ type Value: variant[string, int];
 hex_int mask = 0x00ff;
 hex_float ratio = 0x02.80;
 |===|
-[output = data]
+[output = 'data']
 {
   mask: mask,
   ratio: ratio,
@@ -491,7 +479,7 @@ hex_float ratio = 0x02.80;
 hex_int mask = 0x00ff;
 hex_float ratio = 0x02.80;
 |==========================|
-[output = data]
+[output = 'data']
 {
   mask: mask,
   ratio: ratio
@@ -500,9 +488,9 @@ hex_float ratio = 0x02.80;
 
 	It("formats fusion type references", func() {
 		file, err := parseMaceFile(`|===|
-type Value: fusion[Profile, Audit];
+alias Value: fusion[Profile, Audit];
 |===|
-[output = schema]
+[output = 'schema']
 {
   value: fusion[Profile, Audit],
 }`)
@@ -510,10 +498,10 @@ type Value: fusion[Profile, Audit];
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
-		tAssert.Equal(`|===================================|
-type Value: fusion[Profile, Audit];
-|===================================|
-[output = schema]
+		tAssert.Equal(`|====================================|
+alias Value: fusion[Profile, Audit];
+|====================================|
+[output = 'schema']
 {
   value: fusion[Profile, Audit]
 }`, output)
@@ -530,7 +518,7 @@ type Value: fusion[Profile, Audit];
 
 		tAssert.NoError(err)
 		tAssert.Equal(`|===============================|
-from "./base.mace" import User;
+from './base.mace' import User;
 |===============================|
 {}`, output)
 	})

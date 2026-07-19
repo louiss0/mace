@@ -16,11 +16,11 @@ var _ = Describe("analyzer package helper coverage", func() {
 		workspace := GinkgoT().TempDir()
 		documentPath := filepath.Join(workspace, "document.mace")
 		text := `|===|
-type Alias: string;
+alias Alias: string;
 schema Doc: { field: string, };
 string value = "x";
 |===|
-[output = data]
+[output = 'data']
 {
   value: "x",
 }
@@ -78,7 +78,7 @@ string value = "x";
 		_, _ = identifierRangeAt("alias_name", protocol.Position{})
 		_, _ = nameRange("alias", "alias")
 		_, _ = nameRange("alias", "missing")
-		_ = isDirectivePosition("[output = data]", protocol.Position{Line: 0, Character: 1})
+		_ = isDirectivePosition("[output = \"data\"]", protocol.Position{Line: 0, Character: 1})
 		_ = isDirectivePosition("[output", protocol.Position{Line: 0, Character: 1})
 		_ = isDirectivePosition("plain text", protocol.Position{})
 		_ = utf16LineLength("🙂x")
@@ -86,17 +86,18 @@ string value = "x";
 
 		_ = DiagnosticFromError(errors.New("error at 12:3"))
 		_ = DocumentPath(uri)
-		_ = FormatDocumentText(text)
+		_, _ = FormatDocument(manualSnapshot)
+		_, _ = FormatDocument(analysisSnapshot{})
 	})
 
 	It("covers document symbol and rename branches", func() {
 		workspace := GinkgoT().TempDir()
 		documentPath := filepath.Join(workspace, "document.mace")
 		text := `|===|
-from "./shared.mace" import User as alias;
+from './shared.mace' import User as alias;
 string value = "x";
 |===|
-[output = data]
+[output = 'data']
 {
   value: "x",
 }
@@ -122,7 +123,7 @@ schema_doc User {
   summary: "docs",
 }
 |===|
-[output = data]
+[output = 'data']
 {
   user: { name: "Ada", },
   value: "x",
@@ -164,10 +165,10 @@ schema_doc User {
 		renameSnapshot.symbolIndex = indexSymbols(renameSnapshot.symbols)
 		_, _ = Rename(renameText, renameSnapshot, uri, protocol.Position{Line: 0, Character: 1}, "renamed")
 		aliasText := `|===|
-from "./shared.mace" import User:alias;
+from './shared.mace' import User:alias;
 string value = alias;
 |===|
-[output = data]
+[output = 'data']
 {
   value: alias,
 }
@@ -188,7 +189,7 @@ string value = alias;
 		manualAliasSnapshot.symbolIndex = indexSymbols(manualAliasSnapshot.symbols)
 		_, _ = Rename(aliasText, manualAliasSnapshot, aliasURI, usageStart, "renamed_alias")
 		foreignURI := protocol.DocumentUri(fileURI(filepath.Join(workspace, "shared.mace")))
-		importRenameText := `from "./shared.mace" import User:alias;
+		importRenameText := `from './shared.mace' import User:alias;
 alias`
 		importRenameSnapshot := analysisSnapshot{
 			text:        importRenameText,
@@ -201,7 +202,7 @@ alias`
 		_, _ = Rename(importRenameText, importRenameSnapshot, aliasURI, protocol.Position{Line: 1, Character: 1}, "renamed_alias")
 		_, _ = identifierAt("alias_name", protocol.Position{Line: 0, Character: 5})
 		_, _ = identifierAt(" alias", protocol.Position{Line: 0, Character: 0})
-		_ = isDirectivePosition("[output = data]", protocol.Position{Line: 0, Character: 1})
+		_ = isDirectivePosition("[output = \"data\"]", protocol.Position{Line: 0, Character: 1})
 		_ = isDirectivePosition("[output", protocol.Position{Line: 0, Character: 1})
 		_ = isDirectivePosition("plain text", protocol.Position{})
 	})

@@ -10,13 +10,13 @@ var _ = Describe("Fusions", func() {
 		result, err := processor.Process(`|===|
 schema Profile: { name: string, };
 schema Audit: { created_at: string, };
-type User: fusion[Profile, Audit];
+alias User: fusion[Profile, Audit];
 User value = {
   name: "Ada",
   created_at: "2026-04-08",
 };
 |===|
-[output = data]
+[output = 'data']
 {
   result: value,
 }`)
@@ -29,10 +29,28 @@ User value = {
 		}})
 	})
 
+	It("merges choice aliases and deduplicates their values", func() {
+		processor := New()
+		result, err := processor.Process(`|===|
+alias Access: choice["read", "write"];
+alias Feature: choice["write", "execute"];
+alias Permission: fusion[Access, Feature];
+Permission value = "execute";
+|===|
+[output = 'data']
+{
+  value: value,
+}`)
+		tAssert.NoError(err)
+
+		actual := requireOutputValue(result, "value")
+		assertExpectedValue(actual, expectedValue{kind: ValueString, string: "execute"})
+	})
+
 	It("rejects fusion schema composition with non-schema members", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
-type Broken: fusion[string, int];
+alias Broken: fusion[string, int];
 |===|`))
 		tAssert.ErrorContains(err, "fusion members must be schemas")
 	})
@@ -42,7 +60,7 @@ type Broken: fusion[string, int];
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
 schema Profile: { id: string, };
 schema Audit: { id: int, };
-type Broken: fusion[Profile, Audit];
+alias Broken: fusion[Profile, Audit];
 |===|`))
 		tAssert.ErrorContains(err, "conflicting field")
 	})

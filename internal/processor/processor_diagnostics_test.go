@@ -1,0 +1,97 @@
+package processor
+
+import (
+	"path/filepath"
+
+	. "github.com/onsi/ginkgo/v2"
+)
+
+var _ = Describe("Diagnostic fixtures", func() {
+	DescribeTable("triggers the documented error",
+		func(name string, message string) {
+			path := filepath.Join("..", "..", "fixtures", "diagnostics", name+".mace")
+			_, err := New().ProcessFile(path)
+
+			if !tAssert.Error(err, name) {
+				return
+			}
+			tAssert.ErrorContains(err, message, name)
+		},
+		Entry("inconsistent script delimiters", "inconsistent-script-delimiters", "script block delimiters must match"),
+		Entry("unterminated script block", "unterminated-script-block", "expected closing script delimiter"),
+		Entry("empty script block", "empty-script-block", "empty script block"),
+		Entry("missing output block", "missing-output-block", "expected output directive"),
+		Entry("multiple output blocks", "multiple-output-blocks", "unexpected token after output block"),
+		Entry("missing field separator", "missing-field-separator", "expected ','"),
+		Entry("duplicate directive", "duplicate-directive", "duplicate output directive"),
+		Entry("unknown directive", "unknown-directive", "expected directive pair"),
+		Entry("directive list without output", "directive-list-missing-output", "must include an output directive"),
+		Entry("schema directive in schema output", "schema-directive-in-schema-output", "invalid when output mode is schema"),
+		Entry("variable in schema output", "variable-in-schema-output", "not allowed when output = schema"),
+		Entry("integer overflow", "integer-overflow", "invalid int literal"),
+		Entry("division by zero", "division-by-zero", "division by zero"),
+		Entry("mixed decimal and hexadecimal operands", "mixed-decimal-hexadecimal-operands", "expected hexadecimal operands"),
+		Entry("invalid bitwise complement", "invalid-bitwise-complement", "expected int after '~'"),
+		Entry("untyped empty array output", "untyped-empty-array-output", "requires an output schema"),
+		Entry("untyped empty record output", "untyped-empty-record-output", "requires an output schema"),
+		Entry("nested conditional", "nested-conditional", "nested conditional expressions are not allowed"),
+		Entry("missing schema field", "schema-missing-required-field", "missing required field"),
+		Entry("unknown schema field", "schema-unknown-field", "unknown output field"),
+		Entry("duplicate schema field", "duplicate-schema-field", "duplicate field"),
+		Entry("duplicate output field", "duplicate-output-field", "duplicate output field"),
+		Entry("optional data field", "optional-data-field", "not optional in schema"),
+		Entry("fusion scalar member", "fusion-scalar-member", "fusion members must be schemas or choices"),
+		Entry("fusion mixed kinds", "fusion-mixed-kinds", "fusion members must be schemas or choices"),
+		Entry("fusion field conflict", "fusion-field-conflict", "conflicting field"),
+		Entry("duplicate choice member", "choice-duplicate-member", "duplicate choice member"),
+		Entry("choice alias cycle", "choice-alias-cycle", "cyclic type alias"),
+		Entry("duplicate variant member", "variant-duplicate-member", "duplicate variant member"),
+		Entry("concrete match input", "match-concrete-input", "variant or choice"),
+		Entry("non-exhaustive match", "match-non-exhaustive", "match expression must be exhaustive"),
+		Entry("unknown match pattern", "match-unknown-pattern", "not a member"),
+		Entry("duplicate match pattern", "match-duplicate-pattern", "duplicate match pattern"),
+		Entry("wrong variant match pattern", "match-variant-literal-pattern", "type pattern"),
+		Entry("wrong choice match pattern", "match-choice-type-pattern", "literal pattern"),
+		Entry("type alias cycle", "type-alias-cycle", "cyclic type alias"),
+		Entry("self outside schema", "self-outside-schema", "expected type reference"),
+		Entry("direct self recursion", "self-direct-recursion", "expected type reference"),
+		Entry("self forward reference", "self-forward-reference", "unknown self reference"),
+		Entry("import after declaration", "import-after-declaration", "must appear at top"),
+		Entry("import shadows local declaration", "import-shadows-local", "duplicate declaration"),
+		Entry("duplicate import", "duplicate-import", "duplicate import"),
+		Entry("imported name is not exposed", "import-name-not-exposed", "imported identifier"),
+		Entry("wildcard import", "wildcard-import", "expected identifier in import list"),
+		Entry("invalid path extension", "invalid-path-extension", "must end in .mace"),
+		Entry("path escapes project root", "path-escape", "escapes root"),
+		Entry("circular import", "circular-import-a", "circular import"),
+		Entry("reverse circular import", "circular-import-b", "circular import"),
+		Entry("missing runtime input", "missing-runtime-input", "missing required field"),
+		Entry("inline and structured documentation", "documentation-conflict", "already documented"),
+		Entry("unknown documented field", "documentation-unknown-field", "does not exist"),
+		Entry("fields on general documentation", "documentation-fields-on-gen-doc", "only allowed in schema_doc"),
+		Entry("documentation before target", "documentation-before-target", "must appear after"),
+		Entry("duplicate documentation key", "schema-doc-duplicate-keys", "duplicate schema_doc entry"),
+		Entry("invalid schema documentation target", "schema-doc-invalid-target", "schema_doc target"),
+		Entry("scalar schema documentation target", "schema-doc-scalar-target", "must reference a schema or object-valued variable"),
+		Entry("invalid general documentation target", "gen-doc-invalid-target", "gen_doc target"),
+		Entry("output documentation without directives", "output-inline-doc-requires-directive-list", "expected output directive"),
+		Entry("interpolated output documentation", "output-inline-doc-rejects-interpolation", "interpolation is not allowed"),
+		Entry("non-scalar interpolation", "interpolation-rejects-non-primitives", "interpolation requires a scalar value"),
+		Entry("null array member", "null-array-member", "null is only allowed in output"),
+		Entry("null record member", "null-record-member", "null is only allowed in output"),
+		Entry("null comparison", "null-comparison", "null is only allowed in output"),
+		Entry("null interpolation", "null-interpolation", "null is only allowed in output"),
+		Entry("plain optional field access", "optional-field-plain-access", "use optional chaining"),
+		Entry("unresolved optional chain", "optional-chain-unresolved", "must be resolved with '??'"),
+		Entry("record access past declared depth", "record-access-past-depth", "target is not a record"),
+		Entry("grouped non-mathematical access", "grouped-non-mathematical-access", "parentheses may only alter arithmetic precedence"),
+		Entry("unknown type", "unknown-type", "unknown type"),
+		Entry("variable without initializer", "variable-missing-initializer", "expected '=' in variable declaration"),
+		Entry("initializer type mismatch", "type-mismatch", "type mismatch"),
+		Entry("mixed array literal", "mixed-array-literal", "array<variant[int, string]>"),
+		Entry("duplicate declaration", "duplicate-declaration", "duplicate declaration"),
+		Entry("missing output shorthand variable", "output-shorthand-rejects-missing-variable", "unknown identifier"),
+		Entry("missing record shorthand variable", "shorthand-rejects-missing-variable", "missing required field"),
+		Entry("unknown self field", "self-unknown-field", "unknown self reference"),
+	)
+})

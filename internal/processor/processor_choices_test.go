@@ -12,8 +12,8 @@ var _ = Describe("Choices", func() {
 		func(choiceType string, primitiveType string, presetValue string, fallbackValue string) {
 			processor := New()
 			_, err := processor.Process(wrapScriptWithOutput(fmt.Sprintf(`|===|
-type Preset: %s;
-type Value: variant[Preset, %s];
+alias Preset: %s;
+alias Value: variant[Preset, %s];
 Value preset = %s;
 Value fallback = %s;
 |===|`, choiceType, primitiveType, presetValue, fallbackValue)))
@@ -37,29 +37,29 @@ Value fallback = %s;
 			assertExpectedValue(actual, expected)
 		},
 		Entry("choice string literal", `|===|
- type Fruit: choice["Apple", "Strawberry"];
+ alias Fruit: choice["Apple", "Strawberry"];
  Fruit result = "Apple";
 |===|
-[output = data]
+[output = 'data']
 {
   result: result,
 }`, expectedValue{kind: ValueString, string: "Apple"}),
-		Entry("choice aliases can be mixed", `|===|
- type Environment: choice["dev", "prod"];
- type Numeric: choice[1, 2];
- type Mode: choice[Environment, Numeric, true];
- Mode result = 2;
+		Entry("fusion merges and deduplicates choices", `|===|
+ alias Environment: choice["dev", "prod"];
+ alias Feature: choice["prod", "test"];
+ alias Mode: fusion[Environment, Feature];
+ Mode result = "test";
 |===|
-[output = data]
+[output = 'data']
 {
   result: result,
-}`, expectedValue{kind: ValueInt, int64: 2}),
+}`, expectedValue{kind: ValueString, string: "test"}),
 		Entry("choice float members preserve precision", `|===|
- type Ratio: choice[1.04, 1.0];
+ alias Ratio: choice[1.04, 1.0];
  Ratio first = 1.04;
  Ratio second = 1.0;
 |===|
-[output = data]
+[output = 'data']
 {
   result: { first: first, second: second, },
 }`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{
@@ -75,27 +75,26 @@ Value fallback = %s;
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, message)
 		},
-		Entry("unknown choice alias", wrapScriptWithOutput(`|===|
- type Fruit: choice[MissingChoice];
-|===|`), "unknown choice member"),
-		Entry("non-choice alias in choice members", wrapScriptWithOutput(`|===|
- type Name: string;
- type Fruit: choice[Name];
-|===|`), "must resolve to a choice type"),
+		Entry("choice aliases require fusion", wrapScriptWithOutput(`|===|
+ alias Fruit: choice[MissingChoice];
+|===|`), "use fusion to merge choice types"),
+		Entry("duplicate choice members", wrapScriptWithOutput(`|===|
+ alias Fruit: choice["Apple", "Apple"];
+|===|`), "duplicate choice member"),
 		Entry("value outside choice domain", `|===|
- type Fruit: choice["Apple", "Strawberry"];
+ alias Fruit: choice["Apple", "Strawberry"];
  Fruit result = "Pear";
 |===|
-[output = data]
+[output = 'data']
 {
   result: result,
 }`, "type mismatch: expected choice[\"Apple\", \"Strawberry\"], got \"Pear\""),
 		Entry("conditional branch outside choice domain", `|===|
  boolean enabled = true;
- type Fruit: choice["Apple", "Strawberry"];
- Fruit result = (enabled ? "Pear" : "Apple");
+ alias Fruit: choice["Apple", "Strawberry"];
+Fruit result = enabled ? "Pear" : "Apple";
 |===|
-[output = data]
+[output = 'data']
 {
   result: result,
 }`, "type mismatch: expected choice[\"Apple\", \"Strawberry\"], got \"Pear\""),
@@ -131,12 +130,7 @@ var _ = Describe("Choice type helpers", func() {
 
 	It("covers choice resolution branches", func() {
 		types := newTypeRegistry()
-		types.AddAlias("Fruit", ast.ChoiceType{Members: []ast.Expression{ast.StringLiteral{Lexeme: `"Apple"`}, ast.StringLiteral{Lexeme: `"Pear"`}}})
-		types.AddAlias("Loop", ast.NamedType{Name: "Loop"})
-		types.AddAlias("LoopChoice", ast.ChoiceType{Members: []ast.Expression{ast.Identifier{Name: "LoopChoice"}}})
-		types.AddAlias("Plain", ast.PrimitiveType{Name: "string"})
-
-		resolved, err := resolveChoiceType(ast.ChoiceType{Members: []ast.Expression{ast.Identifier{Name: "Fruit"}, ast.IntLiteral{Lexeme: "7"}}}, types)
+		resolved, err := resolveChoiceType(ast.ChoiceType{Members: []ast.Expression{ast.StringLiteral{Lexeme: `"Apple"`}, ast.IntLiteral{Lexeme: "7"}}}, types)
 		tAssert.NoError(err)
 		tAssert.True(choiceContainsValue(resolved.choiceValues, Value{Kind: ValueString, String: "Apple"}))
 		tAssert.True(choiceContainsValue(resolved.choiceValues, Value{Kind: ValueInt, Int: 7}))
@@ -144,13 +138,7 @@ var _ = Describe("Choice type helpers", func() {
 
 		_, err = resolveChoiceValues([]ast.Expression{ast.RecordLiteral{}}, types, map[string]struct{}{})
 		tAssert.Error(err)
-		_, err = resolveChoiceMemberValues(ast.Identifier{Name: "Missing"}, types, map[string]struct{}{})
-		tAssert.Error(err)
-		_, err = resolveChoiceMemberValues(ast.Identifier{Name: "Loop"}, types, map[string]struct{}{})
-		tAssert.Error(err)
-		_, err = resolveChoiceType(ast.ChoiceType{Members: []ast.Expression{ast.Identifier{Name: "LoopChoice"}}}, types)
-		tAssert.Error(err)
-		_, err = resolveChoiceMemberValues(ast.Identifier{Name: "Plain"}, types, map[string]struct{}{})
+		_, err = resolveChoiceMemberValues(ast.Identifier{Name: "Choice"}, types, map[string]struct{}{})
 		tAssert.Error(err)
 		_, err = resolveChoiceMemberValues(ast.StringLiteral{Lexeme: `"unterminated`}, types, map[string]struct{}{})
 		tAssert.Error(err)

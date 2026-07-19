@@ -15,7 +15,7 @@ var _ = Describe("Variants", func() {
 		func(typeReference string, firstValue string, secondValue string) {
 			processor := New()
 			_, err := processor.Process(wrapScriptWithOutput(fmt.Sprintf(`|===|
-type Value: %s;
+alias Value: %s;
 Value first = %s;
 Value second = %s;
 |===|`, typeReference, firstValue, secondValue)))
@@ -33,7 +33,7 @@ Value second = %s;
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
 schema User: { name: string, };
-type Value: variant[User, string];
+alias Value: variant[User, string];
 Value first = { name: "Ada", };
 Value second = "fallback";
 |===|`))
@@ -43,7 +43,7 @@ Value second = "fallback";
 	It("accepts array variant alternatives", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
-type Value: variant[array<string>, array<int>];
+alias Value: variant[array<string>, array<int>];
 Value names = ["Ada", "Lin"];
 Value counts = [1, 2];
 |===|`))
@@ -53,7 +53,7 @@ Value counts = [1, 2];
 	It("accepts nested array variant alternatives", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
-type Value: variant[array<array<string>>, array<array<array<int>>>];
+alias Value: variant[array<array<string>>, array<array<array<int>>>];
 Value tags = [["api"]];
 Value matrix = [[[1]]];
 |===|`))
@@ -63,8 +63,8 @@ Value matrix = [[[1]]];
 	It("accepts nested variant aliases", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
-type Scalar: variant[string, int];
-type Value: variant[Scalar, boolean];
+alias Scalar: variant[string, int];
+alias Value: variant[Scalar, boolean];
 Value first = "Ada";
 Value second = 42;
 Value third = true;
@@ -75,7 +75,7 @@ Value third = true;
 	It("rejects variant variables with non-matching values", func() {
 		processor := New()
 		_, err := processor.Process(wrapScriptWithOutput(`|===|
-type Scalar: variant[string, int];
+alias Scalar: variant[string, int];
 Scalar value = true;
 |===|`))
 		tAssert.ErrorContains(err, "type mismatch")
@@ -180,7 +180,7 @@ var _ = Describe("Variant type system helpers", func() {
 		workspace, err := os.MkdirTemp("", "processor-helpers-*")
 		tAssert.NoError(err)
 		defer func() { _ = os.RemoveAll(workspace) }()
-		_ = os.WriteFile(filepath.Join(workspace, "schema.mace"), []byte("[output = schema]\n{ User: User, }\n"), 0o600)
+		_ = os.WriteFile(filepath.Join(workspace, "schema.mace"), []byte("[output = 'schema']\n{ User: User, }\n"), 0o600)
 
 		schema := ast.RecordType{Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}, {Name: "opt", Optional: true, Type: ast.PrimitiveType{Name: "int"}}}}
 		schemas := newSchemaRegistry()
@@ -375,9 +375,9 @@ var _ = Describe("Variant type system helpers", func() {
 		tAssert.NoError(err)
 		tAssert.Equal(SchemaType{Kind: SchemaTypeVariant, Members: []SchemaType{schemaPrimitive("string"), schemaPrimitive("int")}}, result)
 
-		result, err = schemaType(ast.ChoiceType{Members: []ast.Expression{
-			ast.Identifier{Name: "ChoiceAlias"},
-			ast.StringLiteral{Lexeme: `"Carol"`},
+		result, err = schemaType(ast.UnionType{Members: []ast.TypeReference{
+			ast.NamedType{Name: "ChoiceAlias"},
+			ast.ChoiceType{Members: []ast.Expression{ast.StringLiteral{Lexeme: `"Carol"`}}},
 		}}, types)
 		tAssert.NoError(err)
 		tAssert.Equal(SchemaType{Kind: SchemaTypeNamed, Name: `choice["Ada", "Bob", "Carol"]`}, result)
@@ -396,28 +396,10 @@ var _ = Describe("Variant type system helpers", func() {
 		tAssert.ErrorContains(err, "unknown type reference")
 	})
 
-	It("infers merge and numeric binary result types", func() {
-		mergeType := inferMergeType
+	It("infers numeric binary result types", func() {
 		numericType := inferNumericBinary
 
-		recordType := valueType{kind: ValueRecord, schemaName: "User"}
-		result, err := mergeType(recordType, recordType)
-		tAssert.NoError(err)
-		tAssert.Equal(recordType, result)
-
-		arrayElement := valueType{kind: ValueString}
-		arrayType := valueType{kind: ValueArray, element: &arrayElement}
-		result, err = mergeType(arrayType, arrayType)
-		tAssert.NoError(err)
-		tAssert.Equal(arrayType, result)
-
-		_, err = mergeType(valueType{kind: ValueString}, recordType)
-		tAssert.ErrorContains(err, "records or arrays")
-
-		_, err = mergeType(valueType{kind: ValueRecord, schemaName: "User"}, valueType{kind: ValueRecord, schemaName: "Audit"})
-		tAssert.ErrorContains(err, "same type")
-
-		result, err = numericType(lexer.TokenPlus, valueType{kind: ValueInt}, valueType{kind: ValueInt})
+		result, err := numericType(lexer.TokenPlus, valueType{kind: ValueInt}, valueType{kind: ValueInt})
 		tAssert.NoError(err)
 		tAssert.Equal(ValueInt, result.kind)
 

@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -78,7 +79,19 @@ func (snapshot analysisSnapshot) symbolAt(position protocol.Position) (semanticS
 		return symbol, true
 	}
 
+	if symbol, ok := snapshot.variableInitializerFieldSymbolAt(position); ok {
+		return symbol, true
+	}
+
+	if symbol, ok := snapshot.schemaFieldSymbolAt(position); ok {
+		return symbol, true
+	}
+
 	if symbol, ok := snapshot.nestedOutputFieldSymbolAt(position); ok {
+		return symbol, true
+	}
+
+	if symbol, ok := snapshot.memberAccessSymbolAt(position); ok {
 		return symbol, true
 	}
 
@@ -161,7 +174,235 @@ func (snapshot analysisSnapshot) selfReferenceSymbolAt(position protocol.Positio
 	}
 
 	name := "$self." + strings.Join(path, ".")
-	return outputValueSymbol(name, path, rangeValue, value), true
+	includesValue := !snapshot.outputExpressionSuppressesValue(path)
+	return outputValueSymbolWithValue(name, path, rangeValue, value, includesValue), true
+}
+
+func (snapshot analysisSnapshot) variableInitializerFieldSymbolAt(position protocol.Position) (semanticSymbol, bool) {
+	if snapshot.file == nil || snapshot.file.Script == nil {
+		return semanticSymbol{}, false
+	}
+
+	documentPath := documentPath(snapshot.documentURI)
+	baseDir := filepath.Dir(documentPath)
+	model := buildCompletionModel(*snapshot.file, baseDir, snapshot.importRootDir, map[string]completionModel{})
+	for _, item := range snapshot.file.Script.Items {
+		declaration, ok := item.(ast.VariableDeclaration)
+		if !ok || !declaration.HasValue {
+			continue
+		}
+
+		if symbol, found := variableInitializerFieldSymbolInExpression(
+			declaration.Value,
+			declaration.Type,
+			[]string{declaration.Name},
+			position,
+			model,
+		); found {
+			return symbol, true
+		}
+	}
+
+	return semanticSymbol{}, false
+}
+
+func variableInitializerFieldSymbolInExpression(
+	expression ast.Expression,
+	expectedType ast.TypeReference,
+	path []string,
+	position protocol.Position,
+	model completionModel,
+) (semanticSymbol, bool) {
+	switch typed := expression.(type) {
+	case ast.RecordLiteral:
+		for _, field := range typed.Fields {
+			fieldType, schemaField, found := variableInitializerFieldType(expectedType, field.Name, model)
+			if !found {
+				continue
+			}
+
+			fieldRange := tokenProtocolRange(field.NameToken)
+			fieldPath := append(append([]string{}, path...), field.Name)
+			if comparePositions(fieldRange.Start, position) <= 0 && comparePositions(position, fieldRange.End) <= 0 {
+				name := strings.Join(fieldPath, ".")
+				if schemaField.Optional {
+					name += "?"
+				}
+				return semanticSymbol{
+					Name:          name,
+					Kind:          protocol.CompletionItemKindField,
+					Detail:        fmt.Sprintf("%s: %s", name, fieldTypeDetail(fieldType)),
+					Documentation: inlineDescriptionDocumentation(schemaField.Description),
+					Origin:        symbolOriginLocal,
+					Range:         fieldRange,
+				}, true
+			}
+
+			if symbol, found := variableInitializerFieldSymbolInExpression(
+				field.Value,
+				fieldType,
+				fieldPath,
+				position,
+				model,
+			); found {
+				return symbol, true
+			}
+		}
+	case ast.ArrayLiteral:
+		resolved := resolveCompletionType(expectedType, model, map[string]struct{}{})
+		if resolved.kind != completionTypeArray || resolved.element == nil {
+			return semanticSymbol{}, false
+		}
+		for _, element := range typed.Elements {
+			if symbol, found := variableInitializerFieldSymbolInExpression(
+				element,
+				resolved.element,
+				path,
+				position,
+				model,
+			); found {
+				return symbol, true
+			}
+		}
+	case ast.ConditionalExpression:
+		for _, branch := range []ast.Expression{typed.Then, typed.Else} {
+			if symbol, found := variableInitializerFieldSymbolInExpression(
+				branch,
+				expectedType,
+				path,
+				position,
+				model,
+			); found {
+				return symbol, true
+			}
+		}
+	case ast.MatchExpression:
+		for _, arm := range typed.Arms {
+			if symbol, found := variableInitializerFieldSymbolInExpression(
+				arm.Value,
+				expectedType,
+				path,
+				position,
+				model,
+			); found {
+				return symbol, true
+			}
+		}
+	}
+
+	return semanticSymbol{}, false
+}
+
+func variableInitializerFieldType(
+	expectedType ast.TypeReference,
+	name string,
+	model completionModel,
+) (ast.TypeReference, ast.SchemaField, bool) {
+	resolved := resolveCompletionType(expectedType, model, map[string]struct{}{})
+	if resolved.kind == completionTypeRecordMap && resolved.element != nil {
+		return resolved.element, ast.SchemaField{Name: name, Type: resolved.element}, true
+	}
+	if resolved.kind != completionTypeSchema {
+		return nil, ast.SchemaField{}, false
+	}
+
+	field, found := lo.Find(resolved.record.Fields, func(field ast.SchemaField) bool {
+		return field.Name == name
+	})
+	if !found {
+		return nil, ast.SchemaField{}, false
+	}
+	return field.Type, field, true
+}
+
+func (snapshot analysisSnapshot) schemaFieldSymbolAt(position protocol.Position) (semanticSymbol, bool) {
+	if snapshot.file == nil || snapshot.file.Script == nil {
+		return semanticSymbol{}, false
+	}
+
+	for _, item := range snapshot.file.Script.Items {
+		schema, ok := item.(ast.SchemaDeclaration)
+		if !ok {
+			continue
+		}
+
+		if symbol, found := schemaFieldSymbolInRecord(
+			schema.Type,
+			[]string{schema.Name},
+			position,
+			snapshot.documentURI,
+		); found {
+			return symbol, true
+		}
+	}
+
+	return semanticSymbol{}, false
+}
+
+func schemaFieldSymbolInRecord(
+	record ast.RecordType,
+	path []string,
+	position protocol.Position,
+	documentURI protocol.DocumentUri,
+) (semanticSymbol, bool) {
+	for _, field := range record.Fields {
+		fieldRange := tokenProtocolRange(field.NameToken)
+		fieldPath := append(append([]string{}, path...), field.Name)
+		if comparePositions(fieldRange.Start, position) <= 0 && comparePositions(position, fieldRange.End) <= 0 {
+			name := strings.Join(fieldPath, ".")
+			if field.Optional {
+				name += "?"
+			}
+			return semanticSymbol{
+				Name:          name,
+				Kind:          protocol.CompletionItemKindField,
+				Detail:        fmt.Sprintf("schema %s: %s", name, fieldTypeDetail(field.Type)),
+				Documentation: inlineDescriptionDocumentation(field.Description),
+				Origin:        symbolOriginLocal,
+				Range:         fieldRange,
+				Definition: protocol.Location{
+					URI:   documentURI,
+					Range: fieldRange,
+				},
+			}, true
+		}
+
+		if symbol, found := schemaFieldSymbolInType(field.Type, fieldPath, position, documentURI); found {
+			return symbol, true
+		}
+	}
+
+	return semanticSymbol{}, false
+}
+
+func schemaFieldSymbolInType(
+	typeReference ast.TypeReference,
+	path []string,
+	position protocol.Position,
+	documentURI protocol.DocumentUri,
+) (semanticSymbol, bool) {
+	switch typed := typeReference.(type) {
+	case ast.RecordType:
+		return schemaFieldSymbolInRecord(typed, path, position, documentURI)
+	case ast.ArrayType:
+		return schemaFieldSymbolInType(typed.Element, path, position, documentURI)
+	case ast.RecordMapType:
+		return schemaFieldSymbolInType(typed.Value, path, position, documentURI)
+	case ast.UnionType:
+		for _, member := range typed.Members {
+			if symbol, found := schemaFieldSymbolInType(member, path, position, documentURI); found {
+				return symbol, true
+			}
+		}
+	case ast.VariantType:
+		for _, member := range typed.Members {
+			if symbol, found := schemaFieldSymbolInType(member, path, position, documentURI); found {
+				return symbol, true
+			}
+		}
+	}
+
+	return semanticSymbol{}, false
 }
 
 func (snapshot analysisSnapshot) nestedOutputFieldSymbolAt(position protocol.Position) (semanticSymbol, bool) {
@@ -180,14 +421,105 @@ func (snapshot analysisSnapshot) nestedOutputFieldSymbolAt(position protocol.Pos
 	}
 
 	name := strings.Join(path, ".")
-	return outputValueSymbol(name, path, rangeValue, value), true
+	includesValue := !snapshot.outputExpressionSuppressesValue(path)
+	return outputValueSymbolWithValue(name, path, rangeValue, value, includesValue), true
+}
+
+func (snapshot analysisSnapshot) memberAccessSymbolAt(position protocol.Position) (semanticSymbol, bool) {
+	if snapshot.file == nil {
+		return semanticSymbol{}, false
+	}
+
+	path, rangeValue, found := memberAccessPathAt(snapshot.tokens, position)
+	if !found {
+		return semanticSymbol{}, false
+	}
+
+	documentPath := documentPath(snapshot.documentURI)
+	baseDir := filepath.Dir(documentPath)
+	model := buildCompletionModel(*snapshot.file, baseDir, snapshot.importRootDir, map[string]completionModel{})
+	rootType, found := model.variables[path[0]]
+	if !found {
+		return semanticSymbol{}, false
+	}
+
+	memberType, found := completionTypeAtPath(rootType, path[1:], model)
+	if !found {
+		return semanticSymbol{}, false
+	}
+
+	name := strings.Join(path, ".")
+	return semanticSymbol{
+		Name:   name,
+		Kind:   protocol.CompletionItemKindField,
+		Detail: fmt.Sprintf("%s: %s", name, typeReferenceDetail(memberType)),
+		Origin: symbolOriginLocal,
+		Range:  rangeValue,
+	}, true
+}
+
+func memberAccessPathAt(tokens []lexer.Token, position protocol.Position) ([]string, protocol.Range, bool) {
+	memberIndex := slices.IndexFunc(tokens, func(token lexer.Token) bool {
+		if token.Type != lexer.TokenIdentifier {
+			return false
+		}
+		rangeValue := tokenProtocolRange(token)
+		return comparePositions(rangeValue.Start, position) <= 0 &&
+			comparePositions(position, rangeValue.End) <= 0
+	})
+	if memberIndex < 2 || !isMemberAccessOperator(tokens[memberIndex-1].Type) {
+		return nil, protocol.Range{}, false
+	}
+
+	rangeValue := tokenProtocolRange(tokens[memberIndex])
+	path := []string{tokens[memberIndex].Lexeme}
+	for memberIndex >= 2 && isMemberAccessOperator(tokens[memberIndex-1].Type) &&
+		tokens[memberIndex-2].Type == lexer.TokenIdentifier {
+		path = append([]string{tokens[memberIndex-2].Lexeme}, path...)
+		memberIndex -= 2
+	}
+	if len(path) < 2 {
+		return nil, protocol.Range{}, false
+	}
+
+	return path, rangeValue, true
+}
+
+func isMemberAccessOperator(tokenType lexer.TokenType) bool {
+	return tokenType == lexer.TokenDot || tokenType == lexer.TokenOptionalDot
+}
+
+func (snapshot analysisSnapshot) outputExpressionSuppressesValue(path []string) bool {
+	if snapshot.file == nil || len(path) == 0 {
+		return false
+	}
+
+	field, found := lo.Find(snapshot.file.Output.DataFields, func(field ast.OutputField) bool {
+		return field.Name == path[0]
+	})
+	return found && expressionSuppressesHoverValue(field.Value)
 }
 
 func outputValueSymbol(name string, path []string, rangeValue protocol.Range, value processor.Value) semanticSymbol {
+	return outputValueSymbolWithValue(name, path, rangeValue, value, true)
+}
+
+func outputValueSymbolWithValue(
+	name string,
+	path []string,
+	rangeValue protocol.Range,
+	value processor.Value,
+	includesValue bool,
+) semanticSymbol {
+	detail := fmt.Sprintf("output %s: %s", strings.Join(path, "."), valueTypeSummary(value))
+	if includesValue {
+		detail += " = " + summarizeValue(value)
+	}
+
 	return semanticSymbol{
 		Name:   name,
 		Kind:   protocol.CompletionItemKindProperty,
-		Detail: fmt.Sprintf("output %s: %s = %s", strings.Join(path, "."), valueTypeSummary(value), summarizeValue(value)),
+		Detail: detail,
 		Origin: symbolOriginOutput,
 		Range:  rangeValue,
 	}
@@ -343,17 +675,28 @@ func analyzeDocumentAt(text string, documentPath string) analysisSnapshot {
 }
 
 func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir string) analysisSnapshot {
+	snapshot, _ := analyzeDocumentAtInRootContext(context.Background(), text, documentPath, importRootDir)
+	return snapshot
+}
+
+func analyzeDocumentAtInRootContext(context context.Context, text string, documentPath string, importRootDir string) (analysisSnapshot, error) {
 	snapshot := analysisSnapshot{}
 	snapshot.importRootDir = importRootDir
 	snapshot.text = text
 	snapshot.documentURI = pathURI(documentPath)
+	if err := context.Err(); err != nil {
+		return snapshot, err
+	}
 
 	tokens, lexErr := lex(text)
 	if lexErr != nil {
 		snapshot.diagnostics = []protocol.Diagnostic{diagnosticFromError(lexErr)}
-		return snapshot
+		return snapshot, nil
 	}
 	snapshot.tokens = tokens
+	if err := context.Err(); err != nil {
+		return snapshot, err
+	}
 
 	file, parseErr := parseFile(text)
 	if parseErr != nil {
@@ -362,7 +705,10 @@ func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir str
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, scriptBlockStructureCodeActions(text, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, variableFixTextCodeActions(text, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, arrayTextCodeActions(text, documentPath)...)
-		return snapshot
+		return snapshot, nil
+	}
+	if err := context.Err(); err != nil {
+		return snapshot, err
 	}
 
 	snapshot.file = &file
@@ -374,13 +720,22 @@ func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir str
 	snapshot.symbols = collectSemanticSymbols(file, tokens, nil, documentPath)
 	snapshot.symbolIndex = indexSymbols(snapshot.symbols)
 	snapshot.declarations = declarationsFromSymbols(snapshot.symbols)
+	if err := context.Err(); err != nil {
+		return snapshot, err
+	}
 
 	fileDiagnostics, fileActions := analyzeFileStructure(text, file, tokens, documentPath)
 	snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, fileActions...)
 	parseDirectiveWarning, hasParseDirectiveWarning := parseDirectiveWarningDiagnostic(text, file)
+	if err := context.Err(); err != nil {
+		return snapshot, err
+	}
 
 	processorInstance := processor.New()
 	result, processErr := processorInstance.ProcessInScope(text, importBaseDir, importRootDir)
+	if err := context.Err(); err != nil {
+		return snapshot, err
+	}
 	if processErr != nil {
 		snapshot.diagnostics = append(snapshot.diagnostics, fileDiagnostics...)
 		if shouldIgnoreParseValidationError(file, processErr) {
@@ -388,7 +743,7 @@ func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir str
 			unusedDiagnostics, unusedActions := unusedDeclarationAnalysis(text, file, tokens, documentPath)
 			snapshot.diagnostics = append(snapshot.diagnostics, unusedDiagnostics...)
 			snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, unusedActions...)
-			return snapshot
+			return snapshot, nil
 		}
 		if semanticDiagnostic, ok := semanticDiagnosticFromError(file, tokens, processErr); ok {
 			snapshot.diagnostics = append(snapshot.diagnostics, semanticDiagnostic)
@@ -397,7 +752,7 @@ func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir str
 			snapshot.diagnostics = append(snapshot.diagnostics, diagnosticFromError(processErr))
 		}
 		snapshot.diagnostics = append(snapshot.diagnostics, lo.Ternary(hasParseDirectiveWarning, []protocol.Diagnostic{parseDirectiveWarning}, nil)...)
-		return snapshot
+		return snapshot, nil
 	}
 
 	snapshot.result = &result
@@ -411,7 +766,10 @@ func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir str
 	snapshot.diagnostics = append(snapshot.diagnostics, unusedDiagnostics...)
 	snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, unusedActions...)
 
-	return snapshot
+	if err := context.Err(); err != nil {
+		return snapshot, err
+	}
+	return snapshot, nil
 }
 
 func analyzeCompletionContext(text string, documentPath string, position protocol.Position) analysisSnapshot {
@@ -424,22 +782,36 @@ func analyzeCompletionContext(text string, documentPath string, position protoco
 }
 
 func analyzeCompletionContextInRoot(text string, documentPath string, importRootDir string, position protocol.Position) analysisSnapshot {
-	snapshot := analyzeDocumentAtInRoot(text, documentPath, importRootDir)
+	snapshot, _ := analyzeCompletionContextInRootContext(context.Background(), text, documentPath, importRootDir, position)
+	return snapshot
+}
+
+func analyzeCompletionContextInRootContext(
+	context context.Context,
+	text string,
+	documentPath string,
+	importRootDir string,
+	position protocol.Position,
+) (analysisSnapshot, error) {
+	snapshot, err := analyzeDocumentAtInRootContext(context, text, documentPath, importRootDir)
+	if err != nil {
+		return snapshot, err
+	}
 	if snapshot.file != nil {
-		return snapshot
+		return snapshot, nil
 	}
 
 	if file, ok := partialScriptFile(text, position); ok {
-		return recoveredSnapshot(text, documentPath, file)
+		return recoveredSnapshot(text, documentPath, file), context.Err()
 	}
 
 	linePrefix := currentLinePrefix(text, position)
 	file := completionFile(document{text: text}, linePrefix)
 	if file == nil {
-		return snapshot
+		return snapshot, context.Err()
 	}
 
-	return recoveredSnapshot(text, documentPath, *file)
+	return recoveredSnapshot(text, documentPath, *file), context.Err()
 }
 
 func recoveredSnapshot(text string, documentPath string, file ast.File) analysisSnapshot {
@@ -497,7 +869,7 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 		}
 
 		if documentPath != "" {
-			fixedPath := strconv.Quote(pathValue + ".mace")
+			fixedPath := quoteMaceString(pathValue + ".mace")
 			result.action = &analysisCodeActionCandidate{
 				Range: rangeValue,
 				Action: protocol.CodeAction{
@@ -578,7 +950,7 @@ func directivePathDiagnostics(file ast.File, tokens []lexer.Token, documentPath 
 			continue
 		}
 
-		pathValue, err := strconv.Unquote(directive.Value)
+		pathValue, err := unquoteMaceString(directive.Value)
 		if err != nil {
 			continue
 		}
@@ -595,7 +967,7 @@ func directivePathDiagnostics(file ast.File, tokens []lexer.Token, documentPath 
 			Action: protocol.CodeAction{
 				Title: "Append .mace to import path",
 				Kind:  Ptr(protocol.CodeActionKindQuickFix),
-				Edit:  &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: {{Range: rangeValue, NewText: strconv.Quote(pathValue + ".mace")}}}},
+				Edit:  &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: {{Range: rangeValue, NewText: quoteMaceString(pathValue + ".mace")}}}},
 			},
 		})
 	}
@@ -656,7 +1028,7 @@ func addMissingScriptSemicolonText(text string) (string, bool) {
 		if trimmed == "" || strings.HasSuffix(trimmed, ";") || strings.HasSuffix(trimmed, "{") || strings.HasSuffix(trimmed, "}") {
 			return false
 		}
-		return strings.HasPrefix(trimmed, "type ") || strings.HasPrefix(trimmed, "schema ") || strings.Contains(trimmed, "=")
+		return strings.HasPrefix(trimmed, "alias ") || strings.HasPrefix(trimmed, "schema ") || strings.Contains(trimmed, "=")
 	})
 	if !ok {
 		return "", false
@@ -736,7 +1108,7 @@ func schemaCreationTextCodeActions(text string, documentPath string) []analysisC
 }
 
 func extractOutputShapeIntoSchemaText(text string) (string, bool) {
-	if strings.Contains(text, "schema Output:") || !strings.Contains(text, "[output = data]") {
+	if strings.Contains(text, "schema Output:") || !strings.Contains(text, "[output = 'data']") {
 		return "", false
 	}
 	fields := inferOutputSchemaFields(text)
@@ -744,7 +1116,7 @@ func extractOutputShapeIntoSchemaText(text string) (string, bool) {
 		return "", false
 	}
 	schema := "|===|\nschema Output: { " + strings.Join(fields, ", ") + " };\n|===|\n"
-	updated := schema + strings.Replace(text, "[output = data]", "[output = data, schema = Output]", 1)
+	updated := schema + strings.Replace(text, "[output = 'data']", "[output = 'data', schema = Output]", 1)
 	return updated, true
 }
 
@@ -800,7 +1172,7 @@ func generateSampleDataFromSchemaText(text string) (string, bool) {
 	if len(sampleFields) == 0 {
 		return "", false
 	}
-	updated := regexp.MustCompile(`\[output\s*=\s*schema\]\s*\{\}`).ReplaceAllString(text, "[output = data, schema = "+matches[1]+"]\n{ "+strings.Join(sampleFields, ", ")+" }")
+	updated := regexp.MustCompile(`\[output\s*=\s*'schema'\]\s*\{\}`).ReplaceAllString(text, "[output = 'data', schema = "+matches[1]+"]\n{ "+strings.Join(sampleFields, ", ")+" }")
 	return updated, updated != text
 }
 
@@ -868,7 +1240,7 @@ func arrayTextCodeActions(text string, documentPath string) []analysisCodeAction
 }
 
 func wrapTypeInArrayText(text string) (string, bool) {
-	updated := regexp.MustCompile(`type\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(string|int|float|boolean);`).ReplaceAllString(text, `type ${1}: array<${2}>;`)
+	updated := regexp.MustCompile(`alias\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(string|int|float|boolean);`).ReplaceAllString(text, `alias ${1}: array<${2}>;`)
 	return updated, updated != text
 }
 
@@ -879,7 +1251,7 @@ func fixMixedArrayLiteralText(text string) (string, bool) {
 		return "", false
 	}
 	aliasName := strings.ToUpper(matches[1][:1]) + matches[1][1:] + "Item"
-	updated := strings.Replace(text, "|===|\n", "|===|\ntype "+aliasName+": variant[string, int];\n", 1)
+	updated := strings.Replace(text, "|===|\n", "|===|\nalias "+aliasName+": variant[string, int];\n", 1)
 	updated = strings.Replace(updated, "array<string> "+matches[1], "array<"+aliasName+"> "+matches[1], 1)
 	return updated, updated != text
 }
@@ -1122,7 +1494,7 @@ func importResolutionCodeActions(text string, file ast.File, tokens []lexer.Toke
 					Title: "Create missing imported file",
 					Kind:  Ptr(protocol.CodeActionKindQuickFix),
 					Edit: &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{
-						protocol.DocumentUri(fileURI(importedPath)): {{Range: protocol.Range{}, NewText: "[output = schema]\n{}\n"}},
+						protocol.DocumentUri(fileURI(importedPath)): {{Range: protocol.Range{}, NewText: "[output = 'schema']\n{}\n"}},
 					}},
 				},
 			})
@@ -1136,7 +1508,7 @@ func importResolutionCodeActions(text string, file ast.File, tokens []lexer.Toke
 					}
 					actions = append(actions, analysisCodeActionCandidate{
 						Range:  protocol.Range{Start: protocol.Position{}, End: protocol.Position{}},
-						Action: protocol.CodeAction{Title: "Update import path after file rename", Kind: Ptr(protocol.CodeActionKindQuickFix), Edit: &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: {{Range: importRange, NewText: strconv.Quote(relativePath)}}}}},
+						Action: protocol.CodeAction{Title: "Update import path after file rename", Kind: Ptr(protocol.CodeActionKindQuickFix), Edit: &protocol.WorkspaceEdit{Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: {{Range: importRange, NewText: quoteMaceString(relativePath)}}}}},
 					})
 				}
 			}
@@ -1445,7 +1817,7 @@ func addImportRefactorActions(file ast.File, addWholeFileAction func(string, pro
 		pathValue, _ := stringLiteralValue(importDecl.Path)
 		if pathValue != "" && !strings.HasPrefix(pathValue, "./") && !strings.HasPrefix(pathValue, "../") && !filepath.IsAbs(pathValue) {
 			updatedImports := append([]ast.ImportDeclaration{}, imports...)
-			updatedImports[index].Path = ast.StringLiteral{Lexeme: strconv.Quote("./" + pathValue)}
+			updatedImports[index].Path = ast.StringLiteral{Lexeme: quoteMaceString("./" + pathValue)}
 			updated := replaceFileImports(file, updatedImports)
 			addWholeFileAction("Fix relative import path", targetRange, updated)
 		}
@@ -2094,7 +2466,7 @@ func missingImportEdit(text string, file ast.File, tokens []lexer.Token, message
 			break
 		}
 	}
-	return protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, fmt.Sprintf("|===|\nfrom \"./shared.mace\" import %s;\n|===|\n", name), true
+	return protocol.Range{Start: protocol.Position{}, End: protocol.Position{}}, fmt.Sprintf("|===|\nfrom './shared.mace' import %s;\n|===|\n", name), true
 }
 
 func moveImportsToTopEdit(text string, file ast.File, tokens []lexer.Token, message string) (protocol.Range, string, bool) {
@@ -2485,6 +2857,12 @@ func referencedNames(file ast.File) map[string]struct{} {
 			for _, member := range typed.Members {
 				visitType(member)
 			}
+		case ast.ChoiceType:
+			for _, member := range typed.Members {
+				if identifier, ok := member.(ast.Identifier); ok {
+					names[identifier.Name] = struct{}{}
+				}
+			}
 		case ast.RecordType:
 			for _, field := range typed.Fields {
 				visitType(field.Type)
@@ -2506,6 +2884,47 @@ func referencedNames(file ast.File) map[string]struct{} {
 	}
 	for _, field := range file.Output.SchemaFields {
 		visitType(field.Type)
+	}
+	var visitExpression func(ast.Expression)
+	visitExpression = func(expression ast.Expression) {
+		switch typed := expression.(type) {
+		case ast.MemberAccess:
+			visitExpression(typed.Target)
+		case ast.ArrayLiteral:
+			for _, element := range typed.Elements {
+				visitExpression(element)
+			}
+		case ast.RecordLiteral:
+			for _, field := range typed.Fields {
+				visitExpression(field.Value)
+			}
+		case ast.PrefixExpression:
+			visitExpression(typed.Right)
+		case ast.InfixExpression:
+			visitExpression(typed.Left)
+			visitExpression(typed.Right)
+		case ast.ConditionalExpression:
+			visitExpression(typed.Condition)
+			visitExpression(typed.Then)
+			visitExpression(typed.Else)
+		case ast.MatchExpression:
+			visitExpression(typed.Value)
+			for _, arm := range typed.Arms {
+				visitType(arm.Pattern.Type)
+				visitExpression(arm.Pattern.Literal)
+				visitExpression(arm.Value)
+			}
+		}
+	}
+	if file.Script != nil {
+		for _, item := range file.Script.Items {
+			if declaration, ok := item.(ast.VariableDeclaration); ok && declaration.HasValue {
+				visitExpression(declaration.Value)
+			}
+		}
+	}
+	for _, field := range file.Output.DataFields {
+		visitExpression(field.Value)
 	}
 	for _, directive := range file.Output.Directives {
 		if directive.Kind == ast.OutputDirectiveSchema {
@@ -2598,6 +3017,12 @@ func usedVariableNames(file ast.File) map[string]struct{} {
 			visit(typed.Condition)
 			visit(typed.Then)
 			visit(typed.Else)
+		case ast.MatchExpression:
+			visit(typed.Value)
+			for _, arm := range typed.Arms {
+				visit(arm.Pattern.Literal)
+				visit(arm.Value)
+			}
 		}
 	}
 
@@ -2669,7 +3094,7 @@ func schemaOutputVariableDiagnostics(file ast.File, tokens []lexer.Token) []prot
 			rangeValue,
 			protocol.DiagnosticSeverityError,
 			diagnosticDirectiveSchemaOutputVariableIgnored,
-			fmt.Sprintf("script variable %q is not allowed when output = schema; only type and schema declarations affect schema output", declaration.Name),
+			fmt.Sprintf("script variable %q is not allowed when output = 'schema'; only type and schema declarations affect schema output", declaration.Name),
 		), true
 	})
 }
@@ -3117,16 +3542,26 @@ func declarationsFromSymbols(symbols []semanticSymbol) []declarationDefinition {
 func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *processor.Result, documentPath string) []semanticSymbol {
 	symbols := importedSemanticSymbols(file, documentPath)
 	documentURI := pathURI(documentPath)
+	outputTypes := dataOutputFieldTypes(file, documentPath)
 
 	if file.Script != nil {
 		symbols = append(symbols, lo.FilterMap(file.Script.Items, func(item ast.Declaration, _ int) (semanticSymbol, bool) {
 			switch declaration := item.(type) {
 			case ast.TypeDeclaration:
-				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindClass, symbolOriginLocal, fmt.Sprintf("type %s: %s;", declaration.Name, typeReferenceDetail(declaration.Type)), declarationDocumentation(file, declaration.Name)), true
+				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindClass, symbolOriginLocal, fmt.Sprintf("alias %s: %s;", declaration.Name, typeReferenceDetail(declaration.Type)), declarationDocumentation(file, declaration.Name)), true
 			case ast.SchemaDeclaration:
 				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindStruct, symbolOriginLocal, fmt.Sprintf("schema %s: %s;", declaration.Name, recordTypeDetail(declaration.Type)), declarationDocumentation(file, declaration.Name)), true
 			case ast.VariableDeclaration:
-				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindVariable, symbolOriginLocal, variableDeclarationDetail(declaration), declarationDocumentation(file, declaration.Name)), true
+				detail := variableDeclarationDetail(declaration)
+				if expressionSuppressesHoverValue(declaration.Value) {
+					detail = variableDeclarationDetailWithoutValue(declaration)
+				}
+				if result != nil {
+					if value, ok := result.Variables[declaration.Name]; ok && !expressionSuppressesHoverValue(declaration.Value) {
+						detail = variableDeclarationDetailWithValue(declaration, value)
+					}
+				}
+				return newLocalSymbol(declaration.NameToken, documentURI, declaration.Name, protocol.CompletionItemKindVariable, symbolOriginLocal, detail, declarationDocumentation(file, declaration.Name)), true
 			case ast.DocDeclaration:
 				return semanticSymbol{}, false
 			}
@@ -3144,13 +3579,95 @@ func collectSemanticSymbols(file ast.File, tokens []lexer.Token, result *process
 		detail := "output " + field.Name
 		if result != nil {
 			if value, ok := result.Output[field.Name]; ok {
-				detail = fmt.Sprintf("output %s: %s = %s", field.Name, valueTypeSummary(value), summarizeValue(value))
+				typeName := valueTypeSummary(value)
+				if outputType, found := outputTypes[field.Name]; found {
+					typeName = typeReferenceDetail(outputType)
+				}
+				detail = fmt.Sprintf("output %s: %s", field.Name, typeName)
+				if !expressionSuppressesHoverValue(field.Value) {
+					detail += " = " + summarizeValue(value)
+				}
 			}
 		}
 		return newOutputSymbol(field.NameToken, documentURI, field.Name, detail, inlineDescriptionDocumentation(field.Description))
 	})...)
 
 	return dedupeSymbols(symbols)
+}
+
+func expressionContainsEmptyLiteral(expression ast.Expression) bool {
+	switch typed := expression.(type) {
+	case ast.StringLiteral:
+		value, ok := stringLiteralValue(typed)
+		return ok && value == ""
+	case ast.ArrayLiteral:
+		return len(typed.Elements) == 0 || lo.ContainsBy(typed.Elements, expressionContainsEmptyLiteral)
+	case ast.RecordLiteral:
+		return len(typed.Fields) == 0 || lo.ContainsBy(typed.Fields, func(field ast.RecordField) bool {
+			return expressionContainsEmptyLiteral(field.Value)
+		})
+	case ast.MemberAccess:
+		return expressionContainsEmptyLiteral(typed.Target)
+	case ast.PrefixExpression:
+		return expressionContainsEmptyLiteral(typed.Right)
+	case ast.InfixExpression:
+		return expressionContainsEmptyLiteral(typed.Left) || expressionContainsEmptyLiteral(typed.Right)
+	case ast.MatchExpression:
+		return expressionContainsEmptyLiteral(typed.Value) || lo.ContainsBy(typed.Arms, func(arm ast.MatchArm) bool {
+			return expressionContainsEmptyLiteral(arm.Value)
+		})
+	case ast.ConditionalExpression:
+		return expressionContainsEmptyLiteral(typed.Condition) ||
+			expressionContainsEmptyLiteral(typed.Then) ||
+			expressionContainsEmptyLiteral(typed.Else)
+	default:
+		return false
+	}
+}
+
+func expressionSuppressesHoverValue(expression ast.Expression) bool {
+	return expressionContainsConditional(expression) || expressionContainsEmptyLiteral(expression)
+}
+
+func expressionContainsConditional(expression ast.Expression) bool {
+	switch typed := expression.(type) {
+	case ast.ArrayLiteral:
+		return lo.ContainsBy(typed.Elements, expressionContainsConditional)
+	case ast.RecordLiteral:
+		return lo.ContainsBy(typed.Fields, func(field ast.RecordField) bool {
+			return expressionContainsConditional(field.Value)
+		})
+	case ast.MemberAccess:
+		return expressionContainsConditional(typed.Target)
+	case ast.PrefixExpression:
+		return expressionContainsConditional(typed.Right)
+	case ast.InfixExpression:
+		return expressionContainsConditional(typed.Left) || expressionContainsConditional(typed.Right)
+	case ast.MatchExpression:
+		return expressionContainsConditional(typed.Value) || lo.ContainsBy(typed.Arms, func(arm ast.MatchArm) bool {
+			return expressionContainsConditional(arm.Value)
+		})
+	case ast.ConditionalExpression:
+		return true
+	default:
+		return false
+	}
+}
+
+func dataOutputFieldTypes(file ast.File, documentPath string) map[string]ast.TypeReference {
+	baseDir := filepath.Dir(documentPath)
+	model := buildCompletionModel(file, baseDir, baseDir, map[string]completionModel{})
+	record, ok := importAsDataRecord(file, model)
+	if !ok {
+		return map[string]ast.TypeReference{}
+	}
+
+	inferredFields := lo.Filter(record.Fields, func(field ast.SchemaField, _ int) bool {
+		return field.Type != nil
+	})
+	return lo.SliceToMap(inferredFields, func(field ast.SchemaField) (string, ast.TypeReference) {
+		return field.Name, field.Type
+	})
 }
 
 func newLocalSymbol(nameToken lexer.Token, uri protocol.DocumentUri, name string, kind protocol.CompletionItemKind, origin symbolOrigin, detail string, documentation string) semanticSymbol {
@@ -3393,7 +3910,7 @@ func importedSemanticSymbol(file ast.File, path string, name string) (semanticSy
 		rangeValue := tokenProtocolRange(field.NameToken)
 
 		kind := protocol.CompletionItemKindClass
-		detail := fmt.Sprintf("type %s: %s;", field.Name, resolvedImportedTypeDetail(field.Type, file))
+		detail := fmt.Sprintf("alias %s: %s;", field.Name, resolvedImportedTypeDetail(field.Type, file))
 		if isSchemaTypeReference(field.Type, file) {
 			kind = protocol.CompletionItemKindStruct
 			detail = fmt.Sprintf("schema %s: %s", field.Name, fieldTypeDetail(field.Type))
@@ -3417,11 +3934,15 @@ func importedSemanticSymbol(file ast.File, path string, name string) (semanticSy
 		return field.Name == name
 	}); ok {
 		rangeValue := tokenProtocolRange(field.NameToken)
+		detail := fmt.Sprintf("import %s", field.Name)
+		if fieldType, found := dataOutputFieldTypes(file, path)[field.Name]; found {
+			detail = fmt.Sprintf("import %s: %s", field.Name, typeReferenceDetail(fieldType))
+		}
 
 		return semanticSymbol{
 			Name:   field.Name,
 			Kind:   protocol.CompletionItemKindVariable,
-			Detail: fmt.Sprintf("import %s", field.Name),
+			Detail: detail,
 			Origin: symbolOriginImport,
 			Range:  rangeValue,
 			Definition: protocol.Location{
@@ -3592,14 +4113,19 @@ func expressionSummary(expression ast.Expression) string {
 
 func variableDeclarationDetail(declaration ast.VariableDeclaration) string {
 	detail := fmt.Sprintf("%s %s", typeReferenceDetail(declaration.Type), declaration.Name)
-	if declaration.Nullable {
-		detail = "nullable " + detail
-	}
 	if !declaration.HasValue {
 		return detail
 	}
 
 	return detail + " = " + expressionSummary(declaration.Value)
+}
+
+func variableDeclarationDetailWithValue(declaration ast.VariableDeclaration, value processor.Value) string {
+	return variableDeclarationDetailWithoutValue(declaration) + " = " + summarizeValue(value)
+}
+
+func variableDeclarationDetailWithoutValue(declaration ast.VariableDeclaration) string {
+	return fmt.Sprintf("%s %s", typeReferenceDetail(declaration.Type), declaration.Name)
 }
 
 func symbolHasRange(symbol semanticSymbol) bool {

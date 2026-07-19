@@ -1,6 +1,7 @@
 package lexer
 
 import (
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -82,10 +83,11 @@ var _ = Describe("Lexer", func() {
 			tAssert.NoError(err)
 			assertTokenSequence(tokens, expected)
 		},
-		Entry("keywords and identifiers", "from import type schema gen_doc schema_doc enum array fusion variant choice record string int float hex_int hex_float boolean output schema_file parse parse_file data nullable in is null user_1", []expectedToken{
+		Entry("keywords and identifiers", "from import alias type schema gen_doc schema_doc enum array fusion variant choice match record string int float hex_int hex_float boolean output schema_file parse parse_file data is null user_1", []expectedToken{
 			{tokenType: TokenFrom, lexeme: "from"},
 			{tokenType: TokenImport, lexeme: "import"},
-			{tokenType: TokenTypeKeyword, lexeme: "type"},
+			{tokenType: TokenAliasKeyword, lexeme: "alias"},
+			{tokenType: TokenIdentifier, lexeme: "type"},
 			{tokenType: TokenSchema, lexeme: "schema"},
 			{tokenType: TokenGenDoc, lexeme: "gen_doc"},
 			{tokenType: TokenSchemaDoc, lexeme: "schema_doc"},
@@ -94,6 +96,7 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenUnion, lexeme: "fusion"},
 			{tokenType: TokenVariant, lexeme: "variant"},
 			{tokenType: TokenChoice, lexeme: "choice"},
+			{tokenType: TokenMatch, lexeme: "match"},
 			{tokenType: TokenRecord, lexeme: "record"},
 			{tokenType: TokenStringType, lexeme: "string"},
 			{tokenType: TokenIntType, lexeme: "int"},
@@ -101,14 +104,12 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenHexIntType, lexeme: "hex_int"},
 			{tokenType: TokenHexFloatType, lexeme: "hex_float"},
 			{tokenType: TokenBooleanType, lexeme: "boolean"},
-			{tokenType: TokenOutput, lexeme: "output"},
-			{tokenType: TokenSchemaFile, lexeme: "schema_file"},
-			{tokenType: TokenParse, lexeme: "parse"},
-			{tokenType: TokenParseFile, lexeme: "parse_file"},
-			{tokenType: TokenData, lexeme: "data"},
-			{tokenType: TokenNullable, lexeme: "nullable"},
-			{tokenType: TokenIn, lexeme: "in"},
-			{tokenType: TokenIs, lexeme: "is"},
+			{tokenType: TokenIdentifier, lexeme: "output"},
+			{tokenType: TokenIdentifier, lexeme: "schema_file"},
+			{tokenType: TokenIdentifier, lexeme: "parse"},
+			{tokenType: TokenIdentifier, lexeme: "parse_file"},
+			{tokenType: TokenIdentifier, lexeme: "data"},
+			{tokenType: TokenIdentifier, lexeme: "is"},
 			{tokenType: TokenNull, lexeme: "null"},
 			{tokenType: TokenIdentifier, lexeme: "user_1"},
 			{tokenType: TokenEOF, lexeme: ""},
@@ -121,15 +122,24 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenIdentifier, lexeme: "name_用户1"},
 			{tokenType: TokenEOF, lexeme: ""},
 		}),
+		Entry("kebab-case identifiers", "display-name user-profile", []expectedToken{
+			{tokenType: TokenIdentifier, lexeme: "display-name"},
+			{tokenType: TokenIdentifier, lexeme: "user-profile"},
+			{tokenType: TokenEOF, lexeme: ""},
+		}),
+		Entry("import-as keyword", "import-as", []expectedToken{
+			{tokenType: TokenImport, lexeme: "import"},
+			{tokenType: TokenMinus, lexeme: "-"},
+			{tokenType: TokenIdentifier, lexeme: "as"},
+			{tokenType: TokenEOF, lexeme: ""},
+		}),
 	)
 
-	It("recognizes only the complete is keyword", func() {
-		tokens, err := collectTokens("value /* comment */ is /* comment */ string island thisValue isReady valueis isstring")
+	It("recognizes only the complete match keyword", func() {
+		tokens, err := collectTokens("match matcher matching")
 		tAssert.NoError(err)
 		assertTokenTypes(tokens, []TokenType{
-			TokenIdentifier, TokenIs, TokenStringType,
-			TokenIdentifier, TokenIdentifier, TokenIdentifier,
-			TokenIdentifier, TokenIdentifier, TokenEOF,
+			TokenMatch, TokenIdentifier, TokenIdentifier, TokenEOF,
 		})
 	})
 
@@ -161,8 +171,9 @@ var _ = Describe("Lexer", func() {
 			tAssert.NoError(err)
 			assertTokenSequence(tokens, expected)
 		},
-		Entry("operators", "= ; , : ? . + - * / % ** ! ~ < <= <> > >= == != & ^ | && || << >> >>> ( ) { } [ ]", []expectedToken{
+		Entry("operators", "= => ; , : ? . + - * / % ** ! ~ < <= > >= == != & ^ | && || << >> >>> ( ) { } [ ]", []expectedToken{
 			{tokenType: TokenAssign, lexeme: "="},
+			{tokenType: TokenArrow, lexeme: "=>"},
 			{tokenType: TokenSemicolon, lexeme: ";"},
 			{tokenType: TokenComma, lexeme: ","},
 			{tokenType: TokenColon, lexeme: ":"},
@@ -178,7 +189,6 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenTilde, lexeme: "~"},
 			{tokenType: TokenLess, lexeme: "<"},
 			{tokenType: TokenLessEqual, lexeme: "<="},
-			{tokenType: TokenMerge, lexeme: "<>"},
 			{tokenType: TokenGreater, lexeme: ">"},
 			{tokenType: TokenGreaterEqual, lexeme: ">="},
 			{tokenType: TokenEqualEqual, lexeme: "=="},
@@ -249,6 +259,14 @@ var _ = Describe("Lexer", func() {
 		Entry("missing fractional digits", "0x8.", "expected hexadecimal digit after hexadecimal point"),
 		Entry("invalid digit", "0xG", "expected hexadecimal digit after 0x"),
 	)
+
+	It("accepts arbitrarily long hexadecimal literal components", func() {
+		literal := "0x" + strings.Repeat("F", 256) + "." + strings.Repeat("A", 300)
+		tokens, err := collectTokens(literal)
+		tAssert.NoError(err)
+		tAssert.Equal(TokenHexFloat, tokens[0].Type)
+		tAssert.Equal(literal, tokens[0].Lexeme)
+	})
 
 	DescribeTable("tracks line and column positions",
 		func(input string, expected []expectedToken) {
@@ -410,16 +428,16 @@ var _ = Describe("Lexer", func() {
 			tAssert.NoError(err)
 			assertTokenTypes(tokens, expected)
 		},
-		Entry("primitive variant", "type Value: variant[string, int];", []TokenType{
-			TokenTypeKeyword, TokenIdentifier, TokenColon, TokenVariant, TokenLBracket,
+		Entry("primitive variant", "alias Value: variant[string, int];", []TokenType{
+			TokenAliasKeyword, TokenIdentifier, TokenColon, TokenVariant, TokenLBracket,
 			TokenStringType, TokenComma, TokenIntType, TokenRBracket, TokenSemicolon, TokenEOF,
 		}),
-		Entry("variant with array and identifier", "type Value: variant[array<string>, User];", []TokenType{
-			TokenTypeKeyword, TokenIdentifier, TokenColon, TokenVariant, TokenLBracket,
+		Entry("variant with array and identifier", "alias Value: variant[array<string>, User];", []TokenType{
+			TokenAliasKeyword, TokenIdentifier, TokenColon, TokenVariant, TokenLBracket,
 			TokenArray, TokenLess, TokenStringType, TokenGreater, TokenComma, TokenIdentifier, TokenRBracket, TokenSemicolon, TokenEOF,
 		}),
-		Entry("schema fusion", "type Value: fusion[Profile, Audit];", []TokenType{
-			TokenTypeKeyword, TokenIdentifier, TokenColon, TokenUnion, TokenLBracket,
+		Entry("schema fusion", "alias Value: fusion[Profile, Audit];", []TokenType{
+			TokenAliasKeyword, TokenIdentifier, TokenColon, TokenUnion, TokenLBracket,
 			TokenIdentifier, TokenComma, TokenIdentifier, TokenRBracket, TokenSemicolon, TokenEOF,
 		}),
 	)

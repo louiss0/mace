@@ -1,8 +1,8 @@
 |==================================================|
-type ReadAction: choice["read"];
-type WriteAction: choice["write", "approve"];
-type Permission: choice[ReadAction, WriteAction];
-type Role: choice["admin", "auditor"];
+alias ReadAction: choice["read"];
+alias WriteAction: choice["write", "approve"];
+alias Permission: fusion[ReadAction, WriteAction];
+alias Role: choice["admin", "auditor"];
 
 schema AccessGrant: {
   role: Role,
@@ -17,7 +17,7 @@ AccessGrant grant = {
 };
 |==================================================|
 
-[output = data]
+[output = 'data']
 {
   result: grant,
 }

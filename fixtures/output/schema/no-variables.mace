@@ -1,4 +1,4 @@
-[output = schema]
+[output = 'schema']
 {
   id: string,
   active: boolean,

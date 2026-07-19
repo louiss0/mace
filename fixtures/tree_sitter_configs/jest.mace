@@ -20,7 +20,7 @@ Coverage coverage = {
   reporters: ["text", "lcov"],
 };
 |==============================|
-[output = data, schema = JestConfig]
+[output = 'data', schema = JestConfig]
 {
   test_environment: "node",
   roots: ["src", "test"],

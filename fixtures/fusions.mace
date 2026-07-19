@@ -9,10 +9,10 @@ schema Activity: {
   updated_at: string,
 };
 
-type ProfileOrActivity: fusion[Profile, Activity];
+alias ProfileOrActivity: fusion[Profile, Activity];
 
-type OptionOne: fusion[UserChoice, TeamChoice];
-type OptionTwo: fusion[BillingChoice, ShippingChoice];
+alias OptionOne: fusion[UserChoice, TeamChoice];
+alias OptionTwo: fusion[BillingChoice, ShippingChoice];
 
 schema UserChoice: {
   id: string,
@@ -34,11 +34,11 @@ schema ShippingChoice: {
   tracking?: string,
 };
 
-type NestedUnion1: fusion[Outer1, Outer2];
-type NestedUnion2: fusion[Outer3, Outer4];
-type NestedUnion3: fusion[Outer5, Outer6];
-type NestedUnion4: fusion[Outer7, Outer8];
-type NestedUnion5: fusion[Outer9, Outer10];
+alias NestedUnion1: fusion[Outer1, Outer2];
+alias NestedUnion2: fusion[Outer3, Outer4];
+alias NestedUnion3: fusion[Outer5, Outer6];
+alias NestedUnion4: fusion[Outer7, Outer8];
+alias NestedUnion5: fusion[Outer9, Outer10];
 
 schema Outer1: { one: Inner1, };
 schema Outer2: { two: Inner2, };

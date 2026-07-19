@@ -1,0 +1,4 @@
+|===|
+from '../arrays.mace' import Missing;
+|===|
+[output = 'data'] {}

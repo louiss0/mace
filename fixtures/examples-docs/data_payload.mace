@@ -1,5 +1,5 @@
 |=============================================|
-type Greeting: string /# A rendered greeting;
+alias Greeting: string /# A rendered greeting;
 
 schema User: {
   name: string, /# The user's display name
@@ -14,7 +14,7 @@ User user = {
 Greeting message = "Hello $(user.name)";
 
 |=============================================|
-[output = data, schema = User]
+[output = 'data', schema = User]
 """
 # User Payload
 

@@ -1,0 +1,4 @@
+|===|
+alias Invalid: fusion[string, { name: string, }];
+|===|
+[output = 'data'] {}

@@ -55,6 +55,9 @@ func (l *Lexer) NextToken() (Token, error) {
 		}
 		return Token{}, fmt.Errorf("lexer: unexpected character %q at %d:%d", current, startLine, startColumn)
 	case '=':
+		if l.match('>') {
+			return l.makeToken(TokenArrow, startPosition, startLine, startColumn), nil
+		}
 		if l.match('=') {
 			return l.makeToken(TokenEqualEqual, startPosition, startLine, startColumn), nil
 		}
@@ -116,9 +119,6 @@ func (l *Lexer) NextToken() (Token, error) {
 		if l.match('=') {
 			return l.makeToken(TokenLessEqual, startPosition, startLine, startColumn), nil
 		}
-		if l.match('>') {
-			return l.makeToken(TokenMerge, startPosition, startLine, startColumn), nil
-		}
 		if l.match('<') {
 			return l.makeToken(TokenShiftLeft, startPosition, startLine, startColumn), nil
 		}
@@ -170,7 +170,16 @@ func (l *Lexer) NextToken() (Token, error) {
 	}
 
 	if isLetter(current) {
-		for isIdentifierPart(l.peek()) {
+		isIdentifierContinuation := func() bool {
+			if isIdentifierPart(l.peek()) {
+				return true
+			}
+
+			currentLexeme := l.input[startPosition:l.position]
+			return currentLexeme != "import" && l.peek() == '-' && isIdentifierPart(l.peekNext())
+		}
+
+		for isIdentifierContinuation() {
 			l.advance()
 		}
 		lexeme := l.input[startPosition:l.position]
@@ -441,8 +450,8 @@ func keywordToken(lexeme string) (TokenType, bool) {
 		return TokenFrom, true
 	case "import":
 		return TokenImport, true
-	case "type":
-		return TokenTypeKeyword, true
+	case "alias":
+		return TokenAliasKeyword, true
 	case "schema":
 		return TokenSchema, true
 	case "gen_doc":
@@ -457,6 +466,8 @@ func keywordToken(lexeme string) (TokenType, bool) {
 		return TokenVariant, true
 	case "choice":
 		return TokenChoice, true
+	case "match":
+		return TokenMatch, true
 	case "record":
 		return TokenRecord, true
 	case "string":
@@ -471,22 +482,6 @@ func keywordToken(lexeme string) (TokenType, bool) {
 		return TokenHexFloatType, true
 	case "boolean":
 		return TokenBooleanType, true
-	case "output":
-		return TokenOutput, true
-	case "schema_file":
-		return TokenSchemaFile, true
-	case "parse":
-		return TokenParse, true
-	case "parse_file":
-		return TokenParseFile, true
-	case "data":
-		return TokenData, true
-	case "nullable":
-		return TokenNullable, true
-	case "in":
-		return TokenIn, true
-	case "is":
-		return TokenIs, true
 	case "null":
 		return TokenNull, true
 	case "true", "false":

@@ -1,6 +1,6 @@
 |===================================================|
-type Environment: choice["dev", "staging", "prod"];
-type Region: choice["us-east-1", "eu-west-1"];
+alias Environment: choice["dev", "staging", "prod"];
+alias Region: choice["us-east-1", "eu-west-1"];
 
 schema Deployment: {
   app: string,
@@ -17,7 +17,7 @@ Deployment deployment = {
 };
 |===================================================|
 
-[output = data]
+[output = 'data']
 {
   result: deployment,
 }

@@ -13,7 +13,7 @@ var _ = Describe("Expressions", func() {
 
 			assertExpectedOutput(result, expected)
 		},
-		Entry("multiple fields and self reference", `[output = data] { base: 2 + 2, result: $self.base * 3, }`, map[string]expectedValue{
+		Entry("multiple fields and self reference", `[output = 'data'] { base: 2 + 2, result: $self.base * 3, }`, map[string]expectedValue{
 			"base":   {kind: ValueInt, int64: 4},
 			"result": {kind: ValueInt, int64: 12},
 		}),
@@ -23,29 +23,29 @@ var _ = Describe("Expressions", func() {
 		func(input string, expected expectedValue) {
 			assertProcessedResult(input, expected)
 		},
-		Entry("level 1", `[output = data] { base: 4, result: $self.base, }`, expectedValue{kind: ValueInt, int64: 4}),
-		Entry("level 2", `[output = data] { profile: { name: "Ada", }, result: $self.profile.name, }`, expectedValue{kind: ValueString, string: "Ada"}),
-		Entry("level 3", `[output = data] { profile: { details: { age: 30, }, }, result: $self.profile.details.age, }`, expectedValue{kind: ValueInt, int64: 30}),
-		Entry("level 4", `[output = data] { tree: { branch: { leaf: { value: 9, }, }, }, result: $self.tree.branch.leaf.value, }`, expectedValue{kind: ValueInt, int64: 9}),
-		Entry("level 5", `[output = data] { a: { b: { c: { d: { e: true, }, }, }, }, result: $self.a.b.c.d.e, }`, expectedValue{kind: ValueBoolean, bool: true}),
+		Entry("level 1", `[output = 'data'] { base: 4, result: $self.base, }`, expectedValue{kind: ValueInt, int64: 4}),
+		Entry("level 2", `[output = 'data'] { profile: { name: "Ada", }, result: $self.profile.name, }`, expectedValue{kind: ValueString, string: "Ada"}),
+		Entry("level 3", `[output = 'data'] { profile: { details: { age: 30, }, }, result: $self.profile.details.age, }`, expectedValue{kind: ValueInt, int64: 30}),
+		Entry("level 4", `[output = 'data'] { tree: { branch: { leaf: { value: 9, }, }, }, result: $self.tree.branch.leaf.value, }`, expectedValue{kind: ValueInt, int64: 9}),
+		Entry("level 5", `[output = 'data'] { a: { b: { c: { d: { e: true, }, }, }, }, result: $self.a.b.c.d.e, }`, expectedValue{kind: ValueBoolean, bool: true}),
 	)
 
 	DescribeTable("returns mixed self reference results",
 		func(input string, expected expectedValue) {
 			assertProcessedResult(input, expected)
 		},
-		Entry("arithmetic with chained fields", `[output = data] { base: 4, doubled: $self.base * 2, result: $self.doubled + $self.base, }`, expectedValue{kind: ValueInt, int64: 12}),
-		Entry("conditional with self", `[output = data] { enabled: true, result: $self.enabled ? "on" : "off", }`, expectedValue{kind: ValueString, string: "on"}),
-		Entry("array literal with self", `[output = data] { base: 2, result: [$self.base, $self.base + 1, $self.base + 2], }`, expectedValue{kind: ValueArray, array: []expectedValue{
+		Entry("arithmetic with chained fields", `[output = 'data'] { base: 4, doubled: $self.base * 2, result: $self.doubled + $self.base, }`, expectedValue{kind: ValueInt, int64: 12}),
+		Entry("conditional with self", `[output = 'data'] { enabled: true, result: $self.enabled ? "on" : "off", }`, expectedValue{kind: ValueString, string: "on"}),
+		Entry("array literal with self", `[output = 'data'] { base: 2, result: [$self.base, $self.base + 1, $self.base + 2], }`, expectedValue{kind: ValueArray, array: []expectedValue{
 			{kind: ValueInt, int64: 2},
 			{kind: ValueInt, int64: 3},
 			{kind: ValueInt, int64: 4},
 		}}),
-		Entry("record literal with self", `[output = data] { name: "Ada", result: { display: $self.name, active: true, }, }`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+		Entry("record literal with self", `[output = 'data'] { name: "Ada", result: { display: $self.name, active: true, }, }`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{
 			"display": {kind: ValueString, string: "Ada"},
 			"active":  {kind: ValueBoolean, bool: true},
 		}}),
-		Entry("nested self and operators", `[output = data] { profile: { score: 3, }, result: $self.profile.score * 4 + 1, }`, expectedValue{kind: ValueInt, int64: 13}),
+		Entry("nested self and operators", `[output = 'data'] { profile: { score: 3, }, result: $self.profile.score * 4 + 1, }`, expectedValue{kind: ValueInt, int64: 13}),
 	)
 
 	DescribeTable("rejects invalid self references",
@@ -55,7 +55,7 @@ var _ = Describe("Expressions", func() {
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, message)
 		},
-		Entry("future field reference", `[output = data] { result: $self.base, base: 4, }`, "unknown self reference"),
-		Entry("nested path through non record", `[output = data] { base: 4, result: $self.base.value, }`, "non-record"),
+		Entry("future field reference", `[output = 'data'] { result: $self.base, base: 4, }`, "unknown self reference"),
+		Entry("nested path through non record", `[output = 'data'] { base: 4, result: $self.base.value, }`, "non-record"),
 	)
 })

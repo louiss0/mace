@@ -1,0 +1,5 @@
+|===|
+from './support/import-source.mace' import Exposed;
+string Exposed = 'local';
+|===|
+[output = 'data'] { Exposed, }

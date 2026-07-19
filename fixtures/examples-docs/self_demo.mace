@@ -1,7 +1,7 @@
 
 /*
 
-[output = data]
+[output = 'data']
 { product: "Mechanical Keyboard",
  unit_price: 129.99,
  quantity: 3,

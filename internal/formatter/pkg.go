@@ -42,8 +42,9 @@ func (f *formatter) writeFile(file ast.File) error {
 }
 
 func formatImportDeclaration(importDeclaration ast.ImportDeclaration) string {
+	path := formatStaticPath(importDeclaration.Path.Lexeme)
 	if importDeclaration.ImportAs != nil {
-		return "from " + importDeclaration.Path.Lexeme + " import-as " + importDeclaration.ImportAs.LocalName() + ";"
+		return "from " + path + " import-as " + importDeclaration.ImportAs.LocalName() + ";"
 	}
 
 	parts := make([]string, 0, len(importDeclaration.Identifiers))
@@ -54,7 +55,11 @@ func formatImportDeclaration(importDeclaration ast.ImportDeclaration) string {
 			parts = append(parts, id.Name)
 		}
 	}
-	return "from " + importDeclaration.Path.Lexeme + " import " + strings.Join(parts, ", ") + ";"
+	return "from " + path + " import " + strings.Join(parts, ", ") + ";"
+}
+
+func formatStaticPath(path string) string {
+	return "'" + strings.Trim(path, "'\"") + "'"
 }
 
 func normalizedScriptBlock(file ast.File) (ast.ScriptBlock, bool) {
@@ -157,18 +162,13 @@ func (f *formatter) writeLine(value string) {
 func formatDeclaration(declaration ast.Declaration) (string, error) {
 	switch typedDeclaration := declaration.(type) {
 	case ast.VariableDeclaration:
-		prefix := ""
-		if typedDeclaration.Nullable {
-			prefix += "nullable "
-		}
-
 		typeReference, err := formatTypeReference(typedDeclaration.Type)
 		if err != nil {
 			return "", err
 		}
 
 		if !typedDeclaration.HasValue {
-			return fmt.Sprintf("%s%s %s;", prefix, typeReference, typedDeclaration.Name), nil
+			return fmt.Sprintf("%s %s;", typeReference, typedDeclaration.Name), nil
 		}
 
 		value, err := formatExpressionWithDepth(typedDeclaration.Value, 0)
@@ -177,7 +177,7 @@ func formatDeclaration(declaration ast.Declaration) (string, error) {
 		}
 
 		description := formatInlineDescription(typedDeclaration.Description)
-		return fmt.Sprintf("%s%s %s = %s%s;", prefix, typeReference, typedDeclaration.Name, value, description), nil
+		return fmt.Sprintf("%s %s = %s%s;", typeReference, typedDeclaration.Name, value, description), nil
 	case ast.TypeDeclaration:
 		typeReference, err := formatTypeReference(typedDeclaration.Type)
 		if err != nil {
@@ -185,7 +185,7 @@ func formatDeclaration(declaration ast.Declaration) (string, error) {
 		}
 
 		description := formatInlineDescription(typedDeclaration.Description)
-		return fmt.Sprintf("type %s: %s%s;", typedDeclaration.Name, typeReference, description), nil
+		return fmt.Sprintf("alias %s: %s%s;", typedDeclaration.Name, typeReference, description), nil
 	case ast.SchemaDeclaration:
 		recordType, err := formatRecordType(typedDeclaration.Type, 0)
 		if err != nil {
@@ -317,7 +317,7 @@ func formatOutputDirectives(directives []ast.OutputDirective) (string, error) {
 	for _, directive := range directives {
 		switch directive.Kind {
 		case ast.OutputDirectiveOutput:
-			parts = append(parts, "output = "+directive.Value)
+			parts = append(parts, "output = '"+directive.Value+"'")
 		case ast.OutputDirectiveSchemaFile:
 			parts = append(parts, "schema_file = "+directive.Value)
 		case ast.OutputDirectiveSchema:
@@ -395,6 +395,8 @@ func formatExpressionWithPrecedence(expression ast.Expression, parentPrecedence 
 
 func formatExpressionNode(expression ast.Expression, depth int) (string, int, error) {
 	switch typedExpression := expression.(type) {
+	case ast.GroupedExpression:
+		return formatExpressionNode(typedExpression.Expression, depth)
 	case ast.Identifier:
 		return typedExpression.Name, precedencePrimary, nil
 	case ast.MemberAccess:
@@ -407,16 +409,31 @@ func formatExpressionNode(expression ast.Expression, depth int) (string, int, er
 			operator = "?."
 		}
 		return target + operator + typedExpression.Name, precedencePrimary, nil
-	case ast.TypeTestExpression:
-		left, err := formatExpressionWithPrecedence(typedExpression.Expression, precedenceTypeTest, depth)
+	case ast.MatchExpression:
+		matched, err := formatExpressionWithDepth(typedExpression.Value, depth)
 		if err != nil {
 			return "", 0, err
 		}
-		targetType, err := formatTypeReference(typedExpression.TargetType)
-		if err != nil {
-			return "", 0, err
+		lines := []string{"match (" + matched + ") {"}
+		indent := strings.Repeat("  ", depth+1)
+		for _, arm := range typedExpression.Arms {
+			pattern := ""
+			if arm.Pattern.Type != nil {
+				pattern, err = formatTypeReference(arm.Pattern.Type)
+			} else {
+				pattern, err = formatExpressionWithDepth(arm.Pattern.Literal, depth+1)
+			}
+			if err != nil {
+				return "", 0, err
+			}
+			value, err := formatExpressionWithDepth(arm.Value, depth+1)
+			if err != nil {
+				return "", 0, err
+			}
+			lines = append(lines, indent+pattern+" => "+value+",")
 		}
-		return left + " is " + targetType, precedenceTypeTest, nil
+		lines = append(lines, strings.Repeat("  ", depth)+"}")
+		return strings.Join(lines, "\n"), precedencePrimary, nil
 	case ast.StringLiteral:
 		return typedExpression.Lexeme, precedencePrimary, nil
 	case ast.IntLiteral:
@@ -629,8 +646,6 @@ func tokenLexeme(tokenType lexer.TokenType) string {
 		return "<"
 	case lexer.TokenLessEqual:
 		return "<="
-	case lexer.TokenMerge:
-		return "<>"
 	case lexer.TokenGreater:
 		return ">"
 	case lexer.TokenGreaterEqual:
@@ -671,9 +686,7 @@ const (
 	precedenceBitwiseOr
 	precedenceBitwiseXor
 	precedenceBitwiseAnd
-	precedenceMerge
 	precedenceEquality
-	precedenceTypeTest
 	precedenceRelational
 	precedenceShift
 	precedenceAdditive
@@ -699,8 +712,6 @@ func infixPrecedence(tokenType lexer.TokenType) int {
 		return precedenceBitwiseAnd
 	case lexer.TokenEqualEqual, lexer.TokenNotEqual:
 		return precedenceEquality
-	case lexer.TokenMerge:
-		return precedenceMerge
 	case lexer.TokenLess, lexer.TokenLessEqual, lexer.TokenGreater, lexer.TokenGreaterEqual:
 		return precedenceRelational
 	case lexer.TokenShiftLeft, lexer.TokenShiftRight, lexer.TokenShiftRightUnsigned:

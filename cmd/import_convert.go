@@ -324,7 +324,7 @@ func yamlMappingExpression(iter *yamlast.MapNodeIter, selfPath string, state *ya
 
 	parts := append([]importExpression{}, mergeParts...)
 	parts = append(parts, record)
-	return mergeExpression{parts: parts}, nil
+	return yamlResolvedRecord(mergeExpression{parts: parts}, state)
 }
 
 func yamlMergeExpressions(node yamlast.Node, selfPath string, state *yamlImportState) ([]importExpression, error) {
@@ -645,9 +645,9 @@ func schemaPathToMace(path string, separator string) string {
 }
 
 func formatImportedOutput(schemaPath string, root recordExpression) (string, error) {
-	directive := `[output = data]`
+	directive := `[output = 'data']`
 	if schemaPath != "" {
-		directive = fmt.Sprintf(`[output = data, schema_file = %q]`, schemaPath)
+		directive = fmt.Sprintf(`[output = 'data', schema_file = '%s']`, schemaPath)
 	}
 
 	source := directive + "\n" + root.render(0)
@@ -916,9 +916,6 @@ func (expression recordExpression) render(depth int) string {
 	lines := []string{"{"}
 	for index, field := range expression.fields {
 		value := field.value.render(depth + 1)
-		if raw, ok := field.value.(rawExpression); ok && (strings.HasPrefix(raw.text, "$self.") || (importFieldPattern.MatchString(raw.text) && raw.text != "true" && raw.text != "false" && raw.text != "null")) {
-			value = "(" + value + ")"
-		}
 		line := indent + field.name + ": " + value
 		if index < len(expression.fields)-1 {
 			line += ","
@@ -930,21 +927,11 @@ func (expression recordExpression) render(depth int) string {
 }
 
 func (expression mergeExpression) render(depth int) string {
-	parts := make([]string, 0, len(expression.parts))
-	for _, part := range expression.parts {
-		parts = append(parts, renderMergeOperand(part, depth))
+	record, err := yamlResolvedRecord(expression, &yamlImportState{})
+	if err != nil {
+		return recordExpression{}.render(depth)
 	}
-	return strings.Join(parts, " <> ")
-}
-
-func renderMergeOperand(expression importExpression, depth int) string {
-	if raw, ok := expression.(rawExpression); ok {
-		if name, isTopLevelReference := yamlTopLevelReferenceName(raw.text); isTopLevelReference {
-			return name
-		}
-	}
-
-	return expression.render(depth)
+	return record.render(depth)
 }
 
 func (expression omittedExpression) render(int) string {

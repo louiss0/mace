@@ -1,8 +1,8 @@
 |===========================================|
-from "./nx_inputs.mace" import-as NxInputs;
+from './nx_inputs.mace' import-as NxInputs;
 |===========================================|
 
-[output = data, parse = NxInputs]
+[output = 'data', parse = NxInputs]
 {
   project_name: project.name,
   project_root: project.root,

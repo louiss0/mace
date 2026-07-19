@@ -1,5 +1,5 @@
 |===|
-type User: string;
+alias User: string;
 schema User: { name: string, };
 |===|
-[output = data] {}
+[output = 'data'] {}
