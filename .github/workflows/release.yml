@@ -110,7 +110,7 @@ jobs:
           token: ${{ steps.load_secrets.outputs.GH_GENERAL_TOKEN }}
           path: zed-extension-mace
 
-      - name: Update version file
+      - name: Update Zed version file
         run: |
           VERSION="${GITHUB_REF_NAME}"
 
@@ -122,8 +122,48 @@ jobs:
           }
           EOF
 
-      - name: Commit and push branch
+      - name: Commit and push Zed branch
         working-directory: zed-extension-mace
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          BRANCH_NAME="chore/update-mace-${VERSION}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "$BRANCH_NAME"
+
+          git add mace-version.json
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Update Mace version to ${VERSION}"
+          git push origin "$BRANCH_NAME"
+
+      - name: Checkout VS Code extension repository
+        uses: actions/checkout@v5
+        with:
+          repository: louiss0/vscode-extension-mace
+          token: ${{ steps.load_secrets.outputs.GH_GENERAL_TOKEN }}
+          path: vscode-extension-mace
+
+      - name: Update VS Code version file
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+
+          cat > vscode-extension-mace/mace-version.json <<EOF
+          {
+            "version": "${VERSION}",
+            "source_repository": "${GITHUB_REPOSITORY}",
+            "source_commit": "${GITHUB_SHA}"
+          }
+          EOF
+
+      - name: Commit and push VS Code branch
+        working-directory: vscode-extension-mace
         run: |
           VERSION="${GITHUB_REF_NAME}"
           BRANCH_NAME="chore/update-mace-${VERSION}"
