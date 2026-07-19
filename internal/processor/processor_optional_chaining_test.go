@@ -233,22 +233,6 @@ func optionalRecordPath(depth int) ast.Expression {
 	return expression
 }
 
-func nestedRecordMapTypeText(depth int) string {
-	valueType := "string"
-	for range depth {
-		valueType = "record<" + valueType + ">"
-	}
-	return valueType
-}
-
-func optionalRecordPathText(depth int) string {
-	path := "packages"
-	for range depth {
-		path += "?.value"
-	}
-	return path
-}
-
 func optionalChainDocument(schemas string, declaration string, fields string) string {
 	return schemas + declaration + "\n|===|\n[output = 'data']\n{\n" + fields + "\n}"
 }
