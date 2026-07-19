@@ -2084,49 +2084,57 @@ func validateExpressionPresence(expression ast.Expression, variables *variableRe
 }
 
 func validateDataOutputExpression(expression ast.Expression, symbols *symbolTable) error {
+	return validateDataOutputExpressionPosition(expression, symbols, true)
+}
+
+func validateDataOutputExpressionPosition(expression ast.Expression, symbols *symbolTable, isFieldRoot bool) error {
 	switch expr := expression.(type) {
+	case ast.NullLiteral:
+		if !isFieldRoot {
+			return validationErrorf("null is only allowed in output")
+		}
 	case ast.Identifier:
 		if symbols.IsType(expr.Name) || symbols.IsSchema(expr.Name) {
 			return diagnosticErrorf(ErrorValue, CodeOutputValueDeclaration, DiagnosticFields{Name: expr.Name}, "output value %q cannot reference type or schema declaration", expr.Name)
 		}
 	case ast.MemberAccess:
-		return validateDataOutputExpression(expr.Target, symbols)
+		return validateDataOutputExpressionPosition(expr.Target, symbols, false)
 	case ast.MatchExpression:
-		if err := validateDataOutputExpression(expr.Value, symbols); err != nil {
+		if err := validateDataOutputExpressionPosition(expr.Value, symbols, false); err != nil {
 			return err
 		}
 		for _, arm := range expr.Arms {
-			if err := validateDataOutputExpression(arm.Value, symbols); err != nil {
+			if err := validateDataOutputExpressionPosition(arm.Value, symbols, false); err != nil {
 				return err
 			}
 		}
 	case ast.ArrayLiteral:
 		for _, element := range expr.Elements {
-			if err := validateDataOutputExpression(element, symbols); err != nil {
+			if err := validateDataOutputExpressionPosition(element, symbols, false); err != nil {
 				return err
 			}
 		}
 	case ast.RecordLiteral:
 		for _, field := range expr.Fields {
-			if err := validateDataOutputExpression(field.Value, symbols); err != nil {
+			if err := validateDataOutputExpressionPosition(field.Value, symbols, false); err != nil {
 				return err
 			}
 		}
 	case ast.PrefixExpression:
-		return validateDataOutputExpression(expr.Right, symbols)
+		return validateDataOutputExpressionPosition(expr.Right, symbols, false)
 	case ast.InfixExpression:
-		if err := validateDataOutputExpression(expr.Left, symbols); err != nil {
+		if err := validateDataOutputExpressionPosition(expr.Left, symbols, false); err != nil {
 			return err
 		}
-		return validateDataOutputExpression(expr.Right, symbols)
+		return validateDataOutputExpressionPosition(expr.Right, symbols, false)
 	case ast.ConditionalExpression:
-		if err := validateDataOutputExpression(expr.Condition, symbols); err != nil {
+		if err := validateDataOutputExpressionPosition(expr.Condition, symbols, false); err != nil {
 			return err
 		}
-		if err := validateDataOutputExpression(expr.Then, symbols); err != nil {
+		if err := validateDataOutputExpressionPosition(expr.Then, symbols, false); err != nil {
 			return err
 		}
-		return validateDataOutputExpression(expr.Else, symbols)
+		return validateDataOutputExpressionPosition(expr.Else, symbols, false)
 	}
 
 	return nil
@@ -4423,6 +4431,7 @@ func inferMatchType(expr ast.MatchExpression, variables *variableRegistry, symbo
 
 func validateMatchPatterns(arms []ast.MatchArm, matchedType valueType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
 	if len(matchedType.members) > 0 {
+		matchedMembers := flattenVariantValueTypes(matchedType.members)
 		seen := make([]valueType, 0, len(arms))
 		for _, arm := range arms {
 			if arm.Pattern.Type == nil {
@@ -4437,7 +4446,7 @@ func validateMatchPatterns(arms []ast.MatchArm, matchedType valueType, symbols *
 				patternMembers = flattenVariantValueTypes(patternType.members)
 			}
 			for _, patternMember := range patternMembers {
-				if !containsValueType(matchedType.members, patternMember) {
+				if !containsValueType(matchedMembers, patternMember) {
 					return validationErrorf("match pattern %s is not a member of %s", patternType.name(), matchedType.name())
 				}
 				if containsValueType(seen, patternMember) {
@@ -4446,7 +4455,7 @@ func validateMatchPatterns(arms []ast.MatchArm, matchedType valueType, symbols *
 				seen = append(seen, patternMember)
 			}
 		}
-		if len(seen) != len(matchedType.members) {
+		if len(seen) != len(matchedMembers) {
 			return validationErrorf("match expression must be exhaustive for %s", matchedType.name())
 		}
 		return nil

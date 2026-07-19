@@ -269,6 +269,22 @@ string selected = match (value) {
 		tAssert.Equal("number", result.Output["selected"].String)
 	})
 
+	It("matches flattened members from a nested source variant", func() {
+		result, err := New().Process(`|===|
+alias Pair: variant[string, int];
+variant[Pair, boolean] value = 7;
+string selected = match (value) {
+  string => "text",
+  int => "number",
+  boolean => "flag",
+};
+|===|
+{ selected, }`)
+
+		tAssert.NoError(err)
+		tAssert.Equal("number", result.Output["selected"].String)
+	})
+
 	It("selects a choice arm by literal value", func() {
 		result, err := New().Process(`|===|
 alias Status: choice["ready", "pending"];

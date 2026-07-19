@@ -293,6 +293,18 @@ User user = { name, };
 { user: user, }`, "null is only allowed in output"),
 	)
 
+	DescribeTable("rejects null below the output field root",
+		func(expression string) {
+			_, err := New().Process(fmt.Sprintf(`[output = 'data']
+{
+  value: %s,
+}`, expression))
+			tAssert.ErrorContains(err, "null is only allowed in output")
+		},
+		Entry("array member", `[null]`),
+		Entry("record field", `{ nested: null }`),
+	)
+
 	DescribeTable("requires context for empty collection output literals",
 		func(expression string) {
 			_, err := New().Process(fmt.Sprintf(`[output = 'data']
