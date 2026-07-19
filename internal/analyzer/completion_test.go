@@ -1543,33 +1543,6 @@ schema User: {
 			tAssert.Empty(items)
 		})
 
-		It("provides completions for optional parse field member access inside 'in' guard", func() {
-			text := `|===|
-schema User: {
-  name: string,
-  manager?: User,
-};
-|===|
-
-[output = 'data', parse = User]
-{
-  result: "manager" in $manager ? $manager.manager.
-}`
-			position := protocol.Position{
-				Line:      9,
-				Character: uint32(len(`  result: "manager" in $manager ? $manager.manager.`)),
-			}
-			documentPath := filepath.Join("workspace", "document.mace")
-			snapshot := AnalyzeCompletionContext(text, documentPath, position)
-
-			items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
-			labels := lo.Map(items, func(item protocol.CompletionItem, _ int) string {
-				return item.Label
-			})
-
-			tAssert.Contains(labels, "name")
-			tAssert.Contains(labels, "manager")
-		})
 	})
 	It("suggests choice values for output block schema fields", func() {
 		text := `|===|

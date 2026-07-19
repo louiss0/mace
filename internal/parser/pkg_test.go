@@ -553,7 +553,6 @@ var _ = Describe("Parser", func() {
 			lexer.TokenLessEqual:          precedenceRelational,
 			lexer.TokenGreater:            precedenceRelational,
 			lexer.TokenGreaterEqual:       precedenceRelational,
-			lexer.TokenIn:                 precedenceRelational,
 			lexer.TokenShiftLeft:          precedenceShift,
 			lexer.TokenShiftRight:         precedenceShift,
 			lexer.TokenShiftRightUnsigned: precedenceShift,

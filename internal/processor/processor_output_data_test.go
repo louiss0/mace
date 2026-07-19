@@ -455,7 +455,6 @@ var _ = Describe("Data output helpers", func() {
 		tAssert.NoError(validateDataOutputExpression(ast.RecordLiteral{Fields: []ast.RecordField{{Name: "name", Value: ast.Identifier{Name: "record"}}}}, symbols))
 		tAssert.NoError(validateDataOutputExpression(ast.PrefixExpression{Right: ast.Identifier{Name: "record"}}, symbols))
 		tAssert.NoError(validateDataOutputExpression(ast.InfixExpression{Left: ast.Identifier{Name: "record"}, Right: ast.Identifier{Name: "record"}}, symbols))
-		tAssert.NoError(validateDataOutputExpression(ast.ConditionalExpression{Condition: ast.InfixExpression{Operator: lexer.TokenIn, Left: ast.StringLiteral{Lexeme: `"opt"`}, Right: ast.Identifier{Name: "record"}}, Then: ast.MemberAccess{Target: ast.Identifier{Name: "opt"}, Name: "name"}, Else: ast.Identifier{Name: "record"}}, symbols))
 
 		types := newTypeRegistry()
 		schemas := newSchemaRegistry()

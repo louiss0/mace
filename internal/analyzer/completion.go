@@ -215,7 +215,7 @@ func outputInitializerCompletionItems(document document, uri protocol.DocumentUr
 				return sortCompletionItems(items), true
 			}
 		}
-		if expectedType, typeOk, guarded := parseInputMemberCompletionRootType(*file, model, memberPath, importBaseDir, importRootDir, cache, outputGuardedNames(currentLinePrefix(document.text, position))); typeOk || guarded {
+		if expectedType, typeOk, guarded := parseInputMemberCompletionRootType(*file, model, memberPath, importBaseDir, importRootDir, cache, nil); typeOk || guarded {
 			if guarded {
 				return []protocol.CompletionItem{}, true
 			}
@@ -384,54 +384,6 @@ func completionDeclarations(
 	default:
 		return nil
 	}
-}
-
-// outputGuardedNames parses the line prefix for patterns like:
-//
-//	"field" in identifier ?  → guards "field"
-//	"a" in x && "b" in y ?  → guards "a" and "b"
-//
-// It only returns guards when a '?' (ternary then-branch) follows.
-func outputGuardedNames(linePrefix string) map[string]struct{} {
-	guarded := map[string]struct{}{}
-	// Find the last unquoted '?' — if present we are in a then-branch.
-	qIdx := lastUnquotedByteInPrefix(linePrefix, '?')
-	if qIdx < 0 {
-		return guarded
-	}
-	// Scan everything before the '?' for "field" in ... patterns.
-	condPart := linePrefix[:qIdx]
-	i := 0
-	for i < len(condPart) {
-		// Skip non-quote, non-" characters until we hit a string literal.
-		if condPart[i] != '"' && condPart[i] != '\'' {
-			i++
-			continue
-		}
-		quote := condPart[i]
-		i++
-		start := i
-		// Read the field name inside the quotes.
-		for i < len(condPart) && condPart[i] != quote {
-			i++
-		}
-		fieldName := condPart[start:i]
-		if i < len(condPart) {
-			i++ // skip closing quote
-		}
-		// Skip whitespace.
-		for i < len(condPart) && (condPart[i] == ' ' || condPart[i] == '\t') {
-			i++
-		}
-		// Check for "in" keyword followed by a non-identifier char.
-		if i+2 <= len(condPart) && condPart[i:i+2] == "in" {
-			after := i + 2
-			if after >= len(condPart) || !isIdentifierCharacter(condPart[after]) {
-				guarded[fieldName] = struct{}{}
-			}
-		}
-	}
-	return guarded
 }
 
 func outputTruthyNames(linePrefix string) map[string]struct{} {
@@ -618,7 +570,7 @@ func variableMemberCompletionItems(document document, uri protocol.DocumentUri, 
 	importBaseDir := filepath.Dir(documentPath(uri))
 	importRootDir := completionRoot(document.analysis, uri)
 	model := buildCompletionModel(*file, importBaseDir, importRootDir, map[string]completionModel{})
-	rootType, ok, guarded := variableMemberCompletionRootType(model, path, outputGuardedNames(linePrefix), outputTruthyNames(linePrefix), matchArmNarrowedTypes(*file))
+	rootType, ok, guarded := variableMemberCompletionRootType(model, path, nil, outputTruthyNames(linePrefix), matchArmNarrowedTypes(*file))
 	if guarded {
 		return []protocol.CompletionItem{}, true
 	}
@@ -662,11 +614,9 @@ func parsedVariableMemberCompletionItems(document document, uri protocol.Documen
 	importRootDir := completionRoot(document.analysis, uri)
 	cache := map[string]completionModel{}
 	model := buildCompletionModel(file, importBaseDir, importRootDir, cache)
-	guardedNames := outputGuardedNames(linePrefix)
-
-	rootType, ok, guarded := parseInputMemberCompletionRootType(file, model, chain, importBaseDir, importRootDir, cache, guardedNames)
+	rootType, ok, guarded := parseInputMemberCompletionRootType(file, model, chain, importBaseDir, importRootDir, cache, nil)
 	if !ok && !guarded {
-		rootType, ok, guarded = variableMemberCompletionRootType(model, chain, guardedNames, outputTruthyNames(linePrefix), matchArmNarrowedTypes(file))
+		rootType, ok, guarded = variableMemberCompletionRootType(model, chain, nil, outputTruthyNames(linePrefix), matchArmNarrowedTypes(file))
 	}
 	if guarded {
 		return []protocol.CompletionItem{}, true

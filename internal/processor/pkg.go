@@ -3323,8 +3323,6 @@ func evaluateInfix(expr ast.InfixExpression, environment *valueEnvironment, self
 	switch expr.Operator {
 	case lexer.TokenPlus, lexer.TokenMinus, lexer.TokenStar, lexer.TokenSlash, lexer.TokenDoubleStar:
 		return evaluateNumeric(expr.Operator, left, right)
-	case lexer.TokenIn:
-		return evaluateContains(left, right)
 	case lexer.TokenPercent:
 		return evaluateModulo(left, right)
 	case lexer.TokenShiftLeft, lexer.TokenShiftRight, lexer.TokenShiftRightUnsigned:
@@ -3350,15 +3348,6 @@ func evaluateCoalesce(expr ast.InfixExpression, environment *valueEnvironment, s
 	}
 
 	return evaluateExpression(expr.Right, environment, self, symbols, types, schemas, enums)
-}
-
-func evaluateContains(left, right Value) (Value, error) {
-	if left.Kind != ValueString || right.Kind != ValueRecord {
-		return Value{}, validationErrorf("type mismatch: expected string key and record value for 'in'")
-	}
-
-	_, exists := right.Record[left.String]
-	return Value{Kind: ValueBoolean, Boolean: exists}, nil
 }
 
 func evaluateNumeric(operator lexer.TokenType, left, right Value) (Value, error) {
@@ -4670,11 +4659,6 @@ func inferInfixType(expr ast.InfixExpression, variables *variableRegistry, symbo
 	switch expr.Operator {
 	case lexer.TokenPlus, lexer.TokenMinus, lexer.TokenStar, lexer.TokenSlash, lexer.TokenDoubleStar:
 		return inferNumericBinary(expr.Operator, leftType, rightType)
-	case lexer.TokenIn:
-		if leftType.kind != ValueString || rightType.kind != ValueRecord {
-			return valueType{}, validationErrorf("type mismatch: expected string key and record value for 'in'")
-		}
-		return valueType{kind: ValueBoolean}, nil
 	case lexer.TokenPercent:
 		if !leftType.isNumeric() || !rightType.isNumeric() {
 			return valueType{}, validationErrorf("type mismatch: expected numeric operands for '%%'")

@@ -301,29 +301,6 @@ schema User: {
 |===|
 `
 
-		It("does not expose input for presence checks", func() {
-			processor := NewWithInput(map[string]Value{
-				"name":    {Kind: ValueString, String: "Ada"},
-				"manager": {Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Bob"}}},
-			})
-			_, err := processor.Process(guardSchema + `[output = 'data', parse = User]
-{
-  has_manager: "manager" in input,
-}`)
-			tAssert.ErrorContains(err, "unknown identifier")
-		})
-
-		It("does not expose input when optional fields are absent", func() {
-			processor := NewWithInput(map[string]Value{
-				"name": {Kind: ValueString, String: "Ada"},
-			})
-			_, err := processor.Process(guardSchema + `[output = 'data', parse = User]
-{
-  has_manager: "manager" in input,
-}`)
-			tAssert.ErrorContains(err, "unknown identifier")
-		})
-
 		It("rejects direct access to parsed optional fields", func() {
 			processor := NewWithInput(map[string]Value{
 				"name":    {Kind: ValueString, String: "Ada"},
@@ -336,56 +313,6 @@ schema User: {
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, "unknown identifier")
 			tAssert.ErrorContains(err, "manager")
-		})
-
-		It("rejects parsed optional fields inside guards", func() {
-			processor := NewWithInput(map[string]Value{
-				"name":    {Kind: ValueString, String: "Ada"},
-				"manager": {Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Bob"}}},
-			})
-			_, err := processor.Process(guardSchema + `[output = 'data', parse = User]
-{
-  result: "manager" in input ? manager.name : "none",
-}`)
-			tAssert.ErrorContains(err, "unknown identifier")
-		})
-
-		It("rejects guards when parsed optional fields are absent", func() {
-			processor := NewWithInput(map[string]Value{
-				"name": {Kind: ValueString, String: "Ada"},
-			})
-			_, err := processor.Process(guardSchema + `[output = 'data', parse = User]
-{
-  result: "manager" in input ? manager.name : "none",
-}`)
-			tAssert.ErrorContains(err, "unknown identifier")
-		})
-
-		It("does not expose the lowercase schema-name variable", func() {
-			processor := NewWithInput(map[string]Value{
-				"name":    {Kind: ValueString, String: "Ada"},
-				"manager": {Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Bob"}}},
-			})
-			_, err := processor.Process(guardSchema + `[output = 'data', parse = User]
-{
-  result: "manager" in user ? manager.name : "none",
-}`)
-			tAssert.ErrorContains(err, "unknown identifier")
-		})
-
-		It("does not expose nested parsed optional fields", func() {
-			processor := NewWithInput(map[string]Value{
-				"name": {Kind: ValueString, String: "Ada"},
-				"manager": {Kind: ValueRecord, Record: map[string]Value{
-					"name":    {Kind: ValueString, String: "Bob"},
-					"manager": {Kind: ValueRecord, Record: map[string]Value{"name": {Kind: ValueString, String: "Carol"}}},
-				}},
-			})
-			_, err := processor.Process(guardSchema + `[output = 'data', parse = User]
-{
-  result: "manager" in input && "manager" in manager ? manager.manager.name : "none",
-}`)
-			tAssert.ErrorContains(err, "unknown identifier")
 		})
 	})
 
