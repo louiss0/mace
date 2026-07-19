@@ -13,7 +13,8 @@ unicode_letter = ? any Unicode character in category Letter ? ;
 unicode_digit = ? any Unicode character in category Number, decimal digit ? ;
 digit = "0"…"9" ;
 hex_digit = digit | "a"…"f" | "A"…"F" ;
-identifier = unicode_letter , { unicode_letter | unicode_digit | "_" } ;
+identifier_part = unicode_letter | unicode_digit | "_" ;
+identifier = unicode_letter , { identifier_part } , { "-" , identifier_part , { identifier_part } } ;
 
 inline_description = "/#" , ws0 , description_text ;
 description_text = ? text up to, but not including, a comma or line terminator ? ;
@@ -45,7 +46,7 @@ script_block = script_delimiter , ws0 , { import_declaration , ws0 } , { declara
 script_delimiter = "|" , "=" , "=" , "=" , { "=" } , "|" ;
 (* The opening and closing script_delimiter must have the same number of '=' characters. *)
 
-import_declaration = "from" , ws1 , path_literal , ws1 , "import" , ws1 , import_list , ws0 , ";" ;
+import_declaration = "from" , ws1 , path_literal , ws1 , ( "import" , ws1 , import_list | "import-as" , ws1 , identifier ) , ws0 , ";" ;
 import_list = imported_identifier , { ws0 , "," , ws0 , imported_identifier } ;
 imported_identifier = identifier , [ ws0 , ":" , ws0 , identifier ] ;
 

@@ -32,6 +32,24 @@ from 'fixtures/processor/imports/values.mace' import count;
 { result: count + 2, }`, expectedValue{kind: ValueInt, int64: 5}),
 	)
 
+	DescribeTable("resolves kebab-case imports",
+		func(importDeclaration, expression string) {
+			document := `|===|
+` + importDeclaration + `
+|===|
+[output = 'data']
+{ result: ` + expression + `, }`
+
+			result, err := New().ProcessInDir(document, "../..")
+
+			tAssert.NoError(err)
+			tAssert.Equal("Ada", requireOutputValue(result, "result").String)
+		},
+		Entry("destructured name", `from 'fixtures/processor/imports/kebab.mace' import display-name;`, "display-name"),
+		Entry("destructured alias", `from 'fixtures/processor/imports/kebab.mace' import display-name:imported-name;`, "imported-name"),
+		Entry("import-as alias", `from 'fixtures/processor/imports/kebab.mace' import-as imported-data;`, "imported-data.display-name"),
+	)
+
 	It("keeps hidden declarations internal", func() {
 		processor := New()
 		_, err := processor.ProcessInDir(`|===|

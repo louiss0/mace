@@ -123,6 +123,17 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenIdentifier, lexeme: "name_用户1"},
 			{tokenType: TokenEOF, lexeme: ""},
 		}),
+		Entry("kebab-case identifiers", "display-name user-profile", []expectedToken{
+			{tokenType: TokenIdentifier, lexeme: "display-name"},
+			{tokenType: TokenIdentifier, lexeme: "user-profile"},
+			{tokenType: TokenEOF, lexeme: ""},
+		}),
+		Entry("import-as keyword", "import-as", []expectedToken{
+			{tokenType: TokenImport, lexeme: "import"},
+			{tokenType: TokenMinus, lexeme: "-"},
+			{tokenType: TokenIdentifier, lexeme: "as"},
+			{tokenType: TokenEOF, lexeme: ""},
+		}),
 	)
 
 	It("recognizes only the complete match keyword", func() {

@@ -7,6 +7,37 @@ import (
 )
 
 var _ = Describe("Record maps", func() {
+	It("processes kebab-case declarations, references, and record keys", func() {
+		result, err := New().Process(`|===|
+schema user-profile: {
+  display-name: string,
+};
+user-profile current-user = {
+  display-name: "Ada",
+};
+string greeting-message = current-user.display-name;
+|===|
+[output = 'data']
+{
+  greeting-message,
+  user-profile: {
+    display-name: current-user.display-name,
+    nested-record: {
+      record-key: greeting-message,
+    },
+  },
+}`)
+
+		tAssert.NoError(err)
+		assertExpectedValue(requireOutputValue(result, "greeting-message"), expectedValue{kind: ValueString, string: "Ada"})
+		assertExpectedValue(requireOutputValue(result, "user-profile"), expectedValue{kind: ValueRecord, record: map[string]expectedValue{
+			"display-name": {kind: ValueString, string: "Ada"},
+			"nested-record": {kind: ValueRecord, record: map[string]expectedValue{
+				"record-key": {kind: ValueString, string: "Ada"},
+			}},
+		}})
+	})
+
 	It("preserves multiple record entries and resolves their member values", func() {
 		result, err := New().Process(`|===|
 alias Dependencies: record<string>;

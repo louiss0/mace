@@ -22,10 +22,13 @@ affect evaluation.
 ## Lexical rules
 
 Identifiers are case-sensitive and consist of a Unicode letter followed by zero
-or more Unicode letters, Unicode decimal digits, or `_`. Casing styles are
-non-normative: tools may warn about unusual casing, but must accept every
-identifier satisfying that lexical rule. `match` is a reserved keyword and is
-never split from a containing identifier such as `matcher` or `matching`.
+or more Unicode letters, Unicode decimal digits, `_`, or joined `-` segments.
+A hyphen belongs to an identifier only when followed immediately by another
+identifier character. Casing styles are non-normative: tools may warn about
+unusual casing, but must accept every identifier satisfying that lexical rule.
+`match` is a reserved keyword and is never split from a containing identifier
+such as `matcher` or `matching`. Because `total-discount` is one identifier,
+subtraction must separate `-` from adjacent identifiers with whitespace.
 
 Line endings are LF, CRLF, or CR; CRLF is one newline. `&#x2f;&#x2f;` comments run to a
 line ending or EOF. `&#x2f;*` comments run to the next `*&#x2f;`, may span lines, and do
@@ -54,7 +57,8 @@ unicode_letter = ? any Unicode character in category Letter ? ;
 unicode_digit = ? any Unicode character in category Number, decimal digit ? ;
 digit = &quot;0&quot;…&quot;9&quot; ;
 hex_digit = digit | &quot;a&quot;…&quot;f&quot; | &quot;A&quot;…&quot;F&quot; ;
-identifier = unicode_letter , { unicode_letter | unicode_digit | &quot;_&quot; } ;
+identifier_part = unicode_letter | unicode_digit | &quot;_&quot; ;
+identifier = unicode_letter , { identifier_part } , { &quot;-&quot; , identifier_part , { identifier_part } } ;
 
 inline_description = &quot;&#x2f;#&quot; , ws0 , description_text ;
 description_text = ? text up to, but not including, a comma or line terminator ? ;
@@ -86,7 +90,7 @@ script_block = script_delimiter , ws0 , { import_declaration , ws0 } , { declara
 script_delimiter = &quot;|&quot; , &quot;=&quot; , &quot;=&quot; , &quot;=&quot; , { &quot;=&quot; } , &quot;|&quot; ;
 (* The opening and closing script_delimiter must have the same number of &#x27;=&#x27; characters. *)
 
-import_declaration = &quot;from&quot; , ws1 , path_literal , ws1 , &quot;import&quot; , ws1 , import_list , ws0 , &quot;;&quot; ;
+import_declaration = &quot;from&quot; , ws1 , path_literal , ws1 , ( &quot;import&quot; , ws1 , import_list | &quot;import-as&quot; , ws1 , identifier ) , ws0 , &quot;;&quot; ;
 import_list = imported_identifier , { ws0 , &quot;,&quot; , ws0 , imported_identifier } ;
 imported_identifier = identifier , [ ws0 , &quot;:&quot; , ws0 , identifier ] ;
 

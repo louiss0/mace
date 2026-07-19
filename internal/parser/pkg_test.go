@@ -919,6 +919,24 @@ from './shared.mace' import User:Person, Config:Settings;
 			}
 		})
 
+		It("parses kebab-case import names and aliases", func() {
+			input := `|===|
+from './values.mace' import display-name;
+from './profile.mace' import DisplayName:display-name;
+from './shared.mace' import-as shared-data;
+|===|
+[output = 'data'] {}`
+
+			file, err := parseFileInput(input)
+			tAssert.NoError(err)
+
+			if tAssert.Len(file.Imports, 3) {
+				tAssert.Equal([]ast.ImportedIdentifier{{Name: "display-name"}}, file.Imports[0].Identifiers)
+				tAssert.Equal([]ast.ImportedIdentifier{{Name: "DisplayName", Alias: "display-name"}}, file.Imports[1].Identifiers)
+				tAssert.Equal("shared-data", file.Imports[2].ImportAs.Name)
+			}
+		})
+
 		It("parses all output directive kinds", func() {
 			file, err := parseFileInput(`[output = 'data', schema = User, schema_file = './schema.mace', parse = Runtime, parse_file = './runtime.mace'] {}`)
 			tAssert.NoError(err)

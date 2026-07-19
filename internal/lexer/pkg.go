@@ -170,7 +170,16 @@ func (l *Lexer) NextToken() (Token, error) {
 	}
 
 	if isLetter(current) {
-		for isIdentifierPart(l.peek()) {
+		isIdentifierContinuation := func() bool {
+			if isIdentifierPart(l.peek()) {
+				return true
+			}
+
+			currentLexeme := l.input[startPosition:l.position]
+			return currentLexeme != "import" && l.peek() == '-' && isIdentifierPart(l.peekNext())
+		}
+
+		for isIdentifierContinuation() {
 			l.advance()
 		}
 		lexeme := l.input[startPosition:l.position]
