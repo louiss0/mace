@@ -1525,13 +1525,14 @@ string name = "Ada";
 			tAssert.Contains(action.Edit.Changes[uri][0].NewText, `value: "Ada"`)
 		})
 
-		It("extracts output expressions into script variables", func() {
-			snapshot := analyzeDocumentAt(`[output = 'data']
-{ value: "Ada", }`, documentPath)
-			action := requireCodeAction(snapshot, uri, rangeValue, "Extract output expression into script variable")
-			text := action.Edit.Changes[uri][0].NewText
-			tAssert.Contains(text, `string value = "Ada";`)
-			tAssert.Contains(text, `value: value`)
+		It("extracts output values into script variables", func() {
+			text := `[output = 'data']
+{ value: "Ada", }`
+			snapshot := analyzeDocumentAt(text, documentPath)
+			action := requireCodeAction(snapshot, uri, fullDocumentRange(text), "Extract output value into script variable")
+			updatedText := action.Edit.Changes[uri][0].NewText
+			tAssert.Contains(updatedText, `string value = "Ada";`)
+			tAssert.Contains(updatedText, `value: value`)
 		})
 	})
 

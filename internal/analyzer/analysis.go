@@ -958,6 +958,7 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 	actions = append(actions, importResolutionCodeActions(text, file, tokens, documentPath)...)
 	actions = append(actions, scriptBlockStructureCodeActions(text, documentPath)...)
 	actions = append(actions, variableFixTextCodeActions(text, documentPath)...)
+	actions = append(actions, outputValueExtractionCodeActions(text, file, tokens, documentPath)...)
 	actions = append(actions, arrayTextCodeActions(text, documentPath)...)
 	actions = append(actions, schemaCreationTextCodeActions(text, documentPath)...)
 	actions = append(actions, documentationCodeActions(text, file, tokens, documentPath)...)
@@ -1346,9 +1347,6 @@ func variableFixTextCodeActions(text string, documentPath string) []analysisCode
 	}
 	if updated, ok := inlineVariableIntoOutputText(text); ok {
 		addTextAction("Inline variable into output field", updated)
-	}
-	if updated, ok := extractOutputExpressionText(text); ok {
-		addTextAction("Extract output expression into script variable", updated)
 	}
 	return actions
 }
