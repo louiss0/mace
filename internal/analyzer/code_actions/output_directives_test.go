@@ -59,4 +59,24 @@ var _ = Describe("Output directives and file-loaded schemas code actions", func(
 			result:         expected,
 		})
 	})
+
+	DescribeTable("satisfies every remaining output-directive contract",
+		testCodeActionContract,
+		Entry("chooses schema output", quickFix("Add `output = 'schema'` directive", "mace.directive.missing-output", "[] { User: { name: string, }, }", "[output = 'schema']")),
+		Entry("removes an unknown directive", preferredQuickFix("Remove unknown directive", "mace.directive.unknown-key", "[output = 'data', scheam = User] { name: 'Mace', }", "[output = 'data']")),
+		Entry("renames a directive", quickFix("Rename directive to nearest known directive", "mace.directive.unknown-key", "[outpt = 'data'] { name: 'Mace', }", "output = 'data'")),
+		Entry("switches to data", rewrite("Switch output to data mode", "mace.directive.data-only-in-schema-output", "[output = 'schema', schema = User] { name: 'Mace', }", "output = 'data'")),
+		Entry("switches to schema", rewrite("Switch output to schema mode", "mace.directive.schema-shaped-data-output", "[output = 'data'] { name: string, age: int, }", "output = 'schema'")),
+		Entry("selects a local schema", quickFix("Select matching local schema", "mace.directive.unknown-schema-name", "|===|\nschema User: { name: string, };\n|===|\n[output = 'data', schema = Usre] { name: 'Mace', }", "schema = User")),
+		Entry("adds an external schema file", withWorkspace(quickFix("Add `schema_file` for selected schema", "mace.directive.schema-file-required", "[output = 'data', schema = User] { name: 'Mace', }", "schema_file = './schema.mace'"), map[string]string{"schema.mace": "[output = 'schema'] { User: { name: string, }, }"}, nil)),
+		Entry("selects loaded schema", quickFix("Select schema from loaded schema file", "mace.directive.unknown-schema-name", "[output = 'data', schema_file = './schema.mace', schema = Usre] { name: 'Mace', }", "schema = User")),
+		Entry("removes redundant schema", quickFix("Remove redundant `schema` directive", "mace.directive.redundant-schema", "[output = 'data', schema_file = './schema.mace', schema = User] { name: 'Mace', }", "schema_file = './schema.mace'")),
+		Entry("adds external parse file", withWorkspace(quickFix("Add `parse_file` for parse schema", "mace.directive.parse-file-required", "[output = 'data', parse = Runtime] { value: $env, }", "parse_file = './runtime.mace'"), map[string]string{"runtime.mace": "[output = 'schema'] { Runtime: { env: string, }, }"}, nil)),
+		Entry("selects parse schema", quickFix("Select parse schema from loaded file", "mace.directive.unknown-parse-name", "[output = 'data', parse_file = './runtime.mace', parse = Runtim] { value: $env, }", "parse = Runtime")),
+		Entry("removes incompatible parse", quickFix("Remove incompatible parse directive", "mace.directive.incompatible-parse", "[output = 'data', parse = Runtime, parse_file = './runtime.mace'] {}", "parse_file = './runtime.mace'")),
+		Entry("generates output schema", extract("Generate output schema from data fields", "mace.type.untyped-output-collection", "[output = 'data'] { names: [], }", "schema Output", "names: array<string>")),
+		Entry("attaches generated schema", quickFix("Attach generated schema to output", "mace.directive.generated-schema-not-selected", "|===|\nschema Output: { name: string, };\n|===|\n[output = 'data'] { name: 'Mace', }", "schema = Output")),
+		Entry("creates a schema file", extract("Create schema file from output shape", "mace.type.output-needs-reusable-schema", "[output = 'data'] { name: 'Mace', }", "schema_file = './output.schema.mace'")),
+		Entry("adds directive docs", preferredQuickFix("Add directive list for output documentation", "mace.documentation.output-directives-missing", "output_doc { summary: 'Generated output', };\n{ name: 'Mace', }", "[output = 'data']")),
+	)
 })

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/louiss0/mace/internal/analyzer"
@@ -28,6 +29,152 @@ type expectedQuickFix struct {
 	diagnosticCode string
 	title          string
 	result         string
+}
+
+type codeActionContract struct {
+	title            string
+	diagnosticCode   string
+	kind             protocol.CodeActionKind
+	preferred        *bool
+	source           string
+	workspaceFiles   map[string]string
+	expectedText     []string
+	unexpectedText   []string
+	expectedFileText map[string][]string
+	expectedCommand  string
+}
+
+func preferredQuickFix(title string, code string, source string, expectedText ...string) codeActionContract {
+	preferred := true
+	return codeActionContract{
+		title:          title,
+		diagnosticCode: code,
+		kind:           protocol.CodeActionKindQuickFix,
+		preferred:      &preferred,
+		source:         source,
+		expectedText:   expectedText,
+	}
+}
+
+func quickFix(title string, code string, source string, expectedText ...string) codeActionContract {
+	return codeActionContract{
+		title:          title,
+		diagnosticCode: code,
+		kind:           protocol.CodeActionKindQuickFix,
+		source:         source,
+		expectedText:   expectedText,
+	}
+}
+
+func rewrite(title string, code string, source string, expectedText ...string) codeActionContract {
+	return codeActionContract{
+		title:          title,
+		diagnosticCode: code,
+		kind:           protocol.CodeActionKindRefactorRewrite,
+		source:         source,
+		expectedText:   expectedText,
+	}
+}
+
+func extract(title string, code string, source string, expectedText ...string) codeActionContract {
+	return codeActionContract{
+		title:          title,
+		diagnosticCode: code,
+		kind:           protocol.CodeActionKindRefactorExtract,
+		source:         source,
+		expectedText:   expectedText,
+	}
+}
+
+func sourceAction(title string, kind protocol.CodeActionKind, source string, expectedText ...string) codeActionContract {
+	return codeActionContract{
+		title:        title,
+		kind:         kind,
+		source:       source,
+		expectedText: expectedText,
+	}
+}
+
+func withWorkspace(contract codeActionContract, files map[string]string, expectedFileText map[string][]string) codeActionContract {
+	contract.workspaceFiles = files
+	contract.expectedFileText = expectedFileText
+	return contract
+}
+
+func withoutText(contract codeActionContract, unexpectedText ...string) codeActionContract {
+	contract.unexpectedText = unexpectedText
+	return contract
+}
+
+func commandAction(title string, kind protocol.CodeActionKind, source string, command string) codeActionContract {
+	return codeActionContract{
+		title:           title,
+		kind:            kind,
+		source:          source,
+		expectedCommand: command,
+	}
+}
+
+func testCodeActionContract(contract codeActionContract) {
+	assertions := assert.New(GinkgoT())
+	fixture := newCodeActionFixture(contract.source, contract.workspaceFiles)
+	targetRange := protocol.Range{
+		Start: protocol.Position{},
+		End:   protocol.Position{Line: protocol.UInteger(len(strings.Split(contract.source, "\n")) + 1)},
+	}
+
+	if contract.diagnosticCode != "" {
+		diagnostic, found := findDiagnosticByCode(analyzer.Diagnostics(fixture.snapshot), contract.diagnosticCode)
+		if !assertions.True(found, "expected diagnostic code %q", contract.diagnosticCode) {
+			return
+		}
+		targetRange = diagnostic.Range
+	}
+
+	action, found := findCodeActionByTitle(analyzer.CodeActions(fixture.snapshot, fixture.uri, targetRange), contract.title)
+	if !assertions.True(found, "expected code action %q", contract.title) {
+		return
+	}
+
+	if assertions.NotNil(action.Kind) {
+		assertions.Equal(contract.kind, *action.Kind)
+	}
+	if contract.preferred != nil && assertions.NotNil(action.IsPreferred) {
+		assertions.Equal(*contract.preferred, *action.IsPreferred)
+	}
+	if contract.diagnosticCode != "" {
+		assertions.True(codeActionResolvesDiagnostic(action, contract.diagnosticCode))
+	}
+	if contract.expectedCommand != "" {
+		if assertions.NotNil(action.Command) {
+			assertions.Equal(contract.expectedCommand, action.Command.Command)
+		}
+		return
+	}
+	if !assertions.NotNil(action.Edit) {
+		return
+	}
+
+	if len(contract.expectedText) > 0 || len(contract.unexpectedText) > 0 {
+		result := applyDocumentEdits(fixture.source, fixture.uri, action)
+		for _, expected := range contract.expectedText {
+			assertions.Contains(result, expected)
+		}
+		for _, unexpected := range contract.unexpectedText {
+			assertions.NotContains(result, unexpected)
+		}
+	}
+	for relativePath, expectedValues := range contract.expectedFileText {
+		uri := documentURI(filepath.Join(filepath.Dir(fixture.path), relativePath))
+		contents, err := os.ReadFile(filepath.Join(filepath.Dir(fixture.path), relativePath))
+		if !assertions.NoError(err) {
+			continue
+		}
+		updated := applyEdits(string(contents), action.Edit.Changes[uri])
+		for _, expected := range expectedValues {
+			assertions.Contains(updated, expected)
+		}
+	}
 }
 
 func newCodeActionFixture(source string, workspaceFiles map[string]string) codeActionFixture {
@@ -148,12 +295,16 @@ func applyDocumentEdits(source string, uri protocol.DocumentUri, action protocol
 		return source
 	}
 
-	assertions.Len(action.Edit.Changes, 1, "Phase 1 local fixes must only edit the current document")
 	edits, found := action.Edit.Changes[uri]
 	if !assertions.True(found, "workspace edit must target %s", uri) {
 		return source
 	}
 
+	return applyEdits(source, edits)
+}
+
+func applyEdits(source string, edits []protocol.TextEdit) string {
+	assertions := assert.New(GinkgoT())
 	type indexedEdit struct {
 		start   int
 		end     int
@@ -282,4 +433,20 @@ int count = 1;
 			result:         expected,
 		})
 	})
+
+	DescribeTable("satisfies the remaining file and syntax contracts",
+		testCodeActionContract,
+		Entry("matches the opening delimiter", preferredQuickFix("Match opening script delimiter", "mace.syntax.inconsistent-script-delimiters", "|====|\nalias Name: string;\n|===|\n[output = 'schema'] { Name: Name, }", "|===|")),
+		Entry("inserts a closing delimiter", preferredQuickFix("Insert closing script delimiter", "mace.syntax.unterminated-script-block", "|===|\nalias Name: string;", "\n|===|")),
+		Entry("removes an empty script block", preferredQuickFix("Remove empty script block", "mace.syntax.empty-script-block", "|===|\n|===|\n[output = 'data'] {}", "[output = 'data']")),
+		Entry("moves declarations into script", rewrite("Move declarations inside script block", "mace.file-structure.declaration-outside-script", "string name = 'Mace';\n[output = 'data'] { name: name, }", "|===|", "string name = 'Mace';")),
+		Entry("creates a script around declarations", rewrite("Create script block around declarations", "mace.file-structure.missing-script-block", "alias Name: string;\n[output = 'schema'] { Name: Name, }", "|===|\nalias Name: string;\n|===|")),
+		Entry("inserts an output block", quickFix("Insert missing output block", "mace.file-structure.missing-output-block", "|===|\nstring name = 'Mace';\n|===|", "[output = 'data']", "{}")),
+		Entry("removes a duplicate output", quickFix("Remove duplicate output block", "mace.file-structure.multiple-output-blocks", "[output = 'data'] { first: 1, }\n[output = 'data'] { second: 2, }", "first: 1")),
+		Entry("merges duplicate output fields", rewrite("Move output fields into the first output block", "mace.file-structure.multiple-output-blocks", "[output = 'data'] { first: 1, }\n[output = 'data'] { second: 2, }", "first: 1", "second: 2")),
+		Entry("replaces a field semicolon", preferredQuickFix("Replace semicolon with comma", "mace.syntax.field-semicolon", "[output = 'data'] { first: 1; second: 2, }", "first: 1,")),
+		Entry("removes a trailing token", quickFix("Remove unexpected trailing token", "mace.syntax.unexpected-trailing-token", "[output = 'data'] { value: 1, } garbage", "[output = 'data'] { value: 1, }")),
+		Entry("rewrites arithmetic grouping", rewrite("Rewrite arithmetic grouping", "mace.syntax.invalid-arithmetic-grouping", "|===|\nint value = 1 + (2 * 3);\n|===|\n[output = 'data'] { value: value, }", "(1 + 2) * 3")),
+		Entry("separates subtraction", preferredQuickFix("Separate subtraction operator with whitespace", "mace.syntax.kebab-identifier-used-as-subtraction", "|===|\nint first = 3; int second = 1; int result = first-second;\n|===|\n[output = 'data'] { result: result, }", "first - second")),
+	)
 })
