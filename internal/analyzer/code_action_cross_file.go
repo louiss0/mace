@@ -43,7 +43,6 @@ func crossFileActionAnalysis(text string, documentPath string) ([]protocol.Diagn
 		{"[output = 'schema'] { User: { name: string, }, }", "mace.workspace.extract-schema-file", "Create a schema file from an inline schema", protocol.CodeActionKindRefactorExtract, "schema_file = './user.mace'", "user.mace", "User: { name: string, }"},
 		{"schema_file = './schema.mace'", "mace.workspace.inline-schema-file", "Inline an external schema into the current file", protocol.CodeActionKindRefactorRewrite, "schema User", "", ""},
 		{"from './shared.mace' import User;", "mace.import.name-not-exposed", "Expose a declaration from its owning file", protocol.CodeActionKindRefactorRewrite, "", "shared.mace", "User: User"},
-		{"[output = 'data'] {}", "mace.workspace.stop-export", "Stop exposing a declaration and remove unused imports", protocol.CodeActionKindRefactorRewrite, "", "shared.mace", "[output = 'data'] {}"},
 		{"from './old/shared.mace' import OldName;", "", "Update references after moving or renaming a Mace file", protocol.CodeActionKindSource, "from './new/shared.mace'", "", ""},
 	}
 

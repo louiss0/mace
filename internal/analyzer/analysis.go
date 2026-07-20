@@ -2987,8 +2987,10 @@ func unusedDeclarationAnalysis(text string, file ast.File, tokens []lexer.Token,
 
 			rangeValue := tokenProtocolRange(declaration.NameToken)
 			message := fmt.Sprintf("script variable %q is never used", declaration.Name)
-			diagnostics = append(diagnostics, diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityWarning, diagnosticDeclarationUnusedVariable, message))
+			diagnostic := diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityWarning, diagnosticDeclarationUnusedVariable, message)
+			diagnostics = append(diagnostics, diagnostic)
 			actions = append(actions, removeDeclarationAction(text, tokens, documentPath, rangeValue, declaration.NameToken, "Remove unused variable")...)
+			actions = append(actions, unusedVariableExportActions(text, file, tokens, documentPath, diagnostic, declaration)...)
 		case ast.TypeDeclaration:
 			if _, used := usedDeclarations[declaration.Name]; used {
 				continue
@@ -2996,8 +2998,10 @@ func unusedDeclarationAnalysis(text string, file ast.File, tokens []lexer.Token,
 
 			rangeValue := tokenProtocolRange(declaration.NameToken)
 			message := fmt.Sprintf("type %q is never used", declaration.Name)
-			diagnostics = append(diagnostics, diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityWarning, diagnosticDeclarationUnusedType, message))
+			diagnostic := diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityWarning, diagnosticDeclarationUnusedType, message)
+			diagnostics = append(diagnostics, diagnostic)
 			actions = append(actions, removeDeclarationAction(text, tokens, documentPath, rangeValue, declaration.NameToken, "Remove unused type")...)
+			actions = append(actions, unusedTypeExportActions(text, file, tokens, documentPath, diagnostic, declaration)...)
 		}
 	}
 

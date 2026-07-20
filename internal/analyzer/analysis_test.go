@@ -1893,7 +1893,7 @@ User user = { name: "Ada", };
 		}
 	})
 
-	It("warns about unused script variables and offers removal", func() {
+	It("warns about unused script variables and offers removal or export", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		snapshot := analyzeDocumentAt(`|===|
 string unused = "Ada";
@@ -1919,10 +1919,17 @@ string name = "Grace";
 				tAssert.Equal(protocol.UInteger(2), edits[0].Range.End.Line)
 				tAssert.Equal(protocol.UInteger(0), edits[0].Range.End.Character)
 			}
+
+			exportAction := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), diagnostic.Range, "Export unused variable from output")
+			exportEdits := exportAction.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
+			if tAssert.Len(exportEdits, 1) {
+				tAssert.Contains(exportEdits[0].NewText, "unused: unused,")
+			}
+
 		}
 	})
 
-	It("warns about unused type declarations and offers removal", func() {
+	It("warns about unused type declarations and offers removal or export", func() {
 		documentPath := filepath.Join("workspace", "document.mace")
 		snapshot := analyzeDocumentAt(`|===|
 alias Unused: string;
@@ -1945,6 +1952,18 @@ schema User: { name: Name, };
 			edits := action.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
 			if tAssert.Len(edits, 1) {
 				tAssert.Equal(``, edits[0].NewText)
+			}
+
+			exportAction := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), diagnostic.Range, "Export unused type from output")
+			exportEdits := exportAction.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
+			if tAssert.Len(exportEdits, 1) {
+				tAssert.Contains(exportEdits[0].NewText, "Unused: Unused,")
+			}
+
+			schemaAction := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), diagnostic.Range, "Add unused type to nearest schema")
+			schemaEdits := schemaAction.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))]
+			if tAssert.Len(schemaEdits, 1) {
+				tAssert.Contains(schemaEdits[0].NewText, "unused: Unused,")
 			}
 		}
 	})
