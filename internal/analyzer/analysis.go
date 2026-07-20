@@ -961,6 +961,7 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 	actions = append(actions, arrayTextCodeActions(text, documentPath)...)
 	actions = append(actions, schemaCreationTextCodeActions(text, documentPath)...)
 	actions = append(actions, documentationCodeActions(text, file, tokens, documentPath)...)
+	actions = append(actions, typeArgumentAliasCodeActions(text, tokens, documentPath)...)
 	actions = append(actions, editorRefactorCodeActions(text, file, tokens, documentPath)...)
 	diagnostics = append(diagnostics, schemaOutputVariableDiagnostics(file, tokens)...)
 
