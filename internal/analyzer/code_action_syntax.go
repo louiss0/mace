@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	protocol "github.com/tliron/glsp/protocol_3_16"
+
+	"github.com/louiss0/mace/internal/lexer"
 )
 
 var (
@@ -15,7 +17,6 @@ var (
 	trailingTokenPattern               = regexp.MustCompile(`(?s)(\}\s*)([A-Za-z_][A-Za-z0-9_]*)\s*$`)
 	redundantParenthesesPattern        = regexp.MustCompile(`\(([-]?(?:\d+(?:\.\d+)?|true|false|'[^']*'|"[^"]*"))\)`)
 	invalidGroupingPattern             = regexp.MustCompile(`1\s*\+\s*\(2\s*\*\s*3\)`)
-	unspacedSubtractionPattern         = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*)-([A-Za-z_][A-Za-z0-9_]*)\b`)
 )
 
 // syntaxStructureAnalysis recognizes recoverable syntax errors whose precise
@@ -116,13 +117,68 @@ func syntaxStructureAnalysis(text string, documentPath string) ([]protocol.Diagn
 }
 
 func findUnspacedSubtraction(text string) []int {
-	for _, match := range unspacedSubtractionPattern.FindAllStringSubmatchIndex(text, -1) {
-		candidate := text[match[0]:match[1]]
-		followingText := strings.TrimLeft(text[match[1]:], " \t")
-		if candidate == "import-as" || strings.HasPrefix(followingText, ":") {
+	tokens, err := lex(text)
+	if err != nil {
+		return nil
+	}
+	declaredNames := collectDeclaredVariableNames(tokens)
+
+	for tokenIndex, token := range tokens {
+		if token.Type != lexer.TokenIdentifier {
 			continue
 		}
-		return match
+		leftName, rightName, containsHyphen := strings.Cut(token.Lexeme, "-")
+		if !containsHyphen || leftName == "" || rightName == "" || !declaredNames[leftName] || !declaredNames[rightName] {
+			continue
+		}
+		if tokenIndex+1 < len(tokens) && tokens[tokenIndex+1].Type == lexer.TokenColon {
+			continue
+		}
+
+		start := sourceIndexAt(text, token.Line, token.Column)
+		if start < 0 {
+			continue
+		}
+		leftEnd := start + len(leftName)
+		rightStart := leftEnd + 1
+		end := rightStart + len(rightName)
+		return []int{start, end, start, leftEnd, rightStart, end}
 	}
+
 	return nil
+}
+
+func collectDeclaredVariableNames(tokens []lexer.Token) map[string]bool {
+	declaredNames := map[string]bool{}
+	for tokenIndex := 0; tokenIndex < len(tokens)-2; tokenIndex++ {
+		if !isVariableType(tokens[tokenIndex].Type) || tokens[tokenIndex+1].Type != lexer.TokenIdentifier || tokens[tokenIndex+2].Type != lexer.TokenAssign {
+			continue
+		}
+		declaredNames[tokens[tokenIndex+1].Lexeme] = true
+	}
+	return declaredNames
+}
+
+func isVariableType(tokenType lexer.TokenType) bool {
+	return tokenType == lexer.TokenStringType || tokenType == lexer.TokenIntType || tokenType == lexer.TokenFloatType || tokenType == lexer.TokenHexIntType || tokenType == lexer.TokenHexFloatType || tokenType == lexer.TokenBooleanType
+}
+
+func sourceIndexAt(text string, line int, column int) int {
+	currentLine := 1
+	currentColumn := 1
+	for index, runeValue := range text {
+		if currentLine == line && currentColumn == column {
+			return index
+		}
+		if runeValue == '\n' {
+			currentLine++
+			currentColumn = 1
+			continue
+		}
+		currentColumn++
+	}
+	if currentLine == line && currentColumn == column {
+		return len(text)
+	}
+	return -1
 }
