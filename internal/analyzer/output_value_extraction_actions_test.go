@@ -1,9 +1,12 @@
 package analyzer
 
 import (
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+
+	protocol "github.com/tliron/glsp/protocol_3_16"
 )
 
 type outputExtractionTestCase struct {
@@ -13,12 +16,46 @@ type outputExtractionTestCase struct {
 	expected []string
 }
 
+type primitiveOutputValue struct {
+	name     string
+	typeName string
+	literal  string
+}
+
 func TestOutputValueExtractionCodeActionsInferPrimitiveAndCollectionTypes(t *testing.T) {
-	primitiveValues := []struct {
-		name     string
-		typeName string
-		literal  string
-	}{
+	for _, testCase := range outputPrimitiveExtractionTestCases() {
+		t.Run(testCase.name, func(t *testing.T) {
+			assertOutputExtractionAction(t, testCase)
+		})
+	}
+}
+
+func TestOutputValueExtractionCodeActionsCreateSchemasForMixedRecordTypes(t *testing.T) {
+	for _, testCase := range outputSchemaExtractionTestCases() {
+		t.Run(testCase.name, func(t *testing.T) {
+			assertOutputExtractionAction(t, testCase)
+		})
+	}
+}
+
+func TestOutputBlockValueExtractionCodeActionsInferPrimitiveAndCollectionTypes(t *testing.T) {
+	for _, testCase := range outputPrimitiveExtractionTestCases() {
+		t.Run(testCase.name, func(t *testing.T) {
+			assertOutputBlockExtractionAction(t, testCase)
+		})
+	}
+}
+
+func TestOutputBlockValueExtractionCodeActionsCreateSchemasForMixedRecordTypes(t *testing.T) {
+	for _, testCase := range outputSchemaExtractionTestCases() {
+		t.Run(testCase.name, func(t *testing.T) {
+			assertOutputBlockExtractionAction(t, testCase)
+		})
+	}
+}
+
+func outputPrimitiveExtractionTestCases() []outputExtractionTestCase {
+	primitiveValues := []primitiveOutputValue{
 		{name: "string", typeName: "string", literal: "'Ada'"},
 		{name: "int", typeName: "int", literal: "42"},
 		{name: "float", typeName: "float", literal: "3.14"},
@@ -52,20 +89,11 @@ func TestOutputValueExtractionCodeActionsInferPrimitiveAndCollectionTypes(t *tes
 			})
 		}
 	}
-
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			assertOutputExtractionAction(t, testCase)
-		})
-	}
+	return testCases
 }
 
-func TestOutputValueExtractionCodeActionsCreateSchemasForMixedRecordTypes(t *testing.T) {
-	fieldValues := []struct {
-		name     string
-		typeName string
-		literal  string
-	}{
+func outputSchemaExtractionTestCases() []outputExtractionTestCase {
+	fieldValues := []primitiveOutputValue{
 		{name: "text", typeName: "string", literal: "'Ada'"},
 		{name: "count", typeName: "int", literal: "42"},
 		{name: "ratio", typeName: "float", literal: "3.14"},
@@ -74,25 +102,23 @@ func TestOutputValueExtractionCodeActionsCreateSchemasForMixedRecordTypes(t *tes
 		{name: "enabled", typeName: "boolean", literal: "true"},
 		{name: "tags", typeName: "array<string>", literal: "['mace']"},
 	}
-
+	testCases := []outputExtractionTestCase{}
 	for count := 2; count <= 7; count++ {
-		count := count
-		t.Run(strconv.Itoa(count)+" distinct field types", func(t *testing.T) {
-			fields := fieldValues[:count]
-			fieldText := strings.Builder{}
-			expectedSchemaFields := []string{}
-			for _, field := range fields {
-				fieldText.WriteString(field.name + ": " + field.literal + ", ")
-				expectedSchemaFields = append(expectedSchemaFields, field.name+": "+field.typeName)
-			}
-			assertOutputExtractionAction(t, outputExtractionTestCase{
-				name:     strconv.Itoa(count) + " distinct field types",
-				text:     "[output = 'data'] { config: { " + fieldText.String() + "}, }",
-				title:    "Extract output record into schema",
-				expected: []string{"schema Config: { " + strings.Join(expectedSchemaFields, ", ") + ", };", "Config config =", "config: config"},
-			})
+		fields := fieldValues[:count]
+		fieldText := strings.Builder{}
+		expectedSchemaFields := []string{}
+		for _, field := range fields {
+			fieldText.WriteString(field.name + ": " + field.literal + ", ")
+			expectedSchemaFields = append(expectedSchemaFields, field.name+": "+field.typeName)
+		}
+		testCases = append(testCases, outputExtractionTestCase{
+			name:     strconv.Itoa(count) + " distinct field types",
+			text:     "[output = 'data'] { config: { " + fieldText.String() + "}, }",
+			title:    "Extract output record into schema",
+			expected: []string{"schema Config: { " + strings.Join(expectedSchemaFields, ", ") + ", };", "Config config =", "config: config"},
 		})
 	}
+	return testCases
 }
 
 func assertOutputExtractionAction(t *testing.T, testCase outputExtractionTestCase) {
@@ -106,8 +132,23 @@ func assertOutputExtractionAction(t *testing.T, testCase outputExtractionTestCas
 		t.Fatal(err)
 	}
 	actions := outputValueExtractionCodeActions(testCase.text, file, tokens, "document.mace")
-	if !containsOutputExtractionAction(actions, testCase.title, testCase.expected) {
+	if !containsOutputExtractionCandidate(actions, testCase.title, testCase.expected) {
 		t.Fatalf("missing %q action", testCase.title)
+	}
+}
+
+func assertOutputBlockExtractionAction(t *testing.T, testCase outputExtractionTestCase) {
+	t.Helper()
+	documentPath := filepath.Join(t.TempDir(), "document.mace")
+	snapshot := AnalyzeDocumentAt(testCase.text, documentPath)
+	if snapshot.file == nil || len(snapshot.file.Output.DataFields) == 0 {
+		t.Fatal("expected a parsed data output block")
+	}
+
+	fieldRange := tokenProtocolRange(snapshot.file.Output.DataFields[0].NameToken)
+	actions := snapshot.codeActions(pathURI(documentPath), fieldRange)
+	if !containsOutputExtractionAction(actions, testCase.title, testCase.expected) {
+		t.Fatalf("missing output-block %q action", testCase.title)
 	}
 }
 
@@ -132,17 +173,31 @@ func nestedType(container string, typeName string, depth int) string {
 	return typeName
 }
 
-func containsOutputExtractionAction(actions []analysisCodeActionCandidate, title string, expected []string) bool {
+func containsOutputExtractionCandidate(actions []analysisCodeActionCandidate, title string, expected []string) bool {
 	for _, action := range actions {
-		if action.Action.Title != title {
-			continue
-		}
-		text := action.Action.Edit.Changes[pathURI("document.mace")][0].NewText
-		if allStringsPresent(text, expected) {
+		if action.Action.Title == title && allStringsPresent(outputExtractionText(action.Action.Edit), expected) {
 			return true
 		}
 	}
 	return false
+}
+
+func containsOutputExtractionAction(actions []protocol.CodeAction, title string, expected []string) bool {
+	for _, action := range actions {
+		if action.Title == title && allStringsPresent(outputExtractionText(action.Edit), expected) {
+			return true
+		}
+	}
+	return false
+}
+
+func outputExtractionText(edit *protocol.WorkspaceEdit) string {
+	for _, edits := range edit.Changes {
+		if len(edits) == 1 {
+			return edits[0].NewText
+		}
+	}
+	return ""
 }
 
 func allStringsPresent(text string, expected []string) bool {
