@@ -1,10 +1,13 @@
 package analyzer
 
 import (
+	"regexp"
 	"strings"
 
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
+
+var incompleteHexFloatPattern = regexp.MustCompile(`(?i)\b0x[0-9a-f]+\.($|[^0-9a-f])`)
 
 func literalActionAnalysis(text string, documentPath string) ([]protocol.Diagnostic, []analysisCodeActionCandidate) {
 	uri := pathURI(documentPath)
@@ -55,8 +58,9 @@ func literalActionAnalysis(text string, documentPath string) ([]protocol.Diagnos
 		add("mace.type.mixed-numeric-family", "Convert decimal literal to hexadecimal family", protocol.CodeActionKindQuickFix, false, strings.Replace(text, "0x2 + 3", "0x2 + 0x3", 1))
 		add("mace.type.mixed-numeric-family", "Convert hexadecimal literal to decimal family", protocol.CodeActionKindQuickFix, false, strings.Replace(text, "0x2 + 3", "2 + 3", 1))
 	}
-	if strings.Contains(text, "0x2.") {
-		add("mace.number.incomplete-hex-float", "Add required hexadecimal fractional component", protocol.CodeActionKindQuickFix, true, strings.Replace(text, "0x2.", "0x2.0", 1))
+	if match := incompleteHexFloatPattern.FindStringIndex(text); match != nil {
+		dotIndex := strings.Index(text[match[0]:match[1]], ".") + match[0]
+		add("mace.number.incomplete-hex-float", "Add required hexadecimal fractional component", protocol.CodeActionKindQuickFix, true, text[:dotIndex+1]+"0"+text[dotIndex+1:])
 	}
 	if strings.Contains(text, "0X02.A0") {
 		add("", "Canonicalize hexadecimal float literal", protocol.CodeActionKind("source.fixAll.mace"), false, strings.Replace(text, "0X02.A0", "0x2.a", 1))
