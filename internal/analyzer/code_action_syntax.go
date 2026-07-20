@@ -64,7 +64,8 @@ func syntaxStructureAnalysis(text string, documentPath string) ([]protocol.Diagn
 	if strings.HasPrefix(strings.TrimSpace(text), "|===|\n|===|") {
 		add(diagnosticSyntaxEmptyScriptBlock, "Remove empty script block", protocol.CodeActionKindQuickFix, true, strings.TrimLeft(strings.TrimPrefix(strings.TrimLeft(text, " \t\r\n"), "|===|\n|===|"), "\r\n"))
 	}
-	if !strings.Contains(text, "|===|") && outsideDeclarationPattern.MatchString(text) {
+	hasScriptDelimiter := regexp.MustCompile(`\|=+\|`).MatchString(text)
+	if !hasScriptDelimiter && outsideDeclarationPattern.MatchString(text) {
 		if strings.HasPrefix(strings.TrimSpace(text), "alias ") {
 			add(diagnosticFileMissingScriptBlock, "Create script block around declarations", protocol.CodeActionKindRefactorRewrite, false, "|===|\n"+strings.TrimSpace(strings.SplitN(text, "\n[output", 2)[0])+"\n|===|\n[output"+strings.SplitN(text, "\n[output", 2)[1])
 		} else {
@@ -106,10 +107,22 @@ func syntaxStructureAnalysis(text string, documentPath string) ([]protocol.Diagn
 	if invalidGroupingPattern.MatchString(text) {
 		add(diagnosticSyntaxInvalidArithmeticGrouping, "Rewrite arithmetic grouping", protocol.CodeActionKindRefactorRewrite, false, invalidGroupingPattern.ReplaceAllString(text, "(1 + 2) * 3"))
 	}
-	if match := unspacedSubtractionPattern.FindStringSubmatchIndex(text); match != nil {
+	if match := findUnspacedSubtraction(text); match != nil {
 		updated := text[:match[0]] + text[match[2]:match[3]] + " - " + text[match[4]:match[5]] + text[match[1]:]
 		add(diagnosticSyntaxKebabIdentifierUsedAsSubtraction, "Separate subtraction operator with whitespace", protocol.CodeActionKindQuickFix, true, updated)
 	}
 
 	return diagnostics, actions
+}
+
+func findUnspacedSubtraction(text string) []int {
+	for _, match := range unspacedSubtractionPattern.FindAllStringSubmatchIndex(text, -1) {
+		candidate := text[match[0]:match[1]]
+		followingText := strings.TrimLeft(text[match[1]:], " \t")
+		if candidate == "import-as" || strings.HasPrefix(followingText, ":") {
+			continue
+		}
+		return match
+	}
+	return nil
 }
