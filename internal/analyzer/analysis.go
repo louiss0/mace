@@ -690,17 +690,46 @@ func analyzeDocumentAtInRootContext(context context.Context, text string, docume
 
 	tokens, lexErr := lex(text)
 	if lexErr != nil {
-		snapshot.diagnostics = []protocol.Diagnostic{diagnosticFromError(lexErr)}
+		analysis := collectCodeActionAnalysis(text, documentPath, literalActionAnalysis)
+		snapshot.diagnostics = append(analysis.diagnostics, diagnosticFromError(lexErr))
+		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, analysis.actions...)
 		return snapshot, nil
 	}
 	snapshot.tokens = tokens
+	analysis := collectCodeActionAnalysis(
+		text,
+		documentPath,
+		syntaxStructureAnalysis,
+		directiveActionAnalysis,
+		arrayActionAnalysis,
+		literalActionAnalysis,
+		nullActionAnalysis,
+		conditionalActionAnalysis,
+		interpolationActionAnalysis,
+		choiceActionAnalysis,
+		variantActionAnalysis,
+		fusionActionAnalysis,
+		recordActionAnalysis,
+		optionalAccessActionAnalysis,
+		operatorActionAnalysis,
+		documentationActionAnalysis,
+		selfActionAnalysis,
+		matchActionAnalysis,
+		declarationActionAnalysis,
+		importActionAnalysis,
+		fixAllActionAnalysis,
+		crossFileActionAnalysis,
+	)
+	diagnosticData := diagnosticDataAnalysis(text)
+	analysis.diagnostics = append(analysis.diagnostics, diagnosticData...)
 	if err := context.Err(); err != nil {
 		return snapshot, err
 	}
 
 	file, parseErr := parseFile(text)
 	if parseErr != nil {
-		snapshot.diagnostics = []protocol.Diagnostic{diagnosticFromError(parseErr)}
+		snapshot.diagnostics = append(analysis.diagnostics, diagnosticFromError(parseErr))
+		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, analysis.actions...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, parseErrorCodeActions(tokens, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, scriptBlockStructureCodeActions(text, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, variableFixTextCodeActions(text, documentPath)...)
@@ -712,6 +741,8 @@ func analyzeDocumentAtInRootContext(context context.Context, text string, docume
 	}
 
 	snapshot.file = &file
+	snapshot.diagnostics = append(snapshot.diagnostics, analysis.diagnostics...)
+	snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, analysis.actions...)
 	importBaseDir := filepath.Dir(documentPath)
 	if documentPath == "" {
 		importBaseDir = ""
