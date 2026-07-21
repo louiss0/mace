@@ -77,6 +77,5 @@ var _ = Describe("Output directives and file-loaded schemas code actions", func(
 		Entry("generates output schema", extract("Generate output schema from data fields", "mace.type.untyped-output-collection", "[output = 'data'] { names: [], }", "schema Output", "names: array<string>")),
 		Entry("attaches generated schema", quickFix("Attach generated schema to output", "mace.directive.generated-schema-not-selected", "|===|\nschema Output: { name: string, };\n|===|\n[output = 'data'] { name: 'Mace', }", "schema = Output")),
 		Entry("creates a schema file", extract("Create schema file from output shape", "mace.type.output-needs-reusable-schema", "[output = 'data'] { name: 'Mace', }", "schema_file = './output.schema.mace'")),
-		Entry("adds directive docs", preferredQuickFix("Add directive list for output documentation", "mace.documentation.output-directives-missing", "output_doc { summary: 'Generated output', };\n{ name: 'Mace', }", "[output = 'data']")),
 	)
 })

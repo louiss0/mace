@@ -74,7 +74,7 @@ var _ = Describe("Diagnostic fixtures", func() {
 		Entry("invalid schema documentation target", "schema-doc-invalid-target", "schema_doc target"),
 		Entry("scalar schema documentation target", "schema-doc-scalar-target", "must reference a schema or object-valued variable"),
 		Entry("invalid general documentation target", "gen-doc-invalid-target", "gen_doc target"),
-		Entry("output documentation without directives", "output-inline-doc-requires-directive-list", "expected output directive"),
+		Entry("invalid output documentation", "output-inline-doc-requires-directive-list", "doc directive must evaluate to a string"),
 		Entry("non-scalar interpolation", "interpolation-rejects-non-primitives", "interpolation requires a scalar value"),
 		Entry("null array member", "null-array-member", "null is only allowed in output"),
 		Entry("null record member", "null-record-member", "null is only allowed in output"),

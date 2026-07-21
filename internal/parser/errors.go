@@ -59,8 +59,6 @@ func parserDiagnosticCode(message string) diagnostic.Code {
 		return diagnostic.Code("mace.doc.duplicate-entry")
 	case strings.Contains(message, "unknown ") && strings.Contains(message, " entry"):
 		return diagnostic.Code("mace.doc.unknown-entry")
-	case strings.Contains(message, "expected multiline string doc block"):
-		return diagnostic.Code("mace.doc.output-doc-must-be-block-string")
 	default:
 		return diagnostic.Code("mace.syntax.unexpected-token")
 	}

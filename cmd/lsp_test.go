@@ -2996,10 +2996,9 @@ Hover should surface this documentation.
   },
 };
 |===|
-[output = 'schema']
-"""
+[output = 'schema', doc = """
 # User Output
-"""
+"""]
 {
   user: User /# Public user schema,
 }

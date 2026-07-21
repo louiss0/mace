@@ -557,7 +557,6 @@ func (s SchemaField) Range() SourceRange {
 
 type OutputBlock struct {
 	Directives   []OutputDirective
-	Doc          *StringLiteral
 	Mode         OutputMode
 	DataFields   []OutputField
 	SchemaFields []OutputSchemaField
@@ -578,11 +577,13 @@ const (
 	OutputDirectiveSchema
 	OutputDirectiveParse
 	OutputDirectiveParseFile
+	OutputDirectiveDoc
 )
 
 type OutputDirective struct {
-	Kind  OutputDirectiveKind
-	Value string
+	Kind          OutputDirectiveKind
+	Value         string
+	Documentation Expression
 }
 
 type OutputField struct {

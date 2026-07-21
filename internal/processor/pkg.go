@@ -334,6 +334,10 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 		return Result{}, err
 	}
 
+	if err := validateOutputDocumentation(outputBlock.Directives, outputContext); err != nil {
+		return Result{}, err
+	}
+
 	if outputBlock.Mode == ast.OutputModeSchema {
 		if err := validateSchemaOutputScriptVariables(file); err != nil {
 			return Result{}, err
@@ -1744,15 +1748,6 @@ func validateDocDeclaration(declaration ast.DocDeclaration, symbols *symbolTable
 }
 
 func validateOutputDirectiveStructure(output ast.OutputBlock) error {
-	if output.Doc != nil {
-		if len(output.Directives) == 0 {
-			return validationErrorf("inline doc blocks require a directive list")
-		}
-		if _, err := parseDocString(output.Doc.Lexeme); err != nil {
-			return err
-		}
-	}
-
 	if len(output.Directives) == 0 {
 		return nil
 	}
@@ -1789,6 +1784,10 @@ func validateOutputDirectiveStructure(output ast.OutputBlock) error {
 			if output.Mode == ast.OutputModeSchema {
 				return validationErrorf("parse_file directive is invalid when output mode is schema")
 			}
+		case ast.OutputDirectiveDoc:
+			if directive.Documentation == nil {
+				return validationErrorf("doc directive requires a value")
+			}
 		default:
 			return validationErrorf("unknown output directive")
 		}
@@ -1799,6 +1798,24 @@ func validateOutputDirectiveStructure(output ast.OutputBlock) error {
 	}
 	if !hasOutput {
 		return validationErrorf("directive list must include an output directive")
+	}
+
+	return nil
+}
+
+func validateOutputDocumentation(directives []ast.OutputDirective, context processContext) error {
+	for _, directive := range directives {
+		if directive.Kind != ast.OutputDirectiveDoc {
+			continue
+		}
+
+		value, err := evaluateExpression(directive.Documentation, context.environment, Value{}, context.symbols, context.types, context.schemas, nil)
+		if err != nil {
+			return err
+		}
+		if value.Kind != ValueString {
+			return validationErrorf("doc directive must evaluate to a string")
+		}
 	}
 
 	return nil
@@ -2756,6 +2773,8 @@ func directiveKindName(kind ast.OutputDirectiveKind) string {
 		return "parse"
 	case ast.OutputDirectiveParseFile:
 		return "parse_file"
+	case ast.OutputDirectiveDoc:
+		return "doc"
 	default:
 		return "unknown"
 	}

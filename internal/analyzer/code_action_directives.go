@@ -80,9 +80,5 @@ func directiveActionAnalysis(text string, documentPath string) ([]protocol.Diagn
 	if strings.Contains(text, "[output = 'data'] { name: 'Mace', }") && !strings.Contains(text, "schema Output:") {
 		add("mace.type.output-needs-reusable-schema", "Create schema file from output shape", protocol.CodeActionKindRefactorExtract, false, strings.Replace(text, "[output = 'data']", "[output = 'data', schema_file = './output.schema.mace']", 1))
 	}
-	if strings.HasPrefix(strings.TrimSpace(text), "output_doc") {
-		add("mace.documentation.output-directives-missing", "Add directive list for output documentation", protocol.CodeActionKindQuickFix, true, "[output = 'data']\n"+text)
-	}
-
 	return diagnostics, actions
 }

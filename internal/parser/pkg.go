@@ -537,16 +537,6 @@ func (p *Parser) parseOutputBlock() (ast.OutputBlock, error) {
 		directives = parsedDirectives
 	}
 
-	var doc *ast.StringLiteral
-	if len(directives) > 0 && p.current().Type == lexer.TokenString {
-		if !strings.HasPrefix(p.current().Lexeme, `"""`) {
-			return ast.OutputBlock{}, p.unexpectedTokenError("parser: expected multiline string doc block")
-		}
-		parsed := ast.StringLiteral{Token: p.current(), Lexeme: p.current().Lexeme}
-		doc = &parsed
-		p.advance()
-	}
-
 	mode := outputModeFromDirectives(directives)
 
 	if _, err := p.consume(lexer.TokenLBrace, "parser: expected '{' to start output block"); err != nil {
@@ -578,7 +568,6 @@ func (p *Parser) parseOutputBlock() (ast.OutputBlock, error) {
 
 	return ast.OutputBlock{
 		Directives:   directives,
-		Doc:          doc,
 		Mode:         mode,
 		DataFields:   dataFields,
 		SchemaFields: schemaFields,
@@ -684,6 +673,18 @@ func (p *Parser) parseDirectivePair() (ast.OutputDirective, error) {
 			Kind:  ast.OutputDirectiveParseFile,
 			Value: pathToken.Lexeme,
 		}, nil
+	case "doc":
+		p.advance()
+		if _, err := p.consume(lexer.TokenAssign, "parser: expected '=' after doc directive"); err != nil {
+			return ast.OutputDirective{}, err
+		}
+
+		documentation, err := p.parseExpression(precedenceLowest)
+		if err != nil {
+			return ast.OutputDirective{}, err
+		}
+
+		return ast.OutputDirective{Kind: ast.OutputDirectiveDoc, Documentation: documentation}, nil
 	case "schema":
 		p.advance()
 		if _, err := p.consume(lexer.TokenAssign, "parser: expected '=' after schema directive"); err != nil {

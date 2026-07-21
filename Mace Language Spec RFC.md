@@ -124,13 +124,14 @@ choice_type = &quot;choice&quot; , ws0 , &quot;[&quot; , ws0 , choice_member , {
 choice_member = string_literal | int_literal | float_literal | hex_int_literal | hex_float_literal | boolean_literal ;
 
 (* OUTPUT *)
-output_block = [ output_directive_list , ws0 , [ block_string , ws0 ] ] , &quot;{&quot; , ws0 , [ output_field , { ws0 , &quot;,&quot; , ws0 , output_field } , [ ws0 , &quot;,&quot; ] ] , ws0 , &quot;}&quot; ;
+output_block = [ output_directive_list , ws0 ] , &quot;{&quot; , ws0 , [ output_field , { ws0 , &quot;,&quot; , ws0 , output_field } , [ ws0 , &quot;,&quot; ] ] , ws0 , &quot;}&quot; ;
 output_directive_list = &quot;[&quot; , ws0 , directive_pair , { ws0 , &quot;,&quot; , ws0 , directive_pair } , ws0 , &quot;]&quot; ;
 directive_pair = &quot;output&quot; , ws0 , &quot;=&quot; , ws0 , ( &quot;data&quot; | &quot;schema&quot; )
                | &quot;schema&quot; , ws0 , &quot;=&quot; , ws0 , identifier
                | &quot;schema_file&quot; , ws0 , &quot;=&quot; , ws0 , path_literal
                | &quot;parse&quot; , ws0 , &quot;=&quot; , ws0 , identifier
-               | &quot;parse_file&quot; , ws0 , &quot;=&quot; , ws0 , path_literal ;
+               | &quot;parse_file&quot; , ws0 , &quot;=&quot; , ws0 , path_literal
+               | &quot;doc&quot; , ws0 , &quot;=&quot; , ws0 , expression ;
 (* The output directive controls output_field interpretation: data uses data_output_field;
    schema uses schema_output_field. This contextual distinction is semantic. *)
 output_field = data_output_field | schema_output_field ;
@@ -479,8 +480,9 @@ Match diagnostics include each of the following distinct static errors:
 Documentation diagnostics include duplicate documentation keys, unknown or
 inapplicable targets, documentation declared before its target, a `fields`
 entry outside `schema_doc`, an unknown documented schema field, conflicting
-inline and structured documentation, interpolation in output documentation, and
-an output documentation block without a directive list.
+inline and structured documentation, and duplicate or non-string output `doc`
+directives. A data-output `doc` directive may evaluate string expressions and
+variables.
 
 Optional-access diagnostics include plain member access on an optional field,
 access beyond the declared record depth, and use of a possibly absent

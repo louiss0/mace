@@ -347,6 +347,7 @@ int count = "seven";
 		tAssert.Equal("schema", kindName(ast.OutputDirectiveSchema))
 		tAssert.Equal("parse", kindName(ast.OutputDirectiveParse))
 		tAssert.Equal("parse_file", kindName(ast.OutputDirectiveParseFile))
+		tAssert.Equal("doc", kindName(ast.OutputDirectiveDoc))
 		tAssert.Equal("unknown", kindName(ast.OutputDirectiveKind(99)))
 		tAssert.Equal(ErrorDoc, inferErrorKind("documentation block"))
 		tAssert.Equal(ErrorImport, inferErrorKind("import path"))
