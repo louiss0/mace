@@ -148,6 +148,26 @@ var _ = Describe("LSP analysis", func() {
 		}
 	})
 
+	It("points variant literal pattern errors at the invalid arm pattern", func() {
+		snapshot := analyzeDocument(`|===|
+variant[string, int] value = 1;
+string result = match (value) {
+  'text' => 'text',
+  int => 'number',
+};
+|===|
+[output = 'data'] { result: result, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "variant match arms require a type pattern")
+			tAssert.Equal("mace.match.variant-literal-pattern", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 3, Character: 2},
+				End:   protocol.Position{Line: 3, Character: 8},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
 	It("points out-of-domain match errors at the invalid arm pattern", func() {
 		snapshot := analyzeDocument(`|===|
 variant[string, int] value = 1;

@@ -650,6 +650,31 @@ Name user = "Ada";
 		}
 	})
 
+	It("publishes variant literal pattern errors at the invalid arm pattern", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+variant[string, int] value = 1;
+string result = match (value) {
+  'text' => 'text',
+  int => 'number',
+};
+|===|
+[output = 'data'] { result: result, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "variant match arms require a type pattern")
+				tAssert.Equal("mace.match.variant-literal-pattern", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 3, Character: 2},
+					End:   protocol.Position{Line: 3, Character: 8},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
 	It("publishes out-of-domain match errors at the invalid arm pattern", func() {
 		notifications := []capturedNotification{}
 

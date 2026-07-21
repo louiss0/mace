@@ -255,6 +255,27 @@ func redundantCompositeMatchSource(kind string, depth int, typeReference string,
 }
 
 var _ = Describe("Match expressions", func() {
+	It("attaches variant literal pattern errors to the invalid arm pattern", func() {
+		_, err := New().Process(`|===|
+variant[string, int] value = 1;
+string result = match (value) {
+  'text' => 'text',
+  int => 'number',
+};
+|===|
+[output = 'data'] { result: result, }`)
+		tAssert.Error(err)
+
+		var diagnostic DiagnosticError
+		if tAssert.ErrorAs(err, &diagnostic) {
+			tAssert.Equal(ErrorCode("mace.match.variant-literal-pattern"), diagnostic.Code)
+			tAssert.Equal(4, diagnostic.Range.Start.Line)
+			tAssert.Equal(3, diagnostic.Range.Start.Column)
+			tAssert.Equal(4, diagnostic.Range.End.Line)
+			tAssert.Equal(9, diagnostic.Range.End.Column)
+		}
+	})
+
 	It("attaches out-of-domain match errors to the invalid arm pattern", func() {
 		_, err := New().Process(`|===|
 variant[string, int] value = 1;
