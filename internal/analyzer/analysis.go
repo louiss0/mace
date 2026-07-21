@@ -728,7 +728,7 @@ func analyzeDocumentAtInRootContext(context context.Context, text string, docume
 
 	file, parseErr := parseFile(text)
 	if parseErr != nil {
-		snapshot.diagnostics = append(analysis.diagnostics, diagnosticFromError(parseErr))
+		snapshot.diagnostics = append(snapshot.diagnostics, diagnosticFromError(parseErr))
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, analysis.actions...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, parseErrorCodeActions(tokens, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, scriptBlockStructureCodeActions(text, documentPath)...)

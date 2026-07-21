@@ -1072,9 +1072,14 @@ schema Runtime: { env: string, };
 {}`)
 
 		if tAssert.Len(snapshot.diagnostics, 1) {
-			tAssert.Contains(snapshot.diagnostics[0].Message, "empty script block")
-			tAssert.Equal(protocol.DiagnosticSeverityError, *snapshot.diagnostics[0].Severity)
-			tAssert.Equal(string(diagnosticSyntaxEmptyScriptBlock), requireDiagnosticCode(snapshot.diagnostics[0]))
+			diagnostic := snapshot.diagnostics[0]
+			tAssert.Contains(diagnostic.Message, "empty script block")
+			tAssert.Equal(protocol.DiagnosticSeverityError, *diagnostic.Severity)
+			tAssert.Equal(string(diagnosticSyntaxEmptyScriptBlock), requireDiagnosticCode(diagnostic))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 0},
+				End:   protocol.Position{Line: 1, Character: 5},
+			}, diagnostic.Range)
 		}
 	})
 
