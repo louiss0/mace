@@ -650,6 +650,28 @@ Name user = "Ada";
 		}
 	})
 
+	It("publishes invalid output optionality errors at the field name", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+schema User: { name: string, };
+|===|
+[output = 'data', schema = User]
+{ name?: 'Ada', }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "field \"name\" is not optional")
+				tAssert.Equal("mace.type.data-field-optional-marker", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 4, Character: 2},
+					End:   protocol.Position{Line: 4, Character: 6},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
 	It("publishes optional field access errors at the access operator", func() {
 		notifications := []capturedNotification{}
 

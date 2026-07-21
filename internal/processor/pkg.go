@@ -2264,7 +2264,10 @@ func validateOutputSchema(schemaName string, items []ast.OutputField, variables 
 			return missingRequiredFieldError(field.Name, schemaName)
 		}
 		if item.Optional && !field.Optional {
-			return validationErrorf("field %q is not optional in schema %q", field.Name, schemaName)
+			return diagnosticErrorAtNode(
+				validationErrorf("field %q is not optional in schema %q", field.Name, schemaName),
+				item,
+			)
 		}
 		expectedType, err := resolveValueType(field.Type, symbols, types, schemas, enums)
 		if err != nil {

@@ -273,6 +273,8 @@ func inferErrorCode(message string) ErrorCode {
 		return CodeOptionalFieldAccess
 	case strings.Contains(message, "null is only allowed in output"):
 		return CodeInvalidNullUsage
+	case strings.Contains(message, "is not optional in schema"):
+		return ErrorCode("mace.type.data-field-optional-marker")
 	case strings.Contains(message, "type mismatch"):
 		return CodeTypeMismatch
 	case strings.Contains(message, "missing required field") || strings.Contains(message, "unknown field") || strings.Contains(message, "is not optional in schema"):
