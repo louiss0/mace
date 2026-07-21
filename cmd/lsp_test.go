@@ -650,6 +650,31 @@ Name user = "Ada";
 		}
 	})
 
+	It("publishes duplicate match errors at the repeated pattern", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+variant[string, int] value = 1;
+string result = match (value) {
+  string => 'text',
+  string => 'again',
+};
+|===|
+[output = 'data'] { result: result, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "duplicate match pattern string")
+				tAssert.Equal("mace.match.duplicate-pattern", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 4, Character: 2},
+					End:   protocol.Position{Line: 4, Character: 8},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
 	It("publishes concrete match input errors at the input expression", func() {
 		notifications := []capturedNotification{}
 

@@ -148,6 +148,26 @@ var _ = Describe("LSP analysis", func() {
 		}
 	})
 
+	It("points duplicate match errors at the repeated pattern", func() {
+		snapshot := analyzeDocument(`|===|
+variant[string, int] value = 1;
+string result = match (value) {
+  string => 'text',
+  string => 'again',
+};
+|===|
+[output = 'data'] { result: result, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "duplicate match pattern string")
+			tAssert.Equal("mace.match.duplicate-pattern", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 4, Character: 2},
+				End:   protocol.Position{Line: 4, Character: 8},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
 	It("points concrete match input errors at the input expression", func() {
 		snapshot := analyzeDocument(`|===|
 string value = 'text'; string result = match (value) { string => 'text', int => 'number', };
