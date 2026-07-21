@@ -148,6 +148,22 @@ var _ = Describe("LSP analysis", func() {
 		}
 	})
 
+	It("points invalid null usage errors at the null literal", func() {
+		snapshot := analyzeDocument(`|===|
+string value = null;
+|===|
+[output = 'data'] { value: value, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "null is only allowed in output")
+			tAssert.Equal("mace.type.invalid-null-usage", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 15},
+				End:   protocol.Position{Line: 1, Character: 19},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
 	It("points missing output field separators at the preceding field", func() {
 		snapshot := analyzeDocument(`[output = 'data']
 {

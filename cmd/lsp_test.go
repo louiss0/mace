@@ -650,6 +650,27 @@ Name user = "Ada";
 		}
 	})
 
+	It("publishes invalid null usage errors at the null literal", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+string value = null;
+|===|
+[output = 'data'] { value: value, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "null is only allowed in output")
+				tAssert.Equal("mace.type.invalid-null-usage", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 1, Character: 15},
+					End:   protocol.Position{Line: 1, Character: 19},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
 	It("publishes missing output field separators at the preceding field", func() {
 		notifications := []capturedNotification{}
 

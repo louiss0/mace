@@ -10,6 +10,23 @@ import (
 )
 
 var _ = Describe("Output data", func() {
+	It("attaches invalid null usage errors to the null literal", func() {
+		_, err := New().Process(`|===|
+string value = null;
+|===|
+[output = 'data'] { value: value, }`)
+		tAssert.Error(err)
+
+		var diagnostic DiagnosticError
+		if tAssert.ErrorAs(err, &diagnostic) {
+			tAssert.Equal(CodeInvalidNullUsage, diagnostic.Code)
+			tAssert.Equal(2, diagnostic.Range.Start.Line)
+			tAssert.Equal(16, diagnostic.Range.Start.Column)
+			tAssert.Equal(2, diagnostic.Range.End.Line)
+			tAssert.Equal(20, diagnostic.Range.End.Column)
+		}
+	})
+
 	DescribeTable("rejects invalid directives",
 		func(input, message string) {
 			processor := New()

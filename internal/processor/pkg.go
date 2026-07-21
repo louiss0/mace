@@ -1538,8 +1538,8 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 			return err
 		}
 		if decl.HasValue {
-			if expressionContainsNull(decl.Value) {
-				return invalidNullUsageError()
+			if nullExpression, found := nullExpressionIn(decl.Value); found {
+				return diagnosticErrorAtNode(invalidNullUsageError(), nullExpression)
 			}
 			actualType, err := inferExpressionType(decl.Value, variables, symbols, types, schemas, enums)
 			if err != nil {
@@ -2060,30 +2060,45 @@ func expressionContainsEmptyCollection(expression ast.Expression) bool {
 	}
 }
 
-func expressionContainsNull(expression ast.Expression) bool {
+func nullExpressionIn(expression ast.Expression) (ast.Expression, bool) {
+	findNullInExpressions := func(expressions []ast.Expression) (ast.Expression, bool) {
+		for _, expression := range expressions {
+			if nullExpression, found := nullExpressionIn(expression); found {
+				return nullExpression, true
+			}
+		}
+		return nil, false
+	}
+
 	switch typed := expression.(type) {
 	case ast.NullLiteral:
-		return true
+		return typed, true
 	case ast.ArrayLiteral:
-		return lo.ContainsBy(typed.Elements, expressionContainsNull)
+		return findNullInExpressions(typed.Elements)
 	case ast.RecordLiteral:
-		return lo.ContainsBy(typed.Fields, func(field ast.RecordField) bool {
-			return expressionContainsNull(field.Value)
+		values := lo.Map(typed.Fields, func(field ast.RecordField, _ int) ast.Expression {
+			return field.Value
 		})
+		return findNullInExpressions(values)
 	case ast.MemberAccess:
-		return expressionContainsNull(typed.Target)
+		return nullExpressionIn(typed.Target)
 	case ast.MatchExpression:
-		return expressionContainsNull(typed.Value) || lo.ContainsBy(typed.Arms, func(arm ast.MatchArm) bool {
-			return expressionContainsNull(arm.Value)
+		nullExpression, found := nullExpressionIn(typed.Value)
+		if found {
+			return nullExpression, true
+		}
+		values := lo.Map(typed.Arms, func(arm ast.MatchArm, _ int) ast.Expression {
+			return arm.Value
 		})
+		return findNullInExpressions(values)
 	case ast.PrefixExpression:
-		return expressionContainsNull(typed.Right)
+		return nullExpressionIn(typed.Right)
 	case ast.InfixExpression:
-		return expressionContainsNull(typed.Left) || expressionContainsNull(typed.Right)
+		return findNullInExpressions([]ast.Expression{typed.Left, typed.Right})
 	case ast.ConditionalExpression:
-		return expressionContainsNull(typed.Condition) || expressionContainsNull(typed.Then) || expressionContainsNull(typed.Else)
+		return findNullInExpressions([]ast.Expression{typed.Condition, typed.Then, typed.Else})
 	default:
-		return false
+		return nil, false
 	}
 }
 
