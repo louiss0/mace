@@ -650,6 +650,32 @@ Name user = "Ada";
 		}
 	})
 
+	It("publishes out-of-domain match errors at the invalid arm pattern", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+variant[string, int] value = 1;
+string result = match (value) {
+  string => 'text',
+  boolean => 'flag',
+  int => 'number',
+};
+|===|
+[output = 'data'] { result: result, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "match pattern boolean is not a member")
+				tAssert.Equal("mace.match.pattern-outside-domain", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 4, Character: 2},
+					End:   protocol.Position{Line: 4, Character: 9},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
 	It("publishes non-exhaustive match errors at the match expression", func() {
 		notifications := []capturedNotification{}
 

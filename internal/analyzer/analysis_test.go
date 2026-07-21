@@ -148,6 +148,27 @@ var _ = Describe("LSP analysis", func() {
 		}
 	})
 
+	It("points out-of-domain match errors at the invalid arm pattern", func() {
+		snapshot := analyzeDocument(`|===|
+variant[string, int] value = 1;
+string result = match (value) {
+  string => 'text',
+  boolean => 'flag',
+  int => 'number',
+};
+|===|
+[output = 'data'] { result: result, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "match pattern boolean is not a member")
+			tAssert.Equal("mace.match.pattern-outside-domain", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 4, Character: 2},
+				End:   protocol.Position{Line: 4, Character: 9},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
 	It("points non-exhaustive match errors at the match expression", func() {
 		snapshot := analyzeDocument(`|===|
 variant[string, int] value = 1;
