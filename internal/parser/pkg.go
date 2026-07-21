@@ -730,7 +730,7 @@ func (p *Parser) parseOutputField() (ast.OutputField, error) {
 
 	description := p.parseOptionalInlineDescription()
 
-	trailingDescription, trailingToken, err := p.consumeRecordSeparatorWithInlineDescription("output field")
+	trailingDescription, trailingToken, err := p.consumeRecordSeparatorWithInlineDescriptionAt("output field", nameToken)
 	if err != nil {
 		return ast.OutputField{}, err
 	}
@@ -1314,6 +1314,10 @@ func (p *Parser) consumePairSeparator(context string) error {
 }
 
 func (p *Parser) consumeRecordSeparator(context string) error {
+	return p.consumeRecordSeparatorAt(context, p.current())
+}
+
+func (p *Parser) consumeRecordSeparatorAt(context string, errorToken lexer.Token) error {
 	switch p.current().Type {
 	case lexer.TokenComma:
 		p.advance()
@@ -1321,12 +1325,16 @@ func (p *Parser) consumeRecordSeparator(context string) error {
 	case lexer.TokenRBrace:
 		return nil
 	default:
-		return p.unexpectedTokenError(fmt.Sprintf("parser: expected ',' after %s", context))
+		return p.unexpectedTokenErrorAt(errorToken, fmt.Sprintf("parser: expected ',' after %s", context))
 	}
 }
 
 func (p *Parser) consumeRecordSeparatorWithInlineDescription(context string) (string, lexer.Token, error) {
-	if err := p.consumeRecordSeparator(context); err != nil {
+	return p.consumeRecordSeparatorWithInlineDescriptionAt(context, p.current())
+}
+
+func (p *Parser) consumeRecordSeparatorWithInlineDescriptionAt(context string, errorToken lexer.Token) (string, lexer.Token, error) {
+	if err := p.consumeRecordSeparatorAt(context, errorToken); err != nil {
 		return "", lexer.Token{}, err
 	}
 

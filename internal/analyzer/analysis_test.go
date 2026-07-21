@@ -148,6 +148,38 @@ var _ = Describe("LSP analysis", func() {
 		}
 	})
 
+	It("points missing output field separators at the preceding field", func() {
+		snapshot := analyzeDocument(`[output = 'data']
+{
+  first: 1
+  second: 2,
+}`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "expected ',' after output field")
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 2, Character: 2},
+				End:   protocol.Position{Line: 2, Character: 7},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("points mixed numeric family errors at the operator", func() {
+		snapshot := analyzeDocument(`|===|
+hex_int value = 0x2 + 3;
+|===|
+[output = 'data'] { value, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "expected hexadecimal operands for operator")
+			tAssert.Equal("mace.type.mixed-numeric-family", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 20},
+				End:   protocol.Position{Line: 1, Character: 21},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
 	It("points variant literal pattern errors at the invalid arm pattern", func() {
 		snapshot := analyzeDocument(`|===|
 variant[string, int] value = 1;

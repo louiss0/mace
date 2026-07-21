@@ -849,6 +849,25 @@ extra`)
 			tAssert.ErrorContains(err, "unexpected token after output block")
 		})
 
+		It("ranges missing output field separators at the preceding field", func() {
+			outputTokens, err := lexInput(`[output = 'data']
+{
+  first: 1
+  second: 2,
+}`)
+			tAssert.NoError(err)
+
+			_, err = New(outputTokens).ParseOutputBlock()
+			var syntaxError diagnostic.Error
+			if tAssert.ErrorAs(err, &syntaxError) {
+				tAssert.Equal(diagnostic.Range{
+					Start: diagnostic.Position{Line: 3, Column: 3},
+					End:   diagnostic.Position{Line: 3, Column: 8},
+				}, syntaxError.Range)
+				tAssert.Contains(syntaxError.Message, `expected ',' after output field`)
+			}
+		})
+
 		It("ranges mismatched script delimiters at the closing delimiter", func() {
 			scriptTokens, err := lexInput(`|===|
 string name = "Ada";

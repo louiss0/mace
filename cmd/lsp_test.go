@@ -650,6 +650,48 @@ Name user = "Ada";
 		}
 	})
 
+	It("publishes missing output field separators at the preceding field", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `[output = 'data']
+{
+  first: 1
+  second: 2,
+}`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "expected ',' after output field")
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 2, Character: 2},
+					End:   protocol.Position{Line: 2, Character: 7},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
+	It("publishes mixed numeric family errors at the operator", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+hex_int value = 0x2 + 3;
+|===|
+[output = 'data'] { value, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "expected hexadecimal operands for operator")
+				tAssert.Equal("mace.type.mixed-numeric-family", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 1, Character: 20},
+					End:   protocol.Position{Line: 1, Character: 21},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
 	It("publishes variant literal pattern errors at the invalid arm pattern", func() {
 		notifications := []capturedNotification{}
 
