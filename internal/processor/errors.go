@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/louiss0/mace/internal/diagnostic"
+	"github.com/louiss0/mace/internal/lexer"
 	"github.com/louiss0/mace/internal/parser/ast"
 )
 
@@ -77,6 +78,31 @@ func diagnosticErrorf(kind ErrorKind, code ErrorCode, fields DiagnosticFields, f
 		Message: fmt.Sprintf("processor: %s", fmt.Sprintf(format, args...)),
 		Fields:  fields,
 	}
+}
+
+func diagnosticErrorAtStringInterpolation(err error, expression ast.StringLiteral) error {
+	if err == nil {
+		return nil
+	}
+
+	var interpolationError interpolationSpanError
+	var diagnosticError DiagnosticError
+	if !errors.As(err, &interpolationError) || !errors.As(err, &diagnosticError) {
+		return diagnosticErrorAtNode(err, expression)
+	}
+
+	prefixRange := ast.TokenRange(lexer.Token{
+		Lexeme: expression.Lexeme[:interpolationError.start],
+		Line:   expression.Token.Line,
+		Column: expression.Token.Column,
+	})
+	interpolationRange := ast.TokenRange(lexer.Token{
+		Lexeme: expression.Lexeme[interpolationError.start:interpolationError.end],
+		Line:   prefixRange.End.Line,
+		Column: prefixRange.End.Column,
+	})
+	diagnosticError.Range = diagnostic.FromASTRange(interpolationRange)
+	return diagnosticError
 }
 
 func diagnosticErrorAtNode(err error, node ast.Node) error {
@@ -208,6 +234,8 @@ func inferErrorCode(message string) ErrorCode {
 		return ErrorCode("mace.declaration.duplicate-output-field")
 	case strings.Contains(message, "array literal has mixed element types"):
 		return ErrorCode("mace.type.mixed-array-literal")
+	case strings.Contains(message, "interpolation requires a scalar value"):
+		return ErrorCode("mace.string.nonscalar-interpolation")
 	case strings.Contains(message, "unknown identifier"):
 		return ErrorCode("mace.type.unknown-identifier")
 	case strings.Contains(message, "unknown self reference"):

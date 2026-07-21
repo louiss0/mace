@@ -650,6 +650,70 @@ Name user = "Ada";
 		}
 	})
 
+	It("publishes duplicate schema fields at the repeated name", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+schema User: { name: string, name: string, };
+|===|
+[output = 'schema'] {}`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Equal("mace.declaration.duplicate-schema-field", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 1, Character: 29},
+					End:   protocol.Position{Line: 1, Character: 33},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
+	It("publishes numeric operand errors at the operator", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+boolean value = true + false;
+|===|
+[output = 'data'] { result: value, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "expected numeric operands for operator")
+				tAssert.Equal("mace.type.invalid-binary-operator", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 1, Character: 21},
+					End:   protocol.Position{Line: 1, Character: 22},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
+	It("publishes scalar interpolation errors at the interpolation", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+schema User: { name: string, };
+User user = { name: "Ada", };
+string message = "Hello $(user)!";
+|===|
+[output = 'data'] { result: message, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "interpolation requires a scalar value")
+				tAssert.Equal("mace.string.nonscalar-interpolation", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 3, Character: 24},
+					End:   protocol.Position{Line: 3, Character: 31},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
 	It("publishes processor diagnostics for invalid variable declarations", func() {
 		notifications := []capturedNotification{}
 

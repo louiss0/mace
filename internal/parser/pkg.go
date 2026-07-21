@@ -1386,9 +1386,10 @@ func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token)
 	}
 
 	return ast.InfixExpression{
-		Left:     left,
-		Operator: operator.Type,
-		Right:    right,
+		Left:          left,
+		OperatorToken: operator,
+		Operator:      operator.Type,
+		Right:         right,
 	}, nil
 }
 
@@ -1586,7 +1587,7 @@ func (p *Parser) parseCoalesceExpression(left ast.Expression, operator lexer.Tok
 		return nil, err
 	}
 
-	return ast.InfixExpression{Left: left, Operator: operator.Type, Right: right}, nil
+	return ast.InfixExpression{Left: left, OperatorToken: operator, Operator: operator.Type, Right: right}, nil
 }
 
 func (p *Parser) consume(tokenType lexer.TokenType, message string) (lexer.Token, error) {

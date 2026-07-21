@@ -148,6 +148,55 @@ var _ = Describe("LSP analysis", func() {
 		}
 	})
 
+	It("prefers the processor range for duplicate schema fields", func() {
+		snapshot := analyzeDocument(`|===|
+ schema User: { name: string, name: string, };
+|===|
+[output = 'schema'] {}`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Equal(string(diagnosticDeclarationDuplicateSchemaField), requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 30},
+				End:   protocol.Position{Line: 1, Character: 34},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("points numeric operand errors at the operator", func() {
+		snapshot := analyzeDocument(`|===|
+boolean value = true + false;
+|===|
+[output = 'data'] { result: value, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "expected numeric operands for operator")
+			tAssert.Equal(string(diagnosticTypeInvalidBinaryOperator), requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 21},
+				End:   protocol.Position{Line: 1, Character: 22},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("points non-scalar interpolation errors at the interpolation", func() {
+		snapshot := analyzeDocument(`|===|
+schema User: { name: string, };
+User user = { name: "Ada", };
+string message = "Hello $(user)!";
+|===|
+[output = 'data'] { result: message, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "interpolation requires a scalar value")
+			tAssert.Equal("mace.string.nonscalar-interpolation", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 3, Character: 24},
+				End:   protocol.Position{Line: 3, Character: 31},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
 	It("uses parser AST ranges for processor diagnostics", func() {
 		snapshot := analyzeDocument(`|===|
 schema User: { nickname?: string, };

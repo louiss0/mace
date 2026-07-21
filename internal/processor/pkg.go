@@ -2909,7 +2909,8 @@ func evaluateExpression(expression ast.Expression, environment *valueEnvironment
 	case ast.HexFloatLiteral:
 		return parseHexFloat(expr.Lexeme)
 	case ast.StringLiteral:
-		return parseInterpolatedString(expr.Lexeme, environment, self, symbols, types, schemas, enums)
+		value, err := parseInterpolatedString(expr.Lexeme, environment, self, symbols, types, schemas, enums)
+		return value, diagnosticErrorAtStringInterpolation(err, expr)
 	case ast.BooleanLiteral:
 		return Value{Kind: ValueBoolean, Boolean: expr.Value}, nil
 	case ast.NullLiteral:
@@ -2923,7 +2924,8 @@ func evaluateExpression(expression ast.Expression, environment *valueEnvironment
 	case ast.PrefixExpression:
 		return evaluatePrefix(expr, environment, self, symbols, types, schemas, enums)
 	case ast.InfixExpression:
-		return evaluateInfix(expr, environment, self, symbols, types, schemas, enums)
+		value, err := evaluateInfix(expr, environment, self, symbols, types, schemas, enums)
+		return value, diagnosticErrorAtNode(err, expr)
 	case ast.ConditionalExpression:
 		return evaluateConditional(expr, environment, self, symbols, types, schemas, enums)
 	default:
@@ -3048,6 +3050,20 @@ func parseInterpolatedString(lexeme string, environment *valueEnvironment, self 
 	return Value{Kind: ValueString, String: value}, nil
 }
 
+type interpolationSpanError struct {
+	cause error
+	start int
+	end   int
+}
+
+func (err interpolationSpanError) Error() string {
+	return err.cause.Error()
+}
+
+func (err interpolationSpanError) Unwrap() error {
+	return err.cause
+}
+
 func decodeStringLexeme(lexeme string, allowInterpolation bool, interpolate func(string) (string, error)) (string, error) {
 	content, quoteMode, err := stringContent(lexeme)
 	if err != nil {
@@ -3075,7 +3091,15 @@ func decodeStringLexeme(lexeme string, allowInterpolation bool, interpolate func
 			}
 			resolved, err := interpolate(expressionText)
 			if err != nil {
-				return "", err
+				quoteWidth := 1
+				if quoteMode == stringQuoteBlock {
+					quoteWidth = 3
+				}
+				return "", interpolationSpanError{
+					cause: err,
+					start: quoteWidth + index,
+					end:   quoteWidth + end,
+				}
 			}
 			builder.WriteString(resolved)
 			index = end
@@ -4476,7 +4500,8 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 	case ast.PrefixExpression:
 		return inferPrefixType(expr, variables, symbols, types, schemas, enums)
 	case ast.InfixExpression:
-		return inferInfixType(expr, variables, symbols, types, schemas, enums)
+		inferredType, err := inferInfixType(expr, variables, symbols, types, schemas, enums)
+		return inferredType, diagnosticErrorAtNode(err, expr)
 	case ast.ConditionalExpression:
 		return inferConditionalType(expr, variables, symbols, types, schemas, enums)
 	default:

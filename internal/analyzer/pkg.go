@@ -109,8 +109,22 @@ type diagnosticIdentity struct {
 }
 
 func deduplicateDiagnostics(diagnostics []protocol.Diagnostic) []protocol.Diagnostic {
+	authoritativeCodes := map[string]struct{}{}
+	for _, diagnostic := range diagnostics {
+		code := diagnosticCodeText(diagnostic.Code)
+		if code != "" && diagnostic.Message != code {
+			authoritativeCodes[code] = struct{}{}
+		}
+	}
+
 	seen := map[diagnosticIdentity]struct{}{}
 	return lo.Filter(diagnostics, func(diagnostic protocol.Diagnostic, _ int) bool {
+		code := diagnosticCodeText(diagnostic.Code)
+		_, hasAuthoritativeDiagnostic := authoritativeCodes[code]
+		if code != "" && diagnostic.Message == code && hasAuthoritativeDiagnostic {
+			return false
+		}
+
 		identity := diagnosticIdentity{
 			Range:              diagnostic.Range,
 			Code:               diagnosticCodeIdentity(diagnostic.Code),
@@ -139,6 +153,18 @@ func diagnosticCodeIdentity(code *protocol.IntegerOrString) string {
 	}
 
 	return fmt.Sprintf("%T:%v", code.Value, code.Value)
+}
+
+func diagnosticCodeText(code *protocol.IntegerOrString) string {
+	if code == nil {
+		return ""
+	}
+
+	value, ok := code.Value.(string)
+	if !ok {
+		return ""
+	}
+	return value
 }
 
 func CompletionItems(text string, snapshot Snapshot, uri protocol.DocumentUri, position protocol.Position) []protocol.CompletionItem {

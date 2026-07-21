@@ -10,6 +10,22 @@ import (
 )
 
 var _ = Describe("Operators", func() {
+	It("attaches operator ranges to operand type errors", func() {
+		_, err := New().Process(`|===|
+boolean value = true + false;
+|===|
+[output = 'data'] { result: value, }`)
+		tAssert.Error(err)
+
+		var diagnostic DiagnosticError
+		if tAssert.ErrorAs(err, &diagnostic) {
+			tAssert.Equal(2, diagnostic.Range.Start.Line)
+			tAssert.Equal(22, diagnostic.Range.Start.Column)
+			tAssert.Equal(2, diagnostic.Range.End.Line)
+			tAssert.Equal(23, diagnostic.Range.End.Column)
+		}
+	})
+
 	DescribeTable("returns individual operator results",
 		func(input string, expected expectedValue) {
 			assertProcessedResult(input, expected)

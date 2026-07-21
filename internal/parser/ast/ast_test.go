@@ -116,4 +116,12 @@ var _ = Describe("AST nodes", func() {
 		}).Range()
 		tAssert.Equal(SourceRange{Start: SourcePosition{Line: 3, Column: 8}, End: SourcePosition{Line: 3, Column: 16}}, rangeValue)
 	})
+
+	It("ranges infix expressions by their operator", func() {
+		rangeValue := (InfixExpression{
+			Left:          StringLiteral{Token: lexer.Token{Lexeme: `"a"`, Line: 4, Column: 1}},
+			OperatorToken: lexer.Token{Lexeme: "+", Line: 4, Column: 5},
+		}).Range()
+		tAssert.Equal(SourceRange{Start: SourcePosition{Line: 4, Column: 5}, End: SourcePosition{Line: 4, Column: 6}}, rangeValue)
+	})
 })

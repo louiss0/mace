@@ -239,9 +239,10 @@ func (p PrefixExpression) Range() SourceRange {
 }
 
 type InfixExpression struct {
-	Left     Expression
-	Operator lexer.TokenType
-	Right    Expression
+	Left          Expression
+	OperatorToken lexer.Token
+	Operator      lexer.TokenType
+	Right         Expression
 }
 
 func (InfixExpression) expressionNode() {
@@ -249,6 +250,9 @@ func (InfixExpression) expressionNode() {
 }
 
 func (i InfixExpression) Range() SourceRange {
+	if i.OperatorToken.Line > 0 && i.OperatorToken.Column > 0 {
+		return TokenRange(i.OperatorToken)
+	}
 	return i.Left.Range()
 }
 
