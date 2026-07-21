@@ -46,7 +46,7 @@ script_block = script_delimiter , ws0 , { import_declaration , ws0 } , { declara
 script_delimiter = "|" , "=" , "=" , "=" , { "=" } , "|" ;
 (* The opening and closing script_delimiter must have the same number of '=' characters. *)
 
-import_declaration = "from" , ws1 , path_literal , ws1 , ( "import" , ws1 , import_list | "import-as" , ws1 , identifier ) , ws0 , ";" ;
+import_declaration = "from" , ws1 , path_literal , ws1 , ( "import" , ws1 , import_list | "bind" , ws1 , identifier ) , ws0 , ";" ;
 import_list = imported_identifier , { ws0 , "," , ws0 , imported_identifier } ;
 imported_identifier = identifier , [ ws0 , ":" , ws0 , identifier ] ;
 

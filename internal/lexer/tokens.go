@@ -10,6 +10,7 @@ const (
 
 	TokenFrom
 	TokenImport
+	TokenBind
 	TokenAliasKeyword
 	TokenSchema
 	TokenGenDoc

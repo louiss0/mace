@@ -39,7 +39,7 @@ A Mace file can contain:
 
 Imports use `from ... import ...;` and must appear at the top of the script
 block before other declarations. Imported names may optionally define a
-local alias with `Name:Alias`. Use `from &quot;.&#x2f;schema.mace&quot; import-as Name` to import an output schema file as a single schema or an output data file as a single record variable.
+local alias with `Name:Alias`. Use `from &quot;.&#x2f;schema.mace&quot; bind Name;` to bind an output schema file as a single schema or an output data file as a single record variable.
 
 Example:
 

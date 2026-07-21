@@ -530,9 +530,9 @@ from './schema.mace' import User;
 from './schema.mace' import User;
 |===|`, "", "")
 		tAssert.Error(err)
-		_, err = buildProcessContext([]ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./schema.mace"`}, ImportAs: &ast.ImportedIdentifier{Name: "User"}}, {Path: ast.StringLiteral{Lexeme: `"./schema.mace"`}, ImportAs: &ast.ImportedIdentifier{Name: "User"}}}, nil, ".", ".", true, map[string]Value{})
+		_, err = buildProcessContext([]ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./schema.mace"`}, Binding: &ast.ImportedIdentifier{Name: "User"}}, {Path: ast.StringLiteral{Lexeme: `"./schema.mace"`}, Binding: &ast.ImportedIdentifier{Name: "User"}}}, nil, ".", ".", true, map[string]Value{})
 		tAssert.Error(err)
-		_, err = buildProcessContext([]ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./schema.txt"`}, ImportAs: &ast.ImportedIdentifier{Name: "User"}}}, nil, ".", ".", true, map[string]Value{})
+		_, err = buildProcessContext([]ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./schema.txt"`}, Binding: &ast.ImportedIdentifier{Name: "User"}}}, nil, ".", ".", true, map[string]Value{})
 		tAssert.Error(err)
 		_, err = buildProcessContext(nil, &ast.ScriptBlock{Items: []ast.Declaration{ast.VariableDeclaration{Name: "value", Type: ast.PrimitiveType{Name: "string"}, HasValue: false}}}, ".", ".", true, map[string]Value{})
 		tAssert.Error(err)

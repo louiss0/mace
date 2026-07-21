@@ -175,8 +175,7 @@ func (l *Lexer) NextToken() (Token, error) {
 				return true
 			}
 
-			currentLexeme := l.input[startPosition:l.position]
-			return currentLexeme != "import" && l.peek() == '-' && isIdentifierPart(l.peekNext())
+			return l.peek() == '-' && isIdentifierPart(l.peekNext())
 		}
 
 		for isIdentifierContinuation() {
@@ -450,6 +449,8 @@ func keywordToken(lexeme string) (TokenType, bool) {
 		return TokenFrom, true
 	case "import":
 		return TokenImport, true
+	case "bind":
+		return TokenBind, true
 	case "alias":
 		return TokenAliasKeyword, true
 	case "schema":

@@ -43,8 +43,8 @@ func (f *formatter) writeFile(file ast.File) error {
 
 func formatImportDeclaration(importDeclaration ast.ImportDeclaration) string {
 	path := formatStaticPath(importDeclaration.Path.Lexeme)
-	if importDeclaration.ImportAs != nil {
-		return "from " + path + " import-as " + importDeclaration.ImportAs.LocalName() + ";"
+	if importDeclaration.Binding != nil {
+		return "from " + path + " bind " + importDeclaration.Binding.LocalName() + ";"
 	}
 
 	parts := make([]string, 0, len(importDeclaration.Identifiers))

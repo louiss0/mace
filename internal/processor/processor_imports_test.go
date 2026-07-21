@@ -47,7 +47,7 @@ from 'fixtures/processor/imports/values.mace' import count;
 		},
 		Entry("destructured name", `from 'fixtures/processor/imports/kebab.mace' import display-name;`, "display-name"),
 		Entry("destructured alias", `from 'fixtures/processor/imports/kebab.mace' import display-name:imported-name;`, "imported-name"),
-		Entry("import-as alias", `from 'fixtures/processor/imports/kebab.mace' import-as imported-data;`, "imported-data.display-name"),
+		Entry("bind alias", `from 'fixtures/processor/imports/kebab.mace' bind imported-data;`, "imported-data.display-name"),
 	)
 
 	It("keeps hidden declarations internal", func() {

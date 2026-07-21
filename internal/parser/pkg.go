@@ -139,31 +139,24 @@ func (p *Parser) parseImportDeclaration() (ast.ImportDeclaration, error) {
 		return ast.ImportDeclaration{}, err
 	}
 
-	if _, err := p.consume(lexer.TokenImport, "parser: expected 'import'"); err != nil {
-		return ast.ImportDeclaration{}, err
-	}
-
-	if p.current().Type == lexer.TokenMinus {
+	if p.current().Type == lexer.TokenBind {
 		p.advance()
-		asToken, err := p.consume(lexer.TokenIdentifier, "parser: expected 'as' after 'import-'")
-		if err != nil {
-			return ast.ImportDeclaration{}, err
-		}
-		if asToken.Lexeme != "as" {
-			return ast.ImportDeclaration{}, p.unexpectedTokenError("parser: expected 'as' after 'import-'")
-		}
-		aliasToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier after 'import-as'")
+		nameToken, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier after 'bind'")
 		if err != nil {
 			return ast.ImportDeclaration{}, err
 		}
 		if err := p.consumeImportSeparator(); err != nil {
 			return ast.ImportDeclaration{}, err
 		}
-		imported := ast.ImportedIdentifier{Name: aliasToken.Lexeme}
+		binding := ast.ImportedIdentifier{Name: nameToken.Lexeme}
 		return ast.ImportDeclaration{
-			Path:     ast.StringLiteral{Token: pathToken, Lexeme: pathToken.Lexeme},
-			ImportAs: &imported,
+			Path:    ast.StringLiteral{Token: pathToken, Lexeme: pathToken.Lexeme},
+			Binding: &binding,
 		}, nil
+	}
+
+	if _, err := p.consume(lexer.TokenImport, "parser: expected 'import' or 'bind'"); err != nil {
+		return ast.ImportDeclaration{}, err
 	}
 
 	firstIdentifier, err := p.consume(lexer.TokenIdentifier, "parser: expected identifier in import list")

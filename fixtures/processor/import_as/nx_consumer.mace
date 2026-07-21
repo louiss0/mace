@@ -1,5 +1,5 @@
 |===========================================|
-from './nx_inputs.mace' import-as NxInputs;
+from './nx_inputs.mace' bind NxInputs;
 |===========================================|
 
 [output = 'data', parse = NxInputs]

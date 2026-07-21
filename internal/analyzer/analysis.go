@@ -3884,8 +3884,8 @@ func importedSemanticSymbols(file ast.File, documentPath string) []semanticSymbo
 			return nil
 		}
 
-		if importDecl.ImportAs != nil {
-			if symbol, ok := importedImportAsSemanticSymbol(importedFile, importedPath, importDecl.ImportAs.LocalName()); ok {
+		if importDecl.Binding != nil {
+			if symbol, ok := importedBindingSemanticSymbol(importedFile, importedPath, importDecl.Binding.LocalName()); ok {
 				return []semanticSymbol{symbol}
 			}
 			return nil
@@ -3904,7 +3904,7 @@ func importedSemanticSymbols(file ast.File, documentPath string) []semanticSymbo
 	})
 }
 
-func importedImportAsSemanticSymbol(file ast.File, path string, name string) (semanticSymbol, bool) {
+func importedBindingSemanticSymbol(file ast.File, path string, name string) (semanticSymbol, bool) {
 	model := buildCompletionModel(file, filepath.Dir(path), filepath.Dir(path), map[string]completionModel{})
 	if file.Output.Mode == ast.OutputModeSchema {
 		record, ok := importAsSchemaRecord(file, model)

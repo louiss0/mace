@@ -306,7 +306,7 @@ func (i ImportedIdentifier) LocalName() string {
 type ImportDeclaration struct {
 	Path        StringLiteral
 	Identifiers []ImportedIdentifier
-	ImportAs    *ImportedIdentifier
+	Binding     *ImportedIdentifier
 }
 
 type ScriptBlock struct {

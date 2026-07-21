@@ -10,8 +10,8 @@ func TestSyntaxStructureAnalysisClassifiesUnspacedSubtraction(t *testing.T) {
 		expectsDiagnostic bool
 	}{
 		{
-			name: "import-as is not subtraction",
-			text: "|==========|\nfrom './shared.mace' import-as Shared;\n|==========|\n[output = 'data'] { value: Shared, }",
+			name: "bind is not subtraction",
+			text: "|==========|\nfrom './shared.mace' bind Shared;\n|==========|\n[output = 'data'] { value: Shared, }",
 			code: diagnosticSyntaxKebabIdentifierUsedAsSubtraction,
 		},
 		{

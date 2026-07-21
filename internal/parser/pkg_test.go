@@ -589,7 +589,7 @@ var _ = Describe("Parser", func() {
 				_, err := p.parseImportDeclaration()
 				return err
 			}},
-			{`from './base.mace' import-as Base`, func(p *Parser) error {
+			{`from './base.mace' bind Base`, func(p *Parser) error {
 				_, err := p.parseImportDeclaration()
 				return err
 			}},
@@ -896,9 +896,9 @@ string name = "Ada";
 			tAssert.Len(output.DataFields, 1)
 		})
 
-		It("parses import-as declarations and import aliases", func() {
+		It("parses bind declarations and import aliases", func() {
 			input := `|===|
-from './base.mace' import-as Base;
+from './base.mace' bind Base;
 from './shared.mace' import User:Person, Config:Settings;
 |===|
 [output = 'data'] {}`
@@ -907,9 +907,9 @@ from './shared.mace' import User:Person, Config:Settings;
 			tAssert.NoError(err)
 
 			if tAssert.Len(file.Imports, 2) {
-				tAssert.NotNil(file.Imports[0].ImportAs)
-				if file.Imports[0].ImportAs != nil {
-					tAssert.Equal("Base", file.Imports[0].ImportAs.Name)
+				tAssert.NotNil(file.Imports[0].Binding)
+				if file.Imports[0].Binding != nil {
+					tAssert.Equal("Base", file.Imports[0].Binding.Name)
 				}
 				tAssert.Equal([]ast.ImportedIdentifier{
 					{Name: "User", Alias: "Person"},
@@ -922,7 +922,7 @@ from './shared.mace' import User:Person, Config:Settings;
 			input := `|===|
 from './values.mace' import display-name;
 from './profile.mace' import DisplayName:display-name;
-from './shared.mace' import-as shared-data;
+from './shared.mace' bind shared-data;
 |===|
 [output = 'data'] {}`
 
@@ -932,7 +932,7 @@ from './shared.mace' import-as shared-data;
 			if tAssert.Len(file.Imports, 3) {
 				tAssert.Equal([]ast.ImportedIdentifier{{Name: "display-name"}}, file.Imports[0].Identifiers)
 				tAssert.Equal([]ast.ImportedIdentifier{{Name: "DisplayName", Alias: "display-name"}}, file.Imports[1].Identifiers)
-				tAssert.Equal("shared-data", file.Imports[2].ImportAs.Name)
+				tAssert.Equal("shared-data", file.Imports[2].Binding.Name)
 			}
 		})
 
@@ -964,7 +964,7 @@ from './base.mace' import- nope Base;
 |===|
 [output = 'data'] {}`,
 				`|===|
-from './base.mace' import-as;
+from './base.mace' bind;
 |===|
 [output = 'data'] {}`,
 				`|===|

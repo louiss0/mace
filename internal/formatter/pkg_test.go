@@ -165,9 +165,9 @@ from './base.mace' import User:Person, Config;
 		tAssert.Equal("int count = 1 /# Item count;", line)
 	})
 
-	It("formats import-as declarations", func() {
+	It("formats bind declarations", func() {
 		file, err := parseMaceFile(`|===|
-from './base.mace' import-as Base;
+from './base.mace' bind Base;
 |===|
 [output = 'data']
 { result: Base.name, }`)
@@ -175,9 +175,9 @@ from './base.mace' import-as Base;
 
 		output, err := FormatFile(file)
 		tAssert.NoError(err)
-		tAssert.Equal(`|==================================|
-from './base.mace' import-as Base;
-|==================================|
+		tAssert.Equal(`|=============================|
+from './base.mace' bind Base;
+|=============================|
 [output = 'data']
 {
   result: Base.name

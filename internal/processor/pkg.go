@@ -575,8 +575,8 @@ func resolveImportsWithState(file ast.File, importBaseDir string, importRootDir 
 		if err != nil {
 			return nil, err
 		}
-		if importDecl.ImportAs != nil {
-			localName := importDecl.ImportAs.LocalName()
+		if importDecl.Binding != nil {
+			localName := importDecl.Binding.LocalName()
 			if _, exists := imports[localName]; exists {
 				return nil, validationErrorf("duplicate import %q", localName)
 			}

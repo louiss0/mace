@@ -90,7 +90,7 @@ script_block = script_delimiter , ws0 , { import_declaration , ws0 } , { declara
 script_delimiter = &quot;|&quot; , &quot;=&quot; , &quot;=&quot; , &quot;=&quot; , { &quot;=&quot; } , &quot;|&quot; ;
 (* The opening and closing script_delimiter must have the same number of &#x27;=&#x27; characters. *)
 
-import_declaration = &quot;from&quot; , ws1 , path_literal , ws1 , ( &quot;import&quot; , ws1 , import_list | &quot;import-as&quot; , ws1 , identifier ) , ws0 , &quot;;&quot; ;
+import_declaration = &quot;from&quot; , ws1 , path_literal , ws1 , ( &quot;import&quot; , ws1 , import_list | &quot;bind&quot; , ws1 , identifier ) , ws0 , &quot;;&quot; ;
 import_list = imported_identifier , { ws0 , &quot;,&quot; , ws0 , imported_identifier } ;
 imported_identifier = identifier , [ ws0 , &quot;:&quot; , ws0 , identifier ] ;
 
