@@ -3463,6 +3463,9 @@ func dataOutputValueDiagnostic(tokens []lexer.Token, diagnosticError processor.D
 	}
 
 	rangeValue, found := tokenRangeFromEnd(tokens, diagnosticError.Fields.Name)
+	if !found && strings.HasPrefix(diagnosticError.Fields.Name, "$") {
+		rangeValue, found = parsedIdentifierRangeFromEnd(tokens, strings.TrimPrefix(diagnosticError.Fields.Name, "$"))
+	}
 	if !found {
 		return protocol.Diagnostic{}, false
 	}
@@ -3546,6 +3549,24 @@ func tokenRangeByTypeFromEnd(tokens []lexer.Token, tokenType lexer.TokenType, le
 		return tokenProtocolRange(token), true
 	}
 
+	return protocol.Range{}, false
+}
+
+func parsedIdentifierRangeFromEnd(tokens []lexer.Token, name string) (protocol.Range, bool) {
+	for index := len(tokens) - 1; index > 0; index-- {
+		nameToken := tokens[index]
+		dollarToken := tokens[index-1]
+		if nameToken.Type != lexer.TokenIdentifier || nameToken.Lexeme != name {
+			continue
+		}
+		if dollarToken.Type != lexer.TokenDollar || dollarToken.Line != nameToken.Line || dollarToken.Column+1 != nameToken.Column {
+			continue
+		}
+
+		rangeValue := tokenProtocolRange(dollarToken)
+		rangeValue.End = tokenProtocolRange(nameToken).End
+		return rangeValue, true
+	}
 	return protocol.Range{}, false
 }
 

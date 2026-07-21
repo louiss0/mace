@@ -992,6 +992,47 @@ schema Package: { name: string, project: string, };
 		}
 	})
 
+	DescribeTable("reports undefined variables when parse requires unavailable runtime input",
+		func(expression string) {
+			snapshot := analyzeDocument(fmt.Sprintf(`|===|
+schema Runtime: { env: string, };
+|===|
+[output = 'data', parse = Runtime]
+{
+  result: %s,
+}`, expression))
+
+			messages := lo.Map(snapshot.diagnostics, func(diagnostic protocol.Diagnostic, _ int) string {
+				return diagnostic.Message
+			})
+			tAssert.Contains(messages, fmt.Sprintf(`processor: unknown identifier %q`, expression))
+		},
+		Entry("bare variable", "missing"),
+		Entry("parsed variable", "$missing"),
+	)
+
+	It("reports undefined bare and parsed variables for parse_file", func() {
+		workspace, err := os.MkdirTemp("", "mace-analysis-parse-file-undefined-*")
+		tAssert.NoError(err)
+		defer func() { _ = os.RemoveAll(workspace) }()
+
+		writeAnalysisFile(workspace, "runtime.mace", `[output = 'schema']
+{
+  Runtime: { env: string, },
+}`)
+		documentPath := filepath.Join(workspace, "consumer.mace")
+		for _, expression := range []string{"missing", "$missing"} {
+			snapshot := analyzeDocumentAt(fmt.Sprintf(`[output = 'data', parse_file = './runtime.mace']
+{
+  result: %s,
+}`, expression), documentPath)
+			messages := lo.Map(snapshot.diagnostics, func(diagnostic protocol.Diagnostic, _ int) string {
+				return diagnostic.Message
+			})
+			tAssert.Contains(messages, fmt.Sprintf(`processor: unknown identifier %q`, expression))
+		}
+	})
+
 	It("warns when parse_file directives require runtime input", func() {
 		workspace, err := os.MkdirTemp("", "mace-analysis-parse-file-*")
 		tAssert.NoError(err)

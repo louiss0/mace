@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/louiss0/mace/internal/parser/ast"
@@ -799,6 +800,46 @@ schema Runtime: {
 
 			tAssert.Contains(labels, "$env")
 			tAssert.Contains(labels, "$region")
+		})
+
+		It("keeps parse_file parsed-variable completions in parity with parse", func() {
+			workspace, err := os.MkdirTemp("", "mace-analyzer-parse-parity-*")
+			tAssert.NoError(err)
+			defer func() { _ = os.RemoveAll(workspace) }()
+
+			runtimeSchema := `{ env: string, profile: { name: string, email: string, }, }`
+			tAssert.NoError(os.WriteFile(filepath.Join(workspace, "runtime.mace"), []byte(fmt.Sprintf(`[output = 'schema']
+{
+  Runtime: %s,
+}`, runtimeSchema)), 0o644))
+
+			parsedLabels := func(text string, documentName string, line uint32) []string {
+				documentPath := filepath.Join(workspace, documentName)
+				tAssert.NoError(os.WriteFile(documentPath, []byte(text), 0o644))
+				position := protocol.Position{Line: line, Character: uint32(len(`  result: `))}
+				snapshot := AnalyzeCompletionContext(text, documentPath, position)
+				items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+				labels := lo.FilterMap(items, func(item protocol.CompletionItem, _ int) (string, bool) {
+					return item.Label, strings.HasPrefix(item.Label, "$") && item.Label != "$self"
+				})
+				slices.Sort(labels)
+				return labels
+			}
+
+			parseLabels := parsedLabels(fmt.Sprintf(`|===|
+schema Runtime: %s;
+|===|
+[output = 'data', parse = Runtime]
+{
+  result:
+}`, runtimeSchema), "parse.mace", 6)
+			parseFileLabels := parsedLabels(`[output = 'data', parse_file = './runtime.mace']
+{
+  result:
+}`, "parse-file.mace", 2)
+
+			tAssert.Equal([]string{"$env", "$profile"}, parseLabels)
+			tAssert.Equal(parseLabels, parseFileLabels)
 		})
 
 		It("only suggests top-level parse fields as output variables", func() {

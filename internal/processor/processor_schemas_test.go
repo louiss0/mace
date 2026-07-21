@@ -235,7 +235,7 @@ schema Meta: { source: string, };
 		tAssert.ErrorContains(err, "unknown identifier")
 	})
 
-	It("does not surface parsed schema fields as variables", func() {
+	It("surfaces parsed schema fields as $ variables", func() {
 		processor := NewWithInput(map[string]Value{
 			"project": {Kind: ValueRecord, Record: map[string]Value{
 				"name": {Kind: ValueString, String: "pi-prompt-form"},
@@ -247,7 +247,7 @@ schema Meta: { source: string, };
 			}},
 		})
 		_, err := processor.ProcessFile("../../fixtures/processor/import_as/nx_consumer.mace")
-		tAssert.ErrorContains(err, "unknown identifier")
+		tAssert.NoError(err)
 	})
 
 	It("does not expose record keyword schema fields as values", func() {

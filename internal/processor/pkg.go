@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -345,11 +346,17 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 		return Result{File: file, Output: map[string]Value{}, Schema: schema, Variables: outputContext.environment.Values()}, nil
 	}
 
-	if err := p.applyParsedOutputInput(outputBlock, &outputContext); err != nil {
-		return Result{}, err
+	parsedInputErr := p.applyParsedOutputInput(outputBlock, &outputContext)
+	if parsedInputErr != nil && !isRuntimeInputValidationError(parsedInputErr) {
+		return Result{}, parsedInputErr
 	}
 
 	schemaName, hasSchema, _ := activeOutputSchemaName(outputBlock.Directives, outputContext)
+	if hasParsedInputDirective(outputBlock.Directives) {
+		if err := validateOutputExpressionReferences(outputBlock.DataFields, outputContext.variables); err != nil {
+			return Result{}, err
+		}
+	}
 	if err := validateDataOutputFields(outputBlock.DataFields, hasSchema, outputContext.variables, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
 		return Result{}, err
 	}
@@ -358,6 +365,10 @@ func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.Fi
 		if err := validateOutputSchema(schemaName, outputBlock.DataFields, outputContext.variables, outputContext.symbols, outputContext.types, outputContext.schemas, nil); err != nil {
 			return Result{}, err
 		}
+	}
+
+	if parsedInputErr != nil {
+		return Result{}, parsedInputErr
 	}
 
 	output, err := evaluateOutputFields(outputBlock.DataFields, outputContext.environment, outputContext.symbols, outputContext.types, outputContext.schemas, nil)
@@ -518,27 +529,95 @@ func (p *Processor) applyParsedOutputInput(output ast.OutputBlock, context *proc
 		return validationErrorf("unknown schema %q", schemaName)
 	}
 
-	expectedType := valueType{kind: ValueRecord, schemaName: schemaName, record: &schema}
-	if err := validateEvaluatedValueAgainstType(inputValue, expectedType, context.symbols, context.types, context.schemas, nil); err != nil {
-		return err
-	}
-
 	for _, field := range schema.Fields {
-		fieldValue, ok := inputValue.Record[field.Name]
-		if !ok {
-			continue
-		}
-
 		fieldType, err := resolveValueType(field.Type, context.symbols, context.types, context.schemas, nil)
 		if err != nil {
 			return err
 		}
 
 		name := "$" + field.Name
-		context.environment.Add(name, fieldValue)
 		context.variables.Add(name, fieldType)
+		if fieldValue, found := inputValue.Record[field.Name]; found {
+			context.environment.Add(name, fieldValue)
+		}
 	}
 
+	expectedType := valueType{kind: ValueRecord, schemaName: schemaName, record: &schema}
+	return validateEvaluatedValueAgainstType(inputValue, expectedType, context.symbols, context.types, context.schemas, nil)
+}
+
+func isRuntimeInputValidationError(err error) bool {
+	var diagnosticError DiagnosticError
+	return errors.As(err, &diagnosticError) && diagnosticError.Code == CodeTypeRecordDoesNotMatchSchema
+}
+
+func hasParsedInputDirective(directives []ast.OutputDirective) bool {
+	_, hasParse := outputParseSchemeName(directives)
+	return hasParse || hasParseFile(directives)
+}
+
+func validateOutputExpressionReferences(fields []ast.OutputField, variables *variableRegistry) error {
+	for _, field := range fields {
+		if err := validateExpressionReferences(field.Value, variables); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateExpressionReferences(expression ast.Expression, variables *variableRegistry) error {
+	switch typed := expression.(type) {
+	case ast.GroupedExpression:
+		return validateExpressionReferences(typed.Expression, variables)
+	case ast.Identifier:
+		if _, ok := variables.Get(typed.Name); !ok {
+			return diagnosticErrorf(
+				ErrorValue,
+				CodeOutputValueDeclaration,
+				DiagnosticFields{Name: typed.Name},
+				"unknown identifier %q",
+				typed.Name,
+			)
+		}
+	case ast.MemberAccess:
+		return validateExpressionReferences(typed.Target, variables)
+	case ast.MatchExpression:
+		if err := validateExpressionReferences(typed.Value, variables); err != nil {
+			return err
+		}
+		for _, arm := range typed.Arms {
+			if err := validateExpressionReferences(arm.Value, variables); err != nil {
+				return err
+			}
+		}
+	case ast.ArrayLiteral:
+		for _, element := range typed.Elements {
+			if err := validateExpressionReferences(element, variables); err != nil {
+				return err
+			}
+		}
+	case ast.RecordLiteral:
+		for _, field := range typed.Fields {
+			if err := validateExpressionReferences(field.Value, variables); err != nil {
+				return err
+			}
+		}
+	case ast.PrefixExpression:
+		return validateExpressionReferences(typed.Right, variables)
+	case ast.InfixExpression:
+		if err := validateExpressionReferences(typed.Left, variables); err != nil {
+			return err
+		}
+		return validateExpressionReferences(typed.Right, variables)
+	case ast.ConditionalExpression:
+		if err := validateExpressionReferences(typed.Condition, variables); err != nil {
+			return err
+		}
+		if err := validateExpressionReferences(typed.Then, variables); err != nil {
+			return err
+		}
+		return validateExpressionReferences(typed.Else, variables)
+	}
 	return nil
 }
 

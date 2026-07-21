@@ -4,7 +4,7 @@ from './nx_inputs.mace' bind NxInputs;
 
 [output = 'data', parse = NxInputs]
 {
-  name: project.name,
-  root: project.root,
-  cwd: workspace.root,
+  name: $project.name,
+  root: $project.root,
+  cwd: $workspace.root,
 }
