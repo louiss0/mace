@@ -148,6 +148,26 @@ var _ = Describe("LSP analysis", func() {
 		}
 	})
 
+	It("points choice type pattern errors at the invalid pattern", func() {
+		snapshot := analyzeDocument(`|===|
+choice['on', 'off'] value = 'on';
+int selected = match (value) {
+  string => 1,
+  'off' => 0,
+};
+|===|
+[output = 'data'] { result: selected, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "choice match arms require a literal pattern")
+			tAssert.Equal("mace.match.choice-type-pattern", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 3, Character: 2},
+				End:   protocol.Position{Line: 3, Character: 8},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
 	It("points mismatched script delimiters at the closing delimiter", func() {
 		snapshot := analyzeDocument(`|===|
 string name = "Ada";

@@ -4546,11 +4546,14 @@ func validateMatchPatterns(arms []ast.MatchArm, matchedType valueType, symbols *
 		seen := make([]valueType, 0, len(arms))
 		for _, arm := range arms {
 			if arm.Pattern.Type == nil {
-				return validationErrorf("variant match arms require a type pattern")
+				return diagnosticErrorAtNode(
+					validationErrorf("variant match arms require a type pattern"),
+					arm.Pattern,
+				)
 			}
 			patternType, err := resolveValueType(arm.Pattern.Type, symbols, types, schemas, enums)
 			if err != nil {
-				return err
+				return diagnosticErrorAtNode(err, arm.Pattern)
 			}
 			patternMembers := []valueType{patternType}
 			if len(patternType.members) > 0 {
@@ -4558,10 +4561,16 @@ func validateMatchPatterns(arms []ast.MatchArm, matchedType valueType, symbols *
 			}
 			for _, patternMember := range patternMembers {
 				if !containsValueType(matchedMembers, patternMember) {
-					return validationErrorf("match pattern %s is not a member of %s", patternType.name(), matchedType.name())
+					return diagnosticErrorAtNode(
+						validationErrorf("match pattern %s is not a member of %s", patternType.name(), matchedType.name()),
+						arm.Pattern,
+					)
 				}
 				if containsValueType(seen, patternMember) {
-					return validationErrorf("duplicate match pattern %s", patternMember.name())
+					return diagnosticErrorAtNode(
+						validationErrorf("duplicate match pattern %s", patternMember.name()),
+						arm.Pattern,
+					)
 				}
 				seen = append(seen, patternMember)
 			}
@@ -4575,18 +4584,27 @@ func validateMatchPatterns(arms []ast.MatchArm, matchedType valueType, symbols *
 	seen := []Value{}
 	for _, arm := range arms {
 		if arm.Pattern.Literal == nil {
-			return validationErrorf("choice match arms require a literal pattern")
+			return diagnosticErrorAtNode(
+				validationErrorf("choice match arms require a literal pattern"),
+				arm.Pattern,
+			)
 		}
 		values, err := resolveChoiceMemberValues(arm.Pattern.Literal, types, map[string]struct{}{})
 		if err != nil {
-			return err
+			return diagnosticErrorAtNode(err, arm.Pattern)
 		}
 		pattern := values[0]
 		if !choiceContainsValue(matchedType.choiceValues, pattern) {
-			return validationErrorf("match pattern %s is not a member of %s", scalarValueDisplay(pattern), matchedType.name())
+			return diagnosticErrorAtNode(
+				validationErrorf("match pattern %s is not a member of %s", scalarValueDisplay(pattern), matchedType.name()),
+				arm.Pattern,
+			)
 		}
 		if choiceContainsValue(seen, pattern) {
-			return validationErrorf("duplicate match pattern %s", scalarValueDisplay(pattern))
+			return diagnosticErrorAtNode(
+				validationErrorf("duplicate match pattern %s", scalarValueDisplay(pattern)),
+				arm.Pattern,
+			)
 		}
 		seen = append(seen, pattern)
 	}

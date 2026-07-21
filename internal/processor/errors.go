@@ -236,6 +236,18 @@ func inferErrorCode(message string) ErrorCode {
 		return ErrorCode("mace.type.mixed-array-literal")
 	case strings.Contains(message, "interpolation requires a scalar value"):
 		return ErrorCode("mace.string.nonscalar-interpolation")
+	case strings.Contains(message, "choice match arms require a literal pattern"):
+		return ErrorCode("mace.match.choice-type-pattern")
+	case strings.Contains(message, "variant match arms require a type pattern"):
+		return ErrorCode("mace.match.variant-literal-pattern")
+	case strings.Contains(message, "duplicate match pattern"):
+		return ErrorCode("mace.match.duplicate-pattern")
+	case strings.Contains(message, "match pattern") && strings.Contains(message, "is not a member"):
+		return ErrorCode("mace.match.pattern-outside-domain")
+	case strings.Contains(message, "match expression must be exhaustive"):
+		return ErrorCode("mace.match.not-exhaustive")
+	case strings.Contains(message, "match input must be a variant or choice"):
+		return ErrorCode("mace.match.concrete-input")
 	case strings.Contains(message, "unknown identifier"):
 		return ErrorCode("mace.type.unknown-identifier")
 	case strings.Contains(message, "unknown self reference"):

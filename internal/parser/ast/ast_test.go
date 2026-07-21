@@ -124,4 +124,11 @@ var _ = Describe("AST nodes", func() {
 		}).Range()
 		tAssert.Equal(SourceRange{Start: SourcePosition{Line: 4, Column: 5}, End: SourcePosition{Line: 4, Column: 6}}, rangeValue)
 	})
+
+	It("ranges match patterns by the pattern expression", func() {
+		rangeValue := (MatchPattern{
+			Type: PrimitiveType{Token: lexer.Token{Lexeme: "string", Line: 5, Column: 3}},
+		}).Range()
+		tAssert.Equal(SourceRange{Start: SourcePosition{Line: 5, Column: 3}, End: SourcePosition{Line: 5, Column: 9}}, rangeValue)
+	})
 })

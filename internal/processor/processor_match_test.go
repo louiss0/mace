@@ -255,6 +255,27 @@ func redundantCompositeMatchSource(kind string, depth int, typeReference string,
 }
 
 var _ = Describe("Match expressions", func() {
+	It("attaches choice pattern errors to the invalid pattern", func() {
+		_, err := New().Process(`|===|
+choice['on', 'off'] value = 'on';
+int selected = match (value) {
+  string => 1,
+  'off' => 0,
+};
+|===|
+[output = 'data'] { result: selected, }`)
+		tAssert.Error(err)
+
+		var diagnostic DiagnosticError
+		if tAssert.ErrorAs(err, &diagnostic) {
+			tAssert.Equal(ErrorCode("mace.match.choice-type-pattern"), diagnostic.Code)
+			tAssert.Equal(4, diagnostic.Range.Start.Line)
+			tAssert.Equal(3, diagnostic.Range.Start.Column)
+			tAssert.Equal(4, diagnostic.Range.End.Line)
+			tAssert.Equal(9, diagnostic.Range.End.Column)
+		}
+	})
+
 	It("selects a variant arm by runtime member type", func() {
 		result, err := New().Process(`|===|
 variant[string, int] value = 7;

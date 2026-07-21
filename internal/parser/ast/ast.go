@@ -267,6 +267,16 @@ type MatchPattern struct {
 	Literal Expression
 }
 
+func (m MatchPattern) Range() SourceRange {
+	if m.Type != nil {
+		return m.Type.Range()
+	}
+	if m.Literal != nil {
+		return m.Literal.Range()
+	}
+	return SourceRange{}
+}
+
 type MatchArm struct {
 	Pattern MatchPattern
 	Value   Expression

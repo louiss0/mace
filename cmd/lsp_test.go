@@ -650,6 +650,31 @@ Name user = "Ada";
 		}
 	})
 
+	It("publishes choice type pattern errors at the invalid pattern", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+choice['on', 'off'] value = 'on';
+int selected = match (value) {
+  string => 1,
+  'off' => 0,
+};
+|===|
+[output = 'data'] { result: selected, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "choice match arms require a literal pattern")
+				tAssert.Equal("mace.match.choice-type-pattern", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 3, Character: 2},
+					End:   protocol.Position{Line: 3, Character: 8},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
 	It("publishes mismatched script delimiters at the closing delimiter", func() {
 		notifications := []capturedNotification{}
 
