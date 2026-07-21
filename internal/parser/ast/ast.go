@@ -1,7 +1,7 @@
 package ast
 
 import (
-	"unicode/utf8"
+	"unicode/utf16"
 
 	"github.com/louiss0/mace/internal/lexer"
 )
@@ -21,12 +21,29 @@ type Node interface {
 }
 
 func TokenRange(token lexer.Token) SourceRange {
+	end := SourcePosition{Line: token.Line, Column: token.Column}
+	previousWasCarriageReturn := false
+	for _, character := range token.Lexeme {
+		switch character {
+		case '\r':
+			end.Line++
+			end.Column = 1
+			previousWasCarriageReturn = true
+		case '\n':
+			if !previousWasCarriageReturn {
+				end.Line++
+			}
+			end.Column = 1
+			previousWasCarriageReturn = false
+		default:
+			end.Column += utf16.RuneLen(character)
+			previousWasCarriageReturn = false
+		}
+	}
+
 	return SourceRange{
 		Start: SourcePosition{Line: token.Line, Column: token.Column},
-		End: SourcePosition{
-			Line:   token.Line,
-			Column: token.Column + utf8.RuneCountInString(token.Lexeme),
-		},
+		End:   end,
 	}
 }
 

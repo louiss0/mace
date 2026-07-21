@@ -3751,6 +3751,8 @@ int value = 1;
 		tAssert.Equal(protocol.Position{Line: 1, Character: 0}, position)
 		position = positionFromIndex("a\nb", 1)
 		tAssert.Equal(protocol.Position{Line: 0, Character: 1}, position)
+		position = positionFromIndex("a😀b", len("a😀"))
+		tAssert.Equal(protocol.Position{Line: 0, Character: 3}, position)
 	})
 
 	It("returns initialized results through the json-rpc bridge", func() {

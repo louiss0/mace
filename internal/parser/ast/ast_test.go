@@ -96,8 +96,16 @@ var _ = Describe("AST nodes", func() {
 		tAssert.Equal("Local", withAlias.LocalName())
 	})
 
-	It("counts token ranges by characters", func() {
+	It("counts token ranges in UTF-16 code units", func() {
 		rangeValue := TokenRange(lexer.Token{Lexeme: "café", Line: 2, Column: 4})
 		tAssert.Equal(SourceRange{Start: SourcePosition{Line: 2, Column: 4}, End: SourcePosition{Line: 2, Column: 8}}, rangeValue)
+
+		rangeValue = TokenRange(lexer.Token{Lexeme: "𐐀", Line: 2, Column: 4})
+		tAssert.Equal(SourceRange{Start: SourcePosition{Line: 2, Column: 4}, End: SourcePosition{Line: 2, Column: 6}}, rangeValue)
+	})
+
+	It("tracks multiline token ranges", func() {
+		rangeValue := TokenRange(lexer.Token{Lexeme: "\"\"\"a\r\n😀\"\"\"", Line: 2, Column: 4})
+		tAssert.Equal(SourceRange{Start: SourcePosition{Line: 2, Column: 4}, End: SourcePosition{Line: 3, Column: 6}}, rangeValue)
 	})
 })

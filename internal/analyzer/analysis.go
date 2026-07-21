@@ -3571,9 +3571,11 @@ func parsedIdentifierRangeFromEnd(tokens []lexer.Token, name string) (protocol.R
 }
 
 func tokenProtocolRange(token lexer.Token) protocol.Range {
-	start := protocol.Position{Line: protocol.UInteger(token.Line - 1), Character: protocol.UInteger(token.Column - 1)}
-	end := protocol.Position{Line: protocol.UInteger(token.Line - 1), Character: protocol.UInteger(token.Column - 1 + len(token.Lexeme))}
-	return protocol.Range{Start: start, End: end}
+	sourceRange := ast.TokenRange(token)
+	return protocol.Range{
+		Start: protocolPositionFromOneBased(sourceRange.Start.Line, sourceRange.Start.Column),
+		End:   protocolPositionFromOneBased(sourceRange.End.Line, sourceRange.End.Column),
+	}
 }
 
 func collectDeclarationsExcludingParsed(file ast.File, result *processor.Result, importBaseDir string) []declarationDefinition {

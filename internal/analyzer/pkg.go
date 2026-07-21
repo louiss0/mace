@@ -347,10 +347,8 @@ func DiagnosticFromError(err error) protocol.Diagnostic {
 		code = diagnosticCode(diagnosticError.Code)
 		message = diagnosticError.Message
 		if diagnosticError.Range.Start.Line != 0 || diagnosticError.Range.Start.Column != 0 || diagnosticError.Range.End.Line != 0 || diagnosticError.Range.End.Column != 0 {
-			position.Line = protocol.UInteger(diagnosticError.Range.Start.Line - 1)
-			position.Character = protocol.UInteger(diagnosticError.Range.Start.Column - 1)
-			end.Line = protocol.UInteger(diagnosticError.Range.End.Line - 1)
-			end.Character = protocol.UInteger(diagnosticError.Range.End.Column - 1)
+			position = protocolPositionFromOneBased(diagnosticError.Range.Start.Line, diagnosticError.Range.Start.Column)
+			end = protocolPositionFromOneBased(diagnosticError.Range.End.Line, diagnosticError.Range.End.Column)
 			return diagnosticWithCode(protocol.Range{Start: position, End: end}, protocol.DiagnosticSeverityError, code, message)
 		}
 	}
@@ -359,10 +357,8 @@ func DiagnosticFromError(err error) protocol.Diagnostic {
 		code = diagnosticCodeFromProcessorError(diagnosticError)
 		message = diagnosticError.Message
 		if diagnosticError.Range.Start.Line != 0 || diagnosticError.Range.Start.Column != 0 || diagnosticError.Range.End.Line != 0 || diagnosticError.Range.End.Column != 0 {
-			position.Line = protocol.UInteger(diagnosticError.Range.Start.Line - 1)
-			position.Character = protocol.UInteger(diagnosticError.Range.Start.Column - 1)
-			end.Line = protocol.UInteger(diagnosticError.Range.End.Line - 1)
-			end.Character = protocol.UInteger(diagnosticError.Range.End.Column - 1)
+			position = protocolPositionFromOneBased(diagnosticError.Range.Start.Line, diagnosticError.Range.Start.Column)
+			end = protocolPositionFromOneBased(diagnosticError.Range.End.Line, diagnosticError.Range.End.Column)
 			return diagnosticWithCode(protocol.Range{Start: position, End: end}, protocol.DiagnosticSeverityError, code, message)
 		}
 	}
@@ -605,26 +601,51 @@ func nameRange(text string, name string) (protocol.Position, protocol.Position) 
 	return start, end
 }
 
-func positionFromIndex(text string, index int) protocol.Position {
+func protocolPositionFromOneBased(line int, character int) protocol.Position {
+	position := protocol.Position{}
+	if line > 0 {
+		position.Line = protocol.UInteger(line - 1)
+	}
+	if character > 0 {
+		position.Character = protocol.UInteger(character - 1)
+	}
+	return position
+}
+
+func PositionFromIndex(text string, index int) protocol.Position {
 	line := protocol.UInteger(0)
-	column := protocol.UInteger(0)
+	character := protocol.UInteger(0)
+	previousWasCarriageReturn := false
 
 	for currentIndex, runeValue := range text {
 		if currentIndex >= index {
 			break
 		}
-		if runeValue == '\n' {
+		switch runeValue {
+		case '\r':
 			line++
-			column = 0
-			continue
+			character = 0
+			previousWasCarriageReturn = true
+		case '\n':
+			if !previousWasCarriageReturn {
+				line++
+			}
+			character = 0
+			previousWasCarriageReturn = false
+		default:
+			character += protocol.UInteger(utf16.RuneLen(runeValue))
+			previousWasCarriageReturn = false
 		}
-		column++
 	}
 
 	return protocol.Position{
 		Line:      line,
-		Character: column,
+		Character: character,
 	}
+}
+
+func positionFromIndex(text string, index int) protocol.Position {
+	return PositionFromIndex(text, index)
 }
 
 func identifierPrefixAt(text string, position protocol.Position) string {
