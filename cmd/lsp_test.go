@@ -650,6 +650,69 @@ Name user = "Ada";
 		}
 	})
 
+	It("does not publish schema-shaped data diagnostics for schema-backed output", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+schema User: { name: string, age: int, };
+|===|
+[output = 'data', schema = User]
+{ name: 'Ada', }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			for _, diagnostic := range requireDiagnostics(notifications[0]).Diagnostics {
+				tAssert.NotEqual("mace.directive.schema-shaped-data-output", diagnostic.Code.Value)
+			}
+		}
+	})
+
+	It("publishes unknown output field errors at the field name", func() {
+		notifications := []capturedNotification{}
+		didOpen(server, uri, `|===|
+schema User: { name: string, };
+|===|
+[output = 'data', schema = User]
+{ name: 'Ada', extra: true, }`, &notifications)
+
+		params := requireDiagnostics(notifications[0])
+		if tAssert.Len(params.Diagnostics, 1) {
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 4, Character: 15},
+				End:   protocol.Position{Line: 4, Character: 20},
+			}, params.Diagnostics[0].Range)
+		}
+	})
+
+	It("publishes self reference errors at the accessed field", func() {
+		notifications := []capturedNotification{}
+		didOpen(server, uri, `[output = 'data']
+{ value: $self.missing, }`, &notifications)
+
+		params := requireDiagnostics(notifications[0])
+		if tAssert.Len(params.Diagnostics, 1) {
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 15},
+				End:   protocol.Position{Line: 1, Character: 22},
+			}, params.Diagnostics[0].Range)
+		}
+	})
+
+	It("publishes unknown type errors at the type reference", func() {
+		notifications := []capturedNotification{}
+		didOpen(server, uri, `|===|
+Unknown value = 1;
+|===|
+[output = 'data'] {}`, &notifications)
+
+		params := requireDiagnostics(notifications[0])
+		if tAssert.Len(params.Diagnostics, 1) {
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 0},
+				End:   protocol.Position{Line: 1, Character: 7},
+			}, params.Diagnostics[0].Range)
+		}
+	})
+
 	It("publishes invalid output optionality errors at the field name", func() {
 		notifications := []capturedNotification{}
 

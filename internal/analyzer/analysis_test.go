@@ -148,6 +148,78 @@ var _ = Describe("LSP analysis", func() {
 		}
 	})
 
+	It("does not classify schema-backed data output as schema-shaped data", func() {
+		snapshot := analyzeDocument(`|===|
+schema User: { name: string, age: int, };
+|===|
+[output = 'data', schema = User]
+{ name: 'Ada', }`)
+
+		for _, diagnostic := range snapshot.diagnostics {
+			tAssert.NotEqual("mace.directive.schema-shaped-data-output", requireDiagnosticCode(diagnostic))
+		}
+	})
+
+	It("points unknown output field errors at the field name", func() {
+		snapshot := analyzeDocument(`|===|
+schema User: { name: string, };
+|===|
+[output = 'data', schema = User]
+{ name: 'Ada', extra: true, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "unknown output field \"extra\"")
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 4, Character: 15},
+				End:   protocol.Position{Line: 4, Character: 20},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("points forward self reference errors at the accessed field", func() {
+		snapshot := analyzeDocument(`[output = 'data']
+{
+  first: $self.second,
+  second: 2,
+}`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "unknown self reference \"second\"")
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 2, Character: 15},
+				End:   protocol.Position{Line: 2, Character: 21},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("points unknown self reference errors at the accessed field", func() {
+		snapshot := analyzeDocument(`[output = 'data']
+{ value: $self.missing, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "unknown self reference \"missing\"")
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 15},
+				End:   protocol.Position{Line: 1, Character: 22},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("points unknown type errors at the type reference", func() {
+		snapshot := analyzeDocument(`|===|
+Unknown value = 1;
+|===|
+[output = 'data'] {}`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "unknown type \"Unknown\"")
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 0},
+				End:   protocol.Position{Line: 1, Character: 7},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
 	It("points invalid output optionality errors at the field name", func() {
 		snapshot := analyzeDocument(`|===|
 schema User: { name: string, };

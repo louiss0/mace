@@ -1123,6 +1123,7 @@ func (p *Parser) parseSelfReference() (ast.Expression, error) {
 		return nil, err
 	}
 
+	segmentTokens := []lexer.Token{firstSegment}
 	segments := []string{firstSegment.Lexeme}
 	for p.current().Type == lexer.TokenDot {
 		p.advance()
@@ -1130,10 +1131,11 @@ func (p *Parser) parseSelfReference() (ast.Expression, error) {
 		if err != nil {
 			return nil, err
 		}
+		segmentTokens = append(segmentTokens, segment)
 		segments = append(segments, segment.Lexeme)
 	}
 
-	return ast.SelfReference{Token: selfToken, Path: segments}, nil
+	return ast.SelfReference{Token: selfToken, PathTokens: segmentTokens, Path: segments}, nil
 }
 
 func (p *Parser) parseDollarReference() (ast.Expression, error) {

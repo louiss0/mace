@@ -10,6 +10,23 @@ import (
 )
 
 var _ = Describe("Output data", func() {
+	It("attaches unknown output field errors to the field name", func() {
+		_, err := New().Process(`|===|
+schema User: { name: string, };
+|===|
+[output = 'data', schema = User]
+{ name: 'Ada', extra: true, }`)
+		tAssert.Error(err)
+
+		var diagnostic DiagnosticError
+		if tAssert.ErrorAs(err, &diagnostic) {
+			tAssert.Equal(5, diagnostic.Range.Start.Line)
+			tAssert.Equal(16, diagnostic.Range.Start.Column)
+			tAssert.Equal(5, diagnostic.Range.End.Line)
+			tAssert.Equal(21, diagnostic.Range.End.Column)
+		}
+	})
+
 	It("attaches invalid output optionality errors to the field name", func() {
 		_, err := New().Process(`|===|
 schema User: { name: string, };

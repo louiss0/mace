@@ -309,8 +309,9 @@ func (c ConditionalExpression) Range() SourceRange {
 }
 
 type SelfReference struct {
-	Token lexer.Token
-	Path  []string
+	Token      lexer.Token
+	PathTokens []lexer.Token
+	Path       []string
 }
 
 func (SelfReference) expressionNode() {
@@ -318,6 +319,9 @@ func (SelfReference) expressionNode() {
 }
 
 func (s SelfReference) Range() SourceRange {
+	if len(s.PathTokens) > 0 {
+		return TokenRange(s.PathTokens[len(s.PathTokens)-1])
+	}
 	return TokenRange(s.Token)
 }
 

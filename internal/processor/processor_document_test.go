@@ -14,6 +14,22 @@ import (
 )
 
 var _ = Describe("Document", func() {
+	It("attaches unknown type errors to the type reference", func() {
+		_, err := New().Process(`|===|
+Unknown value = 1;
+|===|
+[output = 'data'] {}`)
+		tAssert.Error(err)
+
+		var diagnostic DiagnosticError
+		if tAssert.ErrorAs(err, &diagnostic) {
+			tAssert.Equal(2, diagnostic.Range.Start.Line)
+			tAssert.Equal(1, diagnostic.Range.Start.Column)
+			tAssert.Equal(2, diagnostic.Range.End.Line)
+			tAssert.Equal(8, diagnostic.Range.End.Column)
+		}
+	})
+
 	DescribeTable("processes valid script blocks",
 		func(input string) {
 			processor := New()

@@ -1626,10 +1626,10 @@ func validateTypeReference(typeRef ast.TypeReference, symbols *symbolTable, type
 	case ast.NamedType:
 		if symbols.IsType(ref.Name) {
 			_, _, err := types.Resolve(ref.Name)
-			return err
+			return diagnosticErrorAtNode(err, ref)
 		}
 		if !symbols.IsSchema(ref.Name) && !symbols.IsImport(ref.Name) {
-			return validationErrorf("unknown type %q", ref.Name)
+			return diagnosticErrorAtNode(validationErrorf("unknown type %q", ref.Name), ref)
 		}
 		return nil
 	default:
@@ -2283,9 +2283,12 @@ func validateOutputSchema(schemaName string, items []ast.OutputField, variables 
 		}
 	}
 
-	for name := range fieldsByName {
+	for name, item := range fieldsByName {
 		if _, exists := schemaFields[name]; !exists {
-			return validationErrorf("unknown output field %q for schema %q", name, schemaName)
+			return diagnosticErrorAtNode(
+				validationErrorf("unknown output field %q for schema %q", name, schemaName),
+				item,
+			)
 		}
 	}
 
@@ -2938,7 +2941,8 @@ func evaluateExpression(expression ast.Expression, environment *valueEnvironment
 	case ast.RecordLiteral:
 		return evaluateRecordLiteral(expr, environment, self, symbols, types, schemas, enums)
 	case ast.SelfReference:
-		return evaluateSelfReference(expr, self)
+		value, err := evaluateSelfReference(expr, self)
+		return value, diagnosticErrorAtNode(err, expr)
 	case ast.PrefixExpression:
 		return evaluatePrefix(expr, environment, self, symbols, types, schemas, enums)
 	case ast.InfixExpression:
@@ -3037,7 +3041,9 @@ func parseDocString(lexeme string) (Value, error) {
 	if !strings.HasPrefix(lexeme, `"""`) {
 		return Value{}, validationErrorf("doc blocks must use a block string")
 	}
-	value, err := decodeStringLexeme(lexeme, false, nil)
+	value, err := decodeStringLexeme(lexeme, true, func(expression string) (string, error) {
+		return "$(" + expression + ")", nil
+	})
 	if err != nil {
 		return Value{}, err
 	}
@@ -4535,7 +4541,7 @@ func inferMemberExpressionType(expr ast.MemberAccess, variables *variableRegistr
 		return valueType{kind: ValueUnknown}, nil
 	}
 	if targetType.nullable {
-		return valueType{}, diagnosticErrorAtNode(nullableVariableAccessError(expr.Name), expr)
+		return valueType{}, diagnosticErrorAtToken(nullableVariableAccessError(expr.Name), expr.OperatorToken)
 	}
 	if targetType.presence == presencePossiblyAbsent && !expr.Optional {
 		return valueType{}, diagnosticErrorAtToken(optionalFieldAccessError(expr.Name), expr.OperatorToken)

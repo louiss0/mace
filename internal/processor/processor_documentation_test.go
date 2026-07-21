@@ -171,13 +171,16 @@ Invalid: no directive list
 {
 }
 `, "expected output directive"),
-		Entry("output inline doc rejects interpolation", `[output = 'schema']
+	)
+
+	It("preserves interpolation markers in output documentation", func() {
+		_, err := New().Process(`[output = 'schema']
 """$(name)"""
 {
   name: string,
-}
-`, "interpolation is not allowed"),
-	)
+}`)
+		tAssert.NoError(err)
+	})
 
 	It("loads doc fixtures", func() {
 		processor := New()
