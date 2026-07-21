@@ -95,7 +95,50 @@ func HasParsedFile(snapshot Snapshot) bool {
 }
 
 func Diagnostics(snapshot Snapshot) []protocol.Diagnostic {
-	return snapshot.diagnostics
+	return deduplicateDiagnostics(snapshot.diagnostics)
+}
+
+type diagnosticIdentity struct {
+	Range              protocol.Range
+	Severity           protocol.DiagnosticSeverity
+	Code               string
+	Source             string
+	Message            string
+	Tags               string
+	RelatedInformation string
+}
+
+func deduplicateDiagnostics(diagnostics []protocol.Diagnostic) []protocol.Diagnostic {
+	seen := map[diagnosticIdentity]struct{}{}
+	return lo.Filter(diagnostics, func(diagnostic protocol.Diagnostic, _ int) bool {
+		identity := diagnosticIdentity{
+			Range:              diagnostic.Range,
+			Code:               diagnosticCodeIdentity(diagnostic.Code),
+			Message:            diagnostic.Message,
+			Tags:               fmt.Sprintf("%#v", diagnostic.Tags),
+			RelatedInformation: fmt.Sprintf("%#v", diagnostic.RelatedInformation),
+		}
+		if diagnostic.Severity != nil {
+			identity.Severity = *diagnostic.Severity
+		}
+		if diagnostic.Source != nil {
+			identity.Source = *diagnostic.Source
+		}
+		if _, exists := seen[identity]; exists {
+			return false
+		}
+
+		seen[identity] = struct{}{}
+		return true
+	})
+}
+
+func diagnosticCodeIdentity(code *protocol.IntegerOrString) string {
+	if code == nil {
+		return ""
+	}
+
+	return fmt.Sprintf("%T:%v", code.Value, code.Value)
 }
 
 func CompletionItems(text string, snapshot Snapshot, uri protocol.DocumentUri, position protocol.Position) []protocol.CompletionItem {

@@ -693,7 +693,7 @@ func analyzeDocumentAtInRootContext(context context.Context, text string, docume
 		analysis := collectCodeActionAnalysis(text, documentPath, literalActionAnalysis)
 		snapshot.diagnostics = append(analysis.diagnostics, diagnosticFromError(lexErr))
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, analysis.actions...)
-		return snapshot, nil
+		return finalizedAnalysis(snapshot), nil
 	}
 	snapshot.tokens = tokens
 	analysis := collectCodeActionAnalysis(
@@ -734,7 +734,7 @@ func analyzeDocumentAtInRootContext(context context.Context, text string, docume
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, scriptBlockStructureCodeActions(text, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, variableFixTextCodeActions(text, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, arrayTextCodeActions(text, documentPath)...)
-		return snapshot, nil
+		return finalizedAnalysis(snapshot), nil
 	}
 	if err := context.Err(); err != nil {
 		return snapshot, err
@@ -774,7 +774,7 @@ func analyzeDocumentAtInRootContext(context context.Context, text string, docume
 			unusedDiagnostics, unusedActions := unusedDeclarationAnalysis(text, file, tokens, documentPath)
 			snapshot.diagnostics = append(snapshot.diagnostics, unusedDiagnostics...)
 			snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, unusedActions...)
-			return snapshot, nil
+			return finalizedAnalysis(snapshot), nil
 		}
 		if semanticDiagnostic, ok := semanticDiagnosticFromError(file, tokens, processErr); ok {
 			snapshot.diagnostics = append(snapshot.diagnostics, semanticDiagnostic)
@@ -783,7 +783,7 @@ func analyzeDocumentAtInRootContext(context context.Context, text string, docume
 			snapshot.diagnostics = append(snapshot.diagnostics, diagnosticFromError(processErr))
 		}
 		snapshot.diagnostics = append(snapshot.diagnostics, lo.Ternary(hasParseDirectiveWarning, []protocol.Diagnostic{parseDirectiveWarning}, nil)...)
-		return snapshot, nil
+		return finalizedAnalysis(snapshot), nil
 	}
 
 	snapshot.result = &result
@@ -800,7 +800,12 @@ func analyzeDocumentAtInRootContext(context context.Context, text string, docume
 	if err := context.Err(); err != nil {
 		return snapshot, err
 	}
-	return snapshot, nil
+	return finalizedAnalysis(snapshot), nil
+}
+
+func finalizedAnalysis(snapshot analysisSnapshot) analysisSnapshot {
+	snapshot.diagnostics = deduplicateDiagnostics(snapshot.diagnostics)
+	return snapshot
 }
 
 func analyzeCompletionContext(text string, documentPath string, position protocol.Position) analysisSnapshot {

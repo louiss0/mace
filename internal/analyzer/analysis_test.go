@@ -114,6 +114,40 @@ var _ = Describe("LSP analysis", func() {
 		_, _, _ = selfOrderingEdit("[output = 'data'] { result: $self.name, }", file, tokens, "self")
 	})
 
+	It("deduplicates diagnostics before publication", func() {
+		rangeValue := protocol.Range{End: protocol.Position{Character: 1}}
+		diagnostic := diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticTypeUnknownIdentifier, "unknown")
+		differentRange := diagnosticWithCode(
+			protocol.Range{Start: protocol.Position{Character: 2}, End: protocol.Position{Character: 3}},
+			protocol.DiagnosticSeverityError,
+			diagnosticTypeUnknownIdentifier,
+			"unknown",
+		)
+
+		diagnostics := Diagnostics(analysisSnapshot{diagnostics: []protocol.Diagnostic{diagnostic, diagnostic, differentRange}})
+		tAssert.Equal([]protocol.Diagnostic{diagnostic, differentRange}, diagnostics)
+	})
+
+	It("uses local ranges for supplemental semantic diagnostics", func() {
+		text := "first: 1 second: 2\nmatch (value) { string => 1 } variant[string, int]\nparse = Missing"
+		diagnostics := diagnosticDataAnalysis(text)
+
+		if tAssert.Len(diagnostics, 3) {
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 0, Character: 9},
+				End:   protocol.Position{Line: 0, Character: 15},
+			}, diagnostics[0].Range)
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 0},
+				End:   protocol.Position{Line: 1, Character: 13},
+			}, diagnostics[1].Range)
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 2, Character: 8},
+				End:   protocol.Position{Line: 2, Character: 15},
+			}, diagnostics[2].Range)
+		}
+	})
+
 	It("uses parser AST ranges for processor diagnostics", func() {
 		snapshot := analyzeDocument(`|===|
 schema User: { nickname?: string, };
