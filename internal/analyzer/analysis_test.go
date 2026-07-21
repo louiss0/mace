@@ -148,6 +148,22 @@ var _ = Describe("LSP analysis", func() {
 		}
 	})
 
+	It("points concrete match input errors at the input expression", func() {
+		snapshot := analyzeDocument(`|===|
+string value = 'text'; string result = match (value) { string => 'text', int => 'number', };
+|===|
+[output = 'data'] { result: result, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "match input must be a variant or choice")
+			tAssert.Equal("mace.match.concrete-input", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 46},
+				End:   protocol.Position{Line: 1, Character: 51},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
 	It("points choice type pattern errors at the invalid pattern", func() {
 		snapshot := analyzeDocument(`|===|
 choice['on', 'off'] value = 'on';

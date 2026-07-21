@@ -255,6 +255,23 @@ func redundantCompositeMatchSource(kind string, depth int, typeReference string,
 }
 
 var _ = Describe("Match expressions", func() {
+	It("attaches concrete match input errors to the input expression", func() {
+		_, err := New().Process(`|===|
+string value = 'text'; string result = match (value) { string => 'text', int => 'number', };
+|===|
+[output = 'data'] { result: result, }`)
+		tAssert.Error(err)
+
+		var diagnostic DiagnosticError
+		if tAssert.ErrorAs(err, &diagnostic) {
+			tAssert.Equal(ErrorCode("mace.match.concrete-input"), diagnostic.Code)
+			tAssert.Equal(2, diagnostic.Range.Start.Line)
+			tAssert.Equal(47, diagnostic.Range.Start.Column)
+			tAssert.Equal(2, diagnostic.Range.End.Line)
+			tAssert.Equal(52, diagnostic.Range.End.Column)
+		}
+	})
+
 	It("attaches choice pattern errors to the invalid pattern", func() {
 		_, err := New().Process(`|===|
 choice['on', 'off'] value = 'on';

@@ -650,6 +650,27 @@ Name user = "Ada";
 		}
 	})
 
+	It("publishes concrete match input errors at the input expression", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+string value = 'text'; string result = match (value) { string => 'text', int => 'number', };
+|===|
+[output = 'data'] { result: result, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "match input must be a variant or choice")
+				tAssert.Equal("mace.match.concrete-input", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 1, Character: 46},
+					End:   protocol.Position{Line: 1, Character: 51},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
 	It("publishes choice type pattern errors at the invalid pattern", func() {
 		notifications := []capturedNotification{}
 

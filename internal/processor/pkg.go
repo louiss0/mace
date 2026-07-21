@@ -4515,7 +4515,10 @@ func inferMatchType(expr ast.MatchExpression, variables *variableRegistry, symbo
 		return valueType{}, err
 	}
 	if len(matchedType.members) == 0 && len(matchedType.choiceValues) == 0 {
-		return valueType{}, validationErrorf("match input must be a variant or choice")
+		return valueType{}, diagnosticErrorAtNode(
+			validationErrorf("match input must be a variant or choice"),
+			expr.Value,
+		)
 	}
 	if err := validateMatchPatterns(expr.Arms, matchedType, symbols, types, schemas, enums); err != nil {
 		return valueType{}, err
