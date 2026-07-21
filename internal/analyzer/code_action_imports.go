@@ -49,6 +49,12 @@ func importActionAnalysis(text string, documentPath string) ([]protocol.Diagnost
 		if !strings.Contains(text, specification.match) {
 			continue
 		}
+		if specification.code == "mace.import.incorrect-relative-path" {
+			resolvedPath := filepath.Join(filepath.Dir(documentPath), "shared.mace")
+			if _, err := os.Stat(resolvedPath); err == nil {
+				continue
+			}
+		}
 		updated := text + "\n" + specification.updated
 		if specification.replacement {
 			updated = specification.updated
