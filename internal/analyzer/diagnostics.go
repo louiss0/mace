@@ -229,6 +229,9 @@ func classifyDiagnosticCode(message string) diagnosticCode {
 }
 
 func diagnosticCodeFromProcessorError(err processor.DiagnosticError) diagnosticCode {
+	if strings.Contains(err.Message, "cannot be accessed because its target is not a record") {
+		return diagnosticCode("mace.type.optional-field-access")
+	}
 	if mapped, ok := diagnosticCodeFromProcessorErrorCode(err.Code); ok {
 		return mapped
 	}

@@ -763,6 +763,28 @@ string city = user.address.city;
 		}
 	})
 
+	It("publishes record access past its declared depth at the invalid access suffix", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+record<string> packages = {};
+string value = packages.codefixer.cn_efs;
+|===|
+[output = 'data'] { value, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "target is not a record")
+				tAssert.Equal("mace.type.optional-field-access", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 2, Character: 33},
+					End:   protocol.Position{Line: 2, Character: 40},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
 	It("publishes invalid null usage errors at the null literal", func() {
 		notifications := []capturedNotification{}
 

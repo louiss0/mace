@@ -260,6 +260,23 @@ string city = user.address.city;
 		}
 	})
 
+	It("points record access past its declared depth at the invalid access suffix", func() {
+		snapshot := analyzeDocument(`|===|
+record<string> packages = {};
+string value = packages.codefixer.cn_efs;
+|===|
+[output = 'data'] { value, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "target is not a record")
+			tAssert.Equal("mace.type.optional-field-access", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 2, Character: 33},
+				End:   protocol.Position{Line: 2, Character: 40},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
 	It("points invalid null usage errors at the null literal", func() {
 		snapshot := analyzeDocument(`|===|
 string value = null;

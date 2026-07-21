@@ -4554,7 +4554,14 @@ func inferMemberExpressionType(expr ast.MemberAccess, variables *variableRegistr
 		}
 		return valueType{}, diagnosticErrorAtToken(err, expr.OperatorToken)
 	}
-	return memberType, diagnosticErrorAtNode(err, expr)
+	if err != nil {
+		memberRange := expr.Range()
+		return memberType, diagnosticErrorAtRange(err, ast.SourceRange{
+			Start: ast.TokenRange(expr.OperatorToken).Start,
+			End:   memberRange.End,
+		})
+	}
+	return memberType, nil
 }
 
 func isOptionalFieldAccessError(err error) bool {

@@ -139,11 +139,19 @@ string fallback = "";`, `
 	It("requires records to declare every traversed nesting level", func() {
 		_, err := New().Process(`|===|
 record<string> packages = {};
+string value = packages.codefixer.cn_efs;
 |===|
-[output = 'data']
-{ value: packages.codefixer.cn_efs, }`)
+[output = 'data'] { value, }`)
 
 		tAssert.ErrorContains(err, `member "cn_efs" cannot be accessed because its target is not a record`)
+
+		var diagnostic DiagnosticError
+		if tAssert.ErrorAs(err, &diagnostic) {
+			tAssert.Equal(3, diagnostic.Range.Start.Line)
+			tAssert.Equal(34, diagnostic.Range.Start.Column)
+			tAssert.Equal(3, diagnostic.Range.End.Line)
+			tAssert.Equal(41, diagnostic.Range.End.Column)
+		}
 	})
 
 	It("requires optional chaining at each nested record level", func() {
