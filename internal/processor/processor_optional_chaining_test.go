@@ -22,6 +22,30 @@ schema User: {
 };
 `
 
+	It("attaches optional field access errors to the access operator", func() {
+		_, err := New().Process(`|===|
+schema Address: {
+  city: string,
+};
+schema User: {
+  address?: Address,
+};
+User user = { address: { city: 'Paris', }, };
+string city = user.address.city;
+|===|
+[output = 'data'] { city: city, }`)
+		tAssert.Error(err)
+
+		var diagnostic DiagnosticError
+		if tAssert.ErrorAs(err, &diagnostic) {
+			tAssert.Equal(CodeOptionalFieldAccess, diagnostic.Code)
+			tAssert.Equal(9, diagnostic.Range.Start.Line)
+			tAssert.Equal(27, diagnostic.Range.Start.Column)
+			tAssert.Equal(9, diagnostic.Range.End.Line)
+			tAssert.Equal(28, diagnostic.Range.End.Column)
+		}
+	})
+
 	It("requires optional chaining when accessing an optional property", func() {
 		_, err := New().Process(optionalChainDocument(userSchemas, `User user = { records: {}, };`, `
   profile: user.profile,
@@ -248,10 +272,18 @@ func optionalChainDocumentWithOutputSchema(
 }
 
 func requireOptionalFieldAccessError(err error) {
+	requireDiagnosticCode(err, CodeOptionalFieldAccess)
+}
+
+func requireAbsentValueError(err error) {
+	requireDiagnosticCode(err, CodeAbsentValueNotCoalesced)
+}
+
+func requireDiagnosticCode(err error, code ErrorCode) {
 	var diagnostic DiagnosticError
 	if !tAssert.ErrorAs(err, &diagnostic) {
 		return
 	}
 
-	tAssert.Equal(CodeOptionalFieldAccess, diagnostic.Code, diagnostic.Message)
+	tAssert.Equal(code, diagnostic.Code, diagnostic.Message)
 }

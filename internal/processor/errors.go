@@ -30,6 +30,7 @@ const (
 type ErrorCode string
 
 const (
+	CodeAbsentValueNotCoalesced      ErrorCode = "mace.type.absent-value-not-coalesced"
 	CodeImportFileFailedParse        ErrorCode = "mace.import.file-failed-to-parse"
 	CodeImportFileNotFound           ErrorCode = "mace.import.file-not-found"
 	CodeInternal                     ErrorCode = "mace.internal"
@@ -106,6 +107,14 @@ func diagnosticErrorAtStringInterpolation(err error, expression ast.StringLitera
 }
 
 func diagnosticErrorAtNode(err error, node ast.Node) error {
+	return diagnosticErrorAtRange(err, node.Range())
+}
+
+func diagnosticErrorAtToken(err error, token lexer.Token) error {
+	return diagnosticErrorAtRange(err, ast.TokenRange(token))
+}
+
+func diagnosticErrorAtRange(err error, sourceRange ast.SourceRange) error {
 	if err == nil {
 		return nil
 	}
@@ -119,7 +128,7 @@ func diagnosticErrorAtNode(err error, node ast.Node) error {
 		return err
 	}
 
-	diagnosticError.Range = diagnostic.FromASTRange(node.Range())
+	diagnosticError.Range = diagnostic.FromASTRange(sourceRange)
 	return diagnosticError
 }
 
@@ -176,7 +185,7 @@ func nonRecordMemberAccessError(field string) error {
 func possiblyAbsentValueError() error {
 	return diagnosticErrorf(
 		ErrorType,
-		CodeOptionalFieldAccess,
+		CodeAbsentValueNotCoalesced,
 		DiagnosticFields{},
 		"possibly absent expressions must be resolved with '??' before use",
 	)

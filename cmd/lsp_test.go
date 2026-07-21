@@ -650,6 +650,34 @@ Name user = "Ada";
 		}
 	})
 
+	It("publishes optional field access errors at the access operator", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+schema Address: {
+  city: string,
+};
+schema User: {
+  address?: Address,
+};
+User user = { address: { city: 'Paris', }, };
+string city = user.address.city;
+|===|
+[output = 'data'] { city: city, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "use optional chaining '?.'")
+				tAssert.Equal("mace.type.optional-field-access", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 8, Character: 26},
+					End:   protocol.Position{Line: 8, Character: 27},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
 	It("publishes invalid null usage errors at the null literal", func() {
 		notifications := []capturedNotification{}
 

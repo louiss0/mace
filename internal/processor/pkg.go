@@ -4448,26 +4448,7 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 		}
 		return valueType{kind: ValueUnknown}, nil
 	case ast.MemberAccess:
-		if path, stable := stableExpressionPath(expr); stable {
-			if narrowedType, ok := variables.Get(path); ok {
-				return narrowedType, nil
-			}
-		}
-		targetType, err := inferExpressionType(expr.Target, variables, symbols, types, schemas, enums)
-		if err != nil {
-			return valueType{}, err
-		}
-		if targetType.kind == ValueUnknown && len(targetType.members) == 0 && len(targetType.choiceValues) == 0 {
-			return valueType{kind: ValueUnknown}, nil
-		}
-		if targetType.nullable {
-			return valueType{}, diagnosticErrorAtNode(nullableVariableAccessError(expr.Name), expr)
-		}
-		if targetType.presence == presencePossiblyAbsent && !expr.Optional {
-			return valueType{}, diagnosticErrorAtNode(optionalFieldAccessError(expr.Name), expr)
-		}
-		memberType, err := inferMemberAccessType(targetType, expr, symbols, types, schemas, enums)
-		return memberType, diagnosticErrorAtNode(err, expr)
+		return inferMemberExpressionType(expr, variables, symbols, types, schemas, enums, false)
 	case ast.MatchExpression:
 		return inferMatchType(expr, variables, symbols, types, schemas, enums)
 	case ast.IntLiteral:
@@ -4522,6 +4503,54 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 	default:
 		return valueType{}, validationErrorf("unknown expression")
 	}
+}
+
+func inferMemberExpressionType(expr ast.MemberAccess, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any, hasFollowingAccess bool) (valueType, error) {
+	if path, stable := stableExpressionPath(expr); stable {
+		if narrowedType, ok := variables.Get(path); ok {
+			return narrowedType, nil
+		}
+	}
+
+	var targetType valueType
+	var err error
+	if targetAccess, ok := expr.Target.(ast.MemberAccess); ok {
+		targetType, err = inferMemberExpressionType(targetAccess, variables, symbols, types, schemas, enums, true)
+	} else {
+		targetType, err = inferExpressionType(expr.Target, variables, symbols, types, schemas, enums)
+	}
+	if err != nil {
+		if isOptionalFieldAccessError(err) {
+			if !expr.Optional {
+				return valueType{}, diagnosticErrorAtToken(err, expr.OperatorToken)
+			}
+		} else {
+			return valueType{}, err
+		}
+	}
+	if targetType.kind == ValueUnknown && len(targetType.members) == 0 && len(targetType.choiceValues) == 0 {
+		return valueType{kind: ValueUnknown}, nil
+	}
+	if targetType.nullable {
+		return valueType{}, diagnosticErrorAtNode(nullableVariableAccessError(expr.Name), expr)
+	}
+	if targetType.presence == presencePossiblyAbsent && !expr.Optional {
+		return valueType{}, diagnosticErrorAtToken(optionalFieldAccessError(expr.Name), expr.OperatorToken)
+	}
+
+	memberType, err := inferMemberAccessType(targetType, expr, symbols, types, schemas, enums)
+	if isOptionalFieldAccessError(err) {
+		if hasFollowingAccess {
+			return memberType, err
+		}
+		return valueType{}, diagnosticErrorAtToken(err, expr.OperatorToken)
+	}
+	return memberType, diagnosticErrorAtNode(err, expr)
+}
+
+func isOptionalFieldAccessError(err error) bool {
+	var diagnosticError DiagnosticError
+	return errors.As(err, &diagnosticError) && diagnosticError.Code == CodeOptionalFieldAccess
 }
 
 func inferMatchType(expr ast.MatchExpression, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
@@ -4701,9 +4730,6 @@ func inferMemberAccessType(targetType valueType, expr ast.MemberAccess, symbols 
 		if field.Name != expr.Name {
 			continue
 		}
-		if field.Optional && !expr.Optional {
-			return valueType{}, optionalFieldAccessError(expr.Name)
-		}
 		memberType, err := resolveValueType(field.Type, symbols, types, schemas, enums)
 		if err != nil {
 			return valueType{}, err
@@ -4711,6 +4737,9 @@ func inferMemberAccessType(targetType valueType, expr ast.MemberAccess, symbols 
 		memberType.presence = presenceGuaranteed
 		if field.Optional || targetType.presence == presencePossiblyAbsent {
 			memberType.presence = presencePossiblyAbsent
+		}
+		if field.Optional && !expr.Optional {
+			return memberType, optionalFieldAccessError(expr.Name)
 		}
 		return memberType, nil
 	}

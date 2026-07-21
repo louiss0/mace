@@ -148,6 +148,29 @@ var _ = Describe("LSP analysis", func() {
 		}
 	})
 
+	It("points optional field access errors at the access operator", func() {
+		snapshot := analyzeDocument(`|===|
+schema Address: {
+  city: string,
+};
+schema User: {
+  address?: Address,
+};
+User user = { address: { city: 'Paris', }, };
+string city = user.address.city;
+|===|
+[output = 'data'] { city: city, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "use optional chaining '?.'")
+			tAssert.Equal("mace.type.optional-field-access", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 8, Character: 26},
+				End:   protocol.Position{Line: 8, Character: 27},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
 	It("points invalid null usage errors at the null literal", func() {
 		snapshot := analyzeDocument(`|===|
 string value = null;

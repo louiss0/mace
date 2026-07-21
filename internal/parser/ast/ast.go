@@ -79,10 +79,11 @@ func (i Identifier) Range() SourceRange {
 }
 
 type MemberAccess struct {
-	Target    Expression
-	NameToken lexer.Token
-	Name      string
-	Optional  bool
+	Target        Expression
+	OperatorToken lexer.Token
+	NameToken     lexer.Token
+	Name          string
+	Optional      bool
 }
 
 func (MemberAccess) expressionNode() {

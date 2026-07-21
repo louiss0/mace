@@ -96,7 +96,7 @@ from 'fixtures/processor/imports/unguarded_optional_city.mace' import city;
 
 		_, err := New().ProcessInDir(document, "../..")
 
-		requireOptionalFieldAccessError(err)
+		requireAbsentValueError(err)
 	})
 
 	It("tracks optional properties from imported schemas as possibly absent", func() {

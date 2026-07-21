@@ -1369,7 +1369,13 @@ func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token)
 		if err != nil {
 			return nil, err
 		}
-		return ast.MemberAccess{Target: left, NameToken: memberToken, Name: memberToken.Lexeme, Optional: operator.Type == lexer.TokenOptionalDot}, nil
+		return ast.MemberAccess{
+			Target:        left,
+			OperatorToken: operator,
+			NameToken:     memberToken,
+			Name:          memberToken.Lexeme,
+			Optional:      operator.Type == lexer.TokenOptionalDot,
+		}, nil
 	}
 
 	if grouped, ok := left.(ast.GroupedExpression); ok {
