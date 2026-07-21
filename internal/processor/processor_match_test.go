@@ -255,6 +255,26 @@ func redundantCompositeMatchSource(kind string, depth int, typeReference string,
 }
 
 var _ = Describe("Match expressions", func() {
+	It("attaches non-exhaustive match errors to the match expression", func() {
+		_, err := New().Process(`|===|
+variant[string, int] value = 1;
+string result = match (value) {
+  string => 'text',
+};
+|===|
+[output = 'data'] { result: result, }`)
+		tAssert.Error(err)
+
+		var diagnostic DiagnosticError
+		if tAssert.ErrorAs(err, &diagnostic) {
+			tAssert.Equal(ErrorCode("mace.match.not-exhaustive"), diagnostic.Code)
+			tAssert.Equal(3, diagnostic.Range.Start.Line)
+			tAssert.Equal(17, diagnostic.Range.Start.Column)
+			tAssert.Equal(5, diagnostic.Range.End.Line)
+			tAssert.Equal(2, diagnostic.Range.End.Column)
+		}
+	})
+
 	It("attaches duplicate match errors to the repeated pattern", func() {
 		_, err := New().Process(`|===|
 variant[string, int] value = 1;

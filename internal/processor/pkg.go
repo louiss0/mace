@@ -4521,7 +4521,7 @@ func inferMatchType(expr ast.MatchExpression, variables *variableRegistry, symbo
 		)
 	}
 	if err := validateMatchPatterns(expr.Arms, matchedType, symbols, types, schemas, enums); err != nil {
-		return valueType{}, err
+		return valueType{}, diagnosticErrorAtNode(err, expr)
 	}
 
 	var result valueType

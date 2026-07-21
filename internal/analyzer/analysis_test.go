@@ -148,6 +148,25 @@ var _ = Describe("LSP analysis", func() {
 		}
 	})
 
+	It("points non-exhaustive match errors at the match expression", func() {
+		snapshot := analyzeDocument(`|===|
+variant[string, int] value = 1;
+string result = match (value) {
+  string => 'text',
+};
+|===|
+[output = 'data'] { result: result, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "match expression must be exhaustive")
+			tAssert.Equal("mace.match.not-exhaustive", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 2, Character: 16},
+				End:   protocol.Position{Line: 4, Character: 1},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
 	It("points duplicate match errors at the repeated pattern", func() {
 		snapshot := analyzeDocument(`|===|
 variant[string, int] value = 1;
