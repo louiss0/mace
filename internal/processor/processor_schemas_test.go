@@ -319,6 +319,22 @@ schema User: {
 })
 
 var _ = Describe("Schema and processor helpers", func() {
+	It("attaches declaration ranges to processor diagnostics", func() {
+		_, err := New().Process(`|===|
+int count = "seven";
+|===|
+[output = 'data'] { result: count, }`)
+		tAssert.Error(err)
+
+		var diagnostic DiagnosticError
+		if tAssert.ErrorAs(err, &diagnostic) {
+			tAssert.Equal(2, diagnostic.Range.Start.Line)
+			tAssert.Equal(5, diagnostic.Range.Start.Column)
+			tAssert.Equal(2, diagnostic.Range.End.Line)
+			tAssert.Equal(10, diagnostic.Range.End.Column)
+		}
+	})
+
 	It("reports diagnostic helper details", func() {
 		kindName := directiveKindName
 		cause := errors.New("root cause")

@@ -3251,6 +3251,15 @@ func semanticDiagnosticFromError(file ast.File, tokens []lexer.Token, err error)
 	message := err.Error()
 	var diagnosticError processor.DiagnosticError
 	hasDiagnosticError := errors.As(err, &diagnosticError)
+	if hasDiagnosticError && (diagnosticError.Range.Start.Line != 0 || diagnosticError.Range.Start.Column != 0 ||
+		diagnosticError.Range.End.Line != 0 || diagnosticError.Range.End.Column != 0) {
+		diagnostic := diagnosticFromError(err)
+		if diagnosticError.Code == processor.CodeSelfReferenceUnknown {
+			code := classifySelfReferenceCode(file, diagnosticError.Fields.Name)
+			diagnostic = diagnosticWithCode(diagnostic.Range, protocol.DiagnosticSeverityError, code, diagnosticError.Message)
+		}
+		return diagnostic, true
+	}
 
 	if hasDiagnosticError {
 		if diagnostic, ok := variableTypeMismatchDiagnostic(file, tokens, diagnosticError); ok {

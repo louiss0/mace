@@ -108,4 +108,12 @@ var _ = Describe("AST nodes", func() {
 		rangeValue := TokenRange(lexer.Token{Lexeme: "\"\"\"a\r\n😀\"\"\"", Line: 2, Column: 4})
 		tAssert.Equal(SourceRange{Start: SourcePosition{Line: 2, Column: 4}, End: SourcePosition{Line: 3, Column: 6}}, rangeValue)
 	})
+
+	It("ranges member access by its member name", func() {
+		rangeValue := (MemberAccess{
+			Target:    Identifier{Token: lexer.Token{Lexeme: "user", Line: 3, Column: 3}},
+			NameToken: lexer.Token{Lexeme: "nickname", Line: 3, Column: 8},
+		}).Range()
+		tAssert.Equal(SourceRange{Start: SourcePosition{Line: 3, Column: 8}, End: SourcePosition{Line: 3, Column: 16}}, rangeValue)
+	})
 })

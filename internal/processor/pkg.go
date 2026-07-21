@@ -559,7 +559,7 @@ func hasParsedInputDirective(directives []ast.OutputDirective) bool {
 func validateOutputExpressionReferences(fields []ast.OutputField, variables *variableRegistry) error {
 	for _, field := range fields {
 		if err := validateExpressionReferences(field.Value, variables); err != nil {
-			return err
+			return diagnosticErrorAtNode(err, field)
 		}
 	}
 	return nil
@@ -571,12 +571,15 @@ func validateExpressionReferences(expression ast.Expression, variables *variable
 		return validateExpressionReferences(typed.Expression, variables)
 	case ast.Identifier:
 		if _, ok := variables.Get(typed.Name); !ok {
-			return diagnosticErrorf(
-				ErrorValue,
-				CodeOutputValueDeclaration,
-				DiagnosticFields{Name: typed.Name},
-				"unknown identifier %q",
-				typed.Name,
+			return diagnosticErrorAtNode(
+				diagnosticErrorf(
+					ErrorValue,
+					CodeOutputValueDeclaration,
+					DiagnosticFields{Name: typed.Name},
+					"unknown identifier %q",
+					typed.Name,
+				),
+				typed,
 			)
 		}
 	case ast.MemberAccess:
@@ -1469,18 +1472,18 @@ func collectDeclarations(items []ast.Declaration, symbols *symbolTable, types *t
 		switch decl := declaration.(type) {
 		case ast.VariableDeclaration:
 			if symbols.Has(decl.Name) {
-				return validationErrorf("duplicate declaration %q", decl.Name)
+				return diagnosticErrorAtNode(validationErrorf("duplicate declaration %q", decl.Name), decl)
 			}
 			symbols.Add(decl.Name, symbolKindVariable)
 		case ast.TypeDeclaration:
 			if symbols.Has(decl.Name) {
-				return validationErrorf("duplicate declaration %q", decl.Name)
+				return diagnosticErrorAtNode(validationErrorf("duplicate declaration %q", decl.Name), decl)
 			}
 			symbols.Add(decl.Name, symbolKindType)
 			types.AddAlias(decl.Name, decl.Type)
 		case ast.SchemaDeclaration:
 			if symbols.Has(decl.Name) {
-				return validationErrorf("duplicate declaration %q", decl.Name)
+				return diagnosticErrorAtNode(validationErrorf("duplicate declaration %q", decl.Name), decl)
 			}
 			symbols.Add(decl.Name, symbolKindSchema)
 			schemas.Add(decl.Name, decl.Type)
@@ -1508,7 +1511,7 @@ func validateDeclarations(items []ast.Declaration, symbols *symbolTable, types *
 
 	for _, declaration := range items {
 		if err := validateDeclaration(declaration, symbols, types, schemas, nil, variables, seenDocs, docsByTarget, declaredKinds); err != nil {
-			return err
+			return diagnosticErrorAtNode(err, declaration)
 		}
 
 		switch decl := declaration.(type) {
@@ -1638,12 +1641,12 @@ func validateRecordType(record ast.RecordType, symbols *symbolTable, types *type
 	fieldNames := map[string]struct{}{}
 	for _, field := range record.Fields {
 		if _, exists := fieldNames[field.Name]; exists {
-			return validationErrorf("duplicate field %q", field.Name)
+			return diagnosticErrorAtNode(validationErrorf("duplicate field %q", field.Name), field)
 		}
 		fieldNames[field.Name] = struct{}{}
 
 		if err := validateTypeReference(field.Type, symbols, types, schemas, enums); err != nil {
-			return err
+			return diagnosticErrorAtNode(err, field)
 		}
 	}
 
@@ -1819,16 +1822,16 @@ func validateSchemaOutputFields(fields []ast.OutputSchemaField, symbols *symbolT
 	fieldNames := map[string]struct{}{}
 	for _, field := range fields {
 		if _, exists := fieldNames[field.Name]; exists {
-			return validationErrorf("duplicate output field %q", field.Name)
+			return diagnosticErrorAtNode(validationErrorf("duplicate output field %q", field.Name), field)
 		}
 		fieldNames[field.Name] = struct{}{}
 
 		if err := validateSchemaOutputFieldType(field.Type, symbols); err != nil {
-			return err
+			return diagnosticErrorAtNode(err, field)
 		}
 
 		if err := validateTypeReference(field.Type, symbols, types, schemas, enums); err != nil {
-			return err
+			return diagnosticErrorAtNode(err, field)
 		}
 	}
 
@@ -1995,18 +1998,18 @@ func validateDataOutputFields(fields []ast.OutputField, hasSchema bool, variable
 	seen := make(map[string]struct{}, len(fields))
 	for _, field := range fields {
 		if _, exists := seen[field.Name]; exists {
-			return validationErrorf("duplicate output field %q", field.Name)
+			return diagnosticErrorAtNode(validationErrorf("duplicate output field %q", field.Name), field)
 		}
 		seen[field.Name] = struct{}{}
 
 		if !hasSchema && expressionContainsEmptyCollection(field.Value) {
-			return validationErrorf("empty collection output requires an output schema")
+			return diagnosticErrorAtNode(validationErrorf("empty collection output requires an output schema"), field)
 		}
 		if err := validateDataOutputExpression(field.Value, symbols); err != nil {
-			return err
+			return diagnosticErrorAtNode(err, field)
 		}
 		if err := validateExpressionPresence(field.Value, variables, symbols, types, schemas, enums, false); err != nil {
-			return err
+			return diagnosticErrorAtNode(err, field)
 		}
 	}
 
@@ -2100,10 +2103,10 @@ func validateExpressionPresence(expression ast.Expression, variables *variableRe
 	case ast.MemberAccess:
 		expressionType, err := inferExpressionType(expr, variables, symbols, types, schemas, enums)
 		if err != nil {
-			return err
+			return diagnosticErrorAtNode(err, expr)
 		}
 		if expressionType.presence == presencePossiblyAbsent && !allowAbsent {
-			return possiblyAbsentValueError()
+			return diagnosticErrorAtNode(possiblyAbsentValueError(), expr)
 		}
 		return validateExpressionPresence(expr.Target, variables, symbols, types, schemas, enums, true)
 	case ast.MatchExpression:
@@ -2170,11 +2173,14 @@ func validateDataOutputExpressionPosition(expression ast.Expression, symbols *sy
 	switch expr := expression.(type) {
 	case ast.NullLiteral:
 		if !isFieldRoot {
-			return validationErrorf("null is only allowed in output")
+			return diagnosticErrorAtNode(validationErrorf("null is only allowed in output"), expr)
 		}
 	case ast.Identifier:
 		if symbols.IsType(expr.Name) || symbols.IsSchema(expr.Name) {
-			return diagnosticErrorf(ErrorValue, CodeOutputValueDeclaration, DiagnosticFields{Name: expr.Name}, "output value %q cannot reference type or schema declaration", expr.Name)
+			return diagnosticErrorAtNode(
+				diagnosticErrorf(ErrorValue, CodeOutputValueDeclaration, DiagnosticFields{Name: expr.Name}, "output value %q cannot reference type or schema declaration", expr.Name),
+				expr,
+			)
 		}
 	case ast.MemberAccess:
 		return validateDataOutputExpressionPosition(expr.Target, symbols, false)
@@ -2807,21 +2813,21 @@ func evaluateScript(items []ast.Declaration, environment *valueEnvironment, symb
 		}
 
 		if !variable.HasValue {
-			return validationErrorf("variable %q requires an initializer", variable.Name)
+			return diagnosticErrorAtNode(validationErrorf("variable %q requires an initializer", variable.Name), variable)
 		}
 
 		value, err := evaluateExpression(variable.Value, environment, Value{}, symbols, types, schemas, enums)
 		if err != nil {
-			return err
+			return diagnosticErrorAtNode(err, variable)
 		}
 
 		expectedType, err := resolveValueType(variable.Type, symbols, types, schemas, enums)
 		if err != nil {
-			return err
+			return diagnosticErrorAtNode(err, variable)
 		}
 		value, _ = coerceEvaluatedValueAgainstType(variable.Value, value, expectedType, environment, Value{}, symbols, types, schemas, enums)
 		if err := validateEvaluatedValueAgainstType(value, expectedType, symbols, types, schemas, enums); err != nil {
-			return err
+			return diagnosticErrorAtNode(err, variable)
 		}
 		value.Type = &expectedType
 
@@ -2837,10 +2843,10 @@ func evaluateOutputFields(items []ast.OutputField, environment *valueEnvironment
 	for _, item := range items {
 		value, err := evaluateExpression(item.Value, environment, self, symbols, types, schemas, enums)
 		if err != nil {
-			return nil, err
+			return nil, diagnosticErrorAtNode(err, item)
 		}
 		if value.Absent {
-			return nil, possiblyAbsentValueError()
+			return nil, diagnosticErrorAtNode(possiblyAbsentValueError(), item)
 		}
 		if value.Kind == ValueNull {
 			continue
@@ -2884,10 +2890,10 @@ func evaluateExpression(expression ast.Expression, environment *valueEnvironment
 			}
 			if symbols != nil {
 				if kind, exists := symbols.Get(expr.Name); exists && kind != symbolKindVariable {
-					return Value{}, validationErrorf("type reference %q is not a valid value expression", expr.Name)
+					return Value{}, diagnosticErrorAtNode(validationErrorf("type reference %q is not a valid value expression", expr.Name), expr)
 				}
 			}
-			return Value{}, validationErrorf("unknown identifier %q", expr.Name)
+			return Value{}, diagnosticErrorAtNode(validationErrorf("unknown identifier %q", expr.Name), expr)
 		}
 		return value, nil
 	case ast.MemberAccess:
@@ -4398,7 +4404,7 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 		}
 		if symbols != nil {
 			if kind, ok := symbols.Get(expr.Name); ok && kind != symbolKindVariable {
-				return valueType{}, validationErrorf("type reference %q is not a valid value expression", expr.Name)
+				return valueType{}, diagnosticErrorAtNode(validationErrorf("type reference %q is not a valid value expression", expr.Name), expr)
 			}
 		}
 		return valueType{kind: ValueUnknown}, nil
@@ -4416,12 +4422,13 @@ func inferExpressionType(expression ast.Expression, variables *variableRegistry,
 			return valueType{kind: ValueUnknown}, nil
 		}
 		if targetType.nullable {
-			return valueType{}, nullableVariableAccessError(expr.Name)
+			return valueType{}, diagnosticErrorAtNode(nullableVariableAccessError(expr.Name), expr)
 		}
 		if targetType.presence == presencePossiblyAbsent && !expr.Optional {
-			return valueType{}, optionalFieldAccessError(expr.Name)
+			return valueType{}, diagnosticErrorAtNode(optionalFieldAccessError(expr.Name), expr)
 		}
-		return inferMemberAccessType(targetType, expr, symbols, types, schemas, enums)
+		memberType, err := inferMemberAccessType(targetType, expr, symbols, types, schemas, enums)
+		return memberType, diagnosticErrorAtNode(err, expr)
 	case ast.MatchExpression:
 		return inferMatchType(expr, variables, symbols, types, schemas, enums)
 	case ast.IntLiteral:

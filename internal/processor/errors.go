@@ -1,10 +1,12 @@
 package processor
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/louiss0/mace/internal/diagnostic"
+	"github.com/louiss0/mace/internal/parser/ast"
 )
 
 type ErrorKind string
@@ -75,6 +77,24 @@ func diagnosticErrorf(kind ErrorKind, code ErrorCode, fields DiagnosticFields, f
 		Message: fmt.Sprintf("processor: %s", fmt.Sprintf(format, args...)),
 		Fields:  fields,
 	}
+}
+
+func diagnosticErrorAtNode(err error, node ast.Node) error {
+	if err == nil {
+		return nil
+	}
+
+	var diagnosticError DiagnosticError
+	if !errors.As(err, &diagnosticError) {
+		return err
+	}
+	if diagnosticError.Range.Start.Line != 0 || diagnosticError.Range.Start.Column != 0 ||
+		diagnosticError.Range.End.Line != 0 || diagnosticError.Range.End.Column != 0 {
+		return err
+	}
+
+	diagnosticError.Range = diagnostic.FromASTRange(node.Range())
+	return diagnosticError
 }
 
 func typeMismatchError(expected string, actual string) error {

@@ -79,9 +79,10 @@ func (i Identifier) Range() SourceRange {
 }
 
 type MemberAccess struct {
-	Target   Expression
-	Name     string
-	Optional bool
+	Target    Expression
+	NameToken lexer.Token
+	Name      string
+	Optional  bool
 }
 
 func (MemberAccess) expressionNode() {
@@ -89,6 +90,9 @@ func (MemberAccess) expressionNode() {
 }
 
 func (m MemberAccess) Range() SourceRange {
+	if m.NameToken.Line > 0 && m.NameToken.Column > 0 {
+		return TokenRange(m.NameToken)
+	}
 	return m.Target.Range()
 }
 

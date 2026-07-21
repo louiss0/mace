@@ -114,6 +114,25 @@ var _ = Describe("LSP analysis", func() {
 		_, _, _ = selfOrderingEdit("[output = 'data'] { result: $self.name, }", file, tokens, "self")
 	})
 
+	It("uses parser AST ranges for processor diagnostics", func() {
+		snapshot := analyzeDocument(`|===|
+schema User: { nickname?: string, };
+User user = { nickname: "Ada", };
+|===|
+[output = 'data']
+{
+  result: user.nickname,
+}`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "optional chaining")
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 6, Character: 15},
+				End:   protocol.Position{Line: 6, Character: 23},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
 	It("uses UTF-16 positions for UTF-8 source text", func() {
 		text := "a😀\r\nb"
 		tAssert.Equal(protocol.Position{Line: 0, Character: 3}, positionFromIndex(text, len("a😀")))
