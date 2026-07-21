@@ -249,7 +249,7 @@ func (p *Parser) parseScriptBlock() (ast.ScriptBlock, error) {
 		return ast.ScriptBlock{}, err
 	}
 	if openingDelimiter.Lexeme != closingDelimiter.Lexeme {
-		return ast.ScriptBlock{}, p.unexpectedTokenError("parser: script block delimiters must match")
+		return ast.ScriptBlock{}, p.unexpectedTokenErrorAt(closingDelimiter, "parser: script block delimiters must match")
 	}
 
 	return ast.ScriptBlock{Imports: imports, Items: items}, nil

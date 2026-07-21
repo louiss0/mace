@@ -135,7 +135,7 @@ func classifyParseDiagnostic(message string) diagnosticCode {
 		return diagnosticSyntaxEmptyScriptBlock
 	case strings.Contains(message, "expected closing script delimiter") && strings.Contains(message, "EOF"):
 		return diagnosticSyntaxUnterminatedScriptBlock
-	case strings.Contains(message, "script delimiter"):
+	case strings.Contains(message, "script delimiter") || strings.Contains(message, "script block delimiters"):
 		return diagnosticSyntaxInconsistentScriptDelimiters
 	case strings.Contains(message, "import"):
 		return diagnosticSyntaxMalformedImport

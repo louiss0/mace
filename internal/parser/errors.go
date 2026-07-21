@@ -20,7 +20,10 @@ func (p *Parser) diagnosticError(token lexer.Token, code diagnostic.Code, messag
 }
 
 func (p *Parser) unexpectedTokenError(message string) error {
-	token := p.current()
+	return p.unexpectedTokenErrorAt(p.current(), message)
+}
+
+func (p *Parser) unexpectedTokenErrorAt(token lexer.Token, message string) error {
 	if token.Type == lexer.TokenEOF {
 		formatted := fmt.Sprintf("%s: EOF", message)
 		return p.diagnosticError(token, parserDiagnosticCode(formatted), formatted)
@@ -38,7 +41,7 @@ func parserDiagnosticCode(message string) diagnostic.Code {
 		return diagnostic.Code("mace.syntax.empty-script-block")
 	case strings.Contains(message, "expected closing script delimiter") && strings.Contains(message, "EOF"):
 		return diagnostic.Code("mace.syntax.unterminated-script-block")
-	case strings.Contains(message, "script delimiter"):
+	case strings.Contains(message, "script delimiter") || strings.Contains(message, "script block delimiters"):
 		return diagnostic.Code("mace.syntax.inconsistent-script-delimiters")
 	case strings.Contains(message, "import declarations must appear at top of script block") || strings.Contains(message, "expected 'from'") || strings.Contains(message, "expected string literal in import") || strings.Contains(message, "expected 'import'"):
 		return diagnostic.Code("mace.syntax.malformed-import")

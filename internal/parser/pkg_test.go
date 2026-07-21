@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/louiss0/mace/internal/diagnostic"
 	"github.com/louiss0/mace/internal/lexer"
 	"github.com/louiss0/mace/internal/parser/ast"
 )
@@ -846,6 +847,25 @@ extra`)
 
 			_, err = parseFileInput(`[output = 'data'] {} extra`)
 			tAssert.ErrorContains(err, "unexpected token after output block")
+		})
+
+		It("ranges mismatched script delimiters at the closing delimiter", func() {
+			scriptTokens, err := lexInput(`|===|
+string name = "Ada";
+|====|
+[output = 'data'] { result: name, }`)
+			tAssert.NoError(err)
+
+			_, err = New(scriptTokens).ParseScriptBlock()
+			var syntaxError diagnostic.Error
+			if tAssert.ErrorAs(err, &syntaxError) {
+				tAssert.Equal(diagnostic.Code("mace.syntax.inconsistent-script-delimiters"), syntaxError.Code)
+				tAssert.Equal(diagnostic.Range{
+					Start: diagnostic.Position{Line: 3, Column: 1},
+					End:   diagnostic.Position{Line: 3, Column: 7},
+				}, syntaxError.Range)
+				tAssert.Contains(syntaxError.Message, `at 3:1 near "|====|"`)
+			}
 		})
 
 		It("returns public entry parse errors from malformed blocks", func() {

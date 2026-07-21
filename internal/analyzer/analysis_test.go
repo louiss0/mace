@@ -148,6 +148,22 @@ var _ = Describe("LSP analysis", func() {
 		}
 	})
 
+	It("points mismatched script delimiters at the closing delimiter", func() {
+		snapshot := analyzeDocument(`|===|
+string name = "Ada";
+|====|
+[output = 'data'] { result: name, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, `at 3:1 near "|====|"`)
+			tAssert.Equal(string(diagnosticSyntaxInconsistentScriptDelimiters), requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 2, Character: 0},
+				End:   protocol.Position{Line: 2, Character: 6},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
 	It("prefers the processor range for duplicate schema fields", func() {
 		snapshot := analyzeDocument(`|===|
  schema User: { name: string, name: string, };

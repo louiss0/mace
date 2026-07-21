@@ -650,6 +650,27 @@ Name user = "Ada";
 		}
 	})
 
+	It("publishes mismatched script delimiters at the closing delimiter", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+string name = "Ada";
+|====|
+[output = 'data'] { result: name, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Equal("mace.syntax.inconsistent-script-delimiters", params.Diagnostics[0].Code.Value)
+				tAssert.Contains(params.Diagnostics[0].Message, `at 3:1 near "|====|"`)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 2, Character: 0},
+					End:   protocol.Position{Line: 2, Character: 6},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
 	It("publishes duplicate schema fields at the repeated name", func() {
 		notifications := []capturedNotification{}
 
