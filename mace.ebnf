@@ -29,9 +29,9 @@ block_part = ? any character sequence not containing '"""' or the start of "$(" 
 escape_sequence = "\\" , ( "\\" | "'" | '"' | "n" | "r" | "t" | unicode_escape ) ;
 unicode_escape = "u" , hex_digit , hex_digit , hex_digit , hex_digit
                | "U" , hex_digit , hex_digit , hex_digit , hex_digit , hex_digit , hex_digit , hex_digit , hex_digit ;
-(* A path literal is single-line single-quoted text with no escapes or interpolation. *)
-path_literal = "'" , { path_character } , "'" ;
-path_character = ? any character except ', a line terminator, or a backslash ? ;
+(* A path literal is single-line double-quoted text with no escapes or interpolation. *)
+path_literal = '"' , { path_character } , '"' ;
+path_character = ? any character except ", a line terminator, a backslash, or the start of "$(" ? ;
 
 int_literal = digit , { digit } ;
 float_literal = digit , { digit } , "." , digit , { digit } ;
