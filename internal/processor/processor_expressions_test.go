@@ -5,6 +5,37 @@ import (
 )
 
 var _ = Describe("Expressions", func() {
+	It("attaches forward self reference errors to the accessed field", func() {
+		_, err := New().Process(`[output = 'data']
+{
+  first: $self.second,
+  second: 2,
+}`)
+		tAssert.Error(err)
+
+		var diagnostic DiagnosticError
+		if tAssert.ErrorAs(err, &diagnostic) {
+			tAssert.Equal(3, diagnostic.Range.Start.Line)
+			tAssert.Equal(16, diagnostic.Range.Start.Column)
+			tAssert.Equal(3, diagnostic.Range.End.Line)
+			tAssert.Equal(22, diagnostic.Range.End.Column)
+		}
+	})
+
+	It("attaches unknown self reference errors to the accessed field", func() {
+		_, err := New().Process(`[output = 'data']
+{ value: $self.missing, }`)
+		tAssert.Error(err)
+
+		var diagnostic DiagnosticError
+		if tAssert.ErrorAs(err, &diagnostic) {
+			tAssert.Equal(2, diagnostic.Range.Start.Line)
+			tAssert.Equal(16, diagnostic.Range.Start.Column)
+			tAssert.Equal(2, diagnostic.Range.End.Line)
+			tAssert.Equal(23, diagnostic.Range.End.Column)
+		}
+	})
+
 	DescribeTable("returns inline output blocks with multiple fields",
 		func(file string, expected map[string]expectedValue) {
 			processor := New()

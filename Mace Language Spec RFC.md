@@ -35,7 +35,7 @@ line ending or EOF. `&#x2f;*` comments run to the next `*&#x2f;`, may span lines
 not require surrounding newlines. Double-quoted and block strings interpolate
 with exactly `$(expression)`; single-quoted strings do not interpolate.
 
-A `path_literal` is a non-interpolated, single-line double-quoted path. It is
+A `path_literal` is a non-interpolated, single-line single-quoted path. It is
 not a general string and may not be a block string. Import, `schema_file`, and
 `parse_file` use it exclusively.
 
@@ -73,9 +73,9 @@ block_part = ? any character sequence not containing &#x27;&quot;&quot;&quot;&#x
 escape_sequence = &quot;\\&quot; , ( &quot;\\&quot; | &quot;&#x27;&quot; | &#x27;&quot;&#x27; | &quot;n&quot; | &quot;r&quot; | &quot;t&quot; | unicode_escape ) ;
 unicode_escape = &quot;u&quot; , hex_digit , hex_digit , hex_digit , hex_digit
                | &quot;U&quot; , hex_digit , hex_digit , hex_digit , hex_digit , hex_digit , hex_digit , hex_digit , hex_digit ;
-(* A path literal is single-line double-quoted text with no escapes or interpolation. *)
-path_literal = &#x27;&quot;&#x27; , { path_character } , &#x27;&quot;&#x27; ;
-path_character = ? any character except &quot;, a line terminator, or the start of &quot;$(&quot; ? ;
+(* A path literal is single-line single-quoted text with no escapes or interpolation. *)
+path_literal = &quot;&#x27;&quot; , { path_character } , &quot;&#x27;&quot; ;
+path_character = ? any character except &#x27;, a line terminator, or a backslash ? ;
 
 int_literal = digit , { digit } ;
 float_literal = digit , { digit } , &quot;.&quot; , digit , { digit } ;
@@ -124,13 +124,14 @@ choice_type = &quot;choice&quot; , ws0 , &quot;[&quot; , ws0 , choice_member , {
 choice_member = string_literal | int_literal | float_literal | hex_int_literal | hex_float_literal | boolean_literal ;
 
 (* OUTPUT *)
-output_block = [ output_directive_list , ws0 , [ block_string , ws0 ] ] , &quot;{&quot; , ws0 , [ output_field , { ws0 , &quot;,&quot; , ws0 , output_field } , [ ws0 , &quot;,&quot; ] ] , ws0 , &quot;}&quot; ;
+output_block = [ output_directive_list , ws0 ] , &quot;{&quot; , ws0 , [ output_field , { ws0 , &quot;,&quot; , ws0 , output_field } , [ ws0 , &quot;,&quot; ] ] , ws0 , &quot;}&quot; ;
 output_directive_list = &quot;[&quot; , ws0 , directive_pair , { ws0 , &quot;,&quot; , ws0 , directive_pair } , ws0 , &quot;]&quot; ;
-directive_pair = &quot;output&quot; , ws0 , &quot;=&quot; , ws0 , ( &quot;data&quot; | &quot;schema&quot; )
+directive_pair = &quot;output&quot; , ws0 , &quot;=&quot; , ws0 , ( &quot;&#x27;data&#x27;&quot; | &quot;&#x27;schema&#x27;&quot; )
                | &quot;schema&quot; , ws0 , &quot;=&quot; , ws0 , identifier
                | &quot;schema_file&quot; , ws0 , &quot;=&quot; , ws0 , path_literal
                | &quot;parse&quot; , ws0 , &quot;=&quot; , ws0 , identifier
-               | &quot;parse_file&quot; , ws0 , &quot;=&quot; , ws0 , path_literal ;
+               | &quot;parse_file&quot; , ws0 , &quot;=&quot; , ws0 , path_literal
+               | &quot;doc&quot; , ws0 , &quot;=&quot; , ws0 , expression ;
 (* The output directive controls output_field interpretation: data uses data_output_field;
    schema uses schema_output_field. This contextual distinction is semantic. *)
 output_field = data_output_field | schema_output_field ;
@@ -479,8 +480,9 @@ Match diagnostics include each of the following distinct static errors:
 Documentation diagnostics include duplicate documentation keys, unknown or
 inapplicable targets, documentation declared before its target, a `fields`
 entry outside `schema_doc`, an unknown documented schema field, conflicting
-inline and structured documentation, interpolation in output documentation, and
-an output documentation block without a directive list.
+inline and structured documentation, and duplicate or non-string output `doc`
+directives. A data-output `doc` directive may evaluate string expressions and
+variables.
 
 Optional-access diagnostics include plain member access on an optional field,
 access beyond the declared record depth, and use of a possibly absent

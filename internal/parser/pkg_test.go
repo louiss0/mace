@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/louiss0/mace/internal/diagnostic"
 	"github.com/louiss0/mace/internal/lexer"
 	"github.com/louiss0/mace/internal/parser/ast"
 )
@@ -846,6 +847,44 @@ extra`)
 
 			_, err = parseFileInput(`[output = 'data'] {} extra`)
 			tAssert.ErrorContains(err, "unexpected token after output block")
+		})
+
+		It("ranges missing output field separators at the preceding field", func() {
+			outputTokens, err := lexInput(`[output = 'data']
+{
+  first: 1
+  second: 2,
+}`)
+			tAssert.NoError(err)
+
+			_, err = New(outputTokens).ParseOutputBlock()
+			var syntaxError diagnostic.Error
+			if tAssert.ErrorAs(err, &syntaxError) {
+				tAssert.Equal(diagnostic.Range{
+					Start: diagnostic.Position{Line: 3, Column: 3},
+					End:   diagnostic.Position{Line: 3, Column: 8},
+				}, syntaxError.Range)
+				tAssert.Contains(syntaxError.Message, `expected ',' after output field`)
+			}
+		})
+
+		It("ranges mismatched script delimiters at the closing delimiter", func() {
+			scriptTokens, err := lexInput(`|===|
+string name = "Ada";
+|====|
+[output = 'data'] { result: name, }`)
+			tAssert.NoError(err)
+
+			_, err = New(scriptTokens).ParseScriptBlock()
+			var syntaxError diagnostic.Error
+			if tAssert.ErrorAs(err, &syntaxError) {
+				tAssert.Equal(diagnostic.Code("mace.syntax.inconsistent-script-delimiters"), syntaxError.Code)
+				tAssert.Equal(diagnostic.Range{
+					Start: diagnostic.Position{Line: 3, Column: 1},
+					End:   diagnostic.Position{Line: 3, Column: 7},
+				}, syntaxError.Range)
+				tAssert.Contains(syntaxError.Message, `at 3:1 near "|====|"`)
+			}
 		})
 
 		It("returns public entry parse errors from malformed blocks", func() {
@@ -1851,19 +1890,23 @@ gen_doc Alias {
 			}
 		})
 
-		It("parses output inline doc blocks", func() {
-			input := `[output = 'schema']
-"""
+		It("parses output doc directives", func() {
+			input := `[output = 'schema', doc = """
 # Public User Output
-"""
+"""]
 {
   name: string,
 }`
 
 			file, err := parseFileInput(input)
 			tAssert.NoError(err)
-			if tAssert.NotNil(file.Output.Doc) {
-				tAssert.Equal("\"\"\"\n# Public User Output\n\"\"\"", file.Output.Doc.Lexeme)
+			if tAssert.Len(file.Output.Directives, 2) {
+				tAssert.Equal(ast.OutputDirectiveDoc, file.Output.Directives[1].Kind)
+				documentation, ok := file.Output.Directives[1].Documentation.(ast.StringLiteral)
+				tAssert.True(ok)
+				if ok {
+					tAssert.Equal("\"\"\"\n# Public User Output\n\"\"\"", documentation.Lexeme)
+				}
 			}
 		})
 
@@ -1956,10 +1999,9 @@ Hover should surface this documentation.
   },
 };
 |===|
-[output = 'schema']
-"""
+[output = 'schema', doc = """
 # User Output
-"""
+"""]
 {
   user: User /# Public user schema,
 }
@@ -1988,8 +2030,12 @@ Hover should surface this documentation.
 				}
 			}
 
-			if tAssert.NotNil(file.Output.Doc) {
-				tAssert.Contains(file.Output.Doc.Lexeme, "# User Output")
+			if tAssert.Len(file.Output.Directives, 2) {
+				documentation, ok := file.Output.Directives[1].Documentation.(ast.StringLiteral)
+				tAssert.True(ok)
+				if ok {
+					tAssert.Contains(documentation.Lexeme, "# User Output")
+				}
 			}
 			if tAssert.Len(file.Output.SchemaFields, 1) {
 				tAssert.Equal("Public user schema", file.Output.SchemaFields[0].Description)

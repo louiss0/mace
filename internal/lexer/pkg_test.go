@@ -283,6 +283,11 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenIdentifier, lexeme: "beta", line: 2, column: 1},
 			{tokenType: TokenEOF, lexeme: "", line: 2, column: 5},
 		}),
+		Entry("UTF-16 positions in UTF-8 source", `"😀" name`, []expectedToken{
+			{tokenType: TokenString, lexeme: `"😀"`, line: 1, column: 1},
+			{tokenType: TokenIdentifier, lexeme: "name", line: 1, column: 6},
+			{tokenType: TokenEOF, lexeme: "", line: 1, column: 10},
+		}),
 	)
 
 	DescribeTable("treats dot without a trailing digit as punctuation",

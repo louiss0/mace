@@ -693,7 +693,7 @@ func analyzeDocumentAtInRootContext(context context.Context, text string, docume
 		analysis := collectCodeActionAnalysis(text, documentPath, literalActionAnalysis)
 		snapshot.diagnostics = append(analysis.diagnostics, diagnosticFromError(lexErr))
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, analysis.actions...)
-		return snapshot, nil
+		return finalizedAnalysis(snapshot), nil
 	}
 	snapshot.tokens = tokens
 	analysis := collectCodeActionAnalysis(
@@ -728,13 +728,13 @@ func analyzeDocumentAtInRootContext(context context.Context, text string, docume
 
 	file, parseErr := parseFile(text)
 	if parseErr != nil {
-		snapshot.diagnostics = append(analysis.diagnostics, diagnosticFromError(parseErr))
+		snapshot.diagnostics = append(snapshot.diagnostics, diagnosticFromError(parseErr))
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, analysis.actions...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, parseErrorCodeActions(tokens, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, scriptBlockStructureCodeActions(text, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, variableFixTextCodeActions(text, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, arrayTextCodeActions(text, documentPath)...)
-		return snapshot, nil
+		return finalizedAnalysis(snapshot), nil
 	}
 	if err := context.Err(); err != nil {
 		return snapshot, err
@@ -774,7 +774,7 @@ func analyzeDocumentAtInRootContext(context context.Context, text string, docume
 			unusedDiagnostics, unusedActions := unusedDeclarationAnalysis(text, file, tokens, documentPath)
 			snapshot.diagnostics = append(snapshot.diagnostics, unusedDiagnostics...)
 			snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, unusedActions...)
-			return snapshot, nil
+			return finalizedAnalysis(snapshot), nil
 		}
 		if semanticDiagnostic, ok := semanticDiagnosticFromError(file, tokens, processErr); ok {
 			snapshot.diagnostics = append(snapshot.diagnostics, semanticDiagnostic)
@@ -783,7 +783,7 @@ func analyzeDocumentAtInRootContext(context context.Context, text string, docume
 			snapshot.diagnostics = append(snapshot.diagnostics, diagnosticFromError(processErr))
 		}
 		snapshot.diagnostics = append(snapshot.diagnostics, lo.Ternary(hasParseDirectiveWarning, []protocol.Diagnostic{parseDirectiveWarning}, nil)...)
-		return snapshot, nil
+		return finalizedAnalysis(snapshot), nil
 	}
 
 	snapshot.result = &result
@@ -800,7 +800,12 @@ func analyzeDocumentAtInRootContext(context context.Context, text string, docume
 	if err := context.Err(); err != nil {
 		return snapshot, err
 	}
-	return snapshot, nil
+	return finalizedAnalysis(snapshot), nil
+}
+
+func finalizedAnalysis(snapshot analysisSnapshot) analysisSnapshot {
+	snapshot.diagnostics = deduplicateDiagnostics(snapshot.diagnostics)
+	return snapshot
 }
 
 func analyzeCompletionContext(text string, documentPath string, position protocol.Position) analysisSnapshot {
@@ -1405,18 +1410,6 @@ func inlineVariableIntoOutputText(text string) (string, bool) {
 		updated = strings.Replace(text, ": "+matches[1], ": "+matches[2], 1)
 	}
 	return updated, updated != text
-}
-
-func extractOutputExpressionText(text string) (string, bool) {
-	pattern := regexp.MustCompile(`(?m)([A-Za-z_][A-Za-z0-9_]*)\s*:\s*("[^"]*")`)
-	matches := pattern.FindStringSubmatch(text)
-	if len(matches) == 0 || strings.Contains(text, "|===|") {
-		return "", false
-	}
-	name := matches[1]
-	value := matches[2]
-	updated := pattern.ReplaceAllString(text, name+": "+name)
-	return "|===|\nstring " + name + " = " + value + ";\n|===|\n" + updated, true
 }
 
 func parseErrorCodeActions(tokens []lexer.Token, documentPath string) []analysisCodeActionCandidate {
@@ -3251,6 +3244,15 @@ func semanticDiagnosticFromError(file ast.File, tokens []lexer.Token, err error)
 	message := err.Error()
 	var diagnosticError processor.DiagnosticError
 	hasDiagnosticError := errors.As(err, &diagnosticError)
+	if hasDiagnosticError && (diagnosticError.Range.Start.Line != 0 || diagnosticError.Range.Start.Column != 0 ||
+		diagnosticError.Range.End.Line != 0 || diagnosticError.Range.End.Column != 0) {
+		diagnostic := diagnosticFromError(err)
+		if diagnosticError.Code == processor.CodeSelfReferenceUnknown {
+			code := classifySelfReferenceCode(file, diagnosticError.Fields.Name)
+			diagnostic = diagnosticWithCode(diagnostic.Range, protocol.DiagnosticSeverityError, code, diagnosticError.Message)
+		}
+		return diagnostic, true
+	}
 
 	if hasDiagnosticError {
 		if diagnostic, ok := variableTypeMismatchDiagnostic(file, tokens, diagnosticError); ok {
@@ -3571,9 +3573,11 @@ func parsedIdentifierRangeFromEnd(tokens []lexer.Token, name string) (protocol.R
 }
 
 func tokenProtocolRange(token lexer.Token) protocol.Range {
-	start := protocol.Position{Line: protocol.UInteger(token.Line - 1), Character: protocol.UInteger(token.Column - 1)}
-	end := protocol.Position{Line: protocol.UInteger(token.Line - 1), Character: protocol.UInteger(token.Column - 1 + len(token.Lexeme))}
-	return protocol.Range{Start: start, End: end}
+	sourceRange := ast.TokenRange(token)
+	return protocol.Range{
+		Start: protocolPositionFromOneBased(sourceRange.Start.Line, sourceRange.Start.Column),
+		End:   protocolPositionFromOneBased(sourceRange.End.Line, sourceRange.End.Column),
+	}
 }
 
 func collectDeclarationsExcludingParsed(file ast.File, result *processor.Result, importBaseDir string) []declarationDefinition {

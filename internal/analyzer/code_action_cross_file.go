@@ -52,6 +52,12 @@ func crossFileActionAnalysis(text string, documentPath string) ([]protocol.Diagn
 		if !strings.Contains(text, specification.match) {
 			continue
 		}
+		if specification.title == "Expose a declaration from its owning file" {
+			remotePath := filepath.Join(filepath.Dir(documentPath), specification.remotePath)
+			if _, err := os.Stat(remotePath); err != nil {
+				continue
+			}
+		}
 		diagnostic, action := newDiagnosticAction(text, pathURI(documentPath), specification.code, specification.title, specification.kind, false, text+"\n"+specification.localText)
 		if specification.remotePath != "" {
 			remotePath := filepath.Join(filepath.Dir(documentPath), specification.remotePath)

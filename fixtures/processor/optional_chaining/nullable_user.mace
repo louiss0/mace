@@ -12,7 +12,6 @@ schema User: {
   profile: Profile,
 };
 
-User missing_user = null;
 User user = {
   records: { primary: "active", },
   profile: { address: { city: "Paris", }, },
@@ -25,7 +24,6 @@ string fallback = "";
 
 [output = 'data']
 {
-  fallback: missing_user ? missing_user.records?.primary ?? "" : "",
   records: user ? user.records : { primary: 'inactive' },
   city: user ? user.profile.address?.city ?? fallback : 3
 }

@@ -95,7 +95,76 @@ func HasParsedFile(snapshot Snapshot) bool {
 }
 
 func Diagnostics(snapshot Snapshot) []protocol.Diagnostic {
-	return snapshot.diagnostics
+	return deduplicateDiagnostics(snapshot.diagnostics)
+}
+
+type diagnosticIdentity struct {
+	Range              protocol.Range
+	Severity           protocol.DiagnosticSeverity
+	Code               string
+	Source             string
+	Message            string
+	Tags               string
+	RelatedInformation string
+}
+
+func deduplicateDiagnostics(diagnostics []protocol.Diagnostic) []protocol.Diagnostic {
+	authoritativeCodes := map[string]struct{}{}
+	for _, diagnostic := range diagnostics {
+		code := diagnosticCodeText(diagnostic.Code)
+		if code != "" && diagnostic.Message != code {
+			authoritativeCodes[code] = struct{}{}
+		}
+	}
+
+	seen := map[diagnosticIdentity]struct{}{}
+	return lo.Filter(diagnostics, func(diagnostic protocol.Diagnostic, _ int) bool {
+		code := diagnosticCodeText(diagnostic.Code)
+		_, hasAuthoritativeDiagnostic := authoritativeCodes[code]
+		if code != "" && diagnostic.Message == code && hasAuthoritativeDiagnostic {
+			return false
+		}
+
+		identity := diagnosticIdentity{
+			Range:              diagnostic.Range,
+			Code:               diagnosticCodeIdentity(diagnostic.Code),
+			Message:            diagnostic.Message,
+			Tags:               fmt.Sprintf("%#v", diagnostic.Tags),
+			RelatedInformation: fmt.Sprintf("%#v", diagnostic.RelatedInformation),
+		}
+		if diagnostic.Severity != nil {
+			identity.Severity = *diagnostic.Severity
+		}
+		if diagnostic.Source != nil {
+			identity.Source = *diagnostic.Source
+		}
+		if _, exists := seen[identity]; exists {
+			return false
+		}
+
+		seen[identity] = struct{}{}
+		return true
+	})
+}
+
+func diagnosticCodeIdentity(code *protocol.IntegerOrString) string {
+	if code == nil {
+		return ""
+	}
+
+	return fmt.Sprintf("%T:%v", code.Value, code.Value)
+}
+
+func diagnosticCodeText(code *protocol.IntegerOrString) string {
+	if code == nil {
+		return ""
+	}
+
+	value, ok := code.Value.(string)
+	if !ok {
+		return ""
+	}
+	return value
 }
 
 func CompletionItems(text string, snapshot Snapshot, uri protocol.DocumentUri, position protocol.Position) []protocol.CompletionItem {
@@ -347,10 +416,8 @@ func DiagnosticFromError(err error) protocol.Diagnostic {
 		code = diagnosticCode(diagnosticError.Code)
 		message = diagnosticError.Message
 		if diagnosticError.Range.Start.Line != 0 || diagnosticError.Range.Start.Column != 0 || diagnosticError.Range.End.Line != 0 || diagnosticError.Range.End.Column != 0 {
-			position.Line = protocol.UInteger(diagnosticError.Range.Start.Line - 1)
-			position.Character = protocol.UInteger(diagnosticError.Range.Start.Column - 1)
-			end.Line = protocol.UInteger(diagnosticError.Range.End.Line - 1)
-			end.Character = protocol.UInteger(diagnosticError.Range.End.Column - 1)
+			position = protocolPositionFromOneBased(diagnosticError.Range.Start.Line, diagnosticError.Range.Start.Column)
+			end = protocolPositionFromOneBased(diagnosticError.Range.End.Line, diagnosticError.Range.End.Column)
 			return diagnosticWithCode(protocol.Range{Start: position, End: end}, protocol.DiagnosticSeverityError, code, message)
 		}
 	}
@@ -359,10 +426,8 @@ func DiagnosticFromError(err error) protocol.Diagnostic {
 		code = diagnosticCodeFromProcessorError(diagnosticError)
 		message = diagnosticError.Message
 		if diagnosticError.Range.Start.Line != 0 || diagnosticError.Range.Start.Column != 0 || diagnosticError.Range.End.Line != 0 || diagnosticError.Range.End.Column != 0 {
-			position.Line = protocol.UInteger(diagnosticError.Range.Start.Line - 1)
-			position.Character = protocol.UInteger(diagnosticError.Range.Start.Column - 1)
-			end.Line = protocol.UInteger(diagnosticError.Range.End.Line - 1)
-			end.Character = protocol.UInteger(diagnosticError.Range.End.Column - 1)
+			position = protocolPositionFromOneBased(diagnosticError.Range.Start.Line, diagnosticError.Range.Start.Column)
+			end = protocolPositionFromOneBased(diagnosticError.Range.End.Line, diagnosticError.Range.End.Column)
 			return diagnosticWithCode(protocol.Range{Start: position, End: end}, protocol.DiagnosticSeverityError, code, message)
 		}
 	}
@@ -605,26 +670,51 @@ func nameRange(text string, name string) (protocol.Position, protocol.Position) 
 	return start, end
 }
 
-func positionFromIndex(text string, index int) protocol.Position {
+func protocolPositionFromOneBased(line int, character int) protocol.Position {
+	position := protocol.Position{}
+	if line > 0 {
+		position.Line = protocol.UInteger(line - 1)
+	}
+	if character > 0 {
+		position.Character = protocol.UInteger(character - 1)
+	}
+	return position
+}
+
+func PositionFromIndex(text string, index int) protocol.Position {
 	line := protocol.UInteger(0)
-	column := protocol.UInteger(0)
+	character := protocol.UInteger(0)
+	previousWasCarriageReturn := false
 
 	for currentIndex, runeValue := range text {
 		if currentIndex >= index {
 			break
 		}
-		if runeValue == '\n' {
+		switch runeValue {
+		case '\r':
 			line++
-			column = 0
-			continue
+			character = 0
+			previousWasCarriageReturn = true
+		case '\n':
+			if !previousWasCarriageReturn {
+				line++
+			}
+			character = 0
+			previousWasCarriageReturn = false
+		default:
+			character += protocol.UInteger(utf16.RuneLen(runeValue))
+			previousWasCarriageReturn = false
 		}
-		column++
 	}
 
 	return protocol.Position{
 		Line:      line,
-		Character: column,
+		Character: character,
 	}
+}
+
+func positionFromIndex(text string, index int) protocol.Position {
+	return PositionFromIndex(text, index)
 }
 
 func identifierPrefixAt(text string, position protocol.Position) string {

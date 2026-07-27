@@ -114,6 +114,431 @@ var _ = Describe("LSP analysis", func() {
 		_, _, _ = selfOrderingEdit("[output = 'data'] { result: $self.name, }", file, tokens, "self")
 	})
 
+	It("deduplicates diagnostics before publication", func() {
+		rangeValue := protocol.Range{End: protocol.Position{Character: 1}}
+		diagnostic := diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticTypeUnknownIdentifier, "unknown")
+		differentRange := diagnosticWithCode(
+			protocol.Range{Start: protocol.Position{Character: 2}, End: protocol.Position{Character: 3}},
+			protocol.DiagnosticSeverityError,
+			diagnosticTypeUnknownIdentifier,
+			"unknown",
+		)
+
+		diagnostics := Diagnostics(analysisSnapshot{diagnostics: []protocol.Diagnostic{diagnostic, diagnostic, differentRange}})
+		tAssert.Equal([]protocol.Diagnostic{diagnostic, differentRange}, diagnostics)
+	})
+
+	It("uses local ranges for supplemental semantic diagnostics", func() {
+		text := "first: 1 second: 2\nmatch (value) { string => 1 } variant[string, int]\nparse = Missing"
+		diagnostics := diagnosticDataAnalysis(text)
+
+		if tAssert.Len(diagnostics, 3) {
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 0, Character: 9},
+				End:   protocol.Position{Line: 0, Character: 15},
+			}, diagnostics[0].Range)
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 0},
+				End:   protocol.Position{Line: 1, Character: 13},
+			}, diagnostics[1].Range)
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 2, Character: 8},
+				End:   protocol.Position{Line: 2, Character: 15},
+			}, diagnostics[2].Range)
+		}
+	})
+
+	It("does not classify schema-backed data output as schema-shaped data", func() {
+		snapshot := analyzeDocument(`|===|
+schema User: { name: string, age: int, };
+|===|
+[output = 'data', schema = User]
+{ name: 'Ada', }`)
+
+		for _, diagnostic := range snapshot.diagnostics {
+			tAssert.NotEqual("mace.directive.schema-shaped-data-output", requireDiagnosticCode(diagnostic))
+		}
+	})
+
+	It("points unknown output field errors at the field name", func() {
+		snapshot := analyzeDocument(`|===|
+schema User: { name: string, };
+|===|
+[output = 'data', schema = User]
+{ name: 'Ada', extra: true, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "unknown output field \"extra\"")
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 4, Character: 15},
+				End:   protocol.Position{Line: 4, Character: 20},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("points forward self reference errors at the accessed field", func() {
+		snapshot := analyzeDocument(`[output = 'data']
+{
+  first: $self.second,
+  second: 2,
+}`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "unknown self reference \"second\"")
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 2, Character: 15},
+				End:   protocol.Position{Line: 2, Character: 21},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("points unknown self reference errors at the accessed field", func() {
+		snapshot := analyzeDocument(`[output = 'data']
+{ value: $self.missing, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "unknown self reference \"missing\"")
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 15},
+				End:   protocol.Position{Line: 1, Character: 22},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("points unknown type errors at the type reference", func() {
+		snapshot := analyzeDocument(`|===|
+Unknown value = 1;
+|===|
+[output = 'data'] {}`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "unknown type \"Unknown\"")
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 0},
+				End:   protocol.Position{Line: 1, Character: 7},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("points invalid output optionality errors at the field name", func() {
+		snapshot := analyzeDocument(`|===|
+schema User: { name: string, };
+|===|
+[output = 'data', schema = User]
+{ name?: 'Ada', }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "field \"name\" is not optional")
+			tAssert.Equal("mace.type.data-field-optional-marker", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 4, Character: 2},
+				End:   protocol.Position{Line: 4, Character: 6},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("points optional field access errors at the access operator", func() {
+		snapshot := analyzeDocument(`|===|
+schema Address: {
+  city: string,
+};
+schema User: {
+  address?: Address,
+};
+User user = { address: { city: 'Paris', }, };
+string city = user.address.city;
+|===|
+[output = 'data'] { city: city, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "use optional chaining '?.'")
+			tAssert.Equal("mace.type.optional-field-access", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 8, Character: 26},
+				End:   protocol.Position{Line: 8, Character: 27},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("points record access past its declared depth at the invalid access suffix", func() {
+		snapshot := analyzeDocument(`|===|
+record<string> packages = {};
+string value = packages.codefixer.cn_efs;
+|===|
+[output = 'data'] { value, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "target is not a record")
+			tAssert.Equal("mace.type.optional-field-access", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 2, Character: 33},
+				End:   protocol.Position{Line: 2, Character: 40},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("points invalid null usage errors at the null literal", func() {
+		snapshot := analyzeDocument(`|===|
+string value = null;
+|===|
+[output = 'data'] { value: value, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "null is only allowed in output")
+			tAssert.Equal("mace.type.invalid-null-usage", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 15},
+				End:   protocol.Position{Line: 1, Character: 19},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("points missing output field separators at the preceding field", func() {
+		snapshot := analyzeDocument(`[output = 'data']
+{
+  first: 1
+  second: 2,
+}`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "expected ',' after output field")
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 2, Character: 2},
+				End:   protocol.Position{Line: 2, Character: 7},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("points mixed numeric family errors at the operator", func() {
+		snapshot := analyzeDocument(`|===|
+hex_int value = 0x2 + 3;
+|===|
+[output = 'data'] { value, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "expected hexadecimal operands for operator")
+			tAssert.Equal("mace.type.mixed-numeric-family", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 20},
+				End:   protocol.Position{Line: 1, Character: 21},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("points variant literal pattern errors at the invalid arm pattern", func() {
+		snapshot := analyzeDocument(`|===|
+variant[string, int] value = 1;
+string result = match (value) {
+  'text' => 'text',
+  int => 'number',
+};
+|===|
+[output = 'data'] { result: result, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "variant match arms require a type pattern")
+			tAssert.Equal("mace.match.variant-literal-pattern", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 3, Character: 2},
+				End:   protocol.Position{Line: 3, Character: 8},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("points out-of-domain match errors at the invalid arm pattern", func() {
+		snapshot := analyzeDocument(`|===|
+variant[string, int] value = 1;
+string result = match (value) {
+  string => 'text',
+  boolean => 'flag',
+  int => 'number',
+};
+|===|
+[output = 'data'] { result: result, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "match pattern boolean is not a member")
+			tAssert.Equal("mace.match.pattern-outside-domain", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 4, Character: 2},
+				End:   protocol.Position{Line: 4, Character: 9},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("points non-exhaustive match errors at the match expression", func() {
+		snapshot := analyzeDocument(`|===|
+variant[string, int] value = 1;
+string result = match (value) {
+  string => 'text',
+};
+|===|
+[output = 'data'] { result: result, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "match expression must be exhaustive")
+			tAssert.Equal("mace.match.not-exhaustive", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 2, Character: 16},
+				End:   protocol.Position{Line: 4, Character: 1},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("points duplicate match errors at the repeated pattern", func() {
+		snapshot := analyzeDocument(`|===|
+variant[string, int] value = 1;
+string result = match (value) {
+  string => 'text',
+  string => 'again',
+};
+|===|
+[output = 'data'] { result: result, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "duplicate match pattern string")
+			tAssert.Equal("mace.match.duplicate-pattern", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 4, Character: 2},
+				End:   protocol.Position{Line: 4, Character: 8},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("points concrete match input errors at the input expression", func() {
+		snapshot := analyzeDocument(`|===|
+string value = 'text'; string result = match (value) { string => 'text', int => 'number', };
+|===|
+[output = 'data'] { result: result, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "match input must be a variant or choice")
+			tAssert.Equal("mace.match.concrete-input", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 46},
+				End:   protocol.Position{Line: 1, Character: 51},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("points choice type pattern errors at the invalid pattern", func() {
+		snapshot := analyzeDocument(`|===|
+choice['on', 'off'] value = 'on';
+int selected = match (value) {
+  string => 1,
+  'off' => 0,
+};
+|===|
+[output = 'data'] { result: selected, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "choice match arms require a literal pattern")
+			tAssert.Equal("mace.match.choice-type-pattern", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 3, Character: 2},
+				End:   protocol.Position{Line: 3, Character: 8},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("points mismatched script delimiters at the closing delimiter", func() {
+		snapshot := analyzeDocument(`|===|
+string name = "Ada";
+|====|
+[output = 'data'] { result: name, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, `at 3:1 near "|====|"`)
+			tAssert.Equal(string(diagnosticSyntaxInconsistentScriptDelimiters), requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 2, Character: 0},
+				End:   protocol.Position{Line: 2, Character: 6},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("prefers the processor range for duplicate schema fields", func() {
+		snapshot := analyzeDocument(`|===|
+ schema User: { name: string, name: string, };
+|===|
+[output = 'schema'] {}`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Equal(string(diagnosticDeclarationDuplicateSchemaField), requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 30},
+				End:   protocol.Position{Line: 1, Character: 34},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("points numeric operand errors at the operator", func() {
+		snapshot := analyzeDocument(`|===|
+boolean value = true + false;
+|===|
+[output = 'data'] { result: value, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "expected numeric operands for operator")
+			tAssert.Equal(string(diagnosticTypeInvalidBinaryOperator), requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 21},
+				End:   protocol.Position{Line: 1, Character: 22},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("points non-scalar interpolation errors at the interpolation", func() {
+		snapshot := analyzeDocument(`|===|
+schema User: { name: string, };
+User user = { name: "Ada", };
+string message = "Hello $(user)!";
+|===|
+[output = 'data'] { result: message, }`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "interpolation requires a scalar value")
+			tAssert.Equal("mace.string.nonscalar-interpolation", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 3, Character: 24},
+				End:   protocol.Position{Line: 3, Character: 31},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("uses parser AST ranges for processor diagnostics", func() {
+		snapshot := analyzeDocument(`|===|
+schema User: { nickname?: string, };
+User user = { nickname: "Ada", };
+|===|
+[output = 'data']
+{
+  result: user.nickname,
+}`)
+
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Contains(snapshot.diagnostics[0].Message, "optional chaining")
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 6, Character: 14},
+				End:   protocol.Position{Line: 6, Character: 15},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
+	It("uses UTF-16 positions for UTF-8 source text", func() {
+		text := "a😀\r\nb"
+		tAssert.Equal(protocol.Position{Line: 0, Character: 3}, positionFromIndex(text, len("a😀")))
+		tAssert.Equal(protocol.Position{Line: 1, Character: 0}, positionFromIndex(text, len("a😀\r\n")))
+
+		snapshot := analyzeDocument(`[output = 'data'] { first: "😀" second: 1, }`)
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 0, Character: 20},
+				End:   protocol.Position{Line: 0, Character: 25},
+			}, snapshot.diagnostics[0].Range)
+		}
+	})
+
 	It("covers analysis helpers for diagnostics and symbols", func() {
 		tAssert.NotEmpty(diagnosticCodeFromProcessorError(processor.DiagnosticError{Kind: processor.ErrorImport}))
 		tAssert.NotEmpty(diagnosticCodeFromProcessorError(processor.DiagnosticError{Code: processor.CodeTypeMismatch}))
@@ -195,7 +620,7 @@ var _ = Describe("LSP analysis", func() {
 			Start: protocol.Position{Line: 2, Character: 2},
 			End:   protocol.Position{Line: 2, Character: 6},
 		}
-		tAssert.Empty(CodeActions(snapshot, uri, rangeValue))
+		tAssert.NotEmpty(CodeActions(snapshot, uri, rangeValue))
 		tAssert.True(hasTextEditAtRange([]protocol.TextEdit{{Range: rangeValue, NewText: "title"}}, rangeValue))
 		tAssert.False(hasTextEditAtRange(nil, rangeValue))
 	})
@@ -1072,9 +1497,14 @@ schema Runtime: { env: string, };
 {}`)
 
 		if tAssert.Len(snapshot.diagnostics, 1) {
-			tAssert.Contains(snapshot.diagnostics[0].Message, "empty script block")
-			tAssert.Equal(protocol.DiagnosticSeverityError, *snapshot.diagnostics[0].Severity)
-			tAssert.Equal(string(diagnosticSyntaxEmptyScriptBlock), requireDiagnosticCode(snapshot.diagnostics[0]))
+			diagnostic := snapshot.diagnostics[0]
+			tAssert.Contains(diagnostic.Message, "empty script block")
+			tAssert.Equal(protocol.DiagnosticSeverityError, *diagnostic.Severity)
+			tAssert.Equal(string(diagnosticSyntaxEmptyScriptBlock), requireDiagnosticCode(diagnostic))
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 0},
+				End:   protocol.Position{Line: 1, Character: 5},
+			}, diagnostic.Range)
 		}
 	})
 
@@ -1857,7 +2287,7 @@ alias Name: string;
 		}
 	})
 
-	It("treats schema directives as import usages", func() {
+	It("reports unavailable schema imports", func() {
 		workspace, err := os.MkdirTemp("", "mace-analysis-schema-directive-import-*")
 		tAssert.NoError(err)
 
@@ -1874,7 +2304,10 @@ from './shared.mace' import User;
   name: "Ada",
 }`, documentPath)
 
-		tAssert.Empty(snapshot.diagnostics)
+		if tAssert.Len(snapshot.diagnostics, 2) {
+			tAssert.Equal("mace.directive.schema-file-required", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal("mace.import.name-not-exposed", requireDiagnosticCode(snapshot.diagnostics[1]))
+		}
 	})
 
 	It("inserts inline descriptions after complex type declarations", func() {

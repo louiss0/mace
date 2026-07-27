@@ -164,21 +164,16 @@ func isVariableType(tokenType lexer.TokenType) bool {
 }
 
 func sourceIndexAt(text string, line int, column int) int {
-	currentLine := 1
-	currentColumn := 1
-	for index, runeValue := range text {
-		if currentLine == line && currentColumn == column {
-			return index
-		}
-		if runeValue == '\n' {
-			currentLine++
-			currentColumn = 1
-			continue
-		}
-		currentColumn++
+	if line < 1 || column < 1 {
+		return -1
 	}
-	if currentLine == line && currentColumn == column {
-		return len(text)
+
+	index := (protocol.Position{
+		Line:      protocol.UInteger(line - 1),
+		Character: protocol.UInteger(column - 1),
+	}).IndexIn(text)
+	if index == 0 && (line != 1 || column != 1) {
+		return -1
 	}
-	return -1
+	return index
 }

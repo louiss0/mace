@@ -135,7 +135,7 @@ func classifyParseDiagnostic(message string) diagnosticCode {
 		return diagnosticSyntaxEmptyScriptBlock
 	case strings.Contains(message, "expected closing script delimiter") && strings.Contains(message, "EOF"):
 		return diagnosticSyntaxUnterminatedScriptBlock
-	case strings.Contains(message, "script delimiter"):
+	case strings.Contains(message, "script delimiter") || strings.Contains(message, "script block delimiters"):
 		return diagnosticSyntaxInconsistentScriptDelimiters
 	case strings.Contains(message, "import"):
 		return diagnosticSyntaxMalformedImport
@@ -229,6 +229,9 @@ func classifyDiagnosticCode(message string) diagnosticCode {
 }
 
 func diagnosticCodeFromProcessorError(err processor.DiagnosticError) diagnosticCode {
+	if strings.Contains(err.Message, "cannot be accessed because its target is not a record") {
+		return diagnosticCode("mace.type.optional-field-access")
+	}
 	if mapped, ok := diagnosticCodeFromProcessorErrorCode(err.Code); ok {
 		return mapped
 	}

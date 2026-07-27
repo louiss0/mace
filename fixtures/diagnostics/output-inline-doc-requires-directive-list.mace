@@ -1,5 +1,3 @@
-"""
-Invalid: no directive list
-"""
+[output = 'data', doc = 42]
 {
 }

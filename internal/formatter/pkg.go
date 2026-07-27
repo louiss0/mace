@@ -104,9 +104,6 @@ func (f *formatter) writeOutputBlock(output ast.OutputBlock) error {
 		}
 		f.writeLine(directive)
 	}
-	if output.Doc != nil {
-		f.writeLine(output.Doc.Lexeme)
-	}
 	if output.Mode == ast.OutputModeSchema {
 		return f.writeSchemaOutputBlock(output.SchemaFields)
 	}
@@ -326,6 +323,12 @@ func formatOutputDirectives(directives []ast.OutputDirective) (string, error) {
 			parts = append(parts, "parse = "+directive.Value)
 		case ast.OutputDirectiveParseFile:
 			parts = append(parts, "parse_file = "+directive.Value)
+		case ast.OutputDirectiveDoc:
+			documentation, err := formatExpressionWithDepth(directive.Documentation, 0)
+			if err != nil {
+				return "", err
+			}
+			parts = append(parts, "doc = "+documentation)
 		default:
 			return "", fmt.Errorf("format output directive: unsupported %d", directive.Kind)
 		}

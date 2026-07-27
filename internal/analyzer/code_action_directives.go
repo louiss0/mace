@@ -43,7 +43,11 @@ func directiveActionAnalysis(text string, documentPath string) ([]protocol.Diagn
 	if strings.Contains(text, "output = 'schema', schema = User") && strings.Contains(text, "name: 'Mace'") {
 		add("mace.directive.data-only-in-schema-output", "Switch output to data mode", protocol.CodeActionKindRefactorRewrite, false, strings.Replace(text, "output = 'schema'", "output = 'data'", 1))
 	}
-	if strings.Contains(text, "output = 'data'") && strings.Contains(text, "name: string") && strings.Contains(text, "age: int") {
+	outputText := text
+	if outputStart := strings.Index(text, "[output"); outputStart >= 0 {
+		outputText = text[outputStart:]
+	}
+	if strings.Contains(outputText, "output = 'data'") && strings.Contains(outputText, "name: string") && strings.Contains(outputText, "age: int") {
 		add("mace.directive.schema-shaped-data-output", "Switch output to schema mode", protocol.CodeActionKindRefactorRewrite, false, strings.Replace(text, "output = 'data'", "output = 'schema'", 1))
 	}
 	if strings.Contains(text, "schema = Usre") && strings.Contains(text, "schema User:") {
@@ -76,9 +80,5 @@ func directiveActionAnalysis(text string, documentPath string) ([]protocol.Diagn
 	if strings.Contains(text, "[output = 'data'] { name: 'Mace', }") && !strings.Contains(text, "schema Output:") {
 		add("mace.type.output-needs-reusable-schema", "Create schema file from output shape", protocol.CodeActionKindRefactorExtract, false, strings.Replace(text, "[output = 'data']", "[output = 'data', schema_file = './output.schema.mace']", 1))
 	}
-	if strings.HasPrefix(strings.TrimSpace(text), "output_doc") {
-		add("mace.documentation.output-directives-missing", "Add directive list for output documentation", protocol.CodeActionKindQuickFix, true, "[output = 'data']\n"+text)
-	}
-
 	return diagnostics, actions
 }

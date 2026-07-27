@@ -96,8 +96,39 @@ var _ = Describe("AST nodes", func() {
 		tAssert.Equal("Local", withAlias.LocalName())
 	})
 
-	It("counts token ranges by characters", func() {
+	It("counts token ranges in UTF-16 code units", func() {
 		rangeValue := TokenRange(lexer.Token{Lexeme: "café", Line: 2, Column: 4})
 		tAssert.Equal(SourceRange{Start: SourcePosition{Line: 2, Column: 4}, End: SourcePosition{Line: 2, Column: 8}}, rangeValue)
+
+		rangeValue = TokenRange(lexer.Token{Lexeme: "𐐀", Line: 2, Column: 4})
+		tAssert.Equal(SourceRange{Start: SourcePosition{Line: 2, Column: 4}, End: SourcePosition{Line: 2, Column: 6}}, rangeValue)
+	})
+
+	It("tracks multiline token ranges", func() {
+		rangeValue := TokenRange(lexer.Token{Lexeme: "\"\"\"a\r\n😀\"\"\"", Line: 2, Column: 4})
+		tAssert.Equal(SourceRange{Start: SourcePosition{Line: 2, Column: 4}, End: SourcePosition{Line: 3, Column: 6}}, rangeValue)
+	})
+
+	It("ranges member access by its member name", func() {
+		rangeValue := (MemberAccess{
+			Target:    Identifier{Token: lexer.Token{Lexeme: "user", Line: 3, Column: 3}},
+			NameToken: lexer.Token{Lexeme: "nickname", Line: 3, Column: 8},
+		}).Range()
+		tAssert.Equal(SourceRange{Start: SourcePosition{Line: 3, Column: 8}, End: SourcePosition{Line: 3, Column: 16}}, rangeValue)
+	})
+
+	It("ranges infix expressions by their operator", func() {
+		rangeValue := (InfixExpression{
+			Left:          StringLiteral{Token: lexer.Token{Lexeme: `"a"`, Line: 4, Column: 1}},
+			OperatorToken: lexer.Token{Lexeme: "+", Line: 4, Column: 5},
+		}).Range()
+		tAssert.Equal(SourceRange{Start: SourcePosition{Line: 4, Column: 5}, End: SourcePosition{Line: 4, Column: 6}}, rangeValue)
+	})
+
+	It("ranges match patterns by the pattern expression", func() {
+		rangeValue := (MatchPattern{
+			Type: PrimitiveType{Token: lexer.Token{Lexeme: "string", Line: 5, Column: 3}},
+		}).Range()
+		tAssert.Equal(SourceRange{Start: SourcePosition{Line: 5, Column: 3}, End: SourcePosition{Line: 5, Column: 9}}, rangeValue)
 	})
 })

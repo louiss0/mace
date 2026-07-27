@@ -760,7 +760,6 @@ To pass:
 - Synchronize documented fields with schema field IDs, not spelling alone.
 - Detect conflicts between inline and structured documentation.
 - Escape forbidden interpolation markers.
-- Add output directive lists when output documentation lacks an attached output.
 - Implement full-file synchronization as a source action.
 
 ### High-value fix-all actions

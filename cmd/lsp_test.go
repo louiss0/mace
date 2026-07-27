@@ -650,6 +650,435 @@ Name user = "Ada";
 		}
 	})
 
+	It("does not publish schema-shaped data diagnostics for schema-backed output", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+schema User: { name: string, age: int, };
+|===|
+[output = 'data', schema = User]
+{ name: 'Ada', }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			for _, diagnostic := range requireDiagnostics(notifications[0]).Diagnostics {
+				tAssert.NotEqual("mace.directive.schema-shaped-data-output", diagnostic.Code.Value)
+			}
+		}
+	})
+
+	It("publishes unknown output field errors at the field name", func() {
+		notifications := []capturedNotification{}
+		didOpen(server, uri, `|===|
+schema User: { name: string, };
+|===|
+[output = 'data', schema = User]
+{ name: 'Ada', extra: true, }`, &notifications)
+
+		params := requireDiagnostics(notifications[0])
+		if tAssert.Len(params.Diagnostics, 1) {
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 4, Character: 15},
+				End:   protocol.Position{Line: 4, Character: 20},
+			}, params.Diagnostics[0].Range)
+		}
+	})
+
+	It("publishes self reference errors at the accessed field", func() {
+		notifications := []capturedNotification{}
+		didOpen(server, uri, `[output = 'data']
+{ value: $self.missing, }`, &notifications)
+
+		params := requireDiagnostics(notifications[0])
+		if tAssert.Len(params.Diagnostics, 1) {
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 15},
+				End:   protocol.Position{Line: 1, Character: 22},
+			}, params.Diagnostics[0].Range)
+		}
+	})
+
+	It("publishes unknown type errors at the type reference", func() {
+		notifications := []capturedNotification{}
+		didOpen(server, uri, `|===|
+Unknown value = 1;
+|===|
+[output = 'data'] {}`, &notifications)
+
+		params := requireDiagnostics(notifications[0])
+		if tAssert.Len(params.Diagnostics, 1) {
+			tAssert.Equal(protocol.Range{
+				Start: protocol.Position{Line: 1, Character: 0},
+				End:   protocol.Position{Line: 1, Character: 7},
+			}, params.Diagnostics[0].Range)
+		}
+	})
+
+	It("publishes invalid output optionality errors at the field name", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+schema User: { name: string, };
+|===|
+[output = 'data', schema = User]
+{ name?: 'Ada', }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "field \"name\" is not optional")
+				tAssert.Equal("mace.type.data-field-optional-marker", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 4, Character: 2},
+					End:   protocol.Position{Line: 4, Character: 6},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
+	It("publishes optional field access errors at the access operator", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+schema Address: {
+  city: string,
+};
+schema User: {
+  address?: Address,
+};
+User user = { address: { city: 'Paris', }, };
+string city = user.address.city;
+|===|
+[output = 'data'] { city: city, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "use optional chaining '?.'")
+				tAssert.Equal("mace.type.optional-field-access", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 8, Character: 26},
+					End:   protocol.Position{Line: 8, Character: 27},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
+	It("publishes record access past its declared depth at the invalid access suffix", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+record<string> packages = {};
+string value = packages.codefixer.cn_efs;
+|===|
+[output = 'data'] { value, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "target is not a record")
+				tAssert.Equal("mace.type.optional-field-access", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 2, Character: 33},
+					End:   protocol.Position{Line: 2, Character: 40},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
+	It("publishes invalid null usage errors at the null literal", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+string value = null;
+|===|
+[output = 'data'] { value: value, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "null is only allowed in output")
+				tAssert.Equal("mace.type.invalid-null-usage", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 1, Character: 15},
+					End:   protocol.Position{Line: 1, Character: 19},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
+	It("publishes missing output field separators at the preceding field", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `[output = 'data']
+{
+  first: 1
+  second: 2,
+}`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "expected ',' after output field")
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 2, Character: 2},
+					End:   protocol.Position{Line: 2, Character: 7},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
+	It("publishes mixed numeric family errors at the operator", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+hex_int value = 0x2 + 3;
+|===|
+[output = 'data'] { value, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "expected hexadecimal operands for operator")
+				tAssert.Equal("mace.type.mixed-numeric-family", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 1, Character: 20},
+					End:   protocol.Position{Line: 1, Character: 21},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
+	It("publishes variant literal pattern errors at the invalid arm pattern", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+variant[string, int] value = 1;
+string result = match (value) {
+  'text' => 'text',
+  int => 'number',
+};
+|===|
+[output = 'data'] { result: result, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "variant match arms require a type pattern")
+				tAssert.Equal("mace.match.variant-literal-pattern", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 3, Character: 2},
+					End:   protocol.Position{Line: 3, Character: 8},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
+	It("publishes out-of-domain match errors at the invalid arm pattern", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+variant[string, int] value = 1;
+string result = match (value) {
+  string => 'text',
+  boolean => 'flag',
+  int => 'number',
+};
+|===|
+[output = 'data'] { result: result, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "match pattern boolean is not a member")
+				tAssert.Equal("mace.match.pattern-outside-domain", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 4, Character: 2},
+					End:   protocol.Position{Line: 4, Character: 9},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
+	It("publishes non-exhaustive match errors at the match expression", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+variant[string, int] value = 1;
+string result = match (value) {
+  string => 'text',
+};
+|===|
+[output = 'data'] { result: result, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "match expression must be exhaustive")
+				tAssert.Equal("mace.match.not-exhaustive", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 2, Character: 16},
+					End:   protocol.Position{Line: 4, Character: 1},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
+	It("publishes duplicate match errors at the repeated pattern", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+variant[string, int] value = 1;
+string result = match (value) {
+  string => 'text',
+  string => 'again',
+};
+|===|
+[output = 'data'] { result: result, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "duplicate match pattern string")
+				tAssert.Equal("mace.match.duplicate-pattern", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 4, Character: 2},
+					End:   protocol.Position{Line: 4, Character: 8},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
+	It("publishes concrete match input errors at the input expression", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+string value = 'text'; string result = match (value) { string => 'text', int => 'number', };
+|===|
+[output = 'data'] { result: result, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "match input must be a variant or choice")
+				tAssert.Equal("mace.match.concrete-input", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 1, Character: 46},
+					End:   protocol.Position{Line: 1, Character: 51},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
+	It("publishes choice type pattern errors at the invalid pattern", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+choice['on', 'off'] value = 'on';
+int selected = match (value) {
+  string => 1,
+  'off' => 0,
+};
+|===|
+[output = 'data'] { result: selected, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "choice match arms require a literal pattern")
+				tAssert.Equal("mace.match.choice-type-pattern", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 3, Character: 2},
+					End:   protocol.Position{Line: 3, Character: 8},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
+	It("publishes mismatched script delimiters at the closing delimiter", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+string name = "Ada";
+|====|
+[output = 'data'] { result: name, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Equal("mace.syntax.inconsistent-script-delimiters", params.Diagnostics[0].Code.Value)
+				tAssert.Contains(params.Diagnostics[0].Message, `at 3:1 near "|====|"`)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 2, Character: 0},
+					End:   protocol.Position{Line: 2, Character: 6},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
+	It("publishes duplicate schema fields at the repeated name", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+schema User: { name: string, name: string, };
+|===|
+[output = 'schema'] {}`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Equal("mace.declaration.duplicate-schema-field", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 1, Character: 29},
+					End:   protocol.Position{Line: 1, Character: 33},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
+	It("publishes numeric operand errors at the operator", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+boolean value = true + false;
+|===|
+[output = 'data'] { result: value, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "expected numeric operands for operator")
+				tAssert.Equal("mace.type.invalid-binary-operator", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 1, Character: 21},
+					End:   protocol.Position{Line: 1, Character: 22},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
+	It("publishes scalar interpolation errors at the interpolation", func() {
+		notifications := []capturedNotification{}
+
+		didOpen(server, uri, `|===|
+schema User: { name: string, };
+User user = { name: "Ada", };
+string message = "Hello $(user)!";
+|===|
+[output = 'data'] { result: message, }`, &notifications)
+
+		if tAssert.Len(notifications, 1) {
+			params := requireDiagnostics(notifications[0])
+			if tAssert.Len(params.Diagnostics, 1) {
+				tAssert.Contains(params.Diagnostics[0].Message, "interpolation requires a scalar value")
+				tAssert.Equal("mace.string.nonscalar-interpolation", params.Diagnostics[0].Code.Value)
+				tAssert.Equal(protocol.Range{
+					Start: protocol.Position{Line: 3, Character: 24},
+					End:   protocol.Position{Line: 3, Character: 31},
+				}, params.Diagnostics[0].Range)
+			}
+		}
+	})
+
 	It("publishes processor diagnostics for invalid variable declarations", func() {
 		notifications := []capturedNotification{}
 
@@ -2567,10 +2996,9 @@ Hover should surface this documentation.
   },
 };
 |===|
-[output = 'schema']
-"""
+[output = 'schema', doc = """
 # User Output
-"""
+"""]
 {
   user: User /# Public user schema,
 }
@@ -3751,6 +4179,8 @@ int value = 1;
 		tAssert.Equal(protocol.Position{Line: 1, Character: 0}, position)
 		position = positionFromIndex("a\nb", 1)
 		tAssert.Equal(protocol.Position{Line: 0, Character: 1}, position)
+		position = positionFromIndex("a😀b", len("a😀"))
+		tAssert.Equal(protocol.Position{Line: 0, Character: 3}, position)
 	})
 
 	It("returns initialized results through the json-rpc bridge", func() {

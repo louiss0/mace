@@ -7,6 +7,25 @@ import (
 )
 
 var _ = Describe("Strings", func() {
+	It("attaches interpolation ranges to scalar value errors", func() {
+		_, err := New().Process(`|===|
+schema User: { name: string, };
+User user = { name: "Ada", };
+string message = "Hello $(user)!";
+|===|
+[output = 'data'] { result: message, }`)
+		tAssert.Error(err)
+
+		var diagnostic DiagnosticError
+		if tAssert.ErrorAs(err, &diagnostic) {
+			tAssert.Equal(ErrorCode("mace.string.nonscalar-interpolation"), diagnostic.Code)
+			tAssert.Equal(4, diagnostic.Range.Start.Line)
+			tAssert.Equal(25, diagnostic.Range.Start.Column)
+			tAssert.Equal(4, diagnostic.Range.End.Line)
+			tAssert.Equal(32, diagnostic.Range.End.Column)
+		}
+	})
+
 	It("covers parsing and evaluation branches", func() {
 		environment := newValueEnvironment()
 		environment.Add("name", Value{Kind: ValueString, String: "Ada"})

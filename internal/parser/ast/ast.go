@@ -1,7 +1,7 @@
 package ast
 
 import (
-	"unicode/utf8"
+	"unicode/utf16"
 
 	"github.com/louiss0/mace/internal/lexer"
 )
@@ -21,12 +21,29 @@ type Node interface {
 }
 
 func TokenRange(token lexer.Token) SourceRange {
+	end := SourcePosition{Line: token.Line, Column: token.Column}
+	previousWasCarriageReturn := false
+	for _, character := range token.Lexeme {
+		switch character {
+		case '\r':
+			end.Line++
+			end.Column = 1
+			previousWasCarriageReturn = true
+		case '\n':
+			if !previousWasCarriageReturn {
+				end.Line++
+			}
+			end.Column = 1
+			previousWasCarriageReturn = false
+		default:
+			end.Column += utf16.RuneLen(character)
+			previousWasCarriageReturn = false
+		}
+	}
+
 	return SourceRange{
 		Start: SourcePosition{Line: token.Line, Column: token.Column},
-		End: SourcePosition{
-			Line:   token.Line,
-			Column: token.Column + utf8.RuneCountInString(token.Lexeme),
-		},
+		End:   end,
 	}
 }
 
@@ -62,9 +79,11 @@ func (i Identifier) Range() SourceRange {
 }
 
 type MemberAccess struct {
-	Target   Expression
-	Name     string
-	Optional bool
+	Target        Expression
+	OperatorToken lexer.Token
+	NameToken     lexer.Token
+	Name          string
+	Optional      bool
 }
 
 func (MemberAccess) expressionNode() {
@@ -72,6 +91,9 @@ func (MemberAccess) expressionNode() {
 }
 
 func (m MemberAccess) Range() SourceRange {
+	if m.NameToken.Line > 0 && m.NameToken.Column > 0 {
+		return TokenRange(m.NameToken)
+	}
 	return m.Target.Range()
 }
 
@@ -218,9 +240,10 @@ func (p PrefixExpression) Range() SourceRange {
 }
 
 type InfixExpression struct {
-	Left     Expression
-	Operator lexer.TokenType
-	Right    Expression
+	Left          Expression
+	OperatorToken lexer.Token
+	Operator      lexer.TokenType
+	Right         Expression
 }
 
 func (InfixExpression) expressionNode() {
@@ -228,6 +251,9 @@ func (InfixExpression) expressionNode() {
 }
 
 func (i InfixExpression) Range() SourceRange {
+	if i.OperatorToken.Line > 0 && i.OperatorToken.Column > 0 {
+		return TokenRange(i.OperatorToken)
+	}
 	return i.Left.Range()
 }
 
@@ -240,6 +266,16 @@ type ConditionalExpression struct {
 type MatchPattern struct {
 	Type    TypeReference
 	Literal Expression
+}
+
+func (m MatchPattern) Range() SourceRange {
+	if m.Type != nil {
+		return m.Type.Range()
+	}
+	if m.Literal != nil {
+		return m.Literal.Range()
+	}
+	return SourceRange{}
 }
 
 type MatchArm struct {
@@ -273,8 +309,9 @@ func (c ConditionalExpression) Range() SourceRange {
 }
 
 type SelfReference struct {
-	Token lexer.Token
-	Path  []string
+	Token      lexer.Token
+	PathTokens []lexer.Token
+	Path       []string
 }
 
 func (SelfReference) expressionNode() {
@@ -282,6 +319,9 @@ func (SelfReference) expressionNode() {
 }
 
 func (s SelfReference) Range() SourceRange {
+	if len(s.PathTokens) > 0 {
+		return TokenRange(s.PathTokens[len(s.PathTokens)-1])
+	}
 	return TokenRange(s.Token)
 }
 
@@ -517,7 +557,6 @@ func (s SchemaField) Range() SourceRange {
 
 type OutputBlock struct {
 	Directives   []OutputDirective
-	Doc          *StringLiteral
 	Mode         OutputMode
 	DataFields   []OutputField
 	SchemaFields []OutputSchemaField
@@ -538,11 +577,13 @@ const (
 	OutputDirectiveSchema
 	OutputDirectiveParse
 	OutputDirectiveParseFile
+	OutputDirectiveDoc
 )
 
 type OutputDirective struct {
-	Kind  OutputDirectiveKind
-	Value string
+	Kind          OutputDirectiveKind
+	Value         string
+	Documentation Expression
 }
 
 type OutputField struct {

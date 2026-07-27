@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -398,7 +399,7 @@ func (l *Lexer) advance() rune {
 	}
 
 	l.position += size
-	l.column++
+	l.column += utf16.RuneLen(current)
 	return current
 }
 

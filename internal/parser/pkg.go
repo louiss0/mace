@@ -249,7 +249,7 @@ func (p *Parser) parseScriptBlock() (ast.ScriptBlock, error) {
 		return ast.ScriptBlock{}, err
 	}
 	if openingDelimiter.Lexeme != closingDelimiter.Lexeme {
-		return ast.ScriptBlock{}, p.unexpectedTokenError("parser: script block delimiters must match")
+		return ast.ScriptBlock{}, p.unexpectedTokenErrorAt(closingDelimiter, "parser: script block delimiters must match")
 	}
 
 	return ast.ScriptBlock{Imports: imports, Items: items}, nil
@@ -537,16 +537,6 @@ func (p *Parser) parseOutputBlock() (ast.OutputBlock, error) {
 		directives = parsedDirectives
 	}
 
-	var doc *ast.StringLiteral
-	if len(directives) > 0 && p.current().Type == lexer.TokenString {
-		if !strings.HasPrefix(p.current().Lexeme, `"""`) {
-			return ast.OutputBlock{}, p.unexpectedTokenError("parser: expected multiline string doc block")
-		}
-		parsed := ast.StringLiteral{Token: p.current(), Lexeme: p.current().Lexeme}
-		doc = &parsed
-		p.advance()
-	}
-
 	mode := outputModeFromDirectives(directives)
 
 	if _, err := p.consume(lexer.TokenLBrace, "parser: expected '{' to start output block"); err != nil {
@@ -578,7 +568,6 @@ func (p *Parser) parseOutputBlock() (ast.OutputBlock, error) {
 
 	return ast.OutputBlock{
 		Directives:   directives,
-		Doc:          doc,
 		Mode:         mode,
 		DataFields:   dataFields,
 		SchemaFields: schemaFields,
@@ -684,6 +673,18 @@ func (p *Parser) parseDirectivePair() (ast.OutputDirective, error) {
 			Kind:  ast.OutputDirectiveParseFile,
 			Value: pathToken.Lexeme,
 		}, nil
+	case "doc":
+		p.advance()
+		if _, err := p.consume(lexer.TokenAssign, "parser: expected '=' after doc directive"); err != nil {
+			return ast.OutputDirective{}, err
+		}
+
+		documentation, err := p.parseExpression(precedenceLowest)
+		if err != nil {
+			return ast.OutputDirective{}, err
+		}
+
+		return ast.OutputDirective{Kind: ast.OutputDirectiveDoc, Documentation: documentation}, nil
 	case "schema":
 		p.advance()
 		if _, err := p.consume(lexer.TokenAssign, "parser: expected '=' after schema directive"); err != nil {
@@ -730,7 +731,7 @@ func (p *Parser) parseOutputField() (ast.OutputField, error) {
 
 	description := p.parseOptionalInlineDescription()
 
-	trailingDescription, trailingToken, err := p.consumeRecordSeparatorWithInlineDescription("output field")
+	trailingDescription, trailingToken, err := p.consumeRecordSeparatorWithInlineDescriptionAt("output field", nameToken)
 	if err != nil {
 		return ast.OutputField{}, err
 	}
@@ -1123,6 +1124,7 @@ func (p *Parser) parseSelfReference() (ast.Expression, error) {
 		return nil, err
 	}
 
+	segmentTokens := []lexer.Token{firstSegment}
 	segments := []string{firstSegment.Lexeme}
 	for p.current().Type == lexer.TokenDot {
 		p.advance()
@@ -1130,10 +1132,11 @@ func (p *Parser) parseSelfReference() (ast.Expression, error) {
 		if err != nil {
 			return nil, err
 		}
+		segmentTokens = append(segmentTokens, segment)
 		segments = append(segments, segment.Lexeme)
 	}
 
-	return ast.SelfReference{Token: selfToken, Path: segments}, nil
+	return ast.SelfReference{Token: selfToken, PathTokens: segmentTokens, Path: segments}, nil
 }
 
 func (p *Parser) parseDollarReference() (ast.Expression, error) {
@@ -1314,6 +1317,10 @@ func (p *Parser) consumePairSeparator(context string) error {
 }
 
 func (p *Parser) consumeRecordSeparator(context string) error {
+	return p.consumeRecordSeparatorAt(context, p.current())
+}
+
+func (p *Parser) consumeRecordSeparatorAt(context string, errorToken lexer.Token) error {
 	switch p.current().Type {
 	case lexer.TokenComma:
 		p.advance()
@@ -1321,12 +1328,16 @@ func (p *Parser) consumeRecordSeparator(context string) error {
 	case lexer.TokenRBrace:
 		return nil
 	default:
-		return p.unexpectedTokenError(fmt.Sprintf("parser: expected ',' after %s", context))
+		return p.unexpectedTokenErrorAt(errorToken, fmt.Sprintf("parser: expected ',' after %s", context))
 	}
 }
 
 func (p *Parser) consumeRecordSeparatorWithInlineDescription(context string) (string, lexer.Token, error) {
-	if err := p.consumeRecordSeparator(context); err != nil {
+	return p.consumeRecordSeparatorWithInlineDescriptionAt(context, p.current())
+}
+
+func (p *Parser) consumeRecordSeparatorWithInlineDescriptionAt(context string, errorToken lexer.Token) (string, lexer.Token, error) {
+	if err := p.consumeRecordSeparatorAt(context, errorToken); err != nil {
 		return "", lexer.Token{}, err
 	}
 
@@ -1361,7 +1372,13 @@ func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token)
 		if err != nil {
 			return nil, err
 		}
-		return ast.MemberAccess{Target: left, Name: memberToken.Lexeme, Optional: operator.Type == lexer.TokenOptionalDot}, nil
+		return ast.MemberAccess{
+			Target:        left,
+			OperatorToken: operator,
+			NameToken:     memberToken,
+			Name:          memberToken.Lexeme,
+			Optional:      operator.Type == lexer.TokenOptionalDot,
+		}, nil
 	}
 
 	if grouped, ok := left.(ast.GroupedExpression); ok {
@@ -1386,9 +1403,10 @@ func (p *Parser) parseInfixExpression(left ast.Expression, operator lexer.Token)
 	}
 
 	return ast.InfixExpression{
-		Left:     left,
-		Operator: operator.Type,
-		Right:    right,
+		Left:          left,
+		OperatorToken: operator,
+		Operator:      operator.Type,
+		Right:         right,
 	}, nil
 }
 
@@ -1586,7 +1604,7 @@ func (p *Parser) parseCoalesceExpression(left ast.Expression, operator lexer.Tok
 		return nil, err
 	}
 
-	return ast.InfixExpression{Left: left, Operator: operator.Type, Right: right}, nil
+	return ast.InfixExpression{Left: left, OperatorToken: operator, Operator: operator.Type, Right: right}, nil
 }
 
 func (p *Parser) consume(tokenType lexer.TokenType, message string) (lexer.Token, error) {

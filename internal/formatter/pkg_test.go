@@ -335,7 +335,7 @@ string name = "Ada";
 }`, output)
 	})
 
-	It("formats documentation declarations and inline output docs", func() {
+	It("formats documentation declarations and output doc directives", func() {
 		file, err := parseMaceFile(`|===|
 schema User: { name: string, };
 schema_doc User {
@@ -345,10 +345,9 @@ schema_doc User {
 """,
 };
 |===|
-[output = 'schema']
-"""
+[output = 'schema', doc = """
 # Public User Output
-"""
+"""]
 { user: User, }`)
 		tAssert.NoError(err)
 
@@ -365,10 +364,9 @@ schema_doc User {
 """,
 };
 |================================|
-[output = 'schema']
-"""
+[output = 'schema', doc = """
 # Public User Output
-"""
+"""]
 {
   user: User
 }`, output)
