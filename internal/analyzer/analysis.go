@@ -690,28 +690,59 @@ func analyzeDocumentAtInRootContext(context context.Context, text string, docume
 
 	tokens, lexErr := lex(text)
 	if lexErr != nil {
-		snapshot.diagnostics = []protocol.Diagnostic{diagnosticFromError(lexErr)}
-		return snapshot, nil
+		analysis := collectCodeActionAnalysis(text, documentPath, literalActionAnalysis)
+		snapshot.diagnostics = append(analysis.diagnostics, diagnosticFromError(lexErr))
+		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, analysis.actions...)
+		return finalizedAnalysis(snapshot), nil
 	}
 	snapshot.tokens = tokens
+	analysis := collectCodeActionAnalysis(
+		text,
+		documentPath,
+		syntaxStructureAnalysis,
+		directiveActionAnalysis,
+		arrayActionAnalysis,
+		literalActionAnalysis,
+		nullActionAnalysis,
+		conditionalActionAnalysis,
+		interpolationActionAnalysis,
+		choiceActionAnalysis,
+		variantActionAnalysis,
+		fusionActionAnalysis,
+		recordActionAnalysis,
+		optionalAccessActionAnalysis,
+		operatorActionAnalysis,
+		documentationActionAnalysis,
+		selfActionAnalysis,
+		matchActionAnalysis,
+		declarationActionAnalysis,
+		importActionAnalysis,
+		fixAllActionAnalysis,
+		crossFileActionAnalysis,
+	)
+	diagnosticData := diagnosticDataAnalysis(text)
+	analysis.diagnostics = append(analysis.diagnostics, diagnosticData...)
 	if err := context.Err(); err != nil {
 		return snapshot, err
 	}
 
 	file, parseErr := parseFile(text)
 	if parseErr != nil {
-		snapshot.diagnostics = []protocol.Diagnostic{diagnosticFromError(parseErr)}
+		snapshot.diagnostics = append(snapshot.diagnostics, diagnosticFromError(parseErr))
+		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, analysis.actions...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, parseErrorCodeActions(tokens, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, scriptBlockStructureCodeActions(text, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, variableFixTextCodeActions(text, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, arrayTextCodeActions(text, documentPath)...)
-		return snapshot, nil
+		return finalizedAnalysis(snapshot), nil
 	}
 	if err := context.Err(); err != nil {
 		return snapshot, err
 	}
 
 	snapshot.file = &file
+	snapshot.diagnostics = append(snapshot.diagnostics, analysis.diagnostics...)
+	snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, analysis.actions...)
 	importBaseDir := filepath.Dir(documentPath)
 	if documentPath == "" {
 		importBaseDir = ""
@@ -743,7 +774,7 @@ func analyzeDocumentAtInRootContext(context context.Context, text string, docume
 			unusedDiagnostics, unusedActions := unusedDeclarationAnalysis(text, file, tokens, documentPath)
 			snapshot.diagnostics = append(snapshot.diagnostics, unusedDiagnostics...)
 			snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, unusedActions...)
-			return snapshot, nil
+			return finalizedAnalysis(snapshot), nil
 		}
 		if semanticDiagnostic, ok := semanticDiagnosticFromError(file, tokens, processErr); ok {
 			snapshot.diagnostics = append(snapshot.diagnostics, semanticDiagnostic)
@@ -752,7 +783,7 @@ func analyzeDocumentAtInRootContext(context context.Context, text string, docume
 			snapshot.diagnostics = append(snapshot.diagnostics, diagnosticFromError(processErr))
 		}
 		snapshot.diagnostics = append(snapshot.diagnostics, lo.Ternary(hasParseDirectiveWarning, []protocol.Diagnostic{parseDirectiveWarning}, nil)...)
-		return snapshot, nil
+		return finalizedAnalysis(snapshot), nil
 	}
 
 	snapshot.result = &result
@@ -769,7 +800,12 @@ func analyzeDocumentAtInRootContext(context context.Context, text string, docume
 	if err := context.Err(); err != nil {
 		return snapshot, err
 	}
-	return snapshot, nil
+	return finalizedAnalysis(snapshot), nil
+}
+
+func finalizedAnalysis(snapshot analysisSnapshot) analysisSnapshot {
+	snapshot.diagnostics = deduplicateDiagnostics(snapshot.diagnostics)
+	return snapshot
 }
 
 func analyzeCompletionContext(text string, documentPath string, position protocol.Position) analysisSnapshot {
@@ -927,9 +963,11 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 	actions = append(actions, importResolutionCodeActions(text, file, tokens, documentPath)...)
 	actions = append(actions, scriptBlockStructureCodeActions(text, documentPath)...)
 	actions = append(actions, variableFixTextCodeActions(text, documentPath)...)
+	actions = append(actions, outputValueExtractionCodeActions(text, file, tokens, documentPath)...)
 	actions = append(actions, arrayTextCodeActions(text, documentPath)...)
 	actions = append(actions, schemaCreationTextCodeActions(text, documentPath)...)
 	actions = append(actions, documentationCodeActions(text, file, tokens, documentPath)...)
+	actions = append(actions, typeArgumentAliasCodeActions(text, tokens, documentPath)...)
 	actions = append(actions, editorRefactorCodeActions(text, file, tokens, documentPath)...)
 	diagnostics = append(diagnostics, schemaOutputVariableDiagnostics(file, tokens)...)
 
@@ -1315,9 +1353,6 @@ func variableFixTextCodeActions(text string, documentPath string) []analysisCode
 	if updated, ok := inlineVariableIntoOutputText(text); ok {
 		addTextAction("Inline variable into output field", updated)
 	}
-	if updated, ok := extractOutputExpressionText(text); ok {
-		addTextAction("Extract output expression into script variable", updated)
-	}
 	return actions
 }
 
@@ -1375,18 +1410,6 @@ func inlineVariableIntoOutputText(text string) (string, bool) {
 		updated = strings.Replace(text, ": "+matches[1], ": "+matches[2], 1)
 	}
 	return updated, updated != text
-}
-
-func extractOutputExpressionText(text string) (string, bool) {
-	pattern := regexp.MustCompile(`(?m)([A-Za-z_][A-Za-z0-9_]*)\s*:\s*("[^"]*")`)
-	matches := pattern.FindStringSubmatch(text)
-	if len(matches) == 0 || strings.Contains(text, "|===|") {
-		return "", false
-	}
-	name := matches[1]
-	value := matches[2]
-	updated := pattern.ReplaceAllString(text, name+": "+name)
-	return "|===|\nstring " + name + " = " + value + ";\n|===|\n" + updated, true
 }
 
 func parseErrorCodeActions(tokens []lexer.Token, documentPath string) []analysisCodeActionCandidate {
@@ -2956,8 +2979,10 @@ func unusedDeclarationAnalysis(text string, file ast.File, tokens []lexer.Token,
 
 			rangeValue := tokenProtocolRange(declaration.NameToken)
 			message := fmt.Sprintf("script variable %q is never used", declaration.Name)
-			diagnostics = append(diagnostics, diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityWarning, diagnosticDeclarationUnusedVariable, message))
+			diagnostic := diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityWarning, diagnosticDeclarationUnusedVariable, message)
+			diagnostics = append(diagnostics, diagnostic)
 			actions = append(actions, removeDeclarationAction(text, tokens, documentPath, rangeValue, declaration.NameToken, "Remove unused variable")...)
+			actions = append(actions, unusedVariableExportActions(text, file, tokens, documentPath, diagnostic, declaration)...)
 		case ast.TypeDeclaration:
 			if _, used := usedDeclarations[declaration.Name]; used {
 				continue
@@ -2965,8 +2990,10 @@ func unusedDeclarationAnalysis(text string, file ast.File, tokens []lexer.Token,
 
 			rangeValue := tokenProtocolRange(declaration.NameToken)
 			message := fmt.Sprintf("type %q is never used", declaration.Name)
-			diagnostics = append(diagnostics, diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityWarning, diagnosticDeclarationUnusedType, message))
+			diagnostic := diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityWarning, diagnosticDeclarationUnusedType, message)
+			diagnostics = append(diagnostics, diagnostic)
 			actions = append(actions, removeDeclarationAction(text, tokens, documentPath, rangeValue, declaration.NameToken, "Remove unused type")...)
+			actions = append(actions, unusedTypeExportActions(text, file, tokens, documentPath, diagnostic, declaration)...)
 		}
 	}
 
@@ -3217,6 +3244,15 @@ func semanticDiagnosticFromError(file ast.File, tokens []lexer.Token, err error)
 	message := err.Error()
 	var diagnosticError processor.DiagnosticError
 	hasDiagnosticError := errors.As(err, &diagnosticError)
+	if hasDiagnosticError && (diagnosticError.Range.Start.Line != 0 || diagnosticError.Range.Start.Column != 0 ||
+		diagnosticError.Range.End.Line != 0 || diagnosticError.Range.End.Column != 0) {
+		diagnostic := diagnosticFromError(err)
+		if diagnosticError.Code == processor.CodeSelfReferenceUnknown {
+			code := classifySelfReferenceCode(file, diagnosticError.Fields.Name)
+			diagnostic = diagnosticWithCode(diagnostic.Range, protocol.DiagnosticSeverityError, code, diagnosticError.Message)
+		}
+		return diagnostic, true
+	}
 
 	if hasDiagnosticError {
 		if diagnostic, ok := variableTypeMismatchDiagnostic(file, tokens, diagnosticError); ok {
@@ -3429,6 +3465,9 @@ func dataOutputValueDiagnostic(tokens []lexer.Token, diagnosticError processor.D
 	}
 
 	rangeValue, found := tokenRangeFromEnd(tokens, diagnosticError.Fields.Name)
+	if !found && strings.HasPrefix(diagnosticError.Fields.Name, "$") {
+		rangeValue, found = parsedIdentifierRangeFromEnd(tokens, strings.TrimPrefix(diagnosticError.Fields.Name, "$"))
+	}
 	if !found {
 		return protocol.Diagnostic{}, false
 	}
@@ -3515,10 +3554,30 @@ func tokenRangeByTypeFromEnd(tokens []lexer.Token, tokenType lexer.TokenType, le
 	return protocol.Range{}, false
 }
 
+func parsedIdentifierRangeFromEnd(tokens []lexer.Token, name string) (protocol.Range, bool) {
+	for index := len(tokens) - 1; index > 0; index-- {
+		nameToken := tokens[index]
+		dollarToken := tokens[index-1]
+		if nameToken.Type != lexer.TokenIdentifier || nameToken.Lexeme != name {
+			continue
+		}
+		if dollarToken.Type != lexer.TokenDollar || dollarToken.Line != nameToken.Line || dollarToken.Column+1 != nameToken.Column {
+			continue
+		}
+
+		rangeValue := tokenProtocolRange(dollarToken)
+		rangeValue.End = tokenProtocolRange(nameToken).End
+		return rangeValue, true
+	}
+	return protocol.Range{}, false
+}
+
 func tokenProtocolRange(token lexer.Token) protocol.Range {
-	start := protocol.Position{Line: protocol.UInteger(token.Line - 1), Character: protocol.UInteger(token.Column - 1)}
-	end := protocol.Position{Line: protocol.UInteger(token.Line - 1), Character: protocol.UInteger(token.Column - 1 + len(token.Lexeme))}
-	return protocol.Range{Start: start, End: end}
+	sourceRange := ast.TokenRange(token)
+	return protocol.Range{
+		Start: protocolPositionFromOneBased(sourceRange.Start.Line, sourceRange.Start.Column),
+		End:   protocolPositionFromOneBased(sourceRange.End.Line, sourceRange.End.Column),
+	}
 }
 
 func collectDeclarationsExcludingParsed(file ast.File, result *processor.Result, importBaseDir string) []declarationDefinition {
@@ -3850,8 +3909,8 @@ func importedSemanticSymbols(file ast.File, documentPath string) []semanticSymbo
 			return nil
 		}
 
-		if importDecl.ImportAs != nil {
-			if symbol, ok := importedImportAsSemanticSymbol(importedFile, importedPath, importDecl.ImportAs.LocalName()); ok {
+		if importDecl.Binding != nil {
+			if symbol, ok := importedBindingSemanticSymbol(importedFile, importedPath, importDecl.Binding.LocalName()); ok {
 				return []semanticSymbol{symbol}
 			}
 			return nil
@@ -3870,7 +3929,7 @@ func importedSemanticSymbols(file ast.File, documentPath string) []semanticSymbo
 	})
 }
 
-func importedImportAsSemanticSymbol(file ast.File, path string, name string) (semanticSymbol, bool) {
+func importedBindingSemanticSymbol(file ast.File, path string, name string) (semanticSymbol, bool) {
 	model := buildCompletionModel(file, filepath.Dir(path), filepath.Dir(path), map[string]completionModel{})
 	if file.Output.Mode == ast.OutputModeSchema {
 		record, ok := importAsSchemaRecord(file, model)

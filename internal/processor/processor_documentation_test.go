@@ -158,25 +158,51 @@ string name = "Ada";
 |===|`, "must appear after its type or non-object variable declaration"),
 	)
 
-	DescribeTable("rejects invalid output documentation",
+	DescribeTable("accepts output doc directives for each string variation",
+		func(mode, documentation string) {
+			field := `name: "Ada",`
+			if mode == "schema" {
+				field = "name: string,"
+			}
+
+			_, err := New().Process(`[output = '` + mode + `', doc = ` + documentation + `]
+{
+  ` + field + `
+}`)
+			tAssert.NoError(err)
+		},
+		Entry("single-quoted string in data output", "data", `'Public output'`),
+		Entry("double-quoted string in data output", "data", `"Public output"`),
+		Entry("block string in data output", "data", `"""
+# Public output
+"""`),
+		Entry("single-quoted string in schema output", "schema", `'Public output'`),
+		Entry("double-quoted string in schema output", "schema", `"Public output"`),
+		Entry("block string in schema output", "schema", `"""
+# Public output
+"""`),
+	)
+
+	It("accepts data output doc directives that reference variables", func() {
+		_, err := New().Process(`|===|
+string documentation = "Public output";
+|===|
+[output = 'data', doc = documentation]
+{
+  name: "Ada",
+}`)
+		tAssert.NoError(err)
+	})
+
+	DescribeTable("rejects invalid output doc directives",
 		func(input, message string) {
-			processor := New()
-			_, err := processor.Process(input)
+			_, err := New().Process(input)
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, message)
 		},
-		Entry("output inline doc requires a directive list", `"""
-Invalid: no directive list
-"""
+		Entry("non-string doc value", `[output = 'data', doc = 1]
 {
-}
-`, "expected output directive"),
-		Entry("output inline doc rejects interpolation", `[output = 'schema']
-"""$(name)"""
-{
-  name: string,
-}
-`, "interpolation is not allowed"),
+}`, "doc directive must evaluate to a string"),
 	)
 
 	It("loads doc fixtures", func() {

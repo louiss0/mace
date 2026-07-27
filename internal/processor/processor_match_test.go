@@ -255,6 +255,128 @@ func redundantCompositeMatchSource(kind string, depth int, typeReference string,
 }
 
 var _ = Describe("Match expressions", func() {
+	It("attaches variant literal pattern errors to the invalid arm pattern", func() {
+		_, err := New().Process(`|===|
+variant[string, int] value = 1;
+string result = match (value) {
+  'text' => 'text',
+  int => 'number',
+};
+|===|
+[output = 'data'] { result: result, }`)
+		tAssert.Error(err)
+
+		var diagnostic DiagnosticError
+		if tAssert.ErrorAs(err, &diagnostic) {
+			tAssert.Equal(ErrorCode("mace.match.variant-literal-pattern"), diagnostic.Code)
+			tAssert.Equal(4, diagnostic.Range.Start.Line)
+			tAssert.Equal(3, diagnostic.Range.Start.Column)
+			tAssert.Equal(4, diagnostic.Range.End.Line)
+			tAssert.Equal(9, diagnostic.Range.End.Column)
+		}
+	})
+
+	It("attaches out-of-domain match errors to the invalid arm pattern", func() {
+		_, err := New().Process(`|===|
+variant[string, int] value = 1;
+string result = match (value) {
+  string => 'text',
+  boolean => 'flag',
+  int => 'number',
+};
+|===|
+[output = 'data'] { result: result, }`)
+		tAssert.Error(err)
+
+		var diagnostic DiagnosticError
+		if tAssert.ErrorAs(err, &diagnostic) {
+			tAssert.Equal(ErrorCode("mace.match.pattern-outside-domain"), diagnostic.Code)
+			tAssert.Equal(5, diagnostic.Range.Start.Line)
+			tAssert.Equal(3, diagnostic.Range.Start.Column)
+			tAssert.Equal(5, diagnostic.Range.End.Line)
+			tAssert.Equal(10, diagnostic.Range.End.Column)
+		}
+	})
+
+	It("attaches non-exhaustive match errors to the match expression", func() {
+		_, err := New().Process(`|===|
+variant[string, int] value = 1;
+string result = match (value) {
+  string => 'text',
+};
+|===|
+[output = 'data'] { result: result, }`)
+		tAssert.Error(err)
+
+		var diagnostic DiagnosticError
+		if tAssert.ErrorAs(err, &diagnostic) {
+			tAssert.Equal(ErrorCode("mace.match.not-exhaustive"), diagnostic.Code)
+			tAssert.Equal(3, diagnostic.Range.Start.Line)
+			tAssert.Equal(17, diagnostic.Range.Start.Column)
+			tAssert.Equal(5, diagnostic.Range.End.Line)
+			tAssert.Equal(2, diagnostic.Range.End.Column)
+		}
+	})
+
+	It("attaches duplicate match errors to the repeated pattern", func() {
+		_, err := New().Process(`|===|
+variant[string, int] value = 1;
+string result = match (value) {
+  string => 'text',
+  string => 'again',
+};
+|===|
+[output = 'data'] { result: result, }`)
+		tAssert.Error(err)
+
+		var diagnostic DiagnosticError
+		if tAssert.ErrorAs(err, &diagnostic) {
+			tAssert.Equal(ErrorCode("mace.match.duplicate-pattern"), diagnostic.Code)
+			tAssert.Equal(5, diagnostic.Range.Start.Line)
+			tAssert.Equal(3, diagnostic.Range.Start.Column)
+			tAssert.Equal(5, diagnostic.Range.End.Line)
+			tAssert.Equal(9, diagnostic.Range.End.Column)
+		}
+	})
+
+	It("attaches concrete match input errors to the input expression", func() {
+		_, err := New().Process(`|===|
+string value = 'text'; string result = match (value) { string => 'text', int => 'number', };
+|===|
+[output = 'data'] { result: result, }`)
+		tAssert.Error(err)
+
+		var diagnostic DiagnosticError
+		if tAssert.ErrorAs(err, &diagnostic) {
+			tAssert.Equal(ErrorCode("mace.match.concrete-input"), diagnostic.Code)
+			tAssert.Equal(2, diagnostic.Range.Start.Line)
+			tAssert.Equal(47, diagnostic.Range.Start.Column)
+			tAssert.Equal(2, diagnostic.Range.End.Line)
+			tAssert.Equal(52, diagnostic.Range.End.Column)
+		}
+	})
+
+	It("attaches choice pattern errors to the invalid pattern", func() {
+		_, err := New().Process(`|===|
+choice['on', 'off'] value = 'on';
+int selected = match (value) {
+  string => 1,
+  'off' => 0,
+};
+|===|
+[output = 'data'] { result: selected, }`)
+		tAssert.Error(err)
+
+		var diagnostic DiagnosticError
+		if tAssert.ErrorAs(err, &diagnostic) {
+			tAssert.Equal(ErrorCode("mace.match.choice-type-pattern"), diagnostic.Code)
+			tAssert.Equal(4, diagnostic.Range.Start.Line)
+			tAssert.Equal(3, diagnostic.Range.Start.Column)
+			tAssert.Equal(4, diagnostic.Range.End.Line)
+			tAssert.Equal(9, diagnostic.Range.End.Column)
+		}
+	})
+
 	It("selects a variant arm by runtime member type", func() {
 		result, err := New().Process(`|===|
 variant[string, int] value = 7;

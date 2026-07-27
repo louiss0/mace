@@ -2002,8 +2002,8 @@ func buildCompletionModel(file ast.File, importBaseDir string, importRootDir str
 			continue
 		}
 
-		if importDecl.ImportAs != nil {
-			localName := importDecl.ImportAs.LocalName()
+		if importDecl.Binding != nil {
+			localName := importDecl.Binding.LocalName()
 			if importedFile.Output.Mode == ast.OutputModeSchema {
 				if record, ok := importAsSchemaRecord(importedFile, importedModel); ok {
 					model.schemas[localName] = record
@@ -2339,7 +2339,7 @@ func importedMemberCompletionRootType(file ast.File, path []string, importBaseDi
 	}
 
 	for _, importDecl := range file.Imports {
-		if importDecl.ImportAs == nil || importDecl.ImportAs.LocalName() != path[0] {
+		if importDecl.Binding == nil || importDecl.Binding.LocalName() != path[0] {
 			continue
 		}
 

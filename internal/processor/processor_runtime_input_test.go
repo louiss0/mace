@@ -80,6 +80,18 @@ schema Runtime: {
 		})
 	})
 
+	It("rejects undefined variables before reporting unavailable parsed input", func() {
+		processor := New()
+		_, err := processor.Process(`|===|
+schema Runtime: { env: string, };
+|===|
+[output = 'data', parse = Runtime]
+{
+  result: missing,
+}`)
+		tAssert.ErrorContains(err, `unknown identifier "missing"`)
+	})
+
 	It("rejects parse directives without required input fields", func() {
 		processor := New()
 		_, err := processor.Process(`|===|

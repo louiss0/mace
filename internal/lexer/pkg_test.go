@@ -83,9 +83,10 @@ var _ = Describe("Lexer", func() {
 			tAssert.NoError(err)
 			assertTokenSequence(tokens, expected)
 		},
-		Entry("keywords and identifiers", "from import alias type schema gen_doc schema_doc enum array fusion variant choice match record string int float hex_int hex_float boolean output schema_file parse parse_file data is null user_1", []expectedToken{
+		Entry("keywords and identifiers", "from import bind alias type schema gen_doc schema_doc enum array fusion variant choice match record string int float hex_int hex_float boolean output schema_file parse parse_file data is null user_1", []expectedToken{
 			{tokenType: TokenFrom, lexeme: "from"},
 			{tokenType: TokenImport, lexeme: "import"},
+			{tokenType: TokenBind, lexeme: "bind"},
 			{tokenType: TokenAliasKeyword, lexeme: "alias"},
 			{tokenType: TokenIdentifier, lexeme: "type"},
 			{tokenType: TokenSchema, lexeme: "schema"},
@@ -127,10 +128,8 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenIdentifier, lexeme: "user-profile"},
 			{tokenType: TokenEOF, lexeme: ""},
 		}),
-		Entry("import-as keyword", "import-as", []expectedToken{
-			{tokenType: TokenImport, lexeme: "import"},
-			{tokenType: TokenMinus, lexeme: "-"},
-			{tokenType: TokenIdentifier, lexeme: "as"},
+		Entry("bind keyword", "bind", []expectedToken{
+			{tokenType: TokenBind, lexeme: "bind"},
 			{tokenType: TokenEOF, lexeme: ""},
 		}),
 	)
@@ -283,6 +282,11 @@ var _ = Describe("Lexer", func() {
 			{tokenType: TokenIdentifier, lexeme: "alpha", line: 1, column: 1},
 			{tokenType: TokenIdentifier, lexeme: "beta", line: 2, column: 1},
 			{tokenType: TokenEOF, lexeme: "", line: 2, column: 5},
+		}),
+		Entry("UTF-16 positions in UTF-8 source", `"😀" name`, []expectedToken{
+			{tokenType: TokenString, lexeme: `"😀"`, line: 1, column: 1},
+			{tokenType: TokenIdentifier, lexeme: "name", line: 1, column: 6},
+			{tokenType: TokenEOF, lexeme: "", line: 1, column: 10},
 		}),
 	)
 

@@ -235,7 +235,7 @@ schema Meta: { source: string, };
 		tAssert.ErrorContains(err, "unknown identifier")
 	})
 
-	It("does not surface parsed schema fields as variables", func() {
+	It("surfaces parsed schema fields as $ variables", func() {
 		processor := NewWithInput(map[string]Value{
 			"project": {Kind: ValueRecord, Record: map[string]Value{
 				"name": {Kind: ValueString, String: "pi-prompt-form"},
@@ -247,7 +247,7 @@ schema Meta: { source: string, };
 			}},
 		})
 		_, err := processor.ProcessFile("../../fixtures/processor/import_as/nx_consumer.mace")
-		tAssert.ErrorContains(err, "unknown identifier")
+		tAssert.NoError(err)
 	})
 
 	It("does not expose record keyword schema fields as values", func() {
@@ -319,6 +319,22 @@ schema User: {
 })
 
 var _ = Describe("Schema and processor helpers", func() {
+	It("attaches declaration ranges to processor diagnostics", func() {
+		_, err := New().Process(`|===|
+int count = "seven";
+|===|
+[output = 'data'] { result: count, }`)
+		tAssert.Error(err)
+
+		var diagnostic DiagnosticError
+		if tAssert.ErrorAs(err, &diagnostic) {
+			tAssert.Equal(2, diagnostic.Range.Start.Line)
+			tAssert.Equal(5, diagnostic.Range.Start.Column)
+			tAssert.Equal(2, diagnostic.Range.End.Line)
+			tAssert.Equal(10, diagnostic.Range.End.Column)
+		}
+	})
+
 	It("reports diagnostic helper details", func() {
 		kindName := directiveKindName
 		cause := errors.New("root cause")
@@ -331,6 +347,7 @@ var _ = Describe("Schema and processor helpers", func() {
 		tAssert.Equal("schema", kindName(ast.OutputDirectiveSchema))
 		tAssert.Equal("parse", kindName(ast.OutputDirectiveParse))
 		tAssert.Equal("parse_file", kindName(ast.OutputDirectiveParseFile))
+		tAssert.Equal("doc", kindName(ast.OutputDirectiveDoc))
 		tAssert.Equal("unknown", kindName(ast.OutputDirectiveKind(99)))
 		tAssert.Equal(ErrorDoc, inferErrorKind("documentation block"))
 		tAssert.Equal(ErrorImport, inferErrorKind("import path"))

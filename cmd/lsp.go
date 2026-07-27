@@ -522,25 +522,7 @@ func fileURI(path string) string {
 }
 
 func positionFromIndex(text string, index int) protocol.Position {
-	line := protocol.UInteger(0)
-	column := protocol.UInteger(0)
-
-	for currentIndex, runeValue := range text {
-		if currentIndex >= index {
-			break
-		}
-		if runeValue == '\n' {
-			line++
-			column = 0
-			continue
-		}
-		column++
-	}
-
-	return protocol.Position{
-		Line:      line,
-		Character: column,
-	}
+	return analyzer.PositionFromIndex(text, index)
 }
 
 func (server *Server) handle(

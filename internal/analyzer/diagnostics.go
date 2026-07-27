@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"fmt"
 	"strings"
 
 	protocol "github.com/tliron/glsp/protocol_3_16"
@@ -12,63 +13,72 @@ import (
 type diagnosticCode string
 
 const (
-	diagnosticSyntaxUnterminatedScriptBlock         diagnosticCode = "mace.syntax.unterminated-script-block"
-	diagnosticSyntaxInconsistentScriptDelimiters    diagnosticCode = "mace.syntax.inconsistent-script-delimiters"
-	diagnosticSyntaxEmptyScriptBlock                diagnosticCode = "mace.syntax.empty-script-block"
-	diagnosticSyntaxMalformedImport                 diagnosticCode = "mace.syntax.malformed-import"
-	diagnosticSyntaxMalformedDirectiveList          diagnosticCode = "mace.syntax.malformed-directive-list"
-	diagnosticSyntaxMalformedSchema                 diagnosticCode = "mace.syntax.malformed-schema"
-	diagnosticSyntaxMalformedVariableDeclaration    diagnosticCode = "mace.syntax.malformed-variable-declaration"
-	diagnosticSyntaxMalformedOutputField            diagnosticCode = "mace.syntax.malformed-output-field"
-	diagnosticSyntaxUnexpectedToken                 diagnosticCode = "mace.syntax.unexpected-token"
-	diagnosticFileImportAfterScript                 diagnosticCode = "mace.file-structure.import-after-script-block"
-	diagnosticFileImportAfterOutput                 diagnosticCode = "mace.file-structure.import-after-output-block"
-	diagnosticFileScriptAfterOutput                 diagnosticCode = "mace.file-structure.script-after-output-block"
-	diagnosticFileMissingOutputBlock                diagnosticCode = "mace.file-structure.missing-output-block"
-	diagnosticFileMultipleOutputBlocks              diagnosticCode = "mace.file-structure.multiple-output-blocks"
-	diagnosticFileDirectiveNotAttached              diagnosticCode = "mace.file-structure.directive-not-attached-to-output-block"
-	diagnosticImportPathMissing                     diagnosticCode = "mace.import.path-missing"
-	diagnosticImportPathNotString                   diagnosticCode = "mace.import.path-not-string-literal"
-	diagnosticImportPathNotMace                     diagnosticCode = "mace.import.path-not-mace"
-	diagnosticImportFileNotFound                    diagnosticCode = "mace.import.file-not-found"
-	diagnosticImportFileFailedParse                 diagnosticCode = "mace.import.file-failed-to-parse"
-	diagnosticImportCircular                        diagnosticCode = "mace.import.circular"
-	diagnosticImportDuplicateName                   diagnosticCode = "mace.import.duplicate-name"
-	diagnosticImportNameNotExposed                  diagnosticCode = "mace.import.name-not-exposed"
-	diagnosticImportInternalDeclaration             diagnosticCode = "mace.import.internal-declaration"
-	diagnosticImportTargetNotPublic                 diagnosticCode = "mace.import.target-not-public"
-	diagnosticImportUnused                          diagnosticCode = "mace.import.unused"
-	diagnosticDeclarationDuplicateType              diagnosticCode = "mace.declaration.duplicate-type"
-	diagnosticDeclarationDuplicateSchema            diagnosticCode = "mace.declaration.duplicate-schema"
-	diagnosticDeclarationDuplicateVariable          diagnosticCode = "mace.declaration.duplicate-variable"
-	diagnosticDeclarationDuplicateSchemaField       diagnosticCode = "mace.declaration.duplicate-schema-field"
-	diagnosticDeclarationDuplicateOutputField       diagnosticCode = "mace.declaration.duplicate-output-field"
-	diagnosticDeclarationUnknownTypeReference       diagnosticCode = "mace.declaration.unknown-type-reference"
-	diagnosticDeclarationVariableMissingType        diagnosticCode = "mace.declaration.variable-missing-type"
-	diagnosticDeclarationVariableMissingInitializer diagnosticCode = "mace.declaration.variable-missing-initializer"
-	diagnosticDeclarationUnusedVariable             diagnosticCode = "mace.declaration.unused-variable"
-	diagnosticDeclarationUnusedType                 diagnosticCode = "mace.declaration.unused-type"
-	diagnosticTypeInitializerMismatch               diagnosticCode = "mace.type.initializer-type-mismatch"
-	diagnosticTypeInvalidUnaryOperator              diagnosticCode = "mace.type.invalid-unary-operator"
-	diagnosticTypeInvalidBinaryOperator             diagnosticCode = "mace.type.invalid-binary-operator"
-	diagnosticTypeMixedArrayLiteral                 diagnosticCode = "mace.type.mixed-array-literal"
-	diagnosticTypeUnknownIdentifier                 diagnosticCode = "mace.type.unknown-identifier"
-	diagnosticTypeUnknownSelfField                  diagnosticCode = "mace.type.unknown-self-field"
-	diagnosticTypeSelfForwardReference              diagnosticCode = "mace.type.self-forward-reference"
-	diagnosticTypeRecordDoesNotMatchSchema          diagnosticCode = "mace.type.record-does-not-match-schema"
-	diagnosticTypeOutputValueIncompatibleSchema     diagnosticCode = "mace.type.output-value-incompatible-schema"
-	diagnosticTypeInvalidOutputSchemaField          diagnosticCode = "mace.type.invalid-output-schema-field"
-	diagnosticTypeInvalidNullUsage                  diagnosticCode = "mace.type.invalid-null-usage"
-	diagnosticDirectiveDuplicateKey                 diagnosticCode = "mace.directive.duplicate-key"
-	diagnosticDirectiveUnknownKey                   diagnosticCode = "mace.directive.unknown-key"
-	diagnosticDirectiveInvalidOutputValue           diagnosticCode = "mace.directive.invalid-output-value"
-	diagnosticDirectiveOutputSchemaCombined         diagnosticCode = "mace.directive.output-schema-combined"
-	diagnosticDirectiveSchemaAndSchemaFileCombined  diagnosticCode = "mace.directive.schema-and-schema-file-combined"
-	diagnosticDirectiveSchemaOutputVariableIgnored  diagnosticCode = "mace.directive.schema-output-variable-ignored"
-	diagnosticDirectiveUnknownSchemaName            diagnosticCode = "mace.directive.unknown-schema-name"
-	diagnosticDirectiveSchemaFileInvalid            diagnosticCode = "mace.directive.schema-file-invalid"
-	diagnosticDirectiveSchemaFileUnusable           diagnosticCode = "mace.directive.schema-file-unusable"
-	diagnosticDirectiveParseValuesUnknown           diagnosticCode = "mace.directive.parse-values-unknown"
+	diagnosticSyntaxUnterminatedScriptBlock          diagnosticCode = "mace.syntax.unterminated-script-block"
+	diagnosticSyntaxInconsistentScriptDelimiters     diagnosticCode = "mace.syntax.inconsistent-script-delimiters"
+	diagnosticSyntaxEmptyScriptBlock                 diagnosticCode = "mace.syntax.empty-script-block"
+	diagnosticSyntaxMalformedImport                  diagnosticCode = "mace.syntax.malformed-import"
+	diagnosticSyntaxMalformedDirectiveList           diagnosticCode = "mace.syntax.malformed-directive-list"
+	diagnosticSyntaxMalformedSchema                  diagnosticCode = "mace.syntax.malformed-schema"
+	diagnosticSyntaxMalformedVariableDeclaration     diagnosticCode = "mace.syntax.malformed-variable-declaration"
+	diagnosticSyntaxMalformedOutputField             diagnosticCode = "mace.syntax.malformed-output-field"
+	diagnosticSyntaxUnexpectedToken                  diagnosticCode = "mace.syntax.unexpected-token"
+	diagnosticSyntaxMissingFieldComma                diagnosticCode = "mace.syntax.missing-field-comma"
+	diagnosticSyntaxMissingDeclarationSemicolon      diagnosticCode = "mace.syntax.missing-declaration-semicolon"
+	diagnosticSyntaxFieldSemicolon                   diagnosticCode = "mace.syntax.field-semicolon"
+	diagnosticSyntaxUnexpectedTrailingToken          diagnosticCode = "mace.syntax.unexpected-trailing-token"
+	diagnosticSyntaxRedundantParentheses             diagnosticCode = "mace.syntax.redundant-parentheses"
+	diagnosticSyntaxInvalidArithmeticGrouping        diagnosticCode = "mace.syntax.invalid-arithmetic-grouping"
+	diagnosticSyntaxKebabIdentifierUsedAsSubtraction diagnosticCode = "mace.syntax.kebab-identifier-used-as-subtraction"
+	diagnosticFileMissingScriptBlock                 diagnosticCode = "mace.file-structure.missing-script-block"
+	diagnosticFileDeclarationOutsideScript           diagnosticCode = "mace.file-structure.declaration-outside-script"
+	diagnosticFileImportAfterScript                  diagnosticCode = "mace.file-structure.import-after-script-block"
+	diagnosticFileImportAfterOutput                  diagnosticCode = "mace.file-structure.import-after-output-block"
+	diagnosticFileScriptAfterOutput                  diagnosticCode = "mace.file-structure.script-after-output-block"
+	diagnosticFileMissingOutputBlock                 diagnosticCode = "mace.file-structure.missing-output-block"
+	diagnosticFileMultipleOutputBlocks               diagnosticCode = "mace.file-structure.multiple-output-blocks"
+	diagnosticFileDirectiveNotAttached               diagnosticCode = "mace.file-structure.directive-not-attached-to-output-block"
+	diagnosticImportPathMissing                      diagnosticCode = "mace.import.path-missing"
+	diagnosticImportPathNotString                    diagnosticCode = "mace.import.path-not-string-literal"
+	diagnosticImportPathNotMace                      diagnosticCode = "mace.import.path-not-mace"
+	diagnosticImportFileNotFound                     diagnosticCode = "mace.import.file-not-found"
+	diagnosticImportFileFailedParse                  diagnosticCode = "mace.import.file-failed-to-parse"
+	diagnosticImportCircular                         diagnosticCode = "mace.import.circular"
+	diagnosticImportDuplicateName                    diagnosticCode = "mace.import.duplicate-name"
+	diagnosticImportNameNotExposed                   diagnosticCode = "mace.import.name-not-exposed"
+	diagnosticImportInternalDeclaration              diagnosticCode = "mace.import.internal-declaration"
+	diagnosticImportTargetNotPublic                  diagnosticCode = "mace.import.target-not-public"
+	diagnosticImportUnused                           diagnosticCode = "mace.import.unused"
+	diagnosticDeclarationDuplicateType               diagnosticCode = "mace.declaration.duplicate-type"
+	diagnosticDeclarationDuplicateSchema             diagnosticCode = "mace.declaration.duplicate-schema"
+	diagnosticDeclarationDuplicateVariable           diagnosticCode = "mace.declaration.duplicate-variable"
+	diagnosticDeclarationDuplicateSchemaField        diagnosticCode = "mace.declaration.duplicate-schema-field"
+	diagnosticDeclarationDuplicateOutputField        diagnosticCode = "mace.declaration.duplicate-output-field"
+	diagnosticDeclarationUnknownTypeReference        diagnosticCode = "mace.declaration.unknown-type-reference"
+	diagnosticDeclarationVariableMissingType         diagnosticCode = "mace.declaration.variable-missing-type"
+	diagnosticDeclarationVariableMissingInitializer  diagnosticCode = "mace.declaration.variable-missing-initializer"
+	diagnosticDeclarationUnusedVariable              diagnosticCode = "mace.declaration.unused-variable"
+	diagnosticDeclarationUnusedType                  diagnosticCode = "mace.declaration.unused-type"
+	diagnosticTypeInitializerMismatch                diagnosticCode = "mace.type.initializer-type-mismatch"
+	diagnosticTypeInvalidUnaryOperator               diagnosticCode = "mace.type.invalid-unary-operator"
+	diagnosticTypeInvalidBinaryOperator              diagnosticCode = "mace.type.invalid-binary-operator"
+	diagnosticTypeMixedArrayLiteral                  diagnosticCode = "mace.type.mixed-array-literal"
+	diagnosticTypeUnknownIdentifier                  diagnosticCode = "mace.type.unknown-identifier"
+	diagnosticTypeUnknownSelfField                   diagnosticCode = "mace.type.unknown-self-field"
+	diagnosticTypeSelfForwardReference               diagnosticCode = "mace.type.self-forward-reference"
+	diagnosticTypeRecordDoesNotMatchSchema           diagnosticCode = "mace.type.record-does-not-match-schema"
+	diagnosticTypeOutputValueIncompatibleSchema      diagnosticCode = "mace.type.output-value-incompatible-schema"
+	diagnosticTypeInvalidOutputSchemaField           diagnosticCode = "mace.type.invalid-output-schema-field"
+	diagnosticTypeInvalidNullUsage                   diagnosticCode = "mace.type.invalid-null-usage"
+	diagnosticDirectiveDuplicateKey                  diagnosticCode = "mace.directive.duplicate-key"
+	diagnosticDirectiveUnknownKey                    diagnosticCode = "mace.directive.unknown-key"
+	diagnosticDirectiveInvalidOutputValue            diagnosticCode = "mace.directive.invalid-output-value"
+	diagnosticDirectiveOutputSchemaCombined          diagnosticCode = "mace.directive.output-schema-combined"
+	diagnosticDirectiveSchemaAndSchemaFileCombined   diagnosticCode = "mace.directive.schema-and-schema-file-combined"
+	diagnosticDirectiveSchemaOutputVariableIgnored   diagnosticCode = "mace.directive.schema-output-variable-ignored"
+	diagnosticDirectiveUnknownSchemaName             diagnosticCode = "mace.directive.unknown-schema-name"
+	diagnosticDirectiveSchemaFileInvalid             diagnosticCode = "mace.directive.schema-file-invalid"
+	diagnosticDirectiveSchemaFileUnusable            diagnosticCode = "mace.directive.schema-file-unusable"
+	diagnosticDirectiveParseValuesUnknown            diagnosticCode = "mace.directive.parse-values-unknown"
 )
 
 func diagnosticCodeValue(code diagnosticCode) *protocol.IntegerOrString {
@@ -82,7 +92,41 @@ func diagnosticWithCode(rangeValue protocol.Range, severity protocol.DiagnosticS
 		Code:     diagnosticCodeValue(code),
 		Source:   Ptr(serverName),
 		Message:  message,
+		Data:     diagnosticData(code, rangeValue),
 	}
+}
+
+func diagnosticData(code diagnosticCode, rangeValue protocol.Range) map[string]any {
+	data := map[string]any{
+		"code":   string(code),
+		"nodeID": fmt.Sprintf("%d:%d-%d:%d", rangeValue.Start.Line, rangeValue.Start.Character, rangeValue.End.Line, rangeValue.End.Character),
+	}
+
+	switch code {
+	case diagnosticTypeUnknownIdentifier:
+		data["symbolID"] = ""
+		data["candidateSymbols"] = []string{}
+		data["candidateFiles"] = []string{}
+		data["relatedLocations"] = []protocol.Location{}
+	case diagnosticTypeInitializerMismatch:
+		data["symbolID"] = ""
+		data["expectedType"] = ""
+		data["actualType"] = ""
+	case diagnosticTypeRecordDoesNotMatchSchema:
+		data["missingFields"] = []string{}
+		data["unknownFields"] = []string{}
+		data["selectedSchema"] = ""
+	case diagnosticDirectiveUnknownSchemaName:
+		data["outputMode"] = ""
+		data["selectedSchema"] = ""
+	case diagnosticCode("mace.match.not-exhaustive"):
+		data["missingMembers"] = []string{}
+	case diagnosticCode("mace.directive.unknown-parse-name"):
+		data["outputMode"] = ""
+		data["selectedParseType"] = ""
+	}
+
+	return data
 }
 
 func classifyParseDiagnostic(message string) diagnosticCode {
@@ -91,7 +135,7 @@ func classifyParseDiagnostic(message string) diagnosticCode {
 		return diagnosticSyntaxEmptyScriptBlock
 	case strings.Contains(message, "expected closing script delimiter") && strings.Contains(message, "EOF"):
 		return diagnosticSyntaxUnterminatedScriptBlock
-	case strings.Contains(message, "script delimiter"):
+	case strings.Contains(message, "script delimiter") || strings.Contains(message, "script block delimiters"):
 		return diagnosticSyntaxInconsistentScriptDelimiters
 	case strings.Contains(message, "import"):
 		return diagnosticSyntaxMalformedImport
@@ -185,6 +229,9 @@ func classifyDiagnosticCode(message string) diagnosticCode {
 }
 
 func diagnosticCodeFromProcessorError(err processor.DiagnosticError) diagnosticCode {
+	if strings.Contains(err.Message, "cannot be accessed because its target is not a record") {
+		return diagnosticCode("mace.type.optional-field-access")
+	}
 	if mapped, ok := diagnosticCodeFromProcessorErrorCode(err.Code); ok {
 		return mapped
 	}

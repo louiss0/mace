@@ -1,5 +1,5 @@
 |==========================================|
-from 'package_json.mace' import-as Package
+from 'package_json.mace' bind Package
 |==========================================|
 
 [output = 'data', schema = Package]

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/louiss0/mace/internal/parser/ast"
@@ -801,6 +802,46 @@ schema Runtime: {
 			tAssert.Contains(labels, "$region")
 		})
 
+		It("keeps parse_file parsed-variable completions in parity with parse", func() {
+			workspace, err := os.MkdirTemp("", "mace-analyzer-parse-parity-*")
+			tAssert.NoError(err)
+			defer func() { _ = os.RemoveAll(workspace) }()
+
+			runtimeSchema := `{ env: string, profile: { name: string, email: string, }, }`
+			tAssert.NoError(os.WriteFile(filepath.Join(workspace, "runtime.mace"), []byte(fmt.Sprintf(`[output = 'schema']
+{
+  Runtime: %s,
+}`, runtimeSchema)), 0o644))
+
+			parsedLabels := func(text string, documentName string, line uint32) []string {
+				documentPath := filepath.Join(workspace, documentName)
+				tAssert.NoError(os.WriteFile(documentPath, []byte(text), 0o644))
+				position := protocol.Position{Line: line, Character: uint32(len(`  result: `))}
+				snapshot := AnalyzeCompletionContext(text, documentPath, position)
+				items := CompletionItems(text, snapshot, protocol.DocumentUri(fileURI(documentPath)), position)
+				labels := lo.FilterMap(items, func(item protocol.CompletionItem, _ int) (string, bool) {
+					return item.Label, strings.HasPrefix(item.Label, "$") && item.Label != "$self"
+				})
+				slices.Sort(labels)
+				return labels
+			}
+
+			parseLabels := parsedLabels(fmt.Sprintf(`|===|
+schema Runtime: %s;
+|===|
+[output = 'data', parse = Runtime]
+{
+  result:
+}`, runtimeSchema), "parse.mace", 6)
+			parseFileLabels := parsedLabels(`[output = 'data', parse_file = './runtime.mace']
+{
+  result:
+}`, "parse-file.mace", 2)
+
+			tAssert.Equal([]string{"$env", "$profile"}, parseLabels)
+			tAssert.Equal(parseLabels, parseFileLabels)
+		})
+
 		It("only suggests top-level parse fields as output variables", func() {
 			text := `|===|
 schema Runtime: {
@@ -968,8 +1009,8 @@ from './shared.mace' import Runtime;
 			tAssert.NotContains(labels, "Runtime")
 		})
 
-		It("suggests import-as data aliases as output variables", func() {
-			workspace, err := os.MkdirTemp("", "mace-analyzer-import-as-data-*")
+		It("suggests bind data aliases as output variables", func() {
+			workspace, err := os.MkdirTemp("", "mace-analyzer-bind-data-*")
 			tAssert.NoError(err)
 			defer func() { _ = os.RemoveAll(workspace) }()
 
@@ -983,7 +1024,7 @@ from './shared.mace' import Runtime;
 }`), 0o644))
 			documentPath := filepath.Join(workspace, "document.mace")
 			text := `|===|
-from './shared.mace' import-as Shared;
+from './shared.mace' bind Shared;
 |===|
 [output = 'data']
 {
@@ -1006,8 +1047,8 @@ from './shared.mace' import-as Shared;
 			tAssert.NotContains(labels, "project")
 		})
 
-		It("completes members for import-as data aliases", func() {
-			workspace, err := os.MkdirTemp("", "mace-analyzer-import-as-data-members-*")
+		It("completes members for bind data aliases", func() {
+			workspace, err := os.MkdirTemp("", "mace-analyzer-bind-data-members-*")
 			tAssert.NoError(err)
 			defer func() { _ = os.RemoveAll(workspace) }()
 
@@ -1021,7 +1062,7 @@ from './shared.mace' import-as Shared;
 }`), 0o644))
 			documentPath := filepath.Join(workspace, "document.mace")
 			text := `|===|
-from './shared.mace' import-as Shared;
+from './shared.mace' bind Shared;
 |===|
 [output = 'data']
 {
@@ -1045,9 +1086,9 @@ from './shared.mace' import-as Shared;
 			tAssert.NotContains(labels, "project")
 		})
 
-		DescribeTable("completes import-as data aliases across nested levels",
+		DescribeTable("completes bind data aliases across nested levels",
 			func(cursorExpr string, expectedLabels []string) {
-				workspace, err := os.MkdirTemp("", "mace-analyzer-import-as-data-depth-*")
+				workspace, err := os.MkdirTemp("", "mace-analyzer-bind-data-depth-*")
 				tAssert.NoError(err)
 				defer func() { _ = os.RemoveAll(workspace) }()
 
@@ -1072,7 +1113,7 @@ from './shared.mace' import-as Shared;
 }`), 0o644))
 				documentPath := filepath.Join(workspace, "document.mace")
 				text := fmt.Sprintf(`|===|
-from './shared.mace' import-as Shared;
+from './shared.mace' bind Shared;
 |===|
 [output = 'data']
 {
@@ -1102,9 +1143,9 @@ from './shared.mace' import-as Shared;
 			Entry("level 5", "Shared.level1.level2.level3.level4.level5.", []string{"value"}),
 		)
 
-		DescribeTable("completes import-as schema aliases through parse across nested levels",
+		DescribeTable("completes bind schema aliases through parse across nested levels",
 			func(cursorExpr string, expectedLabels []string) {
-				workspace, err := os.MkdirTemp("", "mace-analyzer-import-as-schema-depth-*")
+				workspace, err := os.MkdirTemp("", "mace-analyzer-bind-schema-depth-*")
 				tAssert.NoError(err)
 				defer func() { _ = os.RemoveAll(workspace) }()
 
@@ -1129,7 +1170,7 @@ from './shared.mace' import-as Shared;
 }`), 0o644))
 				documentPath := filepath.Join(workspace, "document.mace")
 				text := fmt.Sprintf(`|===|
-from './shared.mace' import-as Shared;
+from './shared.mace' bind Shared;
 |===|
 [output = 'data', parse = Shared]
 {
@@ -1159,8 +1200,8 @@ from './shared.mace' import-as Shared;
 			Entry("level 5", "$level1.level2.level3.level4.level5.", []string{"value"}),
 		)
 
-		It("suggests import-as schema aliases in directive completions", func() {
-			workspace, err := os.MkdirTemp("", "mace-analyzer-import-as-schema-*")
+		It("suggests bind schema aliases in directive completions", func() {
+			workspace, err := os.MkdirTemp("", "mace-analyzer-bind-schema-*")
 			tAssert.NoError(err)
 			defer func() { _ = os.RemoveAll(workspace) }()
 
@@ -1174,7 +1215,7 @@ from './shared.mace' import-as Shared;
 }`), 0o644))
 			documentPath := filepath.Join(workspace, "document.mace")
 			text := `|===|
-from './shared.mace' import-as Shared;
+from './shared.mace' bind Shared;
 |===|
 [output = 'data', parse = ]
 {
@@ -2859,8 +2900,8 @@ var _ = Describe("completion delimiter coverage helpers", func() {
 	})
 })
 
-var _ = Describe("completion import-as coverage helpers", func() {
-	It("covers import-as data record helper branches directly", func() {
+var _ = Describe("completion bind coverage helpers", func() {
+	It("covers bind data record helper branches directly", func() {
 		model := completionModel{schemas: map[string]ast.RecordType{"User": {Fields: []ast.SchemaField{{Name: "name", Type: ast.PrimitiveType{Name: "string"}}}}}}
 		record, ok := importAsDataRecord(ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchema, Value: "User"}}}}, model)
 		tAssert.True(ok)
@@ -2875,7 +2916,7 @@ var _ = Describe("completion import-as coverage helpers", func() {
 	It("covers imported member root failure branches directly", func() {
 		_, _, ok := importedMemberCompletionRootType(ast.File{}, nil, ".", ".", nil)
 		tAssert.False(ok)
-		file := ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./missing.mace"`}, ImportAs: &ast.ImportedIdentifier{Name: "data"}}}}
+		file := ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./missing.mace"`}, Binding: &ast.ImportedIdentifier{Name: "data"}}}}
 		_, _, ok = importedMemberCompletionRootType(file, []string{"other"}, ".", ".", nil)
 		tAssert.False(ok)
 		_, _, ok = importedMemberCompletionRootType(file, []string{"data"}, ".", ".", nil)

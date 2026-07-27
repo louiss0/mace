@@ -1,10 +1,13 @@
 package processor
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/louiss0/mace/internal/diagnostic"
+	"github.com/louiss0/mace/internal/lexer"
+	"github.com/louiss0/mace/internal/parser/ast"
 )
 
 type ErrorKind string
@@ -27,6 +30,7 @@ const (
 type ErrorCode string
 
 const (
+	CodeAbsentValueNotCoalesced      ErrorCode = "mace.type.absent-value-not-coalesced"
 	CodeImportFileFailedParse        ErrorCode = "mace.import.file-failed-to-parse"
 	CodeImportFileNotFound           ErrorCode = "mace.import.file-not-found"
 	CodeInternal                     ErrorCode = "mace.internal"
@@ -75,6 +79,57 @@ func diagnosticErrorf(kind ErrorKind, code ErrorCode, fields DiagnosticFields, f
 		Message: fmt.Sprintf("processor: %s", fmt.Sprintf(format, args...)),
 		Fields:  fields,
 	}
+}
+
+func diagnosticErrorAtStringInterpolation(err error, expression ast.StringLiteral) error {
+	if err == nil {
+		return nil
+	}
+
+	var interpolationError interpolationSpanError
+	var diagnosticError DiagnosticError
+	if !errors.As(err, &interpolationError) || !errors.As(err, &diagnosticError) {
+		return diagnosticErrorAtNode(err, expression)
+	}
+
+	prefixRange := ast.TokenRange(lexer.Token{
+		Lexeme: expression.Lexeme[:interpolationError.start],
+		Line:   expression.Token.Line,
+		Column: expression.Token.Column,
+	})
+	interpolationRange := ast.TokenRange(lexer.Token{
+		Lexeme: expression.Lexeme[interpolationError.start:interpolationError.end],
+		Line:   prefixRange.End.Line,
+		Column: prefixRange.End.Column,
+	})
+	diagnosticError.Range = diagnostic.FromASTRange(interpolationRange)
+	return diagnosticError
+}
+
+func diagnosticErrorAtNode(err error, node ast.Node) error {
+	return diagnosticErrorAtRange(err, node.Range())
+}
+
+func diagnosticErrorAtToken(err error, token lexer.Token) error {
+	return diagnosticErrorAtRange(err, ast.TokenRange(token))
+}
+
+func diagnosticErrorAtRange(err error, sourceRange ast.SourceRange) error {
+	if err == nil {
+		return nil
+	}
+
+	var diagnosticError DiagnosticError
+	if !errors.As(err, &diagnosticError) {
+		return err
+	}
+	if diagnosticError.Range.Start.Line != 0 || diagnosticError.Range.Start.Column != 0 ||
+		diagnosticError.Range.End.Line != 0 || diagnosticError.Range.End.Column != 0 {
+		return err
+	}
+
+	diagnosticError.Range = diagnostic.FromASTRange(sourceRange)
+	return diagnosticError
 }
 
 func typeMismatchError(expected string, actual string) error {
@@ -130,7 +185,7 @@ func nonRecordMemberAccessError(field string) error {
 func possiblyAbsentValueError() error {
 	return diagnosticErrorf(
 		ErrorType,
-		CodeOptionalFieldAccess,
+		CodeAbsentValueNotCoalesced,
 		DiagnosticFields{},
 		"possibly absent expressions must be resolved with '??' before use",
 	)
@@ -188,6 +243,20 @@ func inferErrorCode(message string) ErrorCode {
 		return ErrorCode("mace.declaration.duplicate-output-field")
 	case strings.Contains(message, "array literal has mixed element types"):
 		return ErrorCode("mace.type.mixed-array-literal")
+	case strings.Contains(message, "interpolation requires a scalar value"):
+		return ErrorCode("mace.string.nonscalar-interpolation")
+	case strings.Contains(message, "choice match arms require a literal pattern"):
+		return ErrorCode("mace.match.choice-type-pattern")
+	case strings.Contains(message, "variant match arms require a type pattern"):
+		return ErrorCode("mace.match.variant-literal-pattern")
+	case strings.Contains(message, "duplicate match pattern"):
+		return ErrorCode("mace.match.duplicate-pattern")
+	case strings.Contains(message, "match pattern") && strings.Contains(message, "is not a member"):
+		return ErrorCode("mace.match.pattern-outside-domain")
+	case strings.Contains(message, "match expression must be exhaustive"):
+		return ErrorCode("mace.match.not-exhaustive")
+	case strings.Contains(message, "match input must be a variant or choice"):
+		return ErrorCode("mace.match.concrete-input")
 	case strings.Contains(message, "unknown identifier"):
 		return ErrorCode("mace.type.unknown-identifier")
 	case strings.Contains(message, "unknown self reference"):
@@ -196,12 +265,16 @@ func inferErrorCode(message string) ErrorCode {
 		return CodeInvalidOutputSchemaField
 	case strings.Contains(message, "expected boolean after '!'") || strings.Contains(message, "expected int after '~'") || strings.Contains(message, "expected numeric after unary operator"):
 		return ErrorCode("mace.type.invalid-unary-operator")
+	case strings.Contains(message, "expected hexadecimal operands for operator"):
+		return ErrorCode("mace.type.mixed-numeric-family")
 	case strings.Contains(message, "expected numeric operands") || strings.Contains(message, "expected int operands") || strings.Contains(message, "expected boolean operands") || strings.Contains(message, "incompatible equality comparison") || strings.Contains(message, "expected ") && strings.Contains(message, " operands"):
 		return ErrorCode("mace.type.invalid-binary-operator")
 	case strings.Contains(message, "use optional chaining '?.'"):
 		return CodeOptionalFieldAccess
 	case strings.Contains(message, "null is only allowed in output"):
 		return CodeInvalidNullUsage
+	case strings.Contains(message, "is not optional in schema"):
+		return ErrorCode("mace.type.data-field-optional-marker")
 	case strings.Contains(message, "type mismatch"):
 		return CodeTypeMismatch
 	case strings.Contains(message, "missing required field") || strings.Contains(message, "unknown field") || strings.Contains(message, "is not optional in schema"):

@@ -24,7 +24,7 @@ is documented in [the formal specification](.&#x2f;docs&#x2f;src&#x2f;content&#x
 - Deterministic expression evaluation
 - Output validation against local schemas or external schema files in implicit or explicit data outputs
 - Relative imports between Mace files and remote imports over HTTP(S)
-- Schema-validated runtime input through `parse = &lt;Schema&gt;` and `parse_file = &quot;&lt;path&gt;&quot;` in data outputs, including remote schema files over HTTP(S); parsed fields are exposed as `$`-prefixed variables, `parse` selects an already-available schema, and `parse_file` loads schema declarations and can infer the schema when the referenced file exports exactly one schema
+- Schema-validated runtime input through `parse = &lt;Schema&gt;` and `parse_file = &#x27;&lt;path&gt;&#x27;` in data outputs, including remote schema files over HTTP(S); parsed fields are exposed as `$`-prefixed variables, `parse` selects an already-available schema, and `parse_file` loads schema declarations and can infer the schema when the referenced file exports exactly one schema
 - Canonical source formatting
 - Language Server Protocol support over stdio
 - Go bindings for parsing, unmarshalling, and marshalling
@@ -39,13 +39,13 @@ A Mace file can contain:
 
 Imports use `from ... import ...;` and must appear at the top of the script
 block before other declarations. Imported names may optionally define a
-local alias with `Name:Alias`. Use `from &quot;.&#x2f;schema.mace&quot; import-as Name` to import an output schema file as a single schema or an output data file as a single record variable.
+local alias with `Name:Alias`. Use `from &#x27;.&#x2f;schema.mace&#x27; bind Name;` to bind an output schema file as a single schema or an output data file as a single record variable.
 
 Example:
 
 ```mace
 |===|
-from &quot;.&#x2f;shared.mace&quot; import User:ProfileUser;
+from &#x27;.&#x2f;shared.mace&#x27; import User:ProfileUser;
 
 alias Environment: choice[&quot;dev&quot;, &quot;prod&quot;];
 

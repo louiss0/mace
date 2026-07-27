@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -175,8 +176,7 @@ func (l *Lexer) NextToken() (Token, error) {
 				return true
 			}
 
-			currentLexeme := l.input[startPosition:l.position]
-			return currentLexeme != "import" && l.peek() == '-' && isIdentifierPart(l.peekNext())
+			return l.peek() == '-' && isIdentifierPart(l.peekNext())
 		}
 
 		for isIdentifierContinuation() {
@@ -399,7 +399,7 @@ func (l *Lexer) advance() rune {
 	}
 
 	l.position += size
-	l.column++
+	l.column += utf16.RuneLen(current)
 	return current
 }
 
@@ -450,6 +450,8 @@ func keywordToken(lexeme string) (TokenType, bool) {
 		return TokenFrom, true
 	case "import":
 		return TokenImport, true
+	case "bind":
+		return TokenBind, true
 	case "alias":
 		return TokenAliasKeyword, true
 	case "schema":

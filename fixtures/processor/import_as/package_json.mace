@@ -1,4 +1,4 @@
-[output=schema]
+[output='schema']
 {
   name: string,
   version: string,

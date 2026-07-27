@@ -14,6 +14,22 @@ import (
 )
 
 var _ = Describe("Document", func() {
+	It("attaches unknown type errors to the type reference", func() {
+		_, err := New().Process(`|===|
+Unknown value = 1;
+|===|
+[output = 'data'] {}`)
+		tAssert.Error(err)
+
+		var diagnostic DiagnosticError
+		if tAssert.ErrorAs(err, &diagnostic) {
+			tAssert.Equal(2, diagnostic.Range.Start.Line)
+			tAssert.Equal(1, diagnostic.Range.Start.Column)
+			tAssert.Equal(2, diagnostic.Range.End.Line)
+			tAssert.Equal(8, diagnostic.Range.End.Column)
+		}
+	})
+
 	DescribeTable("processes valid script blocks",
 		func(input string) {
 			processor := New()
@@ -320,10 +336,9 @@ string name = "Ada";
 
 	It("processes output blocks independently", func() {
 		processor := New()
-		result, err := processor.ProcessOutputBlock(`[output = 'schema']
-"""
+		result, err := processor.ProcessOutputBlock(`[output = 'schema', doc = """
 # Output Schema
-"""
+"""]
 {
   name: string,
   age?: int,
@@ -472,7 +487,7 @@ int value = 1;
 		}}
 		_, err = buildProcessContextWithState(nil, script, ".", ".", true, map[string]Value{}, map[string]map[string]importedDeclaration{}, map[string]struct{}{})
 		tAssert.Error(err)
-		_, err = prepareOutputContext(ast.OutputBlock{Doc: &ast.StringLiteral{Lexeme: `"""doc"""`}, Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveOutput, Value: "data"}}}, newProcessContext(".", "."))
+		_, err = prepareOutputContext(ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveOutput, Value: "data"}, {Kind: ast.OutputDirectiveDoc, Documentation: ast.StringLiteral{Lexeme: `"doc"`}}}}, newProcessContext(".", "."))
 		tAssert.NoError(err)
 		_, err = prepareOutputContext(ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParse, Value: "User"}, {Kind: ast.OutputDirectiveParseFile, Value: `"schema.mace"`}}}, newProcessContext(".", "."))
 		tAssert.Error(err)
@@ -530,9 +545,9 @@ from './schema.mace' import User;
 from './schema.mace' import User;
 |===|`, "", "")
 		tAssert.Error(err)
-		_, err = buildProcessContext([]ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./schema.mace"`}, ImportAs: &ast.ImportedIdentifier{Name: "User"}}, {Path: ast.StringLiteral{Lexeme: `"./schema.mace"`}, ImportAs: &ast.ImportedIdentifier{Name: "User"}}}, nil, ".", ".", true, map[string]Value{})
+		_, err = buildProcessContext([]ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./schema.mace"`}, Binding: &ast.ImportedIdentifier{Name: "User"}}, {Path: ast.StringLiteral{Lexeme: `"./schema.mace"`}, Binding: &ast.ImportedIdentifier{Name: "User"}}}, nil, ".", ".", true, map[string]Value{})
 		tAssert.Error(err)
-		_, err = buildProcessContext([]ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./schema.txt"`}, ImportAs: &ast.ImportedIdentifier{Name: "User"}}}, nil, ".", ".", true, map[string]Value{})
+		_, err = buildProcessContext([]ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./schema.txt"`}, Binding: &ast.ImportedIdentifier{Name: "User"}}}, nil, ".", ".", true, map[string]Value{})
 		tAssert.Error(err)
 		_, err = buildProcessContext(nil, &ast.ScriptBlock{Items: []ast.Declaration{ast.VariableDeclaration{Name: "value", Type: ast.PrimitiveType{Name: "string"}, HasValue: false}}}, ".", ".", true, map[string]Value{})
 		tAssert.Error(err)

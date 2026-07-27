@@ -25,10 +25,9 @@ A reusable schema exposed to imports.
   },
 };
 |=======================================|
-[output = 'schema']
-"""
+[output = 'schema', doc = """
 # Public User Contract
-"""
+"""]
 {
   user: User /# Public user schema,
   user_id: UserID /# Public user identifier type,

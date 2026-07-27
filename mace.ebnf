@@ -46,7 +46,7 @@ script_block = script_delimiter , ws0 , { import_declaration , ws0 } , { declara
 script_delimiter = "|" , "=" , "=" , "=" , { "=" } , "|" ;
 (* The opening and closing script_delimiter must have the same number of '=' characters. *)
 
-import_declaration = "from" , ws1 , path_literal , ws1 , ( "import" , ws1 , import_list | "import-as" , ws1 , identifier ) , ws0 , ";" ;
+import_declaration = "from" , ws1 , path_literal , ws1 , ( "import" , ws1 , import_list | "bind" , ws1 , identifier ) , ws0 , ";" ;
 import_list = imported_identifier , { ws0 , "," , ws0 , imported_identifier } ;
 imported_identifier = identifier , [ ws0 , ":" , ws0 , identifier ] ;
 
@@ -80,13 +80,14 @@ choice_type = "choice" , ws0 , "[" , ws0 , choice_member , { ws0 , "," , ws0 , c
 choice_member = string_literal | int_literal | float_literal | hex_int_literal | hex_float_literal | boolean_literal ;
 
 (* OUTPUT *)
-output_block = [ output_directive_list , ws0 , [ block_string , ws0 ] ] , "{" , ws0 , [ output_field , { ws0 , "," , ws0 , output_field } , [ ws0 , "," ] ] , ws0 , "}" ;
+output_block = [ output_directive_list , ws0 ] , "{" , ws0 , [ output_field , { ws0 , "," , ws0 , output_field } , [ ws0 , "," ] ] , ws0 , "}" ;
 output_directive_list = "[" , ws0 , directive_pair , { ws0 , "," , ws0 , directive_pair } , ws0 , "]" ;
 directive_pair = "output" , ws0 , "=" , ws0 , ( "'data'" | "'schema'" )
                | "schema" , ws0 , "=" , ws0 , identifier
                | "schema_file" , ws0 , "=" , ws0 , path_literal
                | "parse" , ws0 , "=" , ws0 , identifier
-               | "parse_file" , ws0 , "=" , ws0 , path_literal ;
+               | "parse_file" , ws0 , "=" , ws0 , path_literal
+               | "doc" , ws0 , "=" , ws0 , expression ;
 (* The output directive controls output_field interpretation: data uses data_output_field;
    schema uses schema_output_field. This contextual distinction is semantic. *)
 output_field = data_output_field | schema_output_field ;
