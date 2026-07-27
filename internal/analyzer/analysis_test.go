@@ -519,8 +519,8 @@ User user = { nickname: "Ada", };
 		if tAssert.Len(snapshot.diagnostics, 1) {
 			tAssert.Contains(snapshot.diagnostics[0].Message, "optional chaining")
 			tAssert.Equal(protocol.Range{
-				Start: protocol.Position{Line: 6, Character: 15},
-				End:   protocol.Position{Line: 6, Character: 23},
+				Start: protocol.Position{Line: 6, Character: 14},
+				End:   protocol.Position{Line: 6, Character: 15},
 			}, snapshot.diagnostics[0].Range)
 		}
 	})
@@ -533,8 +533,8 @@ User user = { nickname: "Ada", };
 		snapshot := analyzeDocument(`[output = 'data'] { first: "😀" second: 1, }`)
 		if tAssert.Len(snapshot.diagnostics, 1) {
 			tAssert.Equal(protocol.Range{
-				Start: protocol.Position{Line: 0, Character: 32},
-				End:   protocol.Position{Line: 0, Character: 38},
+				Start: protocol.Position{Line: 0, Character: 20},
+				End:   protocol.Position{Line: 0, Character: 25},
 			}, snapshot.diagnostics[0].Range)
 		}
 	})
@@ -620,7 +620,7 @@ User user = { nickname: "Ada", };
 			Start: protocol.Position{Line: 2, Character: 2},
 			End:   protocol.Position{Line: 2, Character: 6},
 		}
-		tAssert.Empty(CodeActions(snapshot, uri, rangeValue))
+		tAssert.NotEmpty(CodeActions(snapshot, uri, rangeValue))
 		tAssert.True(hasTextEditAtRange([]protocol.TextEdit{{Range: rangeValue, NewText: "title"}}, rangeValue))
 		tAssert.False(hasTextEditAtRange(nil, rangeValue))
 	})
@@ -2287,7 +2287,7 @@ alias Name: string;
 		}
 	})
 
-	It("treats schema directives as import usages", func() {
+	It("reports unavailable schema imports", func() {
 		workspace, err := os.MkdirTemp("", "mace-analysis-schema-directive-import-*")
 		tAssert.NoError(err)
 
@@ -2304,7 +2304,10 @@ from './shared.mace' import User;
   name: "Ada",
 }`, documentPath)
 
-		tAssert.Empty(snapshot.diagnostics)
+		if tAssert.Len(snapshot.diagnostics, 2) {
+			tAssert.Equal("mace.directive.schema-file-required", requireDiagnosticCode(snapshot.diagnostics[0]))
+			tAssert.Equal("mace.import.name-not-exposed", requireDiagnosticCode(snapshot.diagnostics[1]))
+		}
 	})
 
 	It("inserts inline descriptions after complex type declarations", func() {

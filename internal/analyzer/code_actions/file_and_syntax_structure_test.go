@@ -101,20 +101,6 @@ func withWorkspace(contract codeActionContract, files map[string]string, expecte
 	return contract
 }
 
-func withoutText(contract codeActionContract, unexpectedText ...string) codeActionContract {
-	contract.unexpectedText = unexpectedText
-	return contract
-}
-
-func commandAction(title string, kind protocol.CodeActionKind, source string, command string) codeActionContract {
-	return codeActionContract{
-		title:           title,
-		kind:            kind,
-		source:          source,
-		expectedCommand: command,
-	}
-}
-
 func testCodeActionContract(contract codeActionContract) {
 	assertions := assert.New(GinkgoT())
 	fixture := newCodeActionFixture(contract.source, contract.workspaceFiles)
