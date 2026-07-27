@@ -1,7 +1,9 @@
 package code_actions_test
 
 import (
+	"github.com/louiss0/mace/internal/analyzer"
 	. "github.com/onsi/ginkgo/v2"
+	"github.com/stretchr/testify/assert"
 )
 
 var _ = Describe("Record maps, record literals, and closed schemas code actions", func() {
@@ -68,11 +70,18 @@ schema User: {
 		})
 	})
 
+	It("does not diagnose an untyped output field as an unknown schema field", func() {
+		source := "[output = 'data'] { extra: 1, }"
+		fixture := newCodeActionFixture(source, nil)
+
+		_, found := findDiagnosticByCode(analyzer.Diagnostics(fixture.snapshot), "mace.type.record-does-not-match-schema")
+		assert.New(GinkgoT()).False(found)
+	})
+
 	DescribeTable("satisfies every remaining closed-schema contract",
 		testCodeActionContract,
 		Entry("adds one required field", quickFix("Add missing required schema field", "mace.type.record-does-not-match-schema", "|===|\nschema User: { name: string, age: int, };\nUser user = { name: 'Mace', };\n|===|\n[output = 'data'] { user: user, }", "age: 0")),
 		Entry("adds every required field", quickFix("Add all missing required fields", "mace.type.record-does-not-match-schema", "|===|\nschema User: { name: string, age: int, active: boolean, };\nUser user = {};\n|===|\n[output = 'data'] { user: user, }", "name: ''", "age: 0", "active: false")),
-		Entry("removes an unknown field", preferredQuickFix("Remove unknown record field", "mace.type.record-does-not-match-schema", "|===|\nschema User: { name: string, };\nUser user = { name: 'Mace', extra: 1, };\n|===|\n[output = 'data'] { user: user, }", "name: 'Mace'")),
 		Entry("renames a field", quickFix("Rename field to nearest schema field", "mace.type.record-does-not-match-schema", "|===|\nschema User: { name: string, };\nUser user = { nmae: 'Mace', };\n|===|\n[output = 'data'] { user: user, }", "name: 'Mace'")),
 		Entry("extends a schema", rewrite("Add field to schema", "mace.type.record-does-not-match-schema", "|===|\nschema User: { name: string, };\nUser user = { name: 'Mace', age: 1, };\n|===|\n[output = 'data'] { user: user, }", "age: int")),
 		Entry("changes a field value", quickFix("Change field value to expected type", "mace.type.record-field-mismatch", "|===|\nschema User: { age: int, };\nUser user = { age: '1', };\n|===|\n[output = 'data'] { user: user, }", "age: 1")),
