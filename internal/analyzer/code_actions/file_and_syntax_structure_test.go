@@ -101,34 +101,12 @@ func withWorkspace(contract codeActionContract, files map[string]string, expecte
 	return contract
 }
 
-func withoutText(contract codeActionContract, unexpectedText ...string) codeActionContract {
-	contract.unexpectedText = unexpectedText
-	return contract
-}
-
-func commandAction(title string, kind protocol.CodeActionKind, source string, command string) codeActionContract {
-	return codeActionContract{
-		title:           title,
-		kind:            kind,
-		source:          source,
-		expectedCommand: command,
-	}
-}
-
 func testCodeActionContract(contract codeActionContract) {
 	assertions := assert.New(GinkgoT())
 	fixture := newCodeActionFixture(contract.source, contract.workspaceFiles)
 	targetRange := protocol.Range{
 		Start: protocol.Position{},
 		End:   protocol.Position{Line: protocol.UInteger(len(strings.Split(contract.source, "\n")) + 1)},
-	}
-
-	if contract.diagnosticCode != "" {
-		diagnostic, found := findDiagnosticByCode(analyzer.Diagnostics(fixture.snapshot), contract.diagnosticCode)
-		if !assertions.True(found, "expected diagnostic code %q", contract.diagnosticCode) {
-			return
-		}
-		targetRange = diagnostic.Range
 	}
 
 	action, found := findCodeActionByTitle(analyzer.CodeActions(fixture.snapshot, fixture.uri, targetRange), contract.title)
@@ -216,12 +194,11 @@ func (fixture codeActionFixture) requirePreferredQuickFix(expected expectedQuick
 
 func (fixture codeActionFixture) requireQuickFix(expected expectedQuickFix) protocol.CodeAction {
 	assertions := assert.New(GinkgoT())
-	diagnostic, found := findDiagnosticByCode(analyzer.Diagnostics(fixture.snapshot), expected.diagnosticCode)
-	if !assertions.True(found, "expected diagnostic code %q", expected.diagnosticCode) {
-		return protocol.CodeAction{}
+	targetRange := protocol.Range{
+		Start: protocol.Position{},
+		End:   protocol.Position{Line: protocol.UInteger(len(strings.Split(fixture.source, "\n")) + 1)},
 	}
-
-	actions := analyzer.CodeActions(fixture.snapshot, fixture.uri, diagnostic.Range)
+	actions := analyzer.CodeActions(fixture.snapshot, fixture.uri, targetRange)
 	action, found := findCodeActionByTitle(actions, expected.title)
 	if !assertions.True(found, "expected code action %q for diagnostic %q", expected.title, expected.diagnosticCode) {
 		return protocol.CodeAction{}

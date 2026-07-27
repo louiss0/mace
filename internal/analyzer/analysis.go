@@ -1412,18 +1412,6 @@ func inlineVariableIntoOutputText(text string) (string, bool) {
 	return updated, updated != text
 }
 
-func extractOutputExpressionText(text string) (string, bool) {
-	pattern := regexp.MustCompile(`(?m)([A-Za-z_][A-Za-z0-9_]*)\s*:\s*("[^"]*")`)
-	matches := pattern.FindStringSubmatch(text)
-	if len(matches) == 0 || strings.Contains(text, "|===|") {
-		return "", false
-	}
-	name := matches[1]
-	value := matches[2]
-	updated := pattern.ReplaceAllString(text, name+": "+name)
-	return "|===|\nstring " + name + " = " + value + ";\n|===|\n" + updated, true
-}
-
 func parseErrorCodeActions(tokens []lexer.Token, documentPath string) []analysisCodeActionCandidate {
 	if documentPath == "" {
 		return nil
