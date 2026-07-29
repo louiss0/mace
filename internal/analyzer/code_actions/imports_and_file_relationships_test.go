@@ -71,21 +71,26 @@ string result = Shared;
 		})
 	})
 
-	It("does not diagnose a resolved local identifier as an import error", func() {
+	It("does not diagnose a resolved local identifier when another identifier is unknown", func() {
 		fixture := newCodeActionFixture(`|===|
 int Symbol = 1;
 |===|
-[output = 'data'] { value: Symbol, }`, nil)
+[output = 'data'] { value: Symbol, other: Missing, }`, nil)
 
-		_, found := findDiagnosticByCode(analyzer.Diagnostics(fixture.snapshot), "mace.type.unknown-identifier")
-		assert.New(GinkgoT()).False(found)
+		unknownDiagnostics := 0
+		for _, diagnostic := range analyzer.Diagnostics(fixture.snapshot) {
+			if diagnostic.Code != nil && diagnostic.Code.Value == "mace.type.unknown-identifier" {
+				unknownDiagnostics++
+			}
+		}
+		assert.New(GinkgoT()).Equal(1, unknownDiagnostics)
 	})
 
 	It("does not diagnose an exposed imported identifier as unavailable", func() {
 		fixture := newCodeActionFixture(`|===|
 from './shared.mace' import Symbol;
 |===|
-[output = 'data'] { value: Symbol, }`, map[string]string{
+[output = 'data'] { value: Symbol, other: Missing, }`, map[string]string{
 			"shared.mace": "[output = 'data'] { Symbol: 1, }",
 		})
 
@@ -120,7 +125,7 @@ from './shared.mace' import Symbol;
 		Entry("removes a duplicate imported name", preferredQuickFix("Remove duplicate imported name", "mace.import.duplicate-name", "|===|\nfrom './shared.mace' import Name, Name;\n|===|\n[output = 'data'] { value: Name, }", "import Name;")),
 		Entry("imports from the declaring file", quickFix("Import symbol from its declaring file", "mace.import.indirect-unexposed-symbol", "|===|\nfrom './facade.mace' import Symbol;\n|===|\n[output = 'data'] { value: Symbol, }", "from './owner.mace' import Symbol;")),
 		Entry("exposes a symbol", withWorkspace(rewrite("Expose ‘Symbol’ from imported file", "mace.import.name-not-exposed", "|===|\nfrom './shared.mace' import Symbol;\n|===|\n[output = 'data'] { value: Symbol, }"), map[string]string{"shared.mace": "|===|\nstring Symbol = 'value';\n|===|\n[output = 'data'] {}"}, map[string][]string{"shared.mace": {"Symbol,"}})),
-		Entry("uses a similarly named export", quickFix("Replace with similarly named exported symbol", "mace.import.name-not-exposed", "|===|\nfrom './shared.mace' import Symbl;\n|===|\n[output = 'data'] { value: Symbl, }", "Symbol")),
+		Entry("uses a similarly named export", withWorkspace(quickFix("Replace with similarly named exported symbol", "mace.import.name-not-exposed", "|===|\nfrom './shared.mace' import Symbl;\n|===|\n[output = 'data'] { value: Symbl, }", "Symbol"), map[string]string{"shared.mace": "[output = 'data'] { Symbol: 1, }"}, nil)),
 		Entry("extracts shared declarations", extract("Extract shared declarations to new file", "mace.import.circular", "|===|\nfrom './b.mace' import B;\nschema A: { b: B, };\n|===|\n[output = 'schema'] { A: A, }", "from './shared.mace' import")),
 		Entry("moves to an existing shared file", rewrite("Move declaration to existing shared file", "mace.import.circular", "|===|\nfrom './b.mace' import B;\nschema Shared: { b: B, };\n|===|\n[output = 'schema'] { Shared: Shared, }", "from './shared.mace' import Shared;")),
 		Entry("removes an unused circular edge", preferredQuickFix("Remove circular import edge", "mace.import.circular", "|===|\nfrom './b.mace' import Unused;\n|===|\n[output = 'data'] {}", "[output = 'data']")),
