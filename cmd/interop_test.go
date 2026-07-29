@@ -171,6 +171,7 @@ var _ = Describe("JSON", func() {
 		Entry("database host", `{"database host":"db"}`, map[string]any{"database_host": "db"}, false),
 		Entry("digit after first character", `{"server 2 address":"db"}`, map[string]any{"server_2_address": "db"}, false),
 		Entry("normalization collision", `{"first name":"Ada","first_name":"Linus"}`, nil, true),
+		Entry("reserved identifier", `{"schema":"User"}`, nil, true),
 		Entry("leading digit", `{"2nd value":"Ada"}`, nil, true),
 		Entry("unsupported character", `{"host-name":"db"}`, nil, true),
 	)

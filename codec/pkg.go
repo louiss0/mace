@@ -30,6 +30,10 @@ var (
 	jsonSchemaHTTPClient = &http.Client{Timeout: 5 * time.Second}
 	importFieldPattern   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	importReservedNames  = map[string]struct{}{}
+	maceReservedNames    = map[string]struct{}{
+		"alias": {}, "enum": {}, "false": {}, "from": {}, "if": {}, "import": {},
+		"null": {}, "output": {}, "schema": {}, "true": {}, "type": {},
+	}
 )
 
 type SchemaField struct {
@@ -199,6 +203,9 @@ func validateImportedJSONFields(value any) error {
 			}
 			if _, exists := normalizedNames[normalized]; exists {
 				return fmt.Errorf("import mace: fields collide after normalization as %q", normalized)
+			}
+			if _, reserved := maceReservedNames[normalized]; reserved {
+				return fmt.Errorf("import mace: reserved field name %q", normalized)
 			}
 			normalizedNames[normalized] = struct{}{}
 			if err := validateImportedJSONFields(item); err != nil {
