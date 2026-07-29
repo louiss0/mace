@@ -169,7 +169,35 @@ func yamlRootExpression(file *yamlast.File) (recordExpression, error) {
 		return recordExpression{}, fmt.Errorf("import yaml: expected one document")
 	}
 	if len(file.Docs) > 1 {
-		return recordExpression{}, fmt.Errorf("import yaml: multiple documents are not supported")
+		fields := make([]recordField, 0, len(file.Docs))
+		for index, document := range file.Docs {
+			state := yamlImportState{
+				anchors: map[string]yamlAnchor{},
+				hoists:  map[string]importExpression{},
+			}
+			expression, err := yamlNodeExpression(document.Body, "", &state)
+			if err != nil {
+				return recordExpression{}, err
+			}
+			if isOmittedImportExpression(expression) {
+				return recordExpression{}, fmt.Errorf("import yaml: null document root is not supported")
+			}
+			record, isRecord, err := yamlDocumentRecord(expression, &state)
+			if err != nil {
+				return recordExpression{}, err
+			}
+			if isRecord {
+				expression, err = yamlRecordWithHoists(record, &state)
+				if err != nil {
+					return recordExpression{}, err
+				}
+			}
+			fields = append(fields, recordField{
+				name:  fmt.Sprintf("document_%d", index+1),
+				value: expression,
+			})
+		}
+		return recordExpression{fields: fields}, nil
 	}
 
 	state := yamlImportState{

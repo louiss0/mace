@@ -837,8 +837,11 @@ can_craft:
   shadow_lantern: false
 `
 
-		_, err := importYAMLSource(filepath.Join("workspace", "game_inventory.documents.yaml"), input)
-		tAssert.ErrorContains(err, "multiple documents")
+		source, err := importYAMLSource(filepath.Join("workspace", "game_inventory.documents.yaml"), input)
+		tAssert.NoError(err)
+		output := importedOutput(source)
+		tAssert.Equal("game_inventory", output["document_1"].(map[string]any)["kind"])
+		tAssert.Equal("crafting_snapshot", output["document_2"].(map[string]any)["kind"])
 	})
 
 	It("imports the user catalog YAML documents example", func() {
@@ -867,8 +870,11 @@ primary_user:
   name: Ada Lovelace
 `
 
-		_, err := importYAMLSource(filepath.Join("workspace", "user_catalog.documents.yaml"), input)
-		tAssert.ErrorContains(err, "multiple documents")
+		source, err := importYAMLSource(filepath.Join("workspace", "user_catalog.documents.yaml"), input)
+		tAssert.NoError(err)
+		output := importedOutput(source)
+		tAssert.Equal("user_catalog", output["document_1"].(map[string]any)["kind"])
+		tAssert.Equal("user_catalog_summary", output["document_2"].(map[string]any)["kind"])
 	})
 
 	It("converts YAML merge keys into resolved records", func() {
@@ -1020,7 +1026,6 @@ tags:
 		_, err := importYAMLSource("config.yaml", input)
 		tAssert.ErrorContains(err, message)
 	},
-		Entry("multiple documents", "---\nname: Ada\n---\nname: Linus\n", "multiple documents"),
 		Entry("null root", "null\n", "null document root"),
 		Entry("scalar root", "Ada\n", "scalar document root"),
 		Entry("application tag", "name: !custom Ada\n", "unsupported application tag"),
@@ -1103,7 +1108,6 @@ var _ = Describe("Compatibility requirements", func() {
 		Entry("unsupported key character", "host-name: db"),
 		Entry("numeric key", "1name: Ada"),
 		Entry("empty key", "'': Ada"),
-		Entry("multiple documents", "---\nname: Ada\n---\nname: Linus"),
 		Entry("null root", "null"),
 		Entry("scalar root", "Ada"),
 		Entry("application tag", "name: !custom Ada"),
@@ -1145,8 +1149,10 @@ var _ = Describe("Interop helpers", func() {
 		_, err = importYAMLSource("workspace/tag.yaml", "!foo hello")
 		tAssert.ErrorContains(err, "unsupported application tag")
 
-		_, err = importYAMLSource("workspace/multi.yaml", "---\nhello\n---\nworld\n")
-		tAssert.ErrorContains(err, "multiple documents")
+		multiSource, err := importYAMLSource("workspace/multi.yaml", "---\nhello\n---\nworld\n")
+		tAssert.NoError(err)
+		tAssert.Contains(multiSource, "document_1")
+		tAssert.Contains(multiSource, "document_2")
 
 		infinitySource, err := importYAMLSource("workspace/infinity.yaml", "value: .inf")
 		tAssert.NoError(err)
@@ -1409,8 +1415,8 @@ var _ = Describe("Interop helpers", func() {
 		tAssert.Empty(multiErrorRoot.fields)
 
 		multiRoot, err := yamlRootExpression(&yamlast.File{Docs: []*yamlast.DocumentNode{{Body: &yamlast.StringNode{Value: "hello"}}, {Body: &yamlast.StringNode{Value: "world"}}}})
-		tAssert.ErrorContains(err, "multiple documents")
-		tAssert.Empty(multiRoot.fields)
+		tAssert.NoError(err)
+		tAssert.Len(multiRoot.fields, 2)
 
 		_, ok, err = yamlDocumentRecord(recordExpression{}, yamlState)
 		tAssert.NoError(err)

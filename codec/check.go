@@ -113,16 +113,6 @@ func CheckYAML(input string) CheckReport {
 		checkYAMLNode(&documents[index], path, &report, visited, &commentReported)
 	}
 
-	if len(documents) > 1 {
-		report.StructureIncompatibility = append(report.StructureIncompatibility, CheckIssue{
-			Path:     "$",
-			Reason:   "multiple YAML documents require migration before direct Mace use",
-			Format:   "yaml",
-			Actual:   strconv.Itoa(len(documents)) + " documents",
-			Expected: "single document",
-		})
-	}
-
 	if len(documents) == 1 && yamlDocumentHasScalarRoot(&documents[0]) {
 		report.StructureIncompatibility = append(report.StructureIncompatibility, positionedCheckIssue(&documents[0], CheckIssue{
 			Path:     "$",
