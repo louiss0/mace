@@ -1,531 +1,709 @@
 # Mace Language Specification
 
-## Status and conformance
+## 1. Status, conformance, and processing model
 
-Mace is a deterministic, strongly typed configuration language. A conforming
-processor produces either a fully valid data record or schema metadata, or an
-error; it never emits a partial result. Source is UTF-8 and string values may
-contain Unicode. The `null` literal is allowed only in data output. It omits
-its output field rather than creating a general runtime value.
+This RFC is normative. [`mace.ebnf`](./mace.ebnf) is the canonical syntax.
+A conforming implementation MUST implement both that grammar and the static and
+evaluation semantics in this RFC. Where the output grammar is contextual, the
+selected output mode determines the applicable field production before fields
+are interpreted.
 
-This RFC is normative. **[`mace.ebnf`](.&#x2f;mace.ebnf) is the canonical grammar
-source.** The grammar excerpt below is an exact copy of that file and MUST
-remain synchronized with it. EBNF describes syntax; constraints explicitly
-marked as semantic are also normative.
+Mace is a deterministic, strongly typed configuration language. Evaluation is
+pure. A processor MUST emit exactly one fully validated record or schema result,
+or an error. It MUST NOT emit partial output. Output roots MUST be records.
+Variables are immutable, explicitly typed, and initialized. Mace has no loops,
+functions, mutation, array indexing, arbitrary host calls, shell execution, or
+unrestricted network or filesystem access.
 
-A file has zero or one script block followed by exactly one record-shaped output
-block. Output arrays are not document roots, though arrays may be field values.
-Variables are immutable, explicitly typed, and initialized. Types, schemas and
-choices are metadata, not runtime values; documentation is metadata and cannot
-affect evaluation.
+Processing occurs in this observable order:
 
-## Lexical rules
+```text
+parse source → resolve imports → resolve schema and parse files → build declarations
+→ resolve types → resolve the parse schema → introduce typed parsed-input symbols
+→ type-check declarations and output expressions → validate runtime input
+→ bind parsed values → evaluate output → validate output → emit one result
+```
 
-Identifiers are case-sensitive and consist of a Unicode letter followed by zero
-or more Unicode letters, Unicode decimal digits, `_`, or joined `-` segments.
-A hyphen belongs to an identifier only when followed immediately by another
-identifier character. Casing styles are non-normative: tools may warn about
-unusual casing, but must accept every identifier satisfying that lexical rule.
-`match` is a reserved keyword and is never split from a containing identifier
-such as `matcher` or `matching`. Because `total-discount` is one identifier,
-subtraction must separate `-` from adjacent identifiers with whitespace.
+Source MUST be UTF-8. Line endings may be LF, CRLF, or CR; CRLF is one newline.
 
-Line endings are LF, CRLF, or CR; CRLF is one newline. `&#x2f;&#x2f;` comments run to a
-line ending or EOF. `&#x2f;*` comments run to the next `*&#x2f;`, may span lines, and do
-not require surrounding newlines. Double-quoted and block strings interpolate
-with exactly `$(expression)`; single-quoted strings do not interpolate.
+## 2. Canonical grammar
 
-A `path_literal` is a non-interpolated, single-line single-quoted path. It is
-not a general string and may not be a block string. Import, `schema_file`, and
-`parse_file` use it exclusively.
-
-## Canonical grammar
+The following fenced block MUST be an exact copy of `mace.ebnf`.
 
 ```ebnf
-(* Mace canonical grammar. Semantic constraints are marked in comments. *)
+(* Mace canonical grammar. Semantic constraints are normative where noted. *)
 
 (* LEXICAL STRUCTURE *)
-whitespace = &quot; &quot; | &quot;\t&quot; | newline ;
-newline = &quot;\r\n&quot; | &quot;\n&quot; | &quot;\r&quot; ;
-line_comment = &quot;&#x2f;&#x2f;&quot; , { ? any character except a line terminator ? } ;
-block_comment = &quot;&#x2f;*&quot; , { ? any character sequence not containing &quot;*&#x2f;&quot; ? } , &quot;*&#x2f;&quot; ;
+whitespace = " " | "\t" | newline ;
+newline = "\r\n" | "\n" | "\r" ;
+line_comment = "//" , { ? any character except a line terminator ? } ;
+block_comment = "/*" , { ? any character sequence not containing "*/" ? } , "*/" ;
 comment = line_comment | block_comment ;
 ws0 = { whitespace | comment } ;
 ws1 = ( whitespace | comment ) , ws0 ;
 
 unicode_letter = ? any Unicode character in category Letter ? ;
 unicode_digit = ? any Unicode character in category Number, decimal digit ? ;
-digit = &quot;0&quot;…&quot;9&quot; ;
-hex_digit = digit | &quot;a&quot;…&quot;f&quot; | &quot;A&quot;…&quot;F&quot; ;
-identifier_part = unicode_letter | unicode_digit | &quot;_&quot; ;
-identifier = unicode_letter , { identifier_part } , { &quot;-&quot; , identifier_part , { identifier_part } } ;
+digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+hex_digit = digit | "a"…"f" | "A"…"F" ;
+identifier_part = unicode_letter | unicode_digit | "_" ;
+identifier =
+    unicode_letter ,
+    { identifier_part } ,
+    { "-" , identifier_part , { identifier_part } } ;
 
-inline_description = &quot;&#x2f;#&quot; , ws0 , description_text ;
-description_text = ? text up to, but not including, a comma or line terminator ? ;
+inline_description = "/#" , ws0 , description_text ;
+description_text =
+    ? text up to, but not including, a comma, semicolon, closing brace, or line terminator ? ;
 
-single_string = &quot;&#x27;&quot; , { single_character } , &quot;&#x27;&quot; ;
-double_string = &#x27;&quot;&#x27; , { double_part } , &#x27;&quot;&#x27; ;
-block_string = &#x27;&quot;&quot;&quot;&#x27; , { block_part } , &#x27;&quot;&quot;&quot;&#x27; ;
+single_string = "'" , { single_character } , "'" ;
+double_string = '"' , { double_part } , '"' ;
+block_string = '"""' , { block_part } , '"""' ;
 string_literal = single_string | double_string | block_string ;
-single_character = ? any character except &#x27;, a line terminator, or backslash ? | escape_sequence ;
-double_part = ? any character except &quot;, a line terminator, backslash, or the start of &quot;$(&quot; ? | escape_sequence | interpolation ;
-block_part = ? any character sequence not containing &#x27;&quot;&quot;&quot;&#x27; or the start of &quot;$(&quot; ? | escape_sequence | interpolation ;
-escape_sequence = &quot;\\&quot; , ( &quot;\\&quot; | &quot;&#x27;&quot; | &#x27;&quot;&#x27; | &quot;n&quot; | &quot;r&quot; | &quot;t&quot; | unicode_escape ) ;
-unicode_escape = &quot;u&quot; , hex_digit , hex_digit , hex_digit , hex_digit
-               | &quot;U&quot; , hex_digit , hex_digit , hex_digit , hex_digit , hex_digit , hex_digit , hex_digit , hex_digit ;
-(* A path literal is single-line single-quoted text with no escapes or interpolation. *)
-path_literal = &quot;&#x27;&quot; , { path_character } , &quot;&#x27;&quot; ;
-path_character = ? any character except &#x27;, a line terminator, or a backslash ? ;
+single_character =
+    ? any character except ', a line terminator, or backslash ?
+  | escape_sequence ;
+double_part =
+    ? any character except ", a line terminator, backslash, or the start of "$(" ?
+  | escape_sequence
+  | interpolation ;
+block_part =
+    ? any character except backslash that does not begin the terminator or an interpolation ?
+  | escape_sequence
+  | interpolation ;
+
+literal_single_string = "'" , { literal_single_character } , "'" ;
+literal_double_string = '"' , { literal_double_character } , '"' ;
+literal_block_string = '"""' , { literal_block_character } , '"""' ;
+literal_string = literal_single_string | literal_double_string | literal_block_string ;
+literal_single_character =
+    ? any character except ', a line terminator, or backslash ?
+  | escape_sequence ;
+literal_double_character =
+    ? any character except ", a line terminator, or backslash ?
+  | escape_sequence ;
+literal_block_character =
+    ? any character except backslash, not beginning '"""' ?
+  | escape_sequence ;
+escape_sequence = "\\" , ( "\\" | "'" | '"' | "n" | "r" | "t" | unicode_escape ) ;
+unicode_escape =
+    "u" , hex_digit , hex_digit , hex_digit , hex_digit
+  | "U" , hex_digit , hex_digit , hex_digit , hex_digit ,
+          hex_digit , hex_digit , hex_digit , hex_digit ;
+
+path_literal = "'" , { path_character } , "'" ;
+path_character = ? any character except ', a line terminator, or backslash ? ;
 
 int_literal = digit , { digit } ;
-float_literal = digit , { digit } , &quot;.&quot; , digit , { digit } ;
-hex_int_literal = ( &quot;0x&quot; | &quot;0X&quot; ) , hex_digit , { hex_digit } ;
-hex_float_literal = ( &quot;0x&quot; | &quot;0X&quot; ) , hex_digit , { hex_digit } , &quot;.&quot; , hex_digit , { hex_digit } ;
-boolean_literal = &quot;true&quot; | &quot;false&quot; ;
-null_literal = &quot;null&quot; ;
+float_literal = digit , { digit } , "." , digit , { digit } ;
+hex_int_literal = ( "0x" | "0X" ) , hex_digit , { hex_digit } ;
+hex_float_literal =
+    ( "0x" | "0X" ) , hex_digit , { hex_digit } , "." , hex_digit , { hex_digit } ;
+boolean_literal = "true" | "false" ;
+null_literal = "null" ;
 
 (* DOCUMENT STRUCTURE *)
 mace_file = ws0 , [ script_block , ws0 ] , output_block , ws0 ;
-script_block = script_delimiter , ws0 , { import_declaration , ws0 } , { declaration , ws0 } , script_delimiter ;
-script_delimiter = &quot;|&quot; , &quot;=&quot; , &quot;=&quot; , &quot;=&quot; , { &quot;=&quot; } , &quot;|&quot; ;
-(* The opening and closing script_delimiter must have the same number of &#x27;=&#x27; characters. *)
+script_block =
+    script_delimiter , ws0 ,
+    { import_declaration , ws0 } ,
+    { declaration , ws0 } ,
+    script_delimiter ;
+script_delimiter = "|" , "=" , "=" , "=" , { "=" } , "|" ;
+(* Opening and closing script delimiters MUST contain equal numbers of '='. *)
 
-import_declaration = &quot;from&quot; , ws1 , path_literal , ws1 , ( &quot;import&quot; , ws1 , import_list | &quot;bind&quot; , ws1 , identifier ) , ws0 , &quot;;&quot; ;
-import_list = imported_identifier , { ws0 , &quot;,&quot; , ws0 , imported_identifier } ;
-imported_identifier = identifier , [ ws0 , &quot;:&quot; , ws0 , identifier ] ;
+import_declaration =
+    "from" , ws1 , path_literal , ws1 ,
+    ( "import" , ws1 , import_list | "bind" , ws1 , identifier ) ,
+    ws0 , ";" ;
+import_list = imported_identifier , { ws0 , "," , ws0 , imported_identifier } ;
+imported_identifier = identifier , [ ws0 , ":" , ws0 , identifier ] ;
 
-declaration = variable_declaration | type_declaration | schema_declaration
-            | gen_doc_declaration | schema_doc_declaration ;
-variable_declaration = type_reference , ws1 , identifier , ws0 , &quot;=&quot; , ws0 , expression , [ ws0 , inline_description ] , ws0 , &quot;;&quot; ;
-type_declaration = &quot;alias&quot; , ws1 , identifier , ws0 , &quot;:&quot; , ws0 , type_reference , [ ws0 , inline_description ] , ws0 , &quot;;&quot; ;
-schema_declaration = &quot;schema&quot; , ws1 , identifier , ws0 , &quot;:&quot; , ws0 , record_type , ws0 , &quot;;&quot; ;
+declaration =
+    variable_declaration
+  | type_declaration
+  | schema_declaration
+  | gen_doc_declaration
+  | schema_doc_declaration ;
+variable_declaration =
+    type_reference , ws1 , identifier , ws0 , "=" , ws0 , expression ,
+    [ ws0 , inline_description ] , ws0 , ";" ;
+type_declaration =
+    "alias" , ws1 , identifier , ws0 , ":" , ws0 , type_reference ,
+    [ ws0 , inline_description ] , ws0 , ";" ;
+schema_declaration =
+    "schema" , ws1 , identifier , ws0 , ":" , ws0 , record_type , ws0 , ";" ;
 
-gen_doc_declaration = &quot;gen_doc&quot; , ws1 , identifier , ws0 , &quot;{&quot; , ws0 , [ gen_doc_entry , { ws0 , &quot;,&quot; , ws0 , gen_doc_entry } , [ ws0 , &quot;,&quot; ] ] , ws0 , &quot;}&quot; , ws0 , &quot;;&quot; ;
-gen_doc_entry = &quot;summary&quot; , ws0 , &quot;:&quot; , ws0 , string_literal
-              | &quot;description&quot; , ws0 , &quot;:&quot; , ws0 , block_string ;
-schema_doc_declaration = &quot;schema_doc&quot; , ws1 , identifier , ws0 , &quot;{&quot; , ws0 , [ schema_doc_entry , { ws0 , &quot;,&quot; , ws0 , schema_doc_entry } , [ ws0 , &quot;,&quot; ] ] , ws0 , &quot;}&quot; , ws0 , &quot;;&quot; ;
-schema_doc_entry = &quot;summary&quot; , ws0 , &quot;:&quot; , ws0 , string_literal
-                 | &quot;description&quot; , ws0 , &quot;:&quot; , ws0 , block_string
-                 | &quot;fields&quot; , ws0 , &quot;:&quot; , ws0 , &quot;{&quot; , ws0 , [ documentation_field , { ws0 , &quot;,&quot; , ws0 , documentation_field } , [ ws0 , &quot;,&quot; ] ] , ws0 , &quot;}&quot; ;
-documentation_field = identifier , ws0 , &quot;:&quot; , ws0 , string_literal ;
+gen_doc_declaration =
+    "gen_doc" , ws1 , identifier , ws0 , "{" , ws0 ,
+    [ gen_doc_entry , { ws0 , "," , ws0 , gen_doc_entry } , [ ws0 , "," ] ] ,
+    ws0 , "}" , ws0 , ";" ;
+gen_doc_entry =
+    "summary" , ws0 , ":" , ws0 , literal_string
+  | "description" , ws0 , ":" , ws0 , literal_block_string ;
+schema_doc_declaration =
+    "schema_doc" , ws1 , identifier , ws0 , "{" , ws0 ,
+    [ schema_doc_entry , { ws0 , "," , ws0 , schema_doc_entry } , [ ws0 , "," ] ] ,
+    ws0 , "}" , ws0 , ";" ;
+schema_doc_entry =
+    "summary" , ws0 , ":" , ws0 , literal_string
+  | "description" , ws0 , ":" , ws0 , literal_block_string
+  | "fields" , ws0 , ":" , ws0 , "{" , ws0 ,
+    [ documentation_field ,
+      { ws0 , "," , ws0 , documentation_field } , [ ws0 , "," ] ] ,
+    ws0 , "}" ;
+documentation_field = identifier , ws0 , ":" , ws0 , literal_string ;
 
 (* TYPES *)
-type_reference = primitive_type | array_type | record_map_type | record_type | fusion_type | variant_type | choice_type | identifier ;
-primitive_type = &quot;string&quot; | &quot;int&quot; | &quot;float&quot; | &quot;hex_int&quot; | &quot;hex_float&quot; | &quot;boolean&quot; ;
-array_type = &quot;array&quot; , ws0 , &quot;&lt;&quot; , ws0 , schema_type_reference , ws0 , &quot;&gt;&quot; ;
-record_map_type = &quot;record&quot; , ws0 , &quot;&lt;&quot; , ws0 , schema_type_reference , ws0 , &quot;&gt;&quot; ;
-record_type = &quot;{&quot; , ws0 , [ schema_field , { ws0 , &quot;,&quot; , ws0 , schema_field } , [ ws0 , &quot;,&quot; ] ] , ws0 , &quot;}&quot; ;
-schema_field = identifier , [ &quot;?&quot; ] , ws0 , &quot;:&quot; , ws0 , schema_type_reference , [ ws0 , inline_description ] ;
+type_reference =
+    primitive_type
+  | array_type
+  | record_map_type
+  | record_type
+  | fusion_type
+  | variant_type
+  | choice_type
+  | identifier ;
+primitive_type = "string" | "int" | "float" | "hex_int" | "hex_float" | "boolean" ;
+array_type = "array" , ws0 , "<" , ws0 , schema_type_reference , ws0 , ">" ;
+record_map_type = "record" , ws0 , "<" , ws0 , schema_type_reference , ws0 , ">" ;
+record_type =
+    "{" , ws0 ,
+    [ schema_field , { ws0 , "," , ws0 , schema_field } , [ ws0 , "," ] ] ,
+    ws0 , "}" ;
+schema_field =
+    identifier , [ "?" ] , ws0 , ":" , ws0 , schema_type_reference ,
+    [ ws0 , inline_description ] ;
 schema_type_reference = type_reference | self_type_reference ;
-self_type_reference = &quot;$self&quot; ;
-fusion_type = &quot;fusion&quot; , ws0 , &quot;[&quot; , ws0 , type_reference , { ws0 , &quot;,&quot; , ws0 , type_reference } , [ ws0 , &quot;,&quot; ] , ws0 , &quot;]&quot; ;
-variant_type = &quot;variant&quot; , ws0 , &quot;[&quot; , ws0 , type_reference , { ws0 , &quot;,&quot; , ws0 , type_reference } , [ ws0 , &quot;,&quot; ] , ws0 , &quot;]&quot; ;
-choice_type = &quot;choice&quot; , ws0 , &quot;[&quot; , ws0 , choice_member , { ws0 , &quot;,&quot; , ws0 , choice_member } , [ ws0 , &quot;,&quot; ] , ws0 , &quot;]&quot; ;
-choice_member = string_literal | int_literal | float_literal | hex_int_literal | hex_float_literal | boolean_literal ;
+self_type_reference = "$self" ;
+fusion_type =
+    "fusion" , ws0 , "[" , ws0 , type_reference ,
+    { ws0 , "," , ws0 , type_reference } , [ ws0 , "," ] , ws0 , "]" ;
+variant_type =
+    "variant" , ws0 , "[" , ws0 , type_reference ,
+    { ws0 , "," , ws0 , type_reference } , [ ws0 , "," ] , ws0 , "]" ;
+choice_type =
+    "choice" , ws0 , "[" , ws0 , choice_member ,
+    { ws0 , "," , ws0 , choice_member } , [ ws0 , "," ] , ws0 , "]" ;
+choice_member =
+    literal_string
+  | int_literal
+  | float_literal
+  | hex_int_literal
+  | hex_float_literal
+  | boolean_literal ;
 
 (* OUTPUT *)
-output_block = [ output_directive_list , ws0 ] , &quot;{&quot; , ws0 , [ output_field , { ws0 , &quot;,&quot; , ws0 , output_field } , [ ws0 , &quot;,&quot; ] ] , ws0 , &quot;}&quot; ;
-output_directive_list = &quot;[&quot; , ws0 , directive_pair , { ws0 , &quot;,&quot; , ws0 , directive_pair } , ws0 , &quot;]&quot; ;
-directive_pair = &quot;output&quot; , ws0 , &quot;=&quot; , ws0 , ( &quot;&#x27;data&#x27;&quot; | &quot;&#x27;schema&#x27;&quot; )
-               | &quot;schema&quot; , ws0 , &quot;=&quot; , ws0 , identifier
-               | &quot;schema_file&quot; , ws0 , &quot;=&quot; , ws0 , path_literal
-               | &quot;parse&quot; , ws0 , &quot;=&quot; , ws0 , identifier
-               | &quot;parse_file&quot; , ws0 , &quot;=&quot; , ws0 , path_literal
-               | &quot;doc&quot; , ws0 , &quot;=&quot; , ws0 , expression ;
-(* The output directive controls output_field interpretation: data uses data_output_field;
-   schema uses schema_output_field. This contextual distinction is semantic. *)
-output_field = data_output_field | schema_output_field ;
-data_output_field = identifier , ws0 , &quot;:&quot; , ws0 , expression , [ ws0 , inline_description ]
-                  | identifier , [ ws0 , inline_description ] ;
-schema_output_field = identifier , [ &quot;?&quot; ] , ws0 , &quot;:&quot; , ws0 , type_reference , 
-[ ws0 , inline_description ] ;
+output_block =
+    [ output_directive_list , ws0 ] ,
+    "{" , ws0 , [ output_field_list ] , ws0 , "}" ;
+(* output_field_list is contextual: data mode selects data_output_field_list;
+   schema mode selects schema_output_field_list. *)
+output_field_list = data_output_field_list | schema_output_field_list ;
+data_output_field_list =
+    data_output_field ,
+    { ws0 , "," , ws0 , data_output_field } , [ ws0 , "," ] ;
+schema_output_field_list =
+    schema_output_field ,
+    { ws0 , "," , ws0 , schema_output_field } , [ ws0 , "," ] ;
+output_directive_list =
+    "[" , ws0 , directive_pair ,
+    { ws0 , "," , ws0 , directive_pair } , ws0 , "]" ;
+directive_pair =
+    "output" , ws0 , "=" , ws0 , ( "'data'" | "'schema'" )
+  | "schema" , ws0 , "=" , ws0 , identifier
+  | "schema_file" , ws0 , "=" , ws0 , path_literal
+  | "parse" , ws0 , "=" , ws0 , identifier
+  | "parse_file" , ws0 , "=" , ws0 , path_literal
+  | "doc" , ws0 , "=" , ws0 , expression ;
+data_output_field =
+    identifier , ws0 , ":" , ws0 , ( expression | null_literal ) ,
+    [ ws0 , inline_description ]
+  | identifier , [ ws0 , inline_description ] ;
+schema_output_field =
+    identifier , [ "?" ] , ws0 , ":" , ws0 , type_reference ,
+    [ ws0 , inline_description ] ;
 
 (* EXPRESSIONS *)
 expression = conditional_expression ;
-conditional_expression = coalescing_expression , [ ws0 , &quot;?&quot; , ws0 , coalescing_expression , ws0 , &quot;:&quot; , ws0 , coalescing_expression ] ;
-coalescing_expression = logical_or_expression , [ ws0 , &quot;??&quot; , ws0 , coalescing_expression ] ;
-logical_or_expression = logical_and_expression , { ws0 , &quot;||&quot; , ws0 , logical_and_expression } ;
-logical_and_expression = bitwise_or_expression , { ws0 , &quot;&amp;&amp;&quot; , ws0 , bitwise_or_expression } ;
-bitwise_or_expression = bitwise_xor_expression , { ws0 , &quot;|&quot; , ws0 , bitwise_xor_expression } ;
-bitwise_xor_expression = bitwise_and_expression , { ws0 , &quot;^&quot; , ws0 , bitwise_and_expression } ;
-bitwise_and_expression = equality_expression , { ws0 , &quot;&amp;&quot; , ws0 , equality_expression } ;
-equality_expression = relational_expression , { ws0 , ( &quot;==&quot; | &quot;!=&quot; ) , ws0 , relational_expression } ;
-relational_expression = shift_expression , { ws0 , ( &quot;&lt;&quot; | &quot;&lt;=&quot; | &quot;&gt;&quot; | &quot;&gt;=&quot; ) , ws0 , shift_expression } ;
-shift_expression = additive_expression , { ws0 , ( &quot;&lt;&lt;&quot; | &quot;&gt;&gt;&quot; | &quot;&gt;&gt;&gt;&quot; ) , ws0 , additive_expression } ;
-additive_expression = multiplicative_expression , { ws0 , ( &quot;+&quot; | &quot;-&quot; ) , ws0 , multiplicative_expression } ;
-multiplicative_expression = exponent_expression , { ws0 , ( &quot;*&quot; | &quot;&#x2f;&quot; | &quot;%&quot; ) , ws0 , exponent_expression } ;
-exponent_expression = unary_expression , [ ws0 , &quot;**&quot; , ws0 , exponent_expression ] ;
-unary_expression = ( &quot;!&quot; | &quot;~&quot; | &quot;+&quot; | &quot;-&quot; ) , ws0 , unary_expression | postfix_expression ;
+conditional_expression =
+    coalescing_expression ,
+    [ ws0 , "?" , ws0 , coalescing_expression ,
+      ws0 , ":" , ws0 , coalescing_expression ] ;
+coalescing_expression =
+    logical_or_expression , [ ws0 , "??" , ws0 , coalescing_expression ] ;
+logical_or_expression =
+    logical_and_expression , { ws0 , "||" , ws0 , logical_and_expression } ;
+logical_and_expression =
+    bitwise_or_expression , { ws0 , "&&" , ws0 , bitwise_or_expression } ;
+bitwise_or_expression =
+    bitwise_xor_expression , { ws0 , "|" , ws0 , bitwise_xor_expression } ;
+bitwise_xor_expression =
+    bitwise_and_expression , { ws0 , "^" , ws0 , bitwise_and_expression } ;
+bitwise_and_expression =
+    equality_expression , { ws0 , "&" , ws0 , equality_expression } ;
+equality_expression =
+    relational_expression ,
+    { ws0 , ( "==" | "!=" ) , ws0 , relational_expression } ;
+relational_expression =
+    shift_expression ,
+    { ws0 , ( "<" | "<=" | ">" | ">=" ) , ws0 , shift_expression } ;
+shift_expression =
+    additive_expression ,
+    { ws0 , ( "<<" | ">>" | ">>>" ) , ws0 , additive_expression } ;
+additive_expression =
+    multiplicative_expression ,
+    { ws0 , ( "+" | "-" ) , ws0 , multiplicative_expression } ;
+multiplicative_expression =
+    exponent_expression ,
+    { ws0 , ( "*" | "/" | "%" ) , ws0 , exponent_expression } ;
+exponent_expression =
+    unary_expression , [ ws0 , "**" , ws0 , exponent_expression ] ;
+unary_expression =
+    ( "!" | "~" | "+" | "-" ) , ws0 , unary_expression
+  | postfix_expression ;
 postfix_expression = primary_atom , { postfix_suffix } ;
-primary_atom = identifier | self_reference | parsed_input_reference | int_literal | float_literal | hex_int_literal | hex_float_literal | string_literal | boolean_literal | null_literal | array_literal | record_literal | match_expression | grouped_expression ;
-postfix_suffix = ws0 , ( &quot;.&quot; | &quot;?.&quot; ) , ws0 , identifier ;
-self_reference = &quot;$self&quot; , &quot;.&quot; , identifier , { &quot;.&quot; , identifier } ;
-parsed_input_reference = &quot;$&quot; , identifier ;
-grouped_expression = &quot;(&quot; , ws0 , expression , ws0 , &quot;)&quot; ;
-(* A grouped-expression candidate is valid only when it changes arithmetic precedence or associativity. *)
-array_literal = &quot;[&quot; , ws0 , [ expression , { ws0 , &quot;,&quot; , ws0 , expression } , [ ws0 , &quot;,&quot; ] ] , ws0 , &quot;]&quot; ;
-record_literal = &quot;{&quot; , ws0 , [ record_field , { ws0 , &quot;,&quot; , ws0 , record_field } , [ ws0 , &quot;,&quot; ] ] , ws0 , &quot;}&quot; ;
-record_field = identifier , ws0 , &quot;:&quot; , ws0 , expression , [ ws0 , inline_description ]
-             | identifier , [ ws0 , inline_description ] ;
-match_expression = &quot;match&quot; , ws0 , &quot;(&quot; , ws0 , expression , ws0 , &quot;)&quot; , ws0 , &quot;{&quot; , ws0 , match_arm , { ws0 , match_arm } , ws0 , &quot;}&quot; ;
-match_arm = match_pattern , ws0 , &quot;=&gt;&quot; , ws0 , expression , ws0 , &quot;,&quot; ;
+primary_atom =
+    identifier
+  | self_reference
+  | parsed_input_reference
+  | int_literal
+  | float_literal
+  | hex_int_literal
+  | hex_float_literal
+  | string_literal
+  | boolean_literal
+  | array_literal
+  | record_literal
+  | match_expression
+  | grouped_expression ;
+postfix_suffix = ws0 , ( "." | "?." ) , ws0 , identifier ;
+self_reference = "$self" , "." , identifier , { "." , identifier } ;
+parsed_input_reference = "$" , identifier ;
+grouped_expression = "(" , ws0 , expression , ws0 , ")" ;
+(* Grouping is valid only when it changes arithmetic precedence or associativity. *)
+array_literal =
+    "[" , ws0 ,
+    [ expression , { ws0 , "," , ws0 , expression } , [ ws0 , "," ] ] ,
+    ws0 , "]" ;
+record_literal =
+    "{" , ws0 ,
+    [ record_field , { ws0 , "," , ws0 , record_field } , [ ws0 , "," ] ] ,
+    ws0 , "}" ;
+record_field =
+    identifier , ws0 , ":" , ws0 , expression , [ ws0 , inline_description ]
+  | identifier , [ ws0 , inline_description ] ;
+match_expression =
+    "match" , ws0 , "(" , ws0 , expression , ws0 , ")" , ws0 ,
+    "{" , ws0 , match_arm , { ws0 , match_arm } , ws0 , "}" ;
+match_arm = match_pattern , ws0 , "=>" , ws0 , expression , ws0 , "," ;
 match_pattern = type_reference | choice_member ;
-
-interpolation = &quot;$&quot; , &quot;(&quot; , expression , &quot;)&quot; ;
+interpolation = "$" , "(" , expression , ")" ;
 ```
 
-## Output directives and fields
+## 3. Lexical rules
 
-A directive list is optional; without it, output is data. When brackets are
-written they MUST include exactly one `output` directive. Unknown or duplicate
-directives are errors.
+### 3.1 Identifiers and keywords
 
-| Output mode | `schema` | `schema_file` | `parse` | `parse_file` |
-| --- | --- | --- | --- | --- |
-| omitted &#x2f; `output = 'data'` | allowed | allowed | allowed | allowed |
-| `output = 'schema'` | forbidden | forbidden | forbidden | forbidden |
+Identifiers are case-sensitive and use the grammar's Unicode categories.
+Hyphenated segments may begin with a letter, decimal digit, or underscore.
+Consequently `用户配置`, `naïve-value`, `foo-1`, and `foo-_internal` are valid.
+Processors MUST compare identifier spelling by exact Unicode code-point sequence;
+they MUST NOT normalize spelling. Thus canonically equivalent NFC and NFD
+spellings are distinct identifiers. Tools SHOULD warn when visually confusable or
+non-normalized names occur, but MUST NOT silently rewrite them.
 
-In data mode, `schema` selects the schema used to validate the produced output,
-and `parse` selects the schema used to validate host runtime input. These roles
-are distinct. `schema` and `schema_file` may be combined; `parse` and
-`parse_file` may be combined. A file directive contributes declarations from
-its file. Without `schema`, a `schema_file` directive uses the referenced
-file's schema output body as the active output shape; when both directives are
-present, `schema` selects the named schema.
+The globally reserved complete-token keywords are `from`, `import`, `bind`,
+`alias`, `schema`, `gen_doc`, `schema_doc`, `array`, `record`, `fusion`,
+`variant`, `choice`, `match`, `string`, `int`, `float`, `hex_int`, `hex_float`,
+`boolean`, `true`, `false`, and `null`. `output`, `schema_file`, `parse`,
+`parse_file`, `doc`, `data`, `summary`, `description`, and `fields` are contextual
+in their corresponding constructs. A keyword matches only a complete identifier
+token: `matcher` is one identifier, not `match` followed by `er`. Contextual
+keywords MAY be field names where the field grammar is unambiguous. A globally
+reserved word used where an identifier is required is a syntax error.
 
-In schema mode the same `{ ... }` output body is interpreted as schema fields:
-its right sides are type references and `?` is permitted. In data mode its right
-sides are expressions; shorthand (`name`) is permitted only in this mode and
-`?` is forbidden. This interpretation is selected by the output directive, not
-by a second brace syntax. Schema output cannot contain variable declarations.
+Positive: `{ matcher: 1, output: 2, }`. Negative: `int match = 1;`.
 
-Every record, schema, documentation, and output field list uses commas. A
-single trailing comma before `}` is allowed. Semicolons terminate script
-declarations only. A missing separator diagnostic MUST say `expected &#x27;,&#x27; after
-field` or `expected &#x27;,&#x27; or &#x27;}&#x27; after field`, never suggest `;`.
+### 3.2 Comments, strings, and descriptions
 
-## Types and static semantics
+`//` comments end at a line ending or EOF. `/* ... */` comments end at the next
+`*/` and do not nest. Double and block strings interpolate only with
+`$(expression)`; single strings never interpolate. Backslashes in every string
+form are consumed only by `escape_sequence`.
 
-The primitive types are `string`, `int`, `float`, `hex_int`, `hex_float`, and
-`boolean`. `int` is signed 64-bit. `float` is IEEE-754 binary64. `hex_int` has
-the same exact range as `int`, from -2^63 through 2^63 - 1. The minimum
-`hex_int` is written `-0x8000000000000000`; the positive literal
-`0x8000000000000000` is out of range. Hexadecimal integer addition,
-subtraction, multiplication, non-negative integer exponentiation, unary
-negation, and left shift MUST produce an evaluation error rather than wrap
-when their mathematical result is outside that range.
+Choice members and structured documentation use `literal_string`; interpolation
+in either location is forbidden. The data-output `doc` directive is the sole
+documentation location that evaluates an expression, which MUST produce a
+string. A path is a single-line, non-interpolated, single-quoted `path_literal`.
 
-`hex_float` uses binary64 storage, but both hexadecimal types are distinct
-from the decimal family. A `hex_float` literal remains fixed-point:
-`0x<hex-digits>.<hex-digits>`, with arbitrarily long non-empty whole and
-fractional components and no scientific notation. Literal conversion rounds
-to the nearest binary64 value. Magnitudes through 2^1024 - 1 are accepted;
-values in the upper binary64 rounding interval produce `math.MaxFloat64`, and
-larger magnitudes are errors. Thus the largest finite positive Mace literal is
-`"0x" + strings.Repeat("F", 256) + ".0"`, representing
-`math.MaxFloat64 = (2 - 2^-52) * 2^1023 = 2^1024 - 2^971`.
-
-Canonical `hex_float` output uses uppercase hexadecimal digits, fixed-point
-notation, an exact binary64 expansion, and a required fractional component.
-Trailing fractional zeroes are removed, but `.0` remains for integer-valued
-floats. Parsing canonical output MUST reproduce the identical binary64 bit
-pattern, including negative zero. NaN, infinity, division by zero, and any
-operation producing a non-finite float are evaluation errors. `int &#x2f; int`
-truncates toward zero. Hexadecimal fractional digits are powers of 16, so
-`0xA.F` is `10.9375`. Decimal and hexadecimal values never mix implicitly.
-`hex_int &#x2f; hex_int` returns `hex_float`; `~` accepts only decimal `int`.
-
-Arrays are homogeneous unless their element type is a permitting `variant`.
-`record&lt;T&gt;` describes a record whose values conform to `T`. `[]` requires an expected array type because it has no inferable element type.
-`{}` is an empty record and requires an expected empty, all-optional, compatible
-inline, or otherwise known record type. Every empty collection literal in a
-data output requires an output shape supplied through `schema` or `schema_file`,
-even when another conditional branch has a known collection type. Empty schemas
-are valid.
-
-Conditional branches of the same type produce that type. Different branch
-types produce a deduplicated `variant[...]`, and the receiving variable or
-output schema MUST accept every inferred member. A conditional expression MUST
-NOT contain another conditional expression in its condition or either branch.
-A schema and a populated `record&lt;T&gt;` remain distinct variant members.
-
-When a conditional combines an empty array or empty record with a different
-branch type, the empty collection has no inferable member type. In a data output,
-that conditional MUST be validated by an output shape supplied through the
-`schema` or `schema_file` directive. In a variable initializer, the variable
-declaration MUST use an explicit type that supplies the collection type. For
-example:
+Positive:
 
 ```mace
-|===|
-boolean enabled = true;
-variant[string, array<string>] value = enabled ? "configured" : [];
-schema Result: { value: variant[string, array<string>], };
-|===|
-[output = 'data', schema = Result]
-{ value: enabled ? "configured" : [], }
+alias Mode: choice['dev', "prod", """test"""];
+gen_doc Mode { summary: "Deployment mode", };
 ```
 
-An untyped data-output conditional such as `{ value: enabled ? "configured" : [], }`
-is a static error. Direct and nested empty collections in schema-less data
-outputs are also static errors, including conditionals between a known
-`record&lt;T&gt;` value and `{}`.
+Negative: `alias Mode: choice["$(environment)"];` and
+`gen_doc Mode { summary: "$(environment)", };`.
 
-A `record_type` is valid wherever a type reference is accepted, including type
-aliases, arrays, schema fields, variants, and fusions. Schemas are closed:
-required fields must be present, optional fields may be omitted, and unknown
-fields are rejected. Optionality is a record-shape property only; it cannot
-annotate a runtime record or data-output field.
+An inline description begins with `/#` and ends immediately before `,`, `;`, `}`,
+or a line ending. The enclosing construct consumes that delimiter. It may annotate
+a variable, alias, schema or inline-record field, runtime record field, or output
+field. It MUST NOT consume a declaration terminator or closing brace.
 
-A fusion member must resolve consistently to either a record type or a choice
-type. Record members may be named schemas, record aliases, inline record types,
-or other record fusions. Choice members may be choice aliases, inline choices,
-or other choice fusions; their resolved literal domains are deduplicated. A
-fusion cannot mix records and choices. For equal record field names,
-equal resolved types are compatible. Required plus optional yields required;
-optional plus optional yields optional. Different resolved types conflict. A
-fusion never silently creates a variant.
+```mace
+string name = "Mace" /# before semicolon;
+schema User: { name: string /# before comma, age?: int /# before brace };
+{ name: "Mace" /# before output brace }
+```
 
-Choice members are scalar literals. A literal repeated directly within one
-choice is an error. Use `fusion[...]` to compose choice aliases; values repeated
-through the fusion are deduplicated in the resolved domain. Choice alias cycles
-are errors.
+A second inline description on the same construct is invalid.
 
-Variant identity is the unordered set of resolved members, so member order does
-not matter and duplicate equivalent members are invalid. A value normally must
-match exactly one member and provable overlap should be rejected. The sole
-explicit overlap exception is `string` with `choice[...]`: the choice supplies
-suggested values while `string` permits additional values. Implementations must
-not use first-match behavior, and must accept a value assignable to at least one
-member.
+## 4. Document structure, declarations, and types
 
-### Match expressions
+A file contains zero or one script block followed by exactly one output block.
+Opening and closing script delimiters MUST have equal lengths. Imports precede
+all declarations. Import, variable, alias, schema, and documentation declarations
+MUST end in `;`. Variables are initialized exactly once and MUST accept their
+initializer's static type.
 
-`match` accepts only a value whose static type resolves to a `variant[...]` or
-`choice[...]`. The matched expression is evaluated exactly once. A variant arm
-uses a type-reference pattern; a choice arm uses one scalar literal from the
-choice domain. A variant type-reference pattern may cover one or more resolved
-members of the source variant. Pattern member sets MUST be disjoint.
+Primitive types are `string`, `int`, `float`, `hex_int`, `hex_float`, and
+`boolean`. Arrays are homogeneous unless their declared element is a permitting
+variant. `record<T>` maps identifier keys to `T`. Schemas and inline record types
+are closed: required fields are present, optional fields may be absent, and
+unknown fields are errors. `?` is a schema-shape marker, never a runtime field
+marker.
 
-Every source variant member or choice literal MUST be covered exactly once.
-Missing, duplicate, incompatible, or extra patterns are static errors, so a
-match expression has no default arm. Each arm ends with a comma, including the
-last arm.
+An empty collection requires an expected type. Every empty collection in a data
+output, including one nested in a conditional, MUST obtain that type from the
+selected output schema. A variable initializer may obtain it from its declared
+type. Empty schemas remain valid.
 
-Patterns do not create a value binding or extract fields. When the matched
-expression is a stable variable or member path, that existing path is narrowed
-to the arm pattern while the arm result is checked.
+A fusion resolves entirely to records or entirely to choices. Record fusion
+merges equal field types; required plus optional is required. Conflicting types
+are errors. Choice fusion deduplicates the union of literal domains. A fusion
+MUST NOT mix record and choice domains. Pure alias cycles are invalid. `$self` in
+a schema type is legal only behind a structural guard such as `array<$self>`;
+direct recursion and use outside a schema are errors.
+
+## 5. Choices, variants, and matching
+
+A choice is a non-empty, compile-time set of distinct scalar literals. Its
+strings MUST be non-interpolating. A variant is an unordered set of distinct
+resolved member types. Primitive/choice overlap is preserved: in
+`variant[string, choice["dev", "prod"]]`, the choice owns `"dev"` and `"prod"`
+and `string` denotes the residual string domain.
+
+### 5.1 Pattern domains and specificity
+
+A pattern has a declared domain and an effective domain:
+
+* A literal pattern's declared domain is exactly that literal.
+* A choice pattern's declared domain is its resolved literal set.
+* Another type pattern's declared domain is its resolved type domain.
+* Specificity is `individual choice literal > choice type > overlapping primitive`.
+* A pattern's effective domain is its declared domain intersected with the source
+  domain, minus every applicable more-specific pattern domain.
+
+Source order MUST NOT affect static analysis or runtime selection. Equivalent
+patterns are duplicates. Equal-specificity patterns with intersecting effective
+domains are errors. A pattern outside the source domain is an error. Every
+non-empty effective portion of the source domain MUST be covered exactly once.
+A choice value MUST be covered by a choice pattern or individual literal patterns;
+it MUST NOT fall through to an overlapping primitive pattern.
+
+Patterns introduce no binding. If the matched expression is a stable variable or
+member path, that path is narrowed to the selected arm's effective domain while
+the arm result is checked. The input is evaluated once. Arm result types use the
+conditional result-type rule in Section 8. Runtime selection chooses the unique
+most-specific applicable arm.
+
+Normal disjoint variant:
 
 ```mace
 variant[string, int] value = 7;
-string result = match (value) {
-    string => "text",
-    int => "number",
-};
+string kind = match (value) { string => "text", int => "number", };
+```
 
-choice["dev", "prod"] environment = "prod";
-int workers = match (environment) {
-    "dev" => 1,
-    "prod" => 4,
+Literal, choice, and primitive together (the same behavior applies in any arm
+order):
+
+```mace
+variant[string, choice["dev", "prod"]] mode = "dev";
+string result = match (mode) {
+    string => "custom",
+    choice["dev", "prod"] => "known",
+    "dev" => "development",
 };
 ```
 
-Arm result types are combined using the same rules as conditional branches:
-equal results retain their type and distinct results form a flattened,
-deduplicated variant. Runtime member selection uses the same primitive, choice,
-array, and closed-schema conformance rules as assignment validation.
+`"dev"` selects the literal, `"prod"` the choice, and `"staging"` residual
+`string`. A variant literal is valid only if it belongs to a choice member.
 
-Pure alias cycles are invalid. Within a schema or inline record type, `$self`
-means the enclosing schema type and may be used only as a structurally guarded
-reference (for example `array&lt;$self&gt;`). It is forbidden in a type alias outside
-a schema context, forbidden as a runtime recursion mechanism, and a direct
-field such as `self: $self` is invalid. Resolvers must keep it symbolic and
-terminate on finite values.
+Negative examples:
 
-## Expressions and evaluation
+```mace
+// Missing "prod"; string cannot absorb it.
+match (mode) { string => "custom", "dev" => "development", };
 
-Operator precedence, highest to lowest, is postfix access; unary; exponent;`r`nmultiplication&#x2f;division&#x2f;modulo; addition&#x2f;subtraction; shifts; relational;`r`nequality; bitwise AND; XOR; OR; logical AND; logical OR; and `?:`.
+// Unrelated literal.
+match (mode) { string => "custom", choice["dev", "prod"] => "known", "qa" => "bad", };
 
-Postfix member access may follow any ungrouped primary expression where its
-resulting type supports access. The grammar recognizes a parenthesized
-expression as a grouped-expression candidate, but static semantics accept it
-only when it contains `+`, `-`, `*`, `/`, `%`, or `**` and changes the binding
-imposed by arithmetic precedence or associativity. Valid examples include
-`(1 + 2) * 3`, `1 - (2 - 3)`, and `(2 ** 3) ** 4`. Redundant groups such as
-`(1 + 2)` and `1 + (2 * 3)` are invalid. Parentheses MUST NOT group shifts,
-comparisons, bitwise expressions, logical expressions, coalescing,
-conditionals, or values solely to enable access. Thus
-`({ user: { name: &quot;Ada&quot; } }).user.name` is invalid.
-
-`$self` is the current data-output record and can access only fields already
-evaluated. Parsed input references are separate: `$name`, `$user.name`, and
-`$user.address.street` refer to typed fields from validated runtime input. `$self` is available only during data-output construction.
-
-## Imports, paths, and processing
-
-Imports are named-only, appear before every other script declaration, and can
-import only symbols exposed through the imported file&#x27;s output block. Local
-names cannot shadow imported names. Wildcard imports are invalid.
-
-Every path literal must use the `.mace` extension and resolves relative to the
-containing file. Before access, processors normalize `.` and `..`, normalize
-platform separators, resolve symlinks, canonicalize both path and project root,
-and reject paths outside the canonical project root. This applies equally to
-imports, `schema_file`, and `parse_file`; raw string-prefix checks are
-insufficient.
-
-Processing has this observable order:
-
-```text
-parse source → resolve imports → resolve schema and parse files → build declarations
-→ resolve types → resolve the parse schema → introduce typed parsed-input symbols
-→ type-check declarations and output expressions → validate actual runtime input
-→ bind parsed values → evaluate output → validate output → emit result
+// Equal-specificity overlap.
+match (mode) {
+    choice["dev", "prod"] => "one",
+    choice["prod", "test"] => "two",
+    string => "custom",
+};
 ```
 
-If a selected parse schema requires runtime input and none is supplied,
-evaluation fails before any output expression runs. Expressions are pure and
-deterministic: no shell execution, arbitrary host calls, networking, or
-unrestricted filesystem access is permitted.
+A direct choice match is exhaustive over its literals:
 
-## Documentation
+```mace
+choice["on", "off"] state = "on";
+int enabled = match (state) { "on" => 1, "off" => 0, };
+```
 
-Inline descriptions may appear on type declarations, variables, schema fields,
-inline record-type fields, record fields, and output fields. They are metadata
-only. A declaration or field cannot receive both inline and structured
-conflicting documentation.
+## 6. Output modes, shorthand, and `null`
 
-| Target | `gen_doc` | `schema_doc` |
-| --- | --- | --- |
-| Primitive variable | yes | no |
-| Array variable | yes | no |
-| Record-valued variable | no | yes |
-| Type alias | yes | no |
-| Choice alias | yes | no |
-| Schema | no | yes |
+Without directives, output mode is data. A bracketed list MUST contain exactly
+one `output` directive. Unknown and duplicate directives are errors. In schema
+mode, fields use `schema_output_field`: right sides are types, `?` is allowed,
+and shorthand and `null` are forbidden. In data mode, fields use
+`data_output_field`: right sides are expressions or direct `null`, and `?` is
+forbidden. `schema`, `schema_file`, `parse`, and `parse_file` are invalid in
+schema mode.
 
-Structured documentation fields are comma-separated; unknown, duplicate, or
-inapplicable targets are errors.
+A shorthand runtime record or data-output field `{ name }` is exactly
+`{ name: name }`. It resolves one immutable value named `name` in the ordinary
+local/imported value namespace. It does not search nested records, `$self`, or
+parsed input. Parsed input therefore requires `$name`; `$self` requires an
+explicit path. An unknown shorthand identifier is an error. Schema output never
+permits shorthand.
 
-## Diagnostics and security
+Positive: `string name = "Mace"; ... { name }` and an imported value shorthand.
+Negative: `{ userName }` when only `$userName` or `$self.userName` exists.
 
-Processing is all-or-nothing. Every lexical, syntactic, static, resolution, or
-evaluation error terminates processing without a partial result. A diagnostic
-MUST identify the failing source construct where source location information is
-available. The message fragments below are normative; implementations MAY add
-context such as a declaration name, field name, expected type, actual type, or
-source position.
+`null` is not an expression or runtime value. It is legal only as the direct
+value of a data-output field:
 
-Syntax and file-structure diagnostics include:
+```mace
+{ obsolete: null, }
+```
 
-- mismatched script delimiters: `script block delimiters must match`;
-- an unterminated or empty script block;
-- an import after another script declaration: `import declarations must appear
-  at top of script block`;
-- a malformed import, declaration, directive list, schema, output field, or
-  unexpected token;
-- a missing field separator: `expected ',' after field` or `expected ',' or
-  '}' after field`;
-- parentheses that do not alter arithmetic precedence: `parentheses may only
-  alter arithmetic precedence`;
-- a missing output block or multiple output blocks.
+The field expression is not evaluated and no null value is created. The field is
+omitted before final output-schema validation. Omission succeeds for an optional
+field and fails when the selected schema requires that field.
 
-Directive and import diagnostics include:
+```mace
+schema Result: { obsolete?: string, };
+[output = 'data', schema = Result] { obsolete: null, } // valid
+```
 
-- a bracketed directive list without exactly one `output` entry: `directive
-  list must include an output directive`;
-- a duplicate or unknown directive;
-- any `schema`, `schema_file`, `parse`, or `parse_file` directive used with
-  `output = 'schema'`;
-- an unknown selected schema, unusable schema file, or incompatible combination
-  of parse directives;
-- a path that does not end in `.mace`, cannot be read or parsed, or escapes the
-  canonical project root;
-- a circular import, duplicate imported name, unexposed imported name, wildcard
-  import, or local declaration that shadows an imported name;
-- required parse input that was not supplied or does not satisfy the selected
-  parse schema.
+Invalid uses include `int value = null;`, `{ values: [null], }`,
+`{ nested: { value: null }, }`, `{ result: enabled ? 1 : null, }`,
+`{ same: null == null, }`, interpolation, and either side of `??`.
 
-Declaration, type, schema, and evaluation diagnostics include:
+## 7. Imports, file directives, and paths
 
-- duplicate declarations, schema fields, output fields, choice members, or
-  equivalent variant members;
-- an unknown type reference, missing initializer, unknown value identifier, or
-  invalid `$self` reference;
-- an initializer or output value that is not assignable to its declared or
-  selected schema type;
-- a closed schema with a missing required field, unknown field, invalid optional
-  marker, or incompatible field value;
-- a mixed array, an untyped empty collection, or an empty collection in a data
-  output without an output schema;
-- an invalid fusion member, a fusion mixing record and choice domains, or a
-  conflicting record field in a fusion;
-- a cyclic type or choice alias;
-- a nested conditional expression;
-- an operator with invalid operand types, integer overflow, division by zero,
-  invalid shift or exponent, or a non-finite floating-point result;
-- interpolation of a non-scalar or null value;
+`from 'file.mace' import Name;` imports one exposed symbol under its name.
+`import Name:LocalName;` imports it under `LocalName`. Ordinary imports can see
+only symbols intentionally exposed by the referenced output: data-output fields
+from a data file and schema-output fields/types from a schema file. Script
+variables, aliases, schemas, and documentation are private unless represented by
+an exposed output field. Duplicate local names, duplicate imports, missing
+exposed names, and local declarations shadowing imports are errors.
 
-Match diagnostics include each of the following distinct static errors:
+`from 'file.mace' bind Name;` processes a referenced data-output file completely
+and binds its output record as one immutable local value `Name`. Binding a
+schema-output file is invalid. The referenced file must process successfully;
+otherwise `bind` fails without creating a value.
 
-- matching a value that is not a `variant[...]` or `choice[...]`;
-- a missing pattern: `match expression must be exhaustive`;
-- a duplicate or overlapping pattern: `duplicate match pattern`;
-- a pattern that is not a member of the matched domain;
-- a literal pattern for a variant match: `variant match arms require a type
-  pattern`;
-- a type pattern for a choice match: `choice match arms require a literal
-  pattern`.
+```mace
+from 'service.mace' import port;
+from 'service.mace' import host:service-host;
+from 'service.mace' bind service;
+```
 
-Documentation diagnostics include duplicate documentation keys, unknown or
-inapplicable targets, documentation declared before its target, a `fields`
-entry outside `schema_doc`, an unknown documented schema field, conflicting
-inline and structured documentation, and duplicate or non-string output `doc`
-directives. A data-output `doc` directive may evaluate string expressions and
-variables.
+`schema_file = 'file.mace'` requires a schema-output file. Its output body is the
+active output shape when `schema` is absent. When `schema = Name` is also present,
+`Name` is resolved only among named schemas loaded from that same file; unrelated
+local declarations are not candidates. `parse_file` behaves in parallel for
+runtime input: without `parse`, its schema-output body is the input shape; with
+`parse = Name`, the name resolves only in that file. File declarations needed to
+resolve the selected exported schema are available internally but do not enter
+the caller's namespace. Name collisions therefore cannot be resolved by leaking
+private declarations. Wrong output mode, absent selection, duplicate selection,
+or an incompatible directive combination is an error.
 
-Optional-access diagnostics include plain member access on an optional field,
-access beyond the declared record depth, and use of a possibly absent
-optional-chain result without a
-coalescing fallback. The last case MUST report `possibly absent expressions
-must be resolved with '??' before use`.
+A `schema` or `parse` without its corresponding file resolves in the current
+file's local named schemas. `schema_file` and `parse_file` relationships,
+imports, and binds all participate in one dependency graph; any cycle is an
+error.
 
-The files in `fixtures/diagnostics/` are the conformance examples for these
-errors. `internal/processor/processor_diagnostics_test.go` maps each fixture to
-its required diagnostic fragment and MUST be updated whenever a normative error
-is added or changed.
+Every path MUST end in `.mace` and resolves relative to its containing file.
+Before access, processors normalize separators and `.`/`..`, resolve symlinks,
+canonicalize target and project root, and reject targets outside the canonical
+root. Raw string-prefix containment is insufficient.
 
-Mace treats imports, file-loaded schemas, runtime input, documentation, strings,
-and emitted values as data, never executable code. Processors must reject
-circular imports and path escapes, validate runtime input before binding parsed
-references, and avoid leaking partial output after any failure.
+Positive cases include named/renamed imports, binding a data file, and each file
+directive with or without its selector. Negative cases include binding a schema
+file, collisions, missing selections, wrong modes, cycles, `..` escapes, and
+symlink escapes.
 
-## Interoperability
+## 8. Expressions and operators
 
-Mace emits structured data or schema metadata in a host-defined representation.
-JSON, YAML, and TOML conversion is lossy with respect to comments, formatting,
-quoted&#x2f;non-identifier keys, duplicate keys, null as a normal runtime value, and
-non-record data roots. No conversion grants executable behavior.
+Operands evaluate left-to-right except where laziness is stated. Checked
+operations MUST report an operator/type, overflow, division, shift, exponent, or
+non-finite-result diagnostic as applicable. Decimal (`int`, `float`) and
+hexadecimal (`hex_int`, `hex_float`) families MUST NOT mix. Within one family,
+integer/float arithmetic promotes the integer operand to that family's float.
+No other implicit numeric conversion occurs.
 
-## Null Output
+| Operators | Operands | Result | Precedence | Associativity / evaluation |
+| --- | --- | --- | ---: | --- |
+| `.`, `?.` | record/schema target and member | member type; `?.` produces possible absence | 15 | left; target first |
+| `!` | `boolean` | `boolean` | 14 | right |
+| `~` | `int` only | `int` | 14 | right |
+| unary `+`, `-` | any numeric scalar | same type | 14 | right; checked for integer minimum negation |
+| `**` | same-family numeric scalars | promoted family type | 13 | right; see below |
+| `*`, `/`, `%` | same-family numeric scalars | promoted type, except `int/int → int`, `hex_int/hex_int → hex_float` for `/` | 12 | left |
+| `+`, `-` | same-family numeric scalars; `string + string` | promoted numeric type or `string` | 11 | left |
+| `<<`, `>>`, `>>>` | left `int` or `hex_int`; right `int` | left type | 10 | left |
+| `<`, `<=`, `>`, `>=` | same-family numeric scalars or `string/string` | `boolean` | 9 | left |
+| `==`, `!=` | same static type | `boolean` | 8 | left; deep arrays/records |
+| `&` | `int/int` or `hex_int/hex_int` | operand type | 7 | left |
+| `^` | `int/int` or `hex_int/hex_int` | operand type | 6 | left |
+| `|` | `int/int` or `hex_int/hex_int` | operand type | 5 | left |
+| `&&` | `boolean/boolean` | `boolean` | 4 | left, lazy right |
+| `||` | `boolean/boolean` | `boolean` | 3 | left, lazy right |
+| `??` | possibly absent left; compatible present right | unified present type | 2 | right; lazy right |
+| `?:` | boolean condition; compatible branches | branch union described below | 1 | right syntactically; selected branch only |
 
-`null` is valid only in data output. It omits the corresponding output field;
-script variables, arrays, records, comparisons, and interpolation cannot use
-`null`.
+Booleans have no bitwise operators. String concatenation and Unicode code-point
+lexicographic ordering are supported only for two strings. Equality across
+distinct types is invalid. Array equality is ordered element equality; record
+equality requires equal key sets and recursively equal values. Choice values
+compare according to their underlying scalar only when both operands have the
+same declared choice type.
 
-## Optional member access
+All `int` and `hex_int` arithmetic, unary negation, exponentiation, and left shift
+are checked against signed 64-bit range and MUST NOT wrap. Integer division
+truncates toward zero. Integer remainder satisfies `a == (a / b) * b + a % b`
+and has the dividend's sign. Division or remainder by zero is an error.
 
-`target?.member` is optional member access. Plain `.` is invalid when `member`
-is an optional schema field. Optional record map lookups
-also use `?.`; every optional step in a nested path requires `?.`. Optional
-member access produces an absent evaluation result when its member is absent.
-The result must be resolved with `??` before it is stored, emitted, or otherwise
-used as a value.
+Exponentiation accepts an integer-valued exponent. Integer bases require a
+non-negative `int` exponent. Float bases accept integer-valued positive or
+negative exponents. Zero to a negative exponent is division by zero. A negative
+base with a non-integer exponent is invalid. Any non-finite result is an error.
 
-Nested record access follows the declared record value type. For example,
-`packages.codefixer.cn_efs` requires `packages` to be declared as
-`record<record<string>>`; `record<string>` only supports one member lookup.
+Shift counts MUST be `int` in `0..63`. `<<` is checked. `>>` is arithmetic signed
+right shift. `>>>` shifts the 64-bit representation right with zero fill and
+reinterprets the bits as the left operand type. Invalid counts are errors.
 
-For `variant` record members, an optional chain can proceed only while every
-variant member at that position is a record. The permitted depth is therefore
-the shallowest variant member's record depth.
+`&&` skips its right operand when left is false; `||` skips it when left is true.
+`?:` evaluates the condition and exactly one branch. Nested conditional
+expressions are forbidden. Equal branch types retain that type; distinct types
+form a flattened, deduplicated `variant[...]`, and the receiving declaration or
+schema MUST accept every member.
+
+`??` handles absence from optional access, never `null`. It evaluates left first
+and right only if left is absent. Its static result removes absence from the left
+and unifies that present type with the right type using the conditional branch
+rule. Chaining is right-associative.
+
+Examples: `false && (1 / 0 == 0)` and `true || (1 / 0 == 0)` do not divide;
+`optional?.name ?? "anonymous"` evaluates the fallback only when absent.
+Negative examples include `1 + 0x1`, `true & false`, `1 << 64`, `1 / 0`, and
+`"1" == 1`.
+
+Grouping may alter only arithmetic precedence or associativity, for example
+`(1 + 2) * 3`, `1 - (2 - 3)`, or `(2 ** 3) ** 4`. Redundant groups and groups
+around shifts, comparisons, logical operations, coalescing, conditionals, or a
+value solely to enable member access are invalid.
+
+## 9. Numeric representation
+
+`int` and `hex_int` are signed 64-bit. `float` and `hex_float` use IEEE-754
+binary64. Hex fixed-point literals have no exponent notation. Decimal and
+hexadecimal types remain distinct.
+
+Hex-float conversion uses IEEE-754 round-to-nearest, ties-to-even. A literal is
+rejected if rounding would produce infinity; values are never clamped. The same
+rule applies symmetrically to negative values. Underflow rounds to a subnormal or
+signed zero according to ties-to-even. Negative zero is preserved. NaN and
+infinity cannot be written and any operation producing a non-finite value fails.
+
+Canonical `hex_float` output uses uppercase hexadecimal digits, fixed-point
+notation, an exact binary64 expansion, and a fractional component. Fractional
+trailing zeroes are removed but `.0` remains. Parsing canonical output MUST
+recover the identical bit pattern, including negative zero.
+
+Positive: `0xA.F` is `10.9375`; the smallest representable subnormal and finite
+boundary values round according to ties-to-even. Negative: a magnitude whose
+nearest binary64 result is infinity.
+
+## 10. Documentation
+
+Documentation is metadata and MUST NOT affect evaluation. `gen_doc` applies to
+primitive/array variables, aliases, and choices. `schema_doc` applies to schemas
+and record-valued variables. Unknown, duplicate, premature, or inapplicable
+targets and keys are errors. `fields` exists only in `schema_doc` and each named
+field MUST exist. Structured values are non-interpolating strings. Inline and
+structured documentation MUST NOT conflict.
+
+## 11. Diagnostics and security
+
+Every lexical, syntax, static, resolution, or evaluation error terminates
+processing. A diagnostic MUST identify the failing construct when a source range
+exists. Exact fragments below are normative where quoted; implementations MAY
+add context.
+
+Required distinct categories include:
+
+* mismatched, unterminated, or empty script blocks; misplaced imports; missing
+  terminators; malformed declarations/directives/fields; missing or extra output;
+* missing field separators (`expected ',' after field` or `expected ',' or '}'
+  after field`) and invalid grouping (`parentheses may only alter arithmetic precedence`);
+* missing/duplicate/unknown directives and data-only directives in schema mode;
+* unknown, duplicate, private, or shadowed imports; `unresolved bind`; `bind target
+  must use data output`; file-selection/mode failures; cycles and path escapes;
+* duplicate declarations, fields, choice members, or variant members; unknown
+  types/values; cycles; invalid fusion; schema mismatch; untyped empty collections;
+* `null is only permitted as a direct data-output field value` for every illegal
+  runtime use, including nested, conditional, collection, interpolation,
+  comparison, and coalescing positions;
+* `choice literals must not interpolate` and `structured documentation must not interpolate`;
+* match input outside variant/choice; non-exhaustive effective domains (`match
+  expression must be exhaustive`); duplicate equivalent patterns (`duplicate
+  match pattern`); `overlapping match patterns at equal specificity`; `literal
+  pattern is not part of a choice member`; unrelated patterns; and `missing
+  residual choice domain`;
+* invalid operand combinations, integer overflow, division by zero, invalid
+  exponent or shift, and non-finite floating-point results;
+* optional plain access, access beyond declared depth, and unresolved absence
+  (`possibly absent expressions must be resolved with '??' before use`);
+* keyword in an identifier position, malformed/unterminated inline descriptions,
+  and duplicate or conflicting documentation.
+
+The conformance fixtures are in `fixtures/diagnostics/`, with their message
+fragments in `internal/processor/processor_diagnostics_test.go`. Match fixtures
+that require revision include `match-variant-literal-pattern.mace` and its
+`variant match arms require a type pattern` expectation. New fixtures are needed
+for equal-specificity overlap, missing residual choice coverage, unrelated
+variant literals, interpolated choice/documentation strings, bind failures,
+file-selection failures, keyword misuse, malformed inline descriptions, and
+operator combinations.
+
+Processors MUST treat source files, imports, runtime input, documentation,
+strings, and emitted values as data. They MUST validate runtime input before
+binding parsed references, enforce canonical-root containment, reject cycles,
+and never leak partial output.
+
+## 12. Interoperability
+
+Mace emits host-represented structured data or schema metadata. JSON, YAML, and
+TOML conversion may lose comments, formatting, quoted/non-identifier keys,
+duplicate keys, hexadecimal type identity, and omission metadata. Conversion
+MUST NOT grant executable behavior.
