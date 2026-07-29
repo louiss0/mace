@@ -56,6 +56,9 @@ func importActionAnalysis(text string, documentPath string) ([]protocol.Diagnost
 			}
 		}
 		updated := text + "\n" + specification.updated
+		if strings.HasPrefix(specification.updated, "from ") {
+			updated = insertImportIntoScript(text, specification.updated)
+		}
 		if specification.replacement {
 			updated = specification.updated
 		}
@@ -70,4 +73,13 @@ func importActionAnalysis(text string, documentPath string) ([]protocol.Diagnost
 		actions = append(actions, action)
 	}
 	return diagnostics, actions
+}
+
+func insertImportIntoScript(text string, importDeclaration string) string {
+	const delimiter = "|===|"
+	if opening := strings.Index(text, delimiter); opening >= 0 {
+		insertion := opening + len(delimiter)
+		return text[:insertion] + "\n" + importDeclaration + text[insertion:]
+	}
+	return delimiter + "\n" + importDeclaration + "\n" + delimiter + "\n" + text
 }

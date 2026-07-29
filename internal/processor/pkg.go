@@ -1552,8 +1552,10 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 			if conditionalRequiresCollectionContext(decl.Value, actualType) && len(expectedType.members) == 0 {
 				return validationErrorf("ambiguous conditional with an empty collection requires a variant variable type")
 			}
-			if err := ensureAssignable(expectedType, actualType); err != nil {
-				return err
+			if !expressionContainsEmptyCollection(decl.Value) {
+				if err := ensureAssignable(expectedType, actualType); err != nil {
+					return err
+				}
 			}
 			if err := validateExpressionAgainstType(decl.Value, expectedType, variables, symbols, types, schemas, enums); err != nil {
 				return err

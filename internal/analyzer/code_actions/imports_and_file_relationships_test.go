@@ -1,7 +1,9 @@
 package code_actions_test
 
 import (
+	"github.com/louiss0/mace/internal/analyzer"
 	. "github.com/onsi/ginkgo/v2"
+	"github.com/stretchr/testify/assert"
 )
 
 var _ = Describe("Imports and relationships between files code actions", func() {
@@ -66,6 +68,39 @@ string result = Shared;
 			diagnosticCode: "mace.import.path-not-mace",
 			title:          "Append `.mace` to import path",
 			result:         expected,
+		})
+	})
+
+	It("does not diagnose a resolved local identifier as an import error", func() {
+		fixture := newCodeActionFixture(`|===|
+int Symbol = 1;
+|===|
+[output = 'data'] { value: Symbol, }`, nil)
+
+		_, found := findDiagnosticByCode(analyzer.Diagnostics(fixture.snapshot), "mace.type.unknown-identifier")
+		assert.New(GinkgoT()).False(found)
+	})
+
+	It("does not diagnose an exposed imported identifier as unavailable", func() {
+		fixture := newCodeActionFixture(`|===|
+from './shared.mace' import Symbol;
+|===|
+[output = 'data'] { value: Symbol, }`, map[string]string{
+			"shared.mace": "[output = 'data'] { Symbol: 1, }",
+		})
+
+		_, found := findDiagnosticByCode(analyzer.Diagnostics(fixture.snapshot), "mace.import.name-not-exposed")
+		assert.New(GinkgoT()).False(found)
+	})
+
+	It("inserts a generated import before the output block", func() {
+		fixture := newCodeActionFixture("[output = 'data'] { value: Symbol, }", map[string]string{
+			"shared.mace": "[output = 'data'] { Symbol: 1, }",
+		})
+		fixture.requireQuickFix(expectedQuickFix{
+			diagnosticCode: "mace.type.unknown-identifier",
+			title:          "Add import for ‘Symbol’",
+			result:         "|===|\nfrom './shared.mace' import Symbol;\n|===|\n[output = 'data'] { value: Symbol, }",
 		})
 	})
 

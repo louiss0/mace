@@ -80,6 +80,14 @@ array<array<int> > result = [[base, base + 1], [base + 2, base + 3]];
 				{kind: ValueInt, int64: 6},
 			}},
 		}}),
+		Entry("contextually typed empty int array", wrapScriptWithOutputFields(`|===|
+array<int> result = [];
+|===|`, "result: result;"), expectedValue{kind: ValueArray, array: []expectedValue{}}),
+		Entry("contextually typed nested empty int array", wrapScriptWithOutputFields(`|===|
+array<array<int>> result = [[]];
+|===|`, "result: result;"), expectedValue{kind: ValueArray, array: []expectedValue{
+			{kind: ValueArray, array: []expectedValue{}},
+		}}),
 		Entry("nested arrays with empty members", wrapScriptWithOutputFields(`|===|
 array<array<string>> result = [["filled"], []];
 |===|`, "result: result;"), expectedValue{kind: ValueArray, array: []expectedValue{
