@@ -181,8 +181,38 @@ func importJSON(input string, sourcePath string) (string, error) {
 	if isSchema {
 		return importJSONSchemaDocument(schemaDocument)
 	}
+	if err := validateImportedJSONFields(value); err != nil {
+		return "", err
+	}
 
 	return importDocument(value)
+}
+
+func validateImportedJSONFields(value any) error {
+	switch typed := value.(type) {
+	case map[string]any:
+		normalizedNames := map[string]struct{}{}
+		for name, item := range typed {
+			normalized, err := normalizedImportFieldName(name)
+			if err != nil {
+				return err
+			}
+			if _, exists := normalizedNames[normalized]; exists {
+				return fmt.Errorf("import mace: fields collide after normalization as %q", normalized)
+			}
+			normalizedNames[normalized] = struct{}{}
+			if err := validateImportedJSONFields(item); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for _, item := range typed {
+			if err := validateImportedJSONFields(item); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func parseImportedJSON(input string) (any, error) {
