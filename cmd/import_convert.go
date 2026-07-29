@@ -15,6 +15,7 @@ import (
 	yamllexer "github.com/goccy/go-yaml/lexer"
 	yamlparser "github.com/goccy/go-yaml/parser"
 
+	"github.com/louiss0/mace/codec"
 	"github.com/louiss0/mace/internal/parser"
 )
 
@@ -64,6 +65,10 @@ type yamlImportState struct {
 
 type tomlImportConfig struct {
 	fieldOrder map[string][]string
+}
+
+func importJSONSource(input string) (string, error) {
+	return codec.ImportJSON(input)
 }
 
 func importYAMLSource(path string, input string) (string, error) {

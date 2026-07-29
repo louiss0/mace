@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -35,9 +36,35 @@ func canonicalJSON(value any) string {
 	return string(payload)
 }
 
-type importFixture struct {
-	name string
-	mace string
+func nestedArrayValue(depth int) any {
+	value := any("leaf")
+	for range depth {
+		value = []any{value}
+	}
+	return value
+}
+
+func nestedRecordValue(depth int) any {
+	value := any("leaf")
+	for level := range depth {
+		value = map[string]any{fmt.Sprintf("level_%d", level+1): value}
+	}
+	return value
+}
+
+func nestedDepthEntries() []any {
+	return []any{
+		Entry("depth 1", 1),
+		Entry("depth 2", 2),
+		Entry("depth 3", 3),
+		Entry("depth 4", 4),
+		Entry("depth 5", 5),
+		Entry("depth 6", 6),
+		Entry("depth 7", 7),
+		Entry("depth 8", 8),
+		Entry("depth 9", 9),
+		Entry("depth 10", 10),
+	}
 }
 
 type quotedStringer string
@@ -46,235 +73,29 @@ func (value quotedStringer) String() string {
 	return string(value)
 }
 
-func dataFixtures() []importFixture {
-	return []importFixture{
-		{
-			name: "app_release",
-			mace: `[output = 'data']
-{
-  app: "MaceBoard",
-  version: "1.8.3",
-  build: 184,
-  stability_score: 98.6,
-  production: true,
-  maintainers: ["Ada", "Linus", "Grace"],
-  features: [
-    {
-      name: "schema-output",
-      enabled: true,
-      rollout_percent: 100.0
-    },
-    {
-      name: "data-output",
-      enabled: true,
-      rollout_percent: 87.5
-    }
-  ],
-  metadata: {
-    repository: "github.com/example/maceboard",
-    license: "MIT",
-    tags: ["config", "language", "tooling"]
-  }
-}`,
-		},
-		{
-			name: "bookstore_order",
-			mace: `[output = 'data']
-{
-  order_id: "ord-2026-0508-001",
-  paid: true,
-  item_count: 3,
-  subtotal: 58.47,
-  customer: {
-    name: "Mira Chen",
-    loyalty_points: 1280,
-    newsletter: false
-  },
-  items: [
-    {
-      sku: "bk-parser-001",
-      title: "Parsing By Candlelight",
-      quantity: 1,
-      price: 29.99
-    },
-    {
-      sku: "bk-config-007",
-      title: "Configuration Garden",
-      quantity: 2,
-      price: 14.24
-    }
-  ],
-  shipping: {
-    method: "ground",
-    insured: true,
-    address: {
-      city: "Coram",
-      state: "NY",
-      postal_code: "11727"
-    }
-  }
-}`,
-		},
-		{
-			name: "deep_observatory_network",
-			mace: `[output = 'data']
-{
-  network: {
-    id: "obs-net-east",
-    active: true,
-    region_count: 3,
-    average_uptime: 99.982,
-    regions: [
-      {
-        name: "north-atlantic",
-        priority: 1,
-        stations: [
-          {
-            code: "NA-001",
-            online: true,
-            calibration: {
-              version: "2026.05",
-              drift: 0.002,
-              instruments: [
-                {
-                  name: "spectrometer",
-                  channels: 128,
-                  thresholds: {
-                    warning: 0.75,
-                    critical: 0.92,
-                    notify: true
-                  }
-                }
-              ]
-            }
-          }
-        ]
-      }
-    ],
-    governance: {
-      owner: {
-        team: "Sky Ops",
-        contacts: [
-          {
-            name: "Rhea",
-            role: "operator",
-            escalation: {
-              primary: true,
-              level: 2,
-              windows: ["day", "night"]
-            }
-          }
-        ]
-      }
-    }
-  }
-}`,
-		},
-		{
-			name: "game_character",
-			mace: `[output = 'data']
-{
-  name: "Nyra",
-  class: "Spellblade",
-  level: 42,
-  health: 935.5,
-  active: true,
-  inventory: [
-    {
-      id: "blade-ember",
-      quantity: 1,
-      equipped: true
-    },
-    {
-      id: "mana-vial",
-      quantity: 6,
-      equipped: false
-    }
-  ],
-  stats: {
-    strength: 18,
-    agility: 24,
-    intelligence: 31,
-    critical_chance: 0.275
-  },
-  quests: [
-    {
-      title: "Glass Moon",
-      completed: false,
-      steps: ["Find shard", "Restore mirror", "Defeat warden"]
-    }
-  ]
-}`,
-		},
-		{
-			name: "smart_home",
-			mace: `[output = 'data']
-{
-  home: "Cedar Loft",
-  occupied: true,
-  floor_count: 2,
-  indoor_temperature: 70.8,
-  rooms: [
-    {
-      name: "Kitchen",
-      lights_on: true,
-      humidity: 44.5,
-      sensors: ["motion", "smoke", "temperature"]
-    },
-    {
-      name: "Studio",
-      lights_on: false,
-      humidity: 39.2,
-      sensors: ["motion", "temperature"]
-    }
-  ],
-  automation: {
-    away_mode: false,
-    thermostat_target: 69,
-    night_routine: {
-      enabled: true,
-      start_hour: 22,
-      actions: ["lock doors", "dim lights", "lower thermostat"]
-    }
-  }
-}`,
-		},
-	}
-}
-
-var _ = Describe("import conversion", func() {
-	It("handles YAML scalar names and reports unsupported YAML name nodes", func() {
-		fieldName := yamlFieldName
-		fieldNameFromNode := yamlFieldNameFromNode
-		anchorName := yamlAnchorName
-		aliasName := yamlAliasName
-
-		name, err := fieldName(&yamlast.StringNode{Value: "service"})
+var _ = Describe("JSON", func() {
+	DescribeTable("converts nested arrays", append([]any{func(depth int) {
+		expected := map[string]any{"value": nestedArrayValue(depth)}
+		input, err := json.Marshal(expected)
 		tAssert.NoError(err)
-		tAssert.Equal("service", name)
 
-		name, err = fieldName(&yamlast.MappingKeyNode{Value: &yamlast.StringNode{Value: "mapped"}})
+		source, err := importJSONSource(string(input))
 		tAssert.NoError(err)
-		tAssert.Equal("mapped", name)
+		tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(source)))
+	}}, nestedDepthEntries()...)...)
 
-		_, err = fieldNameFromNode(&yamlast.IntegerNode{Value: int64(1)})
-		tAssert.ErrorContains(err, "unsupported map key")
-
-		name, err = anchorName(&yamlast.StringNode{Value: "defaults"})
+	DescribeTable("converts nested records", append([]any{func(depth int) {
+		expected := map[string]any{"value": nestedRecordValue(depth)}
+		input, err := json.Marshal(expected)
 		tAssert.NoError(err)
-		tAssert.Equal("defaults", name)
 
-		_, err = anchorName(&yamlast.IntegerNode{Value: int64(1)})
-		tAssert.ErrorContains(err, "unsupported anchor name")
-
-		name, err = aliasName(&yamlast.StringNode{Value: "defaults"})
+		source, err := importJSONSource(string(input))
 		tAssert.NoError(err)
-		tAssert.Equal("defaults", name)
+		tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(source)))
+	}}, nestedDepthEntries()...)...)
+})
 
-		_, err = aliasName(&yamlast.IntegerNode{Value: int64(1)})
-		tAssert.ErrorContains(err, "unsupported alias")
-	})
-
+var _ = Describe("TOML", func() {
 	It("converts schema references to Mace paths", func() {
 		referenceToMace := schemaReferenceToMace
 		pathToMace := schemaPathToMace
@@ -331,40 +152,148 @@ var _ = Describe("import conversion", func() {
 		tAssert.ErrorContains(err, "unsupported value")
 	})
 
-	It("renders omitted import expressions as empty text", func() {
-		render := omittedExpression{}.render
+	It("imports an inline TOML document", func() {
+		input := "name = \"Ada\"\nenabled = true\ntags = [\"config\", \"tooling\"]\n[profile]\nlevel = 2\n"
 
-		tAssert.Equal("", render(0))
+		source, err := importTOMLSource("config.toml", input)
+		tAssert.NoError(err)
+		tAssert.Equal(canonicalJSON(map[string]any{
+			"name": "Ada", "enabled": true, "profile": map[string]any{"level": int64(2)}, "tags": []any{"config", "tooling"},
+		}), canonicalJSON(importedOutput(source)))
 	})
 
-	It("imports YAML data fixtures into equivalent Mace output", func() {
-		for _, fixture := range dataFixtures() {
-			expected := expectedOutput(fixture.mace)
+	It("imports TOML schema directives, tables, inline tables, arrays of tables, dotted keys, and multiline strings", func() {
+		input := `#:schema ./schemas/vehicle_telemetry.schema.json
+name = "orbital-array"
+enabled = true
+score = 42.5
+tags = ["edge", "night"]
+description = """
+Line one
+Line two
+"""
 
-			input, err := goccyyaml.Marshal(expected)
-			tAssert.NoError(err)
+metrics.cpu = 0.25
+metrics.mem = 0.75
 
-			actualSource, err := importYAMLSource(fixture.name+".yaml", string(input))
-			tAssert.NoError(err, fixture.name)
-			tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(actualSource)), fixture.name)
-		}
+[owner]
+name = "Ada"
+active = true
+
+[[sensors]]
+id = "sensor-a"
+kind = "temp"
+
+[[sensors]]
+id = "sensor-b"
+kind = "pressure"
+
+[location]
+point = { lat = 51.5, lon = -0.1 }
+updated_at = 2026-05-08T09:00:00Z
+`
+
+		source, err := importTOMLSource(filepath.Join("workspace", "config.toml"), input)
+		tAssert.NoError(err)
+		tAssert.Contains(source, `[output = 'data', schema_file = './schemas/vehicle_telemetry.schema.mace']`)
+		tAssert.Contains(source, "description: \"\"\"")
+
+		output := importedOutput(strings.Replace(source, `, schema_file = './schemas/vehicle_telemetry.schema.mace'`, "", 1))
+		tAssert.Equal("orbital-array", output["name"])
+		tAssert.Equal(true, output["enabled"])
+		tAssert.Equal(42.5, output["score"])
+		tAssert.Equal([]any{"edge", "night"}, output["tags"])
+		tAssert.Equal("Line one\nLine two\n", output["description"])
+		tAssert.Equal(map[string]any{"name": "Ada", "active": true}, output["owner"])
+		tAssert.Equal(map[string]any{"cpu": 0.25, "mem": 0.75}, output["metrics"])
+		sensors := output["sensors"].([]any)
+		tAssert.Len(sensors, 2)
+		tAssert.Equal(map[string]any{"id": "sensor-a", "kind": "temp"}, sensors[0])
+		tAssert.Equal(map[string]any{"id": "sensor-b", "kind": "pressure"}, sensors[1])
+		location := output["location"].(map[string]any)
+		tAssert.Equal(map[string]any{"lat": 51.5, "lon": -0.1}, location["point"])
+		tAssert.Equal(time.Date(2026, 5, 8, 9, 0, 0, 0, time.UTC).Format(time.RFC3339Nano), location["updated_at"])
 	})
 
-	It("imports TOML data fixtures into equivalent Mace output", func() {
-		for _, fixture := range dataFixtures() {
-			expected := expectedOutput(fixture.mace)
+	It("rebases schema directives when imports are written to an output directory", func() {
+		input := `#:schema ./schemas/vehicle_telemetry.schema.json
+name = "orbital-array"
+`
 
-			var buffer bytes.Buffer
-			err := burnttoml.NewEncoder(&buffer).Encode(expected)
-			tAssert.NoError(err)
-
-			actualSource, err := importTOMLSource(fixture.name+".toml", buffer.String())
-			tAssert.NoError(err, fixture.name)
-			tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(actualSource)), fixture.name)
-		}
+		source, err := importTOMLSourceToPath(
+			filepath.Join("workspace", "config.toml"),
+			filepath.Join("out", "config.mace"),
+			input,
+		)
+		tAssert.NoError(err)
+		tAssert.Contains(source, `[output = 'data', schema_file = '../workspace/schemas/vehicle_telemetry.schema.mace']`)
 	})
 
-	It("imports the basic YAML alias fixture", func() {
+	DescribeTable("converts nested arrays", append([]any{func(depth int) {
+		expected := map[string]any{"value": nestedArrayValue(depth)}
+		var input bytes.Buffer
+		tAssert.NoError(burnttoml.NewEncoder(&input).Encode(expected))
+
+		source, err := importTOMLSource("config.toml", input.String())
+		tAssert.NoError(err)
+		tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(source)))
+	}}, nestedDepthEntries()...)...)
+
+	DescribeTable("converts nested records", append([]any{func(depth int) {
+		expected := map[string]any{"value": nestedRecordValue(depth)}
+		var input bytes.Buffer
+		tAssert.NoError(burnttoml.NewEncoder(&input).Encode(expected))
+
+		source, err := importTOMLSource("config.toml", input.String())
+		tAssert.NoError(err)
+		tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(source)))
+	}}, nestedDepthEntries()...)...)
+})
+
+var _ = Describe("YAML", func() {
+	It("handles YAML scalar names and reports unsupported YAML name nodes", func() {
+		fieldName := yamlFieldName
+		fieldNameFromNode := yamlFieldNameFromNode
+		anchorName := yamlAnchorName
+		aliasName := yamlAliasName
+
+		name, err := fieldName(&yamlast.StringNode{Value: "service"})
+		tAssert.NoError(err)
+		tAssert.Equal("service", name)
+
+		name, err = fieldName(&yamlast.MappingKeyNode{Value: &yamlast.StringNode{Value: "mapped"}})
+		tAssert.NoError(err)
+		tAssert.Equal("mapped", name)
+
+		_, err = fieldNameFromNode(&yamlast.IntegerNode{Value: int64(1)})
+		tAssert.ErrorContains(err, "unsupported map key")
+
+		name, err = anchorName(&yamlast.StringNode{Value: "defaults"})
+		tAssert.NoError(err)
+		tAssert.Equal("defaults", name)
+
+		_, err = anchorName(&yamlast.IntegerNode{Value: int64(1)})
+		tAssert.ErrorContains(err, "unsupported anchor name")
+
+		name, err = aliasName(&yamlast.StringNode{Value: "defaults"})
+		tAssert.NoError(err)
+		tAssert.Equal("defaults", name)
+
+		_, err = aliasName(&yamlast.IntegerNode{Value: int64(1)})
+		tAssert.ErrorContains(err, "unsupported alias")
+	})
+
+	It("imports an inline YAML document", func() {
+		input := "name: Ada\nenabled: true\nprofile:\n  level: 2\ntags: [config, tooling]\n"
+
+		source, err := importYAMLSource("config.yaml", input)
+		tAssert.NoError(err)
+		tAssert.Equal(canonicalJSON(map[string]any{
+			"name": "Ada", "enabled": true, "profile": map[string]any{"level": int64(2)}, "tags": []any{"config", "tooling"},
+		}), canonicalJSON(importedOutput(source)))
+	})
+
+	It("imports the basic YAML alias example", func() {
 		input := `defaults: &defaults
   retry_count: 3
   timeout_seconds: 30
@@ -419,7 +348,7 @@ production:
 		tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(source)))
 	})
 
-	It("imports the YAML merge override fixture", func() {
+	It("imports the YAML merge override example", func() {
 		input := `base_service: &base_service
   image: mace/api
   replicas: 2
@@ -484,7 +413,7 @@ api_service:
 		tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(source)))
 	})
 
-	It("imports the nested YAML anchor fixture", func() {
+	It("imports the nested YAML anchor example", func() {
 		input := `database_defaults: &database_defaults
   host: db.internal
   port: 5432
@@ -571,7 +500,7 @@ services:
 		tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(source)))
 	})
 
-	It("imports the multi-source YAML merge fixture", func() {
+	It("imports the multi-source YAML merge example", func() {
 		input := `runtime_defaults: &runtime_defaults
   restart: always
   memory_mb: 512
@@ -630,7 +559,7 @@ worker:
 		tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(source)))
 	})
 
-	It("imports the deep nested YAML merge fixture", func() {
+	It("imports the deep nested YAML merge example", func() {
 		input := `global_metadata: &global_metadata
   owner: platform-team
   labels: &global_labels
@@ -709,7 +638,7 @@ deployment:
 		tAssert.Equal("eu-west", euPrimary["metadata"].(map[string]any)["labels"].(map[string]any)["region"])
 	})
 
-	It("imports the game inventory YAML documents fixture", func() {
+	It("imports the game inventory YAML documents example", func() {
 		input := `---
 kind: game_inventory
 player:
@@ -755,7 +684,7 @@ can_craft:
 		tAssert.Equal([]any{"healing_potion", "shadow_lantern"}, document2["recipes_unlocked"])
 	})
 
-	It("imports the user catalog YAML documents fixture", func() {
+	It("imports the user catalog YAML documents example", func() {
 		input := `---
 kind: user_catalog
 version: 1
@@ -918,73 +847,28 @@ tags:
 		tAssert.Equal([]any{"alpha", "beta"}, output["tags"])
 	})
 
-	It("imports TOML schema directives, tables, inline tables, arrays of tables, dotted keys, and multiline strings", func() {
-		input := `#:schema ./schemas/vehicle_telemetry.schema.json
-name = "orbital-array"
-enabled = true
-score = 42.5
-tags = ["edge", "night"]
-description = """
-Line one
-Line two
-"""
-
-metrics.cpu = 0.25
-metrics.mem = 0.75
-
-[owner]
-name = "Ada"
-active = true
-
-[[sensors]]
-id = "sensor-a"
-kind = "temp"
-
-[[sensors]]
-id = "sensor-b"
-kind = "pressure"
-
-[location]
-point = { lat = 51.5, lon = -0.1 }
-updated_at = 2026-05-08T09:00:00Z
-`
-
-		source, err := importTOMLSource(filepath.Join("workspace", "config.toml"), input)
+	DescribeTable("converts nested arrays", append([]any{func(depth int) {
+		expected := map[string]any{"value": nestedArrayValue(depth)}
+		input, err := goccyyaml.Marshal(expected)
 		tAssert.NoError(err)
-		tAssert.Contains(source, `[output = 'data', schema_file = './schemas/vehicle_telemetry.schema.mace']`)
-		tAssert.Contains(source, "description: \"\"\"")
 
-		output := importedOutput(strings.Replace(source, `, schema_file = './schemas/vehicle_telemetry.schema.mace'`, "", 1))
-		tAssert.Equal("orbital-array", output["name"])
-		tAssert.Equal(true, output["enabled"])
-		tAssert.Equal(42.5, output["score"])
-		tAssert.Equal([]any{"edge", "night"}, output["tags"])
-		tAssert.Equal("Line one\nLine two\n", output["description"])
-		tAssert.Equal(map[string]any{"name": "Ada", "active": true}, output["owner"])
-		tAssert.Equal(map[string]any{"cpu": 0.25, "mem": 0.75}, output["metrics"])
-		sensors := output["sensors"].([]any)
-		tAssert.Len(sensors, 2)
-		tAssert.Equal(map[string]any{"id": "sensor-a", "kind": "temp"}, sensors[0])
-		tAssert.Equal(map[string]any{"id": "sensor-b", "kind": "pressure"}, sensors[1])
-		location := output["location"].(map[string]any)
-		tAssert.Equal(map[string]any{"lat": 51.5, "lon": -0.1}, location["point"])
-		tAssert.Equal(time.Date(2026, 5, 8, 9, 0, 0, 0, time.UTC).Format(time.RFC3339Nano), location["updated_at"])
-	})
-
-	It("rebases schema directives when imports are written to an output directory", func() {
-		input := `#:schema ./schemas/vehicle_telemetry.schema.json
-name = "orbital-array"
-`
-
-		source, err := importTOMLSourceToPath(
-			filepath.Join("workspace", "config.toml"),
-			filepath.Join("out", "config.mace"),
-			input,
-		)
+		source, err := importYAMLSource("config.yaml", string(input))
 		tAssert.NoError(err)
-		tAssert.Contains(source, `[output = 'data', schema_file = '../workspace/schemas/vehicle_telemetry.schema.mace']`)
-	})
+		tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(source)))
+	}}, nestedDepthEntries()...)...)
 
+	DescribeTable("converts nested records", append([]any{func(depth int) {
+		expected := map[string]any{"value": nestedRecordValue(depth)}
+		input, err := goccyyaml.Marshal(expected)
+		tAssert.NoError(err)
+
+		source, err := importYAMLSource("config.yaml", string(input))
+		tAssert.NoError(err)
+		tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(source)))
+	}}, nestedDepthEntries()...)...)
+})
+
+var _ = Describe("Interop helpers", func() {
 	It("covers import conversion edge cases", func() {
 		tAssert.NoError(validateImportFieldName("valid_name"))
 		tAssert.ErrorContains(validateImportFieldName("invalid-name"), "unsupported field name")
