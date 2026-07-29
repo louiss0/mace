@@ -13,6 +13,7 @@ import (
 	burnttoml "github.com/BurntSushi/toml"
 	goccyyaml "github.com/goccy/go-yaml"
 	yamlast "github.com/goccy/go-yaml/ast"
+	"github.com/louiss0/mace/codec"
 	"github.com/louiss0/mace/internal/parser/ast"
 	"github.com/louiss0/mace/internal/processor"
 	. "github.com/onsi/ginkgo/v2"
@@ -963,6 +964,51 @@ tags:
 		tAssert.NoError(err)
 		tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(source)))
 	}}, nestedRecordShapeEntries()...)...)
+})
+
+var _ = Describe("Compatibility requirements", func() {
+	DescribeTable("reports JSON inputs that must not convert", func(input string) {
+		report := codec.CheckJSON(input)
+		tAssert.True(report.HasIssues())
+	},
+		Entry("invalid JSON", `{"name":`),
+		Entry("duplicate object key", `{"name":"Ada","name":"Linus"}`),
+		Entry("unsupported key character", `{"host-name":"db"}`),
+		Entry("numeric key", `{"1name":"Ada"}`),
+		Entry("empty key", `{"":"Ada"}`),
+		Entry("null root", `null`),
+		Entry("scalar root", `"Ada"`),
+		Entry("array root", `[]`),
+		Entry("JSON comment", "{\n  // unsupported\n  \"name\": \"Ada\"\n}"),
+	)
+
+	DescribeTable("reports YAML inputs that must not convert directly", func(input string) {
+		report := codec.CheckYAML(input)
+		tAssert.True(report.HasIssues())
+	},
+		Entry("invalid YAML", "name: ["),
+		Entry("non-string key", "1: Ada"),
+		Entry("complex key", "? [name]\n: Ada"),
+		Entry("duplicate key", "name: Ada\nname: Linus"),
+		Entry("unsupported key character", "host-name: db"),
+		Entry("numeric key", "1name: Ada"),
+		Entry("empty key", "'': Ada"),
+		Entry("multiple documents", "---\nname: Ada\n---\nname: Linus"),
+		Entry("null root", "null"),
+		Entry("scalar root", "Ada"),
+		Entry("application tag", "name: !custom Ada"),
+	)
+
+	DescribeTable("reports TOML inputs that must not convert directly", func(input string) {
+		report := codec.CheckTOML(input)
+		tAssert.True(report.HasIssues())
+	},
+		Entry("invalid TOML", "name ="),
+		Entry("duplicate key", "name = \"Ada\"\nname = \"Linus\""),
+		Entry("unsupported key character", "host-name = \"db\""),
+		Entry("numeric key", "1name = \"Ada\""),
+		Entry("empty quoted key", "\"\" = \"Ada\""),
+	)
 })
 
 var _ = Describe("Interop helpers", func() {

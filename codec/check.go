@@ -123,7 +123,21 @@ func CheckYAML(input string) CheckReport {
 		})
 	}
 
+	if len(documents) == 1 && yamlDocumentHasScalarRoot(&documents[0]) {
+		report.StructureIncompatibility = append(report.StructureIncompatibility, positionedCheckIssue(&documents[0], CheckIssue{
+			Path:     "$",
+			Reason:   "root value must be a record or sequence",
+			Format:   "yaml",
+			Actual:   "scalar",
+			Expected: "record or sequence",
+		}))
+	}
+
 	return report
+}
+
+func yamlDocumentHasScalarRoot(document *yaml.Node) bool {
+	return document != nil && len(document.Content) == 1 && document.Content[0].Kind == yaml.ScalarNode
 }
 
 func positionedCheckIssue(node *yaml.Node, issue CheckIssue) CheckIssue {
