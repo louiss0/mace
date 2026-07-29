@@ -21,9 +21,13 @@ import (
 )
 
 var (
-	yamlSchemaPattern  = regexp.MustCompile(`(?m)^\s*#\s*yaml-language-server:\s*\$schema\s*=\s*(\S+)\s*$`)
-	tomlSchemaPattern  = regexp.MustCompile(`(?m)^\s*#:schema\s+(\S+)\s*$`)
-	importFieldPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	yamlSchemaPattern    = regexp.MustCompile(`(?m)^\s*#\s*yaml-language-server:\s*\$schema\s*=\s*(\S+)\s*$`)
+	tomlSchemaPattern    = regexp.MustCompile(`(?m)^\s*#:schema\s+(\S+)\s*$`)
+	importFieldPattern   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	reservedImportFields = map[string]struct{}{
+		"alias": {}, "enum": {}, "false": {}, "from": {}, "if": {}, "import": {},
+		"null": {}, "output": {}, "schema": {}, "true": {}, "type": {},
+	}
 )
 
 type importExpression interface {
@@ -54,8 +58,9 @@ type mergeExpression struct {
 type omittedExpression struct{}
 
 type yamlAnchor struct {
-	path  string
-	value importExpression
+	path      string
+	value     importExpression
+	resolving bool
 }
 
 type yamlImportState struct {
@@ -117,55 +122,35 @@ func importTOMLSourceToPath(sourcePath string, outputPath string, input string) 
 
 func yamlRootExpression(file *yamlast.File) (recordExpression, error) {
 	if len(file.Docs) == 0 {
-		return recordExpression{}, fmt.Errorf("import yaml: expected at least one document")
+		return recordExpression{}, fmt.Errorf("import yaml: expected one document")
+	}
+	if len(file.Docs) > 1 {
+		return recordExpression{}, fmt.Errorf("import yaml: multiple documents are not supported")
 	}
 
-	if len(file.Docs) == 1 {
-		state := yamlImportState{
-			anchors: map[string]yamlAnchor{},
-			hoists:  map[string]importExpression{},
-		}
-		expression, err := yamlNodeExpression(file.Docs[0].Body, "", &state)
-		if err != nil {
-			return recordExpression{}, err
-		}
-		record, ok, err := yamlDocumentRecord(expression, &state)
-		if err != nil {
-			return recordExpression{}, err
-		}
-		if !ok {
-			return recordExpression{fields: []recordField{{name: "document_1", value: expression}}}, nil
-		}
-		return yamlRecordWithHoists(record, &state)
+	state := yamlImportState{
+		anchors: map[string]yamlAnchor{},
+		hoists:  map[string]importExpression{},
+	}
+	expression, err := yamlNodeExpression(file.Docs[0].Body, "", &state)
+	if err != nil {
+		return recordExpression{}, err
+	}
+	if isOmittedImportExpression(expression) {
+		return recordExpression{}, fmt.Errorf("import yaml: null document root is not supported")
+	}
+	if sequence, ok := expression.(arrayExpression); ok {
+		return recordExpression{fields: []recordField{{name: "root", value: sequence}}}, nil
 	}
 
-	fields := make([]recordField, 0, len(file.Docs))
-	for index, document := range file.Docs {
-		name := fmt.Sprintf("document_%d", index+1)
-		state := yamlImportState{
-			anchors: map[string]yamlAnchor{},
-			hoists:  map[string]importExpression{},
-		}
-		expression, err := yamlNodeExpression(document.Body, "", &state)
-		if err != nil {
-			return recordExpression{}, err
-		}
-		record, ok, err := yamlDocumentRecord(expression, &state)
-		if err != nil {
-			return recordExpression{}, err
-		}
-		if !ok {
-			fields = append(fields, recordField{name: name, value: expression})
-			continue
-		}
-		record, err = yamlRecordWithHoists(record, &state)
-		if err != nil {
-			return recordExpression{}, err
-		}
-		fields = append(fields, recordField{name: name, value: record})
+	record, ok, err := yamlDocumentRecord(expression, &state)
+	if err != nil {
+		return recordExpression{}, err
 	}
-
-	return recordExpression{fields: fields}, nil
+	if !ok {
+		return recordExpression{}, fmt.Errorf("import yaml: scalar document root is not supported")
+	}
+	return yamlRecordWithHoists(record, &state)
 }
 
 func yamlRecordWithHoists(record recordExpression, state *yamlImportState) (recordExpression, error) {
@@ -220,13 +205,14 @@ func yamlNodeExpression(node yamlast.Node, selfPath string, state *yamlImportSta
 			return nil, fmt.Errorf("import yaml: anchor %q must be attached to a named value", name)
 		}
 		targetPath := "$self." + name
-		state.anchors[name] = yamlAnchor{path: targetPath}
+		state.anchors[name] = yamlAnchor{path: targetPath, resolving: true}
 		value, err := yamlNodeExpression(typed.Value, selfPath, state)
 		if err != nil {
 			return nil, err
 		}
 		anchor := state.anchors[name]
 		anchor.value = value
+		anchor.resolving = false
 		state.anchors[name] = anchor
 		if selfPath == targetPath {
 			return value, nil
@@ -244,12 +230,15 @@ func yamlNodeExpression(node yamlast.Node, selfPath string, state *yamlImportSta
 		if !ok {
 			return nil, fmt.Errorf("import yaml: unknown alias %q", name)
 		}
+		if anchor.resolving {
+			return nil, fmt.Errorf("import yaml: cyclic alias %q", name)
+		}
 		if isOmittedImportExpression(anchor.value) {
 			return omittedExpression{}, nil
 		}
 		return rawExpression{text: anchor.path}, nil
 	case *yamlast.TagNode:
-		return yamlNodeExpression(typed.Value, selfPath, state)
+		return nil, fmt.Errorf("import yaml: unsupported application tag")
 	case *yamlast.MappingNode:
 		return yamlMappingExpression(typed.MapRange(), selfPath, state)
 	case *yamlast.MappingValueNode:
@@ -313,8 +302,12 @@ func yamlMappingExpression(iter *yamlast.MapNodeIter, selfPath string, state *ya
 		if err != nil {
 			return nil, err
 		}
-		if err := validateImportFieldName(name); err != nil {
+		name, err = normalizedImportFieldName(name)
+		if err != nil {
 			return nil, err
+		}
+		if slices.ContainsFunc(fields, func(field recordField) bool { return field.name == name }) {
+			return nil, fmt.Errorf("import yaml: duplicate normalized field %q", name)
 		}
 		expression, err := yamlNodeExpression(iter.Value(), selfFieldPath(selfPath, name), state)
 		if err != nil {
@@ -471,14 +464,18 @@ func tomlRecordExpression(record map[string]any, path []string, config tomlImpor
 	orderedNames := orderedRecordNames(record, path, config.fieldOrder)
 	fields := make([]recordField, 0, len(orderedNames))
 	for _, name := range orderedNames {
-		if err := validateImportFieldName(name); err != nil {
-			return recordExpression{}, err
-		}
-		expression, err := tomlExpression(record[name], append(path, name), config)
+		normalized, err := normalizedImportFieldName(name)
 		if err != nil {
 			return recordExpression{}, err
 		}
-		fields = append(fields, recordField{name: name, value: expression})
+		if slices.ContainsFunc(fields, func(field recordField) bool { return field.name == normalized }) {
+			return recordExpression{}, fmt.Errorf("import toml: duplicate normalized field %q", normalized)
+		}
+		expression, err := tomlExpression(record[name], append(path, normalized), config)
+		if err != nil {
+			return recordExpression{}, err
+		}
+		fields = append(fields, recordField{name: normalized, value: expression})
 	}
 	return recordExpression{fields: fields}, nil
 }
@@ -697,6 +694,17 @@ func formatImportedSource(source string) (string, error) {
 
 func defaultImportOutputPath(sourcePath string) string {
 	return strings.TrimSuffix(sourcePath, filepath.Ext(sourcePath)) + ".mace"
+}
+
+func normalizedImportFieldName(name string) (string, error) {
+	normalized := strings.Join(strings.Fields(name), "_")
+	if err := validateImportFieldName(normalized); err != nil {
+		return "", err
+	}
+	if _, reserved := reservedImportFields[normalized]; reserved {
+		return "", fmt.Errorf("import mace: reserved field name %q", name)
+	}
+	return normalized, nil
 }
 
 func validateImportFieldName(name string) error {

@@ -1456,6 +1456,28 @@ var _ = Describe("ImportSchema", func() {
 }`, source)
 	})
 
+	It("rejects required nullable properties that Mace cannot represent", func() {
+		_, err := ImportJSONSchema(`{
+  "type": "object",
+  "properties": {
+    "nickname": { "type": ["string", "null"] }
+  },
+  "required": ["nickname"]
+}`)
+		tAssert.ErrorContains(err, "required nullable property")
+	})
+
+	It("rejects JSON Schema constraints without a Mace equivalent", func() {
+		_, err := ImportJSONSchema(`{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string", "pattern": "^[A-Z]" }
+  }
+}`)
+		tAssert.ErrorContains(err, `unsupported constraint "pattern"`)
+		tAssert.ErrorContains(err, "properties.name.pattern")
+	})
+
 	It("maps multi-type variant alternatives inline", func() {
 		source, err := ImportJSONSchema(`{
   "$schema": "./schemas/draft-2020-12/schema.json",

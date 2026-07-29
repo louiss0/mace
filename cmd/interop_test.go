@@ -141,13 +141,13 @@ var _ = Describe("JSON", func() {
 		tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(source)))
 	}}, nestedRecordShapeEntries()...)...)
 
-	DescribeTable("rejects JSON numbers outside Mace ranges", func(input string) {
+	DescribeTable("rejects JSON numbers outside Mace ranges with complete paths", func(input string, path string) {
 		_, err := importJSONSource(input)
-		tAssert.Error(err)
+		tAssert.ErrorContains(err, path)
 	},
-		Entry("integer above int64", `{"value":9223372036854775808}`),
-		Entry("integer below int64", `{"value":-9223372036854775809}`),
-		Entry("non-finite float", `{"value":1e999}`),
+		Entry("integer above int64", `{"value":9223372036854775808}`, "$.value"),
+		Entry("integer below int64", `{"profile":{"age":-9223372036854775809}}`, "$.profile.age"),
+		Entry("non-finite float in array", `{"values":[1,1e999]}`, "$.values[1]"),
 	)
 
 	DescribeTable("rejects duplicate JSON keys before conversion", func(input string) {
@@ -350,6 +350,35 @@ name = "orbital-array"
 		Entry("NaN", "value = nan\n", "NaN"),
 		Entry("positive infinity", "value = +inf\n", "Infinity"),
 		Entry("negative infinity", "value = -inf\n", "-Infinity"),
+	)
+
+	DescribeTable("normalizes TOML whitespace keys", func(input string, expected map[string]any) {
+		source, err := importTOMLSource("config.toml", input)
+		tAssert.NoError(err)
+		tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(source)))
+	},
+		Entry("first name", "'first name' = 'Ada'\n", map[string]any{"first_name": "Ada"}),
+		Entry("database host", "'database host' = 'db'\n", map[string]any{"database_host": "db"}),
+	)
+
+	DescribeTable("rejects invalid normalized TOML keys", func(input string, message string) {
+		_, err := importTOMLSource("config.toml", input)
+		tAssert.ErrorContains(err, message)
+	},
+		Entry("normalized collision", "'first name' = 'Ada'\nfirst_name = 'Linus'\n", "duplicate normalized field"),
+		Entry("reserved field", "schema = 'User'\n", "reserved field name"),
+		Entry("unsupported character", "'host-name' = 'db'\n", "unsupported field name"),
+	)
+
+	DescribeTable("converts every TOML temporal type into a string", func(input string) {
+		source, err := importTOMLSource("config.toml", input)
+		tAssert.NoError(err)
+		tAssert.IsType("", importedOutput(source)["value"])
+	},
+		Entry("offset date-time", "value = 1979-05-27T07:32:00Z\n"),
+		Entry("local date-time", "value = 1979-05-27T07:32:00\n"),
+		Entry("local date", "value = 1979-05-27\n"),
+		Entry("local time", "value = 07:32:00\n"),
 	)
 
 	DescribeTable("converts nested arrays", append([]any{func(depth int) {
@@ -800,21 +829,8 @@ can_craft:
   shadow_lantern: false
 `
 
-		source, err := importYAMLSource(filepath.Join("workspace", "game_inventory.documents.yaml"), input)
-		tAssert.NoError(err)
-		tAssert.Contains(source, "document_1")
-		tAssert.Contains(source, "document_2")
-
-		output := importedOutput(source)
-		document1 := output["document_1"].(map[string]any)
-		document2 := output["document_2"].(map[string]any)
-		weapons := document1["inventory"].(map[string]any)["weapons"].([]any)
-
-		tAssert.Equal("game_inventory", document1["kind"])
-		tAssert.Equal("Moss Knight", document1["player"].(map[string]any)["display_name"])
-		tAssert.Len(weapons, 2)
-		tAssert.Equal("crafting_snapshot", document2["kind"])
-		tAssert.Equal([]any{"healing_potion", "shadow_lantern"}, document2["recipes_unlocked"])
+		_, err := importYAMLSource(filepath.Join("workspace", "game_inventory.documents.yaml"), input)
+		tAssert.ErrorContains(err, "multiple documents")
 	})
 
 	It("imports the user catalog YAML documents example", func() {
@@ -843,21 +859,8 @@ primary_user:
   name: Ada Lovelace
 `
 
-		source, err := importYAMLSource(filepath.Join("workspace", "user_catalog.documents.yaml"), input)
-		tAssert.NoError(err)
-		tAssert.Contains(source, "document_1")
-		tAssert.Contains(source, "document_2")
-
-		output := importedOutput(source)
-		document1 := output["document_1"].(map[string]any)
-		document2 := output["document_2"].(map[string]any)
-		users := document1["users"].([]any)
-
-		tAssert.Equal(int64(1), document1["version"])
-		tAssert.Len(users, 1)
-		tAssert.Equal("Ada Lovelace", users[0].(map[string]any)["name"])
-		tAssert.Equal("user_catalog_summary", document2["kind"])
-		tAssert.Equal(int64(1), document2["total_users"])
+		_, err := importYAMLSource(filepath.Join("workspace", "user_catalog.documents.yaml"), input)
+		tAssert.ErrorContains(err, "multiple documents")
 	})
 
 	It("converts YAML merge keys into resolved records", func() {
@@ -990,6 +993,35 @@ tags:
 		tAssert.Equal([]any{"alpha", "beta"}, output["tags"])
 	})
 
+	DescribeTable("rejects unsupported YAML document structures", func(input string, message string) {
+		_, err := importYAMLSource("config.yaml", input)
+		tAssert.ErrorContains(err, message)
+	},
+		Entry("multiple documents", "---\nname: Ada\n---\nname: Linus\n", "multiple documents"),
+		Entry("null root", "null\n", "null document root"),
+		Entry("scalar root", "Ada\n", "scalar document root"),
+		Entry("application tag", "name: !custom Ada\n", "unsupported application tag"),
+		Entry("cyclic alias", "value: &value\n  self: *value\n", "cyclic"),
+		Entry("duplicate key", "name: Ada\nname: Linus\n", "already defined"),
+		Entry("normalized collision", "'first name': Ada\nfirst_name: Linus\n", "duplicate normalized field"),
+		Entry("reserved key", "schema: User\n", "reserved field name"),
+	)
+
+	It("wraps a YAML root sequence in the synthetic root field", func() {
+		source, err := importYAMLSource("config.yaml", "- Ada\n- Linus\n")
+		tAssert.NoError(err)
+		tAssert.Equal([]any{"Ada", "Linus"}, importedOutput(source)["root"])
+	})
+
+	DescribeTable("normalizes YAML whitespace keys", func(input string, expected map[string]any) {
+		source, err := importYAMLSource("config.yaml", input)
+		tAssert.NoError(err)
+		tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(source)))
+	},
+		Entry("first name", "'first name': Ada\n", map[string]any{"first_name": "Ada"}),
+		Entry("database host", "'database host': db\n", map[string]any{"database_host": "db"}),
+	)
+
 	DescribeTable("converts nested arrays", append([]any{func(depth int) {
 		expected := map[string]any{"value": nestedArrayValue(depth)}
 		input, err := goccyyaml.Marshal(expected)
@@ -1082,20 +1114,16 @@ var _ = Describe("Interop helpers", func() {
 
 		emptyDocs := yamlast.File{}
 		_, err := yamlRootExpression(&emptyDocs)
-		tAssert.ErrorContains(err, "expected at least one document")
+		tAssert.ErrorContains(err, "expected one document")
 
-		scalarSource, err := importYAMLSource("workspace/scalar.yaml", "hello")
-		tAssert.NoError(err)
-		tAssert.Contains(scalarSource, "document_1")
+		_, err = importYAMLSource("workspace/scalar.yaml", "hello")
+		tAssert.ErrorContains(err, "scalar document root")
 
-		tagSource, err := importYAMLSource("workspace/tag.yaml", "!foo hello")
-		tAssert.NoError(err)
-		tAssert.Contains(tagSource, "hello")
+		_, err = importYAMLSource("workspace/tag.yaml", "!foo hello")
+		tAssert.ErrorContains(err, "unsupported application tag")
 
-		multiDocSource, err := importYAMLSource("workspace/multi.yaml", "---\nhello\n---\nworld\n")
-		tAssert.NoError(err)
-		tAssert.Contains(multiDocSource, "document_1")
-		tAssert.Contains(multiDocSource, "document_2")
+		_, err = importYAMLSource("workspace/multi.yaml", "---\nhello\n---\nworld\n")
+		tAssert.ErrorContains(err, "multiple documents")
 
 		infinitySource, err := importYAMLSource("workspace/infinity.yaml", "value: .inf")
 		tAssert.NoError(err)
@@ -1227,9 +1255,8 @@ var _ = Describe("Interop helpers", func() {
 		tAssert.NoError(err)
 		tAssert.Equal(`"doc"`, documentNode.render(0))
 
-		tagNode, err := yamlNodeExpression(&yamlast.TagNode{Value: &yamlast.StringNode{Value: "tag"}}, "", yamlState)
-		tAssert.NoError(err)
-		tAssert.Equal(`"tag"`, tagNode.render(0))
+		_, err = yamlNodeExpression(&yamlast.TagNode{Value: &yamlast.StringNode{Value: "tag"}}, "", yamlState)
+		tAssert.ErrorContains(err, "unsupported application tag")
 
 		sequenceNode, err := yamlNodeExpression(&yamlast.SequenceNode{Values: []yamlast.Node{&yamlast.StringNode{Value: "item"}}}, "", yamlState)
 		tAssert.NoError(err)
@@ -1260,8 +1287,9 @@ var _ = Describe("Interop helpers", func() {
 		tAssert.NoError(err)
 		tAssert.Contains(mappingValueNode.render(0), "name")
 
-		_, err = yamlNodeExpression(&yamlast.MappingValueNode{Key: &yamlast.StringNode{Value: "bad name"}, Value: &yamlast.StringNode{Value: "Ada"}}, "", yamlState)
-		tAssert.ErrorContains(err, "unsupported field name")
+		normalizedMapping, err := yamlNodeExpression(&yamlast.MappingValueNode{Key: &yamlast.StringNode{Value: "bad name"}, Value: &yamlast.StringNode{Value: "Ada"}}, "", yamlState)
+		tAssert.NoError(err)
+		tAssert.Contains(normalizedMapping.render(0), "bad_name")
 
 		_, err = yamlNodeExpression(&yamlast.MappingValueNode{Key: &yamlast.IntegerNode{Value: 1}, Value: &yamlast.StringNode{Value: "Ada"}}, "", yamlState)
 		tAssert.ErrorContains(err, "unsupported map key")
@@ -1358,8 +1386,8 @@ var _ = Describe("Interop helpers", func() {
 		tAssert.Empty(multiErrorRoot.fields)
 
 		multiRoot, err := yamlRootExpression(&yamlast.File{Docs: []*yamlast.DocumentNode{{Body: &yamlast.StringNode{Value: "hello"}}, {Body: &yamlast.StringNode{Value: "world"}}}})
-		tAssert.NoError(err)
-		tAssert.Len(multiRoot.fields, 2)
+		tAssert.ErrorContains(err, "multiple documents")
+		tAssert.Empty(multiRoot.fields)
 
 		_, ok, err = yamlDocumentRecord(recordExpression{}, yamlState)
 		tAssert.NoError(err)
