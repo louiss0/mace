@@ -1,10 +1,35 @@
 package processor
 
 import (
+	"strings"
+
+	"github.com/louiss0/mace/internal/parser/ast"
 	. "github.com/onsi/ginkgo/v2"
 )
 
 var _ = Describe("Arrays", func() {
+	DescribeTable("infers string element types for nested empty arrays", func(depth int) {
+		array := ast.ArrayLiteral{}
+		for range depth - 1 {
+			array = ast.ArrayLiteral{Elements: []ast.Expression{array}}
+		}
+
+		valueType, err := inferArrayLiteralType(array, nil, nil, nil, nil, nil)
+		tAssert.NoError(err)
+		tAssert.Equal(strings.Repeat("array<", depth)+"string"+strings.Repeat(">", depth), valueType.name())
+	},
+		Entry("depth 1", 1),
+		Entry("depth 2", 2),
+		Entry("depth 3", 3),
+		Entry("depth 4", 4),
+		Entry("depth 5", 5),
+		Entry("depth 6", 6),
+		Entry("depth 7", 7),
+		Entry("depth 8", 8),
+		Entry("depth 9", 9),
+		Entry("depth 10", 10),
+	)
+
 	DescribeTable("returns array results",
 		func(file string, expected expectedValue) {
 			processor := New()

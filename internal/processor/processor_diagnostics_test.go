@@ -32,7 +32,6 @@ var _ = Describe("Diagnostic fixtures", func() {
 		Entry("division by zero", "division-by-zero", "division by zero"),
 		Entry("mixed decimal and hexadecimal operands", "mixed-decimal-hexadecimal-operands", "expected hexadecimal operands"),
 		Entry("invalid bitwise complement", "invalid-bitwise-complement", "expected int after '~'"),
-		Entry("untyped empty array output", "untyped-empty-array-output", "requires an output schema"),
 		Entry("untyped empty record output", "untyped-empty-record-output", "requires an output schema"),
 		Entry("nested conditional", "nested-conditional", "nested conditional expressions are not allowed"),
 		Entry("missing schema field", "schema-missing-required-field", "missing required field"),

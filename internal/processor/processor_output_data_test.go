@@ -357,7 +357,7 @@ User user = { name, };
 		Entry("record field", `{ nested: null }`),
 	)
 
-	DescribeTable("requires context for empty collection output literals",
+	DescribeTable("requires context for empty record output literals",
 		func(expression string) {
 			_, err := New().Process(fmt.Sprintf(`[output = 'data']
 {
@@ -366,17 +366,13 @@ User user = { name, };
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, "requires an output schema")
 		},
-		Entry("empty array", `[]`),
 		Entry("empty record", `{}`),
-		Entry("conditional empty array", `false ? "configured" : []`),
 		Entry("conditional empty record", `false ? "configured" : {}`),
-		Entry("two empty array branches", `true ? [] : []`),
 		Entry("two empty record branches", `true ? {} : {}`),
-		Entry("nested empty array", `[[1], []]`),
 		Entry("nested empty record", `{ nested: {}, }`),
 	)
 
-	DescribeTable("requires an output schema when a typed collection branch has an empty fallback",
+	DescribeTable("requires an output schema when a typed record branch has an empty fallback",
 		func(input string) {
 			_, err := New().Process(input)
 			tAssert.Error(err)
@@ -389,14 +385,6 @@ record<string> records = { primary: "active", };
 [output = 'data']
 {
   value: configured ? records : {},
-}`),
-		Entry("array", `|===|
-boolean configured = true;
-array<string> values = ["configured"];
-|===|
-[output = 'data']
-{
-  value: configured ? values : [],
 }`),
 	)
 

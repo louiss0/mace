@@ -52,6 +52,28 @@ func nestedRecordValue(depth int) any {
 	return value
 }
 
+func nestedRecordWithProperties(depth int, propertyCount int) any {
+	value := any("leaf")
+	for level := range depth {
+		record := make(map[string]any, propertyCount+1)
+		for property := range propertyCount {
+			name := fmt.Sprintf("level_%d_property_%d", level+1, property+1)
+			record[name] = name
+		}
+		record[fmt.Sprintf("level_%d_child", level+1)] = value
+		value = record
+	}
+	return value
+}
+
+func nestedEmptyArrayValue(depth int) any {
+	value := any([]any{})
+	for range depth - 1 {
+		value = []any{value}
+	}
+	return value
+}
+
 func nestedDepthEntries() []any {
 	return []any{
 		Entry("depth 1", 1),
@@ -65,6 +87,20 @@ func nestedDepthEntries() []any {
 		Entry("depth 9", 9),
 		Entry("depth 10", 10),
 	}
+}
+
+func nestedRecordShapeEntries() []any {
+	entries := make([]any, 0, 45)
+	for depth := 2; depth <= 10; depth++ {
+		for propertyCount := 1; propertyCount <= 5; propertyCount++ {
+			entries = append(entries, Entry(
+				fmt.Sprintf("depth %d with %d properties per level", depth, propertyCount),
+				depth,
+				propertyCount,
+			))
+		}
+	}
+	return entries
 }
 
 type quotedStringer string
@@ -86,6 +122,47 @@ var _ = Describe("JSON", func() {
 
 	DescribeTable("converts nested records", append([]any{func(depth int) {
 		expected := map[string]any{"value": nestedRecordValue(depth)}
+		input, err := json.Marshal(expected)
+		tAssert.NoError(err)
+
+		source, err := importJSONSource(string(input))
+		tAssert.NoError(err)
+		tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(source)))
+	}}, nestedDepthEntries()...)...)
+
+	DescribeTable("converts nested records with explicit field names", append([]any{func(depth int, propertyCount int) {
+		expected := map[string]any{"root_record": nestedRecordWithProperties(depth, propertyCount)}
+		input, err := json.Marshal(expected)
+		tAssert.NoError(err)
+
+		source, err := importJSONSource(string(input))
+		tAssert.NoError(err)
+		tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(source)))
+	}}, nestedRecordShapeEntries()...)...)
+
+	DescribeTable("converts record document roots", func(input string, expected map[string]any) {
+		source, err := importJSONSource(input)
+		tAssert.NoError(err)
+		tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(source)))
+	},
+		Entry("single field", `{"name":"Ada"}`, map[string]any{"name": "Ada"}),
+		Entry("nested record", `{"profile":{"name":"Ada"}}`, map[string]any{
+			"profile": map[string]any{"name": "Ada"},
+		}),
+	)
+
+	DescribeTable("rejects non-record document roots", func(input string) {
+		_, err := importJSONSource(input)
+		tAssert.ErrorContains(err, "expected record root")
+	},
+		Entry("null", "null"),
+		Entry("string", `"mace"`),
+		Entry("number", "1"),
+		Entry("array", "[]"),
+	)
+
+	DescribeTable("preserves recursively nested empty arrays with string inference", append([]any{func(depth int) {
+		expected := map[string]any{"items": nestedEmptyArrayValue(depth)}
 		input, err := json.Marshal(expected)
 		tAssert.NoError(err)
 
@@ -248,6 +325,16 @@ name = "orbital-array"
 		tAssert.NoError(err)
 		tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(source)))
 	}}, nestedDepthEntries()...)...)
+
+	DescribeTable("converts nested records with explicit field names", append([]any{func(depth int, propertyCount int) {
+		expected := map[string]any{"root_record": nestedRecordWithProperties(depth, propertyCount)}
+		var input bytes.Buffer
+		tAssert.NoError(burnttoml.NewEncoder(&input).Encode(expected))
+
+		source, err := importTOMLSource("config.toml", input.String())
+		tAssert.NoError(err)
+		tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(source)))
+	}}, nestedRecordShapeEntries()...)...)
 })
 
 var _ = Describe("YAML", func() {
@@ -866,6 +953,16 @@ tags:
 		tAssert.NoError(err)
 		tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(source)))
 	}}, nestedDepthEntries()...)...)
+
+	DescribeTable("converts nested records with explicit field names", append([]any{func(depth int, propertyCount int) {
+		expected := map[string]any{"root_record": nestedRecordWithProperties(depth, propertyCount)}
+		input, err := goccyyaml.Marshal(expected)
+		tAssert.NoError(err)
+
+		source, err := importYAMLSource("config.yaml", string(input))
+		tAssert.NoError(err)
+		tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(source)))
+	}}, nestedRecordShapeEntries()...)...)
 })
 
 var _ = Describe("Interop helpers", func() {
