@@ -17,11 +17,36 @@ unrestricted network or filesystem access.
 
 Processing occurs in this observable order:
 
-```text
-parse source → resolve imports → resolve schema and parse files → build declarations
-→ resolve types → resolve the parse schema → introduce typed parsed-input symbols
-→ type-check declarations and output expressions → validate runtime input
-→ bind parsed values → evaluate output → validate output → emit one result
+```mermaid
+flowchart TD
+    subgraph parsing["1. Parse and resolve sources"]
+        direction TD
+        parse["Parse source"] --> imports["Resolve imports"]
+        imports --> schemaFiles["Resolve schema and parse files"]
+    end
+
+    subgraph typing["2. Build and check types"]
+        direction TD
+        declarations["Build declarations"] --> types["Resolve types"]
+        types --> parseSchema["Resolve the parse schema"]
+        parseSchema --> inputSymbols["Introduce typed parsed-input symbols"]
+        inputSymbols --> typeCheck["Type-check declarations and output expressions"]
+    end
+
+    subgraph input["3. Validate and bind input"]
+        direction TD
+        validateInput["Validate runtime input"] --> bind["Bind parsed values"]
+    end
+
+    subgraph output["4. Produce the result"]
+        direction TD
+        evaluate["Evaluate output"] --> validateOutput["Validate output"]
+        validateOutput --> emit["Emit one result"]
+    end
+
+    schemaFiles --> declarations
+    typeCheck --> validateInput
+    bind --> evaluate
 ```
 
 Source MUST be UTF-8. Line endings may be LF, CRLF, or CR; CRLF is one newline.
