@@ -43,8 +43,9 @@ type arrayExpression struct {
 }
 
 type recordField struct {
-	name  string
-	value importExpression
+	name        string
+	description string
+	value       importExpression
 }
 
 type recordExpression struct {
@@ -93,6 +94,7 @@ func importYAMLSourceToPath(sourcePath string, outputPath string, input string) 
 	if err != nil {
 		return "", err
 	}
+	applyYAMLTopLevelFieldComments(&root, input)
 
 	return formatImportedOutput(schemaPath, root)
 }
@@ -121,6 +123,45 @@ func importTOMLSourceToPath(sourcePath string, outputPath string, input string) 
 	record := root.(recordExpression)
 
 	return formatImportedOutput(schemaPath, record)
+}
+
+func applyYAMLTopLevelFieldComments(root *recordExpression, input string) {
+	descriptions := map[string]string{}
+	pending := ""
+	for _, line := range strings.Split(input, "\n") {
+		if strings.HasPrefix(line, "#") {
+			pending = strings.TrimSpace(strings.TrimPrefix(line, "#"))
+			continue
+		}
+		if line == "" || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+			pending = ""
+			continue
+		}
+		separator := strings.Index(line, ":")
+		if separator < 1 {
+			pending = ""
+			continue
+		}
+		name := strings.Trim(strings.TrimSpace(line[:separator]), `"'`)
+		normalized, err := normalizedImportFieldName(name)
+		if err != nil {
+			pending = ""
+			continue
+		}
+		description := pending
+		if comment := strings.Index(line[separator+1:], "#"); comment >= 0 {
+			description = strings.TrimSpace(line[separator+1+comment+1:])
+		}
+		if description != "" {
+			descriptions[normalized] = description
+		}
+		pending = ""
+	}
+	for index := range root.fields {
+		if description := descriptions[root.fields[index].name]; description != "" {
+			root.fields[index].description = description
+		}
+	}
 }
 
 func yamlRootExpression(file *yamlast.File) (recordExpression, error) {
@@ -987,6 +1028,9 @@ func (expression recordExpression) render(depth int) string {
 		line := indent + field.name + ": " + value
 		if index < len(expression.fields)-1 {
 			line += ","
+		}
+		if field.description != "" {
+			line += " /# " + field.description
 		}
 		lines = append(lines, line)
 	}

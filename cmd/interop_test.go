@@ -955,6 +955,15 @@ copy_a: *a
 		tAssert.Equal("db.internal", copyA["target"].(map[string]any)["host"])
 	})
 
+	DescribeTable("converts attached YAML field comments into Mace docs", func(input string, description string) {
+		source, err := importYAMLSource("config.yaml", input)
+		tAssert.NoError(err)
+		tAssert.Contains(source, "/# "+description)
+	},
+		Entry("preceding comment", "# account name\nname: Ada\n", "account name"),
+		Entry("trailing comment", "name: Ada # account name\n", "account name"),
+	)
+
 	It("converts YAML timestamps into strings", func() {
 		source, err := importYAMLSource("config.yaml", "created_at: 2026-05-17T12:30:00Z\n")
 		tAssert.NoError(err)
