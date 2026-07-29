@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -25,7 +26,11 @@ type Result struct {
 	Schema map[SchemaField]SchemaType
 }
 
-var jsonSchemaHTTPClient = &http.Client{Timeout: 5 * time.Second}
+var (
+	jsonSchemaHTTPClient = &http.Client{Timeout: 5 * time.Second}
+	importFieldPattern   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	importReservedNames  = map[string]struct{}{}
+)
 
 type SchemaField struct {
 	Name     string
@@ -181,6 +186,12 @@ func importJSON(input string, sourcePath string) (string, error) {
 }
 
 func parseImportedJSON(input string) (any, error) {
+	for _, issue := range CheckJSON(input).StructureIncompatibility {
+		if issue.Reason == "duplicate object key" {
+			return nil, fmt.Errorf("import json: duplicate object key at %s", issue.Path)
+		}
+	}
+
 	decoder := json.NewDecoder(strings.NewReader(input))
 	decoder.UseNumber()
 
@@ -486,6 +497,13 @@ func normalizeImportedValue(value reflect.Value) (any, error) {
 			if err != nil {
 				return nil, err
 			}
+			name, err = normalizedImportFieldName(name)
+			if err != nil {
+				return nil, err
+			}
+			if _, exists := record[name]; exists {
+				return nil, fmt.Errorf("import mace: fields collide after normalization as %q", name)
+			}
 
 			item, err := normalizeImportedValue(value.MapIndex(key))
 			if err != nil {
@@ -521,9 +539,28 @@ func importedMapKey(value reflect.Value) (string, error) {
 	return value.String(), nil
 }
 
+func normalizedImportFieldName(name string) (string, error) {
+	switch name {
+	case "$schema", "$defs", "$ref", "$id":
+		return name, nil
+	}
+
+	normalized := strings.Join(strings.Fields(name), "_")
+	if !importFieldPattern.MatchString(normalized) {
+		return "", fmt.Errorf("import mace: unsupported field name %q", name)
+	}
+	if _, reserved := importReservedNames[normalized]; reserved {
+		return "", fmt.Errorf("import mace: reserved field name %q", name)
+	}
+	return normalized, nil
+}
+
 func importedJSONNumber(value json.Number) (any, error) {
 	if integer, err := value.Int64(); err == nil {
 		return integer, nil
+	}
+	if !strings.ContainsAny(value.String(), ".eE") {
+		return nil, fmt.Errorf("import json: integer %q is outside the signed 64-bit range", value.String())
 	}
 
 	floatValue, err := value.Float64()

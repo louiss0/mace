@@ -141,6 +141,40 @@ var _ = Describe("JSON", func() {
 		tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(source)))
 	}}, nestedRecordShapeEntries()...)...)
 
+	DescribeTable("rejects JSON numbers outside Mace ranges", func(input string) {
+		_, err := importJSONSource(input)
+		tAssert.Error(err)
+	},
+		Entry("integer above int64", `{"value":9223372036854775808}`),
+		Entry("integer below int64", `{"value":-9223372036854775809}`),
+		Entry("non-finite float", `{"value":1e999}`),
+	)
+
+	DescribeTable("rejects duplicate JSON keys before conversion", func(input string) {
+		_, err := importJSONSource(input)
+		tAssert.ErrorContains(err, "duplicate object key")
+	},
+		Entry("top-level duplicate", `{"name":"Ada","name":"Linus"}`),
+		Entry("nested duplicate", `{"profile":{"name":"Ada","name":"Linus"}}`),
+	)
+
+	DescribeTable("normalizes JSON whitespace keys and rejects invalid normalized keys", func(input string, expected map[string]any, expectError bool) {
+		source, err := importJSONSource(input)
+		if expectError {
+			tAssert.Error(err)
+			return
+		}
+		tAssert.NoError(err)
+		tAssert.Equal(canonicalJSON(expected), canonicalJSON(importedOutput(source)))
+	},
+		Entry("first name", `{"first name":"Ada"}`, map[string]any{"first_name": "Ada"}, false),
+		Entry("database host", `{"database host":"db"}`, map[string]any{"database_host": "db"}, false),
+		Entry("digit after first character", `{"server 2 address":"db"}`, map[string]any{"server_2_address": "db"}, false),
+		Entry("normalization collision", `{"first name":"Ada","first_name":"Linus"}`, nil, true),
+		Entry("leading digit", `{"2nd value":"Ada"}`, nil, true),
+		Entry("unsupported character", `{"host-name":"db"}`, nil, true),
+	)
+
 	DescribeTable("converts record document roots", func(input string, expected map[string]any) {
 		source, err := importJSONSource(input)
 		tAssert.NoError(err)
@@ -306,6 +340,16 @@ name = "orbital-array"
 		tAssert.NoError(err)
 		tAssert.Contains(source, `[output = 'data', schema_file = '../workspace/schemas/vehicle_telemetry.schema.mace']`)
 	})
+
+	DescribeTable("converts TOML non-finite values into strings", func(input string, expected string) {
+		source, err := importTOMLSource("config.toml", input)
+		tAssert.NoError(err)
+		tAssert.Equal(expected, importedOutput(source)["value"])
+	},
+		Entry("NaN", "value = nan\n", "NaN"),
+		Entry("positive infinity", "value = +inf\n", "Infinity"),
+		Entry("negative infinity", "value = -inf\n", "-Infinity"),
+	)
 
 	DescribeTable("converts nested arrays", append([]any{func(depth int) {
 		expected := map[string]any{"value": nestedArrayValue(depth)}
@@ -899,6 +943,16 @@ copy_a: *a
 		tAssert.Equal("db.internal", copyA["target"].(map[string]any)["host"])
 	})
 
+	DescribeTable("converts YAML non-finite values into strings", func(input string, expected string) {
+		source, err := importYAMLSource("config.yaml", input)
+		tAssert.NoError(err)
+		tAssert.Equal(expected, importedOutput(source)["value"])
+	},
+		Entry("NaN", "value: .nan\n", "NaN"),
+		Entry("positive infinity", "value: .inf\n", "Infinity"),
+		Entry("negative infinity", "value: -.inf\n", "-Infinity"),
+	)
+
 	It("normalizes YAML booleans and floats to valid Mace literals", func() {
 		input := `enabled: TRUE
 threshold: .5
@@ -1044,11 +1098,11 @@ var _ = Describe("Interop helpers", func() {
 
 		infinitySource, err := importYAMLSource("workspace/infinity.yaml", "value: .inf")
 		tAssert.NoError(err)
-		tAssert.Contains(infinitySource, `".inf"`)
+		tAssert.Contains(infinitySource, `"Infinity"`)
 
 		nanSource, err := importYAMLSource("workspace/nan.yaml", "value: .nan")
 		tAssert.NoError(err)
-		tAssert.Contains(nanSource, `".nan"`)
+		tAssert.Contains(nanSource, `"NaN"`)
 
 		literalSource, err := importYAMLSource("workspace/literal.yaml", "value: |\n  line one\n  line two\n")
 		tAssert.NoError(err)

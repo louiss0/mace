@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -280,9 +281,12 @@ func yamlNodeExpression(node yamlast.Node, selfPath string, state *yamlImportSta
 	case *yamlast.FloatNode:
 		return rawExpression{text: yamlFloatLiteral(typed.Value)}, nil
 	case *yamlast.InfinityNode:
-		return rawExpression{text: strconv.Quote(typed.GetToken().Value)}, nil
+		if strings.HasPrefix(typed.GetToken().Value, "-") {
+			return rawExpression{text: strconv.Quote("-Infinity")}, nil
+		}
+		return rawExpression{text: strconv.Quote("Infinity")}, nil
 	case *yamlast.NanNode:
-		return rawExpression{text: strconv.Quote(typed.GetToken().Value)}, nil
+		return rawExpression{text: strconv.Quote("NaN")}, nil
 	case *yamlast.NullNode:
 		return omittedExpression{}, nil
 	default:
@@ -418,9 +422,9 @@ func tomlExpression(value any, path []string, config tomlImportConfig) (importEx
 	case uint, uint8, uint16, uint32, uint64:
 		return rawExpression{text: fmt.Sprintf("%d", reflect.ValueOf(typed).Uint())}, nil
 	case float32:
-		return rawExpression{text: strconv.FormatFloat(float64(typed), 'f', -1, 32)}, nil
+		return tomlFloatExpression(float64(typed), 32), nil
 	case float64:
-		return rawExpression{text: strconv.FormatFloat(typed, 'f', -1, 64)}, nil
+		return tomlFloatExpression(typed, 64), nil
 	case time.Time:
 		return rawExpression{text: strconv.Quote(typed.Format(time.RFC3339Nano))}, nil
 	case map[string]any:
@@ -448,6 +452,19 @@ func tomlExpression(value any, path []string, config tomlImportConfig) (importEx
 	default:
 		return reflectTOMLExpression(reflect.ValueOf(value), path, config)
 	}
+}
+
+func tomlFloatExpression(value float64, bits int) importExpression {
+	if math.IsNaN(value) {
+		return rawExpression{text: strconv.Quote("NaN")}
+	}
+	if math.IsInf(value, 1) {
+		return rawExpression{text: strconv.Quote("Infinity")}
+	}
+	if math.IsInf(value, -1) {
+		return rawExpression{text: strconv.Quote("-Infinity")}
+	}
+	return rawExpression{text: strconv.FormatFloat(value, 'f', -1, bits)}
 }
 
 func tomlRecordExpression(record map[string]any, path []string, config tomlImportConfig) (recordExpression, error) {
@@ -881,6 +898,16 @@ func yamlTopLevelReferenceName(path string) (string, bool) {
 }
 
 func yamlFloatLiteral(value float64) string {
+	if math.IsNaN(value) {
+		return strconv.Quote("NaN")
+	}
+	if math.IsInf(value, 1) {
+		return strconv.Quote("Infinity")
+	}
+	if math.IsInf(value, -1) {
+		return strconv.Quote("-Infinity")
+	}
+
 	literal := strconv.FormatFloat(value, 'f', -1, 64)
 	if strings.ContainsAny(literal, ".") {
 		return literal
