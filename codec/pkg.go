@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -25,7 +26,15 @@ type Result struct {
 	Schema map[SchemaField]SchemaType
 }
 
-var jsonSchemaHTTPClient = &http.Client{Timeout: 5 * time.Second}
+var (
+	jsonSchemaHTTPClient = &http.Client{Timeout: 5 * time.Second}
+	importFieldPattern   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	importReservedNames  = map[string]struct{}{}
+	maceReservedNames    = map[string]struct{}{
+		"alias": {}, "enum": {}, "false": {}, "from": {}, "if": {}, "import": {},
+		"null": {}, "output": {}, "schema": {}, "true": {}, "type": {},
+	}
+)
 
 type SchemaField struct {
 	Name     string
@@ -176,11 +185,50 @@ func importJSON(input string, sourcePath string) (string, error) {
 	if isSchema {
 		return importJSONSchemaDocument(schemaDocument)
 	}
+	if err := validateImportedJSONFields(value); err != nil {
+		return "", err
+	}
 
 	return importDocument(value)
 }
 
+func validateImportedJSONFields(value any) error {
+	switch typed := value.(type) {
+	case map[string]any:
+		normalizedNames := map[string]struct{}{}
+		for name, item := range typed {
+			normalized, err := normalizedImportFieldName(name)
+			if err != nil {
+				return err
+			}
+			if _, exists := normalizedNames[normalized]; exists {
+				return fmt.Errorf("import mace: fields collide after normalization as %q", normalized)
+			}
+			if _, reserved := maceReservedNames[normalized]; reserved {
+				return fmt.Errorf("import mace: reserved field name %q", normalized)
+			}
+			normalizedNames[normalized] = struct{}{}
+			if err := validateImportedJSONFields(item); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for _, item := range typed {
+			if err := validateImportedJSONFields(item); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func parseImportedJSON(input string) (any, error) {
+	for _, issue := range CheckJSON(input).StructureIncompatibility {
+		if issue.Reason == "duplicate object key" {
+			return nil, fmt.Errorf("import json: duplicate object key at %s", issue.Path)
+		}
+	}
+
 	decoder := json.NewDecoder(strings.NewReader(input))
 	decoder.UseNumber()
 
@@ -246,6 +294,10 @@ func marshalImportedOutput(record map[string]any) (string, error) {
 }
 
 func importJSONSchemaDocument(value any) (string, error) {
+	if err := validateUnsupportedJSONSchemaConstraints(value, nil); err != nil {
+		return "", err
+	}
+
 	normalized, err := normalizeImportedValue(reflect.ValueOf(value))
 	if err != nil {
 		return "", err
@@ -436,6 +488,10 @@ func processorValueFromReflect(value reflect.Value) processor.Value {
 type omittedValue struct{}
 
 func normalizeImportedValue(value reflect.Value) (any, error) {
+	return normalizeImportedValueAtPath(value, "$")
+}
+
+func normalizeImportedValueAtPath(value reflect.Value, path string) (any, error) {
 	if !value.IsValid() {
 		return omittedValue{}, nil
 	}
@@ -448,7 +504,11 @@ func normalizeImportedValue(value reflect.Value) (any, error) {
 	}
 
 	if number, ok := value.Interface().(json.Number); ok {
-		return importedJSONNumber(number)
+		normalized, err := importedJSONNumber(number)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		return normalized, nil
 	}
 
 	if timestamp, ok := value.Interface().(time.Time); ok {
@@ -469,7 +529,7 @@ func normalizeImportedValue(value reflect.Value) (any, error) {
 	case reflect.Slice, reflect.Array:
 		items := make([]any, 0, value.Len())
 		for index := 0; index < value.Len(); index++ {
-			item, err := normalizeImportedValue(value.Index(index))
+			item, err := normalizeImportedValueAtPath(value.Index(index), fmt.Sprintf("%s[%d]", path, index))
 			if err != nil {
 				return nil, err
 			}
@@ -486,8 +546,15 @@ func normalizeImportedValue(value reflect.Value) (any, error) {
 			if err != nil {
 				return nil, err
 			}
+			name, err = normalizedImportFieldName(name)
+			if err != nil {
+				return nil, err
+			}
+			if _, exists := record[name]; exists {
+				return nil, fmt.Errorf("import mace: fields collide after normalization as %q", name)
+			}
 
-			item, err := normalizeImportedValue(value.MapIndex(key))
+			item, err := normalizeImportedValueAtPath(value.MapIndex(key), path+"."+name)
 			if err != nil {
 				return nil, err
 			}
@@ -521,9 +588,28 @@ func importedMapKey(value reflect.Value) (string, error) {
 	return value.String(), nil
 }
 
+func normalizedImportFieldName(name string) (string, error) {
+	switch name {
+	case "$schema", "$defs", "$ref", "$id":
+		return name, nil
+	}
+
+	normalized := strings.Join(strings.Fields(name), "_")
+	if !importFieldPattern.MatchString(normalized) {
+		return "", fmt.Errorf("import mace: unsupported field name %q", name)
+	}
+	if _, reserved := importReservedNames[normalized]; reserved {
+		return "", fmt.Errorf("import mace: reserved field name %q", name)
+	}
+	return normalized, nil
+}
+
 func importedJSONNumber(value json.Number) (any, error) {
 	if integer, err := value.Int64(); err == nil {
 		return integer, nil
+	}
+	if !strings.ContainsAny(value.String(), ".eE") {
+		return nil, fmt.Errorf("import json: integer %q is outside the signed 64-bit range", value.String())
 	}
 
 	floatValue, err := value.Float64()
@@ -971,10 +1057,42 @@ func (context *jsonSchemaContext) record(record map[string]any, path []string) (
 		}
 
 		_, required := requiredNames[name]
+		if required && nullable {
+			return recordSchema{}, fmt.Errorf("import mace schema: required nullable property %q cannot be represented", name)
+		}
 		fields = append(fields, schemaField{name: name, optional: !required || nullable, value: valueType})
 	}
 
 	return recordSchema{fields: fields}, nil
+}
+
+func validateUnsupportedJSONSchemaConstraints(value any, path []string) error {
+	unsupported := map[string]struct{}{
+		"exclusiveMaximum": {}, "exclusiveMinimum": {}, "format": {}, "maxItems": {},
+		"maxLength": {}, "maximum": {}, "minItems": {}, "minLength": {}, "minimum": {},
+		"multipleOf": {}, "pattern": {}, "uniqueItems": {},
+	}
+
+	switch typed := value.(type) {
+	case map[string]any:
+		for name, item := range typed {
+			currentPath := append(append([]string{}, path...), name)
+			if _, rejected := unsupported[name]; rejected {
+				return fmt.Errorf("import json schema: unsupported constraint %q at %s", name, strings.Join(currentPath, "."))
+			}
+			if err := validateUnsupportedJSONSchemaConstraints(item, currentPath); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for index, item := range typed {
+			currentPath := append(append([]string{}, path...), fmt.Sprintf("[%d]", index))
+			if err := validateUnsupportedJSONSchemaConstraints(item, currentPath); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func jsonSchemaRequiredNames(value any) map[string]struct{} {

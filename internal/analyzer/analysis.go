@@ -716,10 +716,10 @@ func analyzeDocumentAtInRootContext(context context.Context, text string, docume
 		selfActionAnalysis,
 		matchActionAnalysis,
 		declarationActionAnalysis,
-		importActionAnalysis,
 		fixAllActionAnalysis,
 		crossFileActionAnalysis,
 	)
+	importAnalysis := collectCodeActionAnalysis(text, documentPath, importActionAnalysis)
 	diagnosticData := diagnosticDataAnalysis(text)
 	analysis.diagnostics = append(analysis.diagnostics, diagnosticData...)
 	if err := context.Err(); err != nil {
@@ -729,7 +729,9 @@ func analyzeDocumentAtInRootContext(context context.Context, text string, docume
 	file, parseErr := parseFile(text)
 	if parseErr != nil {
 		snapshot.diagnostics = append(snapshot.diagnostics, diagnosticFromError(parseErr))
+		snapshot.diagnostics = append(snapshot.diagnostics, importAnalysis.diagnostics...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, analysis.actions...)
+		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, importAnalysis.actions...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, parseErrorCodeActions(tokens, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, scriptBlockStructureCodeActions(text, documentPath)...)
 		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, variableFixTextCodeActions(text, documentPath)...)
@@ -769,6 +771,8 @@ func analyzeDocumentAtInRootContext(context context.Context, text string, docume
 	}
 	if processErr != nil {
 		snapshot.diagnostics = append(snapshot.diagnostics, fileDiagnostics...)
+		snapshot.diagnostics = append(snapshot.diagnostics, importAnalysis.diagnostics...)
+		snapshot.codeActionCandidates = append(snapshot.codeActionCandidates, importAnalysis.actions...)
 		if shouldIgnoreParseValidationError(file, processErr) {
 			snapshot.diagnostics = append(snapshot.diagnostics, lo.Ternary(hasParseDirectiveWarning, []protocol.Diagnostic{parseDirectiveWarning}, nil)...)
 			unusedDiagnostics, unusedActions := unusedDeclarationAnalysis(text, file, tokens, documentPath)

@@ -1,12 +1,25 @@
 package code_actions_test
 
 import (
+	"github.com/louiss0/mace/internal/analyzer"
 	. "github.com/onsi/ginkgo/v2"
+	"github.com/stretchr/testify/assert"
+	protocol "github.com/tliron/glsp/protocol_3_16"
 )
 
 const fixAllKind = "source.fixAll.mace"
 
 var _ = Describe("High-value fix-all code actions", func() {
+	It("replaces malformed delimiters instead of appending a second document", func() {
+		source := "|====|\nalias A: string;\n|===|\n[output = 'schema'] { A: A, }"
+		fixture := newCodeActionFixture(source, nil)
+		targetRange := protocol.Range{End: protocol.Position{Line: 5}}
+		action, found := findCodeActionByTitle(analyzer.CodeActions(fixture.snapshot, fixture.uri, targetRange), "Match all script delimiters")
+
+		assert.New(GinkgoT()).True(found)
+		assert.New(GinkgoT()).Equal("|===|\nalias A: string;\n|===|\n[output = 'schema'] { A: A, }", applyDocumentEdits(source, fixture.uri, action))
+	})
+
 	DescribeTable("only combines deterministic nonconflicting edits",
 		testCodeActionContract,
 		Entry("fixes commas", sourceAction("Fix all missing field commas", fixAllKind, "[output = 'data'] { first: 1 second: 2 third: 3, }", "first: 1,", "second: 2,")),

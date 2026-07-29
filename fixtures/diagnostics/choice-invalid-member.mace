@@ -1,0 +1,5 @@
+|===|
+alias Other: string;
+alias Invalid: choice[Other];
+|===|
+{}

@@ -741,23 +741,9 @@ var _ = Describe("Check", func() {
 		tAssert.Equal("struct", importedValueTypeName(struct{}{}))
 	})
 
-	It("reports multi-document YAML as a structural migration concern", func() {
+	It("accepts multi-document YAML through document fields", func() {
 		report := CheckYAML("name: Ada\n---\nname: Bob\n")
-
-		source, err := FormatCheckReport(report)
-		tAssert.NoError(err)
-		tAssert.Equal(`{
-  syntax: [],
-  key_incompatibility: [],
-  type_incompatibility: [],
-  structure_incompatibility: [{
-      path: "$",
-      reason: "multiple YAML documents require migration before direct Mace use",
-      format: "yaml",
-      actual: "2 documents",
-      expected: "single document"
-    }]
-}`, source)
+		tAssert.False(report.HasIssues())
 	})
 
 	It("accepts TOML timestamps and flags invalid quoted nested keys", func() {
@@ -1454,6 +1440,28 @@ var _ = Describe("ImportSchema", func() {
 {
   nickname?: string
 }`, source)
+	})
+
+	It("rejects required nullable properties that Mace cannot represent", func() {
+		_, err := ImportJSONSchema(`{
+  "type": "object",
+  "properties": {
+    "nickname": { "type": ["string", "null"] }
+  },
+  "required": ["nickname"]
+}`)
+		tAssert.ErrorContains(err, "required nullable property")
+	})
+
+	It("rejects JSON Schema constraints without a Mace equivalent", func() {
+		_, err := ImportJSONSchema(`{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string", "pattern": "^[A-Z]" }
+  }
+}`)
+		tAssert.ErrorContains(err, `unsupported constraint "pattern"`)
+		tAssert.ErrorContains(err, "properties.name.pattern")
 	})
 
 	It("maps multi-type variant alternatives inline", func() {

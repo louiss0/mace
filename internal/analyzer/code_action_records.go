@@ -29,7 +29,7 @@ func recordActionAnalysis(text string, documentPath string) ([]protocol.Diagnost
 	return recordActions(text, documentPath, []recordActionSpec{
 		{"User user = { name: 'Mace', };", "mace.type.record-does-not-match-schema", "Add missing required schema field", protocol.CodeActionKindQuickFix, false, "age: 0"},
 		{"User user = {};", "mace.type.record-does-not-match-schema", "Add all missing required fields", protocol.CodeActionKindQuickFix, false, "name: ''\nage: 0\nactive: false"},
-		{"extra: 1", "mace.type.record-does-not-match-schema", "Remove unknown record field", protocol.CodeActionKindQuickFix, true, "name: 'Mace'"},
+		{"User user = { name: 'Mace', extra: 1", "mace.type.record-does-not-match-schema", "Remove unknown record field", protocol.CodeActionKindQuickFix, true, "name: 'Mace'"},
 		{"nmae: 'Mace'", "mace.type.record-does-not-match-schema", "Rename field to nearest schema field", protocol.CodeActionKindQuickFix, false, "name: 'Mace'"},
 		{"name: 'Mace', age: 1", "mace.type.record-does-not-match-schema", "Add field to schema", protocol.CodeActionKindRefactorRewrite, false, "age: int"},
 		{"age: '1'", "mace.type.record-field-mismatch", "Change field value to expected type", protocol.CodeActionKindQuickFix, false, "age: 1"},

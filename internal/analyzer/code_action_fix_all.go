@@ -36,7 +36,8 @@ func fixAllActionAnalysis(text string, documentPath string) ([]protocol.Diagnost
 		if !strings.Contains(text, specification.match) {
 			continue
 		}
-		action := newSourceAction(text, pathURI(documentPath), specification.title, protocol.CodeActionKind("source.fixAll.mace"), text+"\n"+specification.updated)
+		updated := strings.Replace(text, specification.match, specification.updated, 1)
+		action := newSourceAction(text, pathURI(documentPath), specification.title, protocol.CodeActionKind("source.fixAll.mace"), updated)
 		actions = append(actions, action)
 	}
 	return nil, actions

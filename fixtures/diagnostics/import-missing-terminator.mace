@@ -1,0 +1,4 @@
+|===|
+from './support/import-source.mace' import Shared
+|===|
+{}

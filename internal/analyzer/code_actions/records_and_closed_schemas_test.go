@@ -1,7 +1,9 @@
 package code_actions_test
 
 import (
+	"github.com/louiss0/mace/internal/analyzer"
 	. "github.com/onsi/ginkgo/v2"
+	"github.com/stretchr/testify/assert"
 )
 
 var _ = Describe("Record maps, record literals, and closed schemas code actions", func() {
@@ -66,6 +68,14 @@ schema User: {
 			title:          "Remove optional marker from data field",
 			result:         expected,
 		})
+	})
+
+	It("does not diagnose an untyped output field as an unknown schema field", func() {
+		source := "[output = 'data'] { extra: 1, }"
+		fixture := newCodeActionFixture(source, nil)
+
+		_, found := findDiagnosticByCode(analyzer.Diagnostics(fixture.snapshot), "mace.type.record-does-not-match-schema")
+		assert.New(GinkgoT()).False(found)
 	})
 
 	DescribeTable("satisfies every remaining closed-schema contract",

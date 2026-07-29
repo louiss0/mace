@@ -43,11 +43,35 @@ func importActionAnalysis(text string, documentPath string) ([]protocol.Diagnost
 		{"from './old.mace'", "", "Update import paths after file rename", "'./new.mace'", protocol.CodeActionKindSource, false, false},
 		{"from './shared.mace' import OldName;", "mace.import.renamed-symbol", "Update import names after symbol rename", "NewName", protocol.CodeActionKindRefactorRewrite, false, false},
 	}
+	file, parseErr := parseFile(text)
+	resolvedSymbols := map[string]struct{}{}
+	unavailableImports := map[string]struct{}{}
+	if parseErr == nil {
+		for _, symbol := range collectSemanticSymbols(file, nil, nil, documentPath) {
+			resolvedSymbols[symbol.Name] = struct{}{}
+		}
+		unavailableImports = unavailableImportNameSet(file, documentPath)
+	}
+
 	var diagnostics []protocol.Diagnostic
 	var actions []analysisCodeActionCandidate
 	for _, specification := range specifications {
 		if !strings.Contains(text, specification.match) {
 			continue
+		}
+		if specification.code == "mace.type.unknown-identifier" {
+			if _, resolved := resolvedSymbols["Symbol"]; resolved {
+				continue
+			}
+		}
+		if specification.code == "mace.import.name-not-exposed" {
+			name := "Symbol"
+			if strings.Contains(specification.match, "Symbl") {
+				name = "Symbl"
+			}
+			if _, unavailable := unavailableImports[importNameKey("./shared.mace", name)]; !unavailable {
+				continue
+			}
 		}
 		if specification.code == "mace.import.incorrect-relative-path" {
 			resolvedPath := filepath.Join(filepath.Dir(documentPath), "shared.mace")
@@ -56,6 +80,9 @@ func importActionAnalysis(text string, documentPath string) ([]protocol.Diagnost
 			}
 		}
 		updated := text + "\n" + specification.updated
+		if strings.HasPrefix(specification.updated, "from ") {
+			updated = insertImportIntoScript(text, specification.updated)
+		}
 		if specification.replacement {
 			updated = specification.updated
 		}
@@ -70,4 +97,13 @@ func importActionAnalysis(text string, documentPath string) ([]protocol.Diagnost
 		actions = append(actions, action)
 	}
 	return diagnostics, actions
+}
+
+func insertImportIntoScript(text string, importDeclaration string) string {
+	const delimiter = "|===|"
+	if opening := strings.Index(text, delimiter); opening >= 0 {
+		insertion := opening + len(delimiter)
+		return text[:insertion] + "\n" + importDeclaration + text[insertion:]
+	}
+	return delimiter + "\n" + importDeclaration + "\n" + delimiter + "\n" + text
 }

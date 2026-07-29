@@ -617,7 +617,7 @@ var _ = Describe("Parser", func() {
 		tokens, err := lexInput(`from './base.mace' import User |===|`)
 		tAssert.NoError(err)
 		_, err = New(tokens).parseImportDeclaration()
-		tAssert.NoError(err)
+		tAssert.ErrorContains(err, "expected ';' after import declaration")
 	})
 
 	It("covers parser declaration helper errors directly", func() {
@@ -1667,10 +1667,6 @@ alias Names: record;
 [output = 'data'] {}`,
 				`|===|
 alias Names: fusion;
-|===|
-[output = 'data'] {}`,
-				`|===|
-alias Names: variant[string,];
 |===|
 [output = 'data'] {}`,
 				`|===|

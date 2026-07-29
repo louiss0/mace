@@ -2597,8 +2597,8 @@ schema Result: { value: { name?: string, }, };
 }`, uint32(5), `output value: { name?: string }`),
 	)
 
-	DescribeTable("does not infer schema-less output ternaries containing empty collections",
-		func(declaration string, expression string) {
+	DescribeTable("infers schema-less output ternaries containing empty collections",
+		func(declaration string, expression string, expectedType string) {
 			text := fmt.Sprintf(`|===|
 boolean configured = true;
 %s
@@ -2629,18 +2629,24 @@ boolean configured = true;
 			tAssert.True(ok)
 			if ok {
 				tAssert.Contains(content.Value, "output value")
-				tAssert.NotContains(content.Value, "output value:")
+				if expectedType == "" {
+					tAssert.NotContains(content.Value, "output value:")
+					return
+				}
+				tAssert.Contains(content.Value, "output value: "+expectedType)
 			}
 		},
 		Entry(
 			"empty array",
 			`array<string> configured_value = ["configured"];`,
 			`configured ? configured_value : []`,
+			"array<string>",
 		),
 		Entry(
 			"empty record",
 			`record<string> configured_value = { primary: "active", };`,
 			`configured ? configured_value : {}`,
+			"",
 		),
 	)
 

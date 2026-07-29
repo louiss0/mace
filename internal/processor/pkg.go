@@ -1552,8 +1552,10 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 			if conditionalRequiresCollectionContext(decl.Value, actualType) && len(expectedType.members) == 0 {
 				return validationErrorf("ambiguous conditional with an empty collection requires a variant variable type")
 			}
-			if err := ensureAssignable(expectedType, actualType); err != nil {
-				return err
+			if !expressionContainsEmptyCollection(decl.Value) {
+				if err := ensureAssignable(expectedType, actualType); err != nil {
+					return err
+				}
 			}
 			if err := validateExpressionAgainstType(decl.Value, expectedType, variables, symbols, types, schemas, enums); err != nil {
 				return err
@@ -2019,8 +2021,8 @@ func validateDataOutputFields(fields []ast.OutputField, hasSchema bool, variable
 		}
 		seen[field.Name] = struct{}{}
 
-		if !hasSchema && expressionContainsEmptyCollection(field.Value) {
-			return diagnosticErrorAtNode(validationErrorf("empty collection output requires an output schema"), field)
+		if !hasSchema && expressionContainsEmptyRecord(field.Value) {
+			return diagnosticErrorAtNode(validationErrorf("empty record output requires an output schema"), field)
 		}
 		if err := validateDataOutputExpression(field.Value, symbols); err != nil {
 			return diagnosticErrorAtNode(err, field)
@@ -2072,6 +2074,39 @@ func expressionContainsEmptyCollection(expression ast.Expression) bool {
 		return expressionContainsEmptyCollection(typed.Condition) ||
 			expressionContainsEmptyCollection(typed.Then) ||
 			expressionContainsEmptyCollection(typed.Else)
+	default:
+		return false
+	}
+}
+
+func expressionContainsEmptyRecord(expression ast.Expression) bool {
+	switch typed := expression.(type) {
+	case ast.ArrayLiteral:
+		return lo.ContainsBy(typed.Elements, expressionContainsEmptyRecord)
+	case ast.RecordLiteral:
+		if len(typed.Fields) == 0 {
+			return true
+		}
+		return lo.ContainsBy(typed.Fields, func(field ast.RecordField) bool {
+			return expressionContainsEmptyRecord(field.Value)
+		})
+	case ast.MemberAccess:
+		return expressionContainsEmptyRecord(typed.Target)
+	case ast.PrefixExpression:
+		return expressionContainsEmptyRecord(typed.Right)
+	case ast.InfixExpression:
+		return expressionContainsEmptyRecord(typed.Left) || expressionContainsEmptyRecord(typed.Right)
+	case ast.MatchExpression:
+		if expressionContainsEmptyRecord(typed.Value) {
+			return true
+		}
+		return lo.ContainsBy(typed.Arms, func(arm ast.MatchArm) bool {
+			return expressionContainsEmptyRecord(arm.Value)
+		})
+	case ast.ConditionalExpression:
+		return expressionContainsEmptyRecord(typed.Condition) ||
+			expressionContainsEmptyRecord(typed.Then) ||
+			expressionContainsEmptyRecord(typed.Else)
 	default:
 		return false
 	}
@@ -4783,7 +4818,7 @@ func inferMemberAccessType(targetType valueType, expr ast.MemberAccess, symbols 
 
 func inferArrayLiteralType(expr ast.ArrayLiteral, variables *variableRegistry, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
 	if len(expr.Elements) == 0 {
-		return valueType{kind: ValueArray, element: &valueType{kind: ValueUnknown}}, nil
+		return valueType{kind: ValueArray, element: &valueType{kind: ValueString}}, nil
 	}
 
 	elementTypes := []valueType{}
