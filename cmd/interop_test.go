@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -1126,7 +1127,35 @@ var _ = Describe("Compatibility requirements", func() {
 })
 
 var _ = Describe("Interop helpers", func() {
+	It("writes imported files through the import command", func() {
+		directory := GinkgoT().TempDir()
+		inputPath := filepath.Join(directory, "profile.json")
+		tAssert.NoError(os.WriteFile(inputPath, []byte(`{"name":"Ada"}`), 0o600))
+
+		output := &bytes.Buffer{}
+		command := newImportCommand()
+		command.SetArgs([]string{inputPath})
+		command.SetOut(output)
+		command.SetErr(output)
+
+		tAssert.NoError(command.Execute())
+		outputPath := filepath.Join(directory, "profile.mace")
+		tAssert.FileExists(outputPath)
+		tAssert.Contains(output.String(), outputPath)
+		tAssert.Contains(output.String(), "Generated 1 Mace file(s).")
+	})
+
 	It("covers import conversion edge cases", func() {
+		tAssert.Equal("1.5", yamlFloatLiteral(1.5))
+		tAssert.Equal("2.0", yamlFloatLiteral(2))
+		tAssert.Equal("", omittedExpression{}.render(0))
+		tAssert.Contains(mergeExpression{parts: []importExpression{
+			recordExpression{fields: []recordField{{name: "name", value: rawExpression{text: `"Ada"`}}}},
+		}}.render(0), "name")
+		tAssert.Equal("{}", mergeExpression{parts: []importExpression{
+			rawExpression{text: "not-a-reference"},
+		}}.render(0))
+
 		tAssert.NoError(validateImportFieldName("valid_name"))
 		tAssert.ErrorContains(validateImportFieldName("invalid-name"), "unsupported field name")
 

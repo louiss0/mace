@@ -1300,15 +1300,6 @@ func (p *Parser) isFieldShorthandStart() bool {
 	}
 }
 
-func (p *Parser) consumeOptionalToken(tokenType lexer.TokenType) bool {
-	if p.current().Type != tokenType {
-		return false
-	}
-
-	p.advance()
-	return true
-}
-
 func (p *Parser) consumePairSeparator(context string) error {
 	switch p.current().Type {
 	case lexer.TokenComma:

@@ -88,6 +88,51 @@ var _ = Describe("AST nodes", func() {
 		}
 	})
 
+	It("returns source ranges for every AST node kind", func() {
+		token := lexer.Token{Lexeme: "node", Line: 2, Column: 3}
+		nodes := []Node{
+			GroupedExpression{StartToken: token},
+			Identifier{Token: token},
+			MemberAccess{Target: Identifier{Token: token}},
+			StringLiteral{Token: token},
+			IntLiteral{Token: token},
+			FloatLiteral{Token: token},
+			HexIntLiteral{Token: token},
+			HexFloatLiteral{Token: token},
+			BooleanLiteral{Token: token},
+			NullLiteral{Token: token},
+			ArrayLiteral{StartToken: token},
+			RecordLiteral{StartToken: token},
+			RecordField{NameToken: token},
+			PrefixExpression{OperatorToken: token},
+			InfixExpression{Left: Identifier{Token: token}},
+			ConditionalExpression{Condition: Identifier{Token: token}},
+			MatchPattern{Literal: StringLiteral{Token: token}},
+			MatchExpression{MatchToken: token, EndToken: token},
+			SelfReference{Token: token},
+			VariableDeclaration{NameToken: token},
+			TypeDeclaration{NameToken: token},
+			SchemaDeclaration{NameToken: token},
+			DocDeclaration{TargetToken: token},
+			PrimitiveType{Token: token},
+			ArrayType{Token: token},
+			RecordMapType{Token: token},
+			UnionType{Token: token},
+			VariantType{Token: token},
+			ChoiceType{Token: token},
+			NamedType{Token: token},
+			RecordType{StartToken: token},
+			SchemaField{NameToken: token},
+			OutputField{NameToken: token},
+			OutputSchemaField{NameToken: token},
+		}
+
+		for _, node := range nodes {
+			tAssert.Equal(SourcePosition{Line: 2, Column: 3}, node.Range().Start)
+		}
+		tAssert.Empty((MatchPattern{}).Range())
+	})
+
 	It("returns the local name for imported identifiers", func() {
 		withoutAlias := ImportedIdentifier{Name: "Remote"}
 		tAssert.Equal("Remote", withoutAlias.LocalName())
