@@ -107,6 +107,9 @@ func importTOMLSourceToPath(sourcePath string, outputPath string, input string) 
 	var value map[string]any
 	metadata, err := burnttoml.Decode(input, &value)
 	if err != nil {
+		if path := tomlNumericErrorPath(input, err.Error()); path != "" {
+			return "", fmt.Errorf("import toml: %w at %s", err, path)
+		}
 		return "", fmt.Errorf("import toml: %w", err)
 	}
 
@@ -445,6 +448,31 @@ func tomlExpression(value any, path []string, config tomlImportConfig) (importEx
 	default:
 		return reflectTOMLExpression(reflect.ValueOf(value), path, config)
 	}
+}
+
+func tomlNumericErrorPath(input string, message string) string {
+	keyMatch := regexp.MustCompile(`last key "([^"]+)"`).FindStringSubmatch(message)
+	valueMatch := regexp.MustCompile(`([-+]?\d+) is out of range`).FindStringSubmatch(message)
+	if len(keyMatch) != 2 || len(valueMatch) != 2 {
+		return ""
+	}
+
+	for _, line := range strings.Split(input, "\n") {
+		if !strings.Contains(line, valueMatch[1]) {
+			continue
+		}
+		opening := strings.Index(line, "[")
+		closing := strings.LastIndex(line, "]")
+		if opening < 0 || closing <= opening {
+			return keyMatch[1]
+		}
+		for index, item := range strings.Split(line[opening+1:closing], ",") {
+			if strings.TrimSpace(item) == valueMatch[1] {
+				return fmt.Sprintf("%s[%d]", keyMatch[1], index)
+			}
+		}
+	}
+	return keyMatch[1]
 }
 
 func tomlFloatExpression(value float64, bits int) importExpression {

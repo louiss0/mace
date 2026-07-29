@@ -352,6 +352,14 @@ name = "orbital-array"
 		Entry("negative infinity", "value = -inf\n", "-Infinity"),
 	)
 
+	DescribeTable("reports TOML numeric failures with source paths", func(input string, path string) {
+		_, err := importTOMLSource("config.toml", input)
+		tAssert.ErrorContains(err, path)
+	},
+		Entry("nested integer overflow", "[profile]\nage = 9223372036854775808\n", "profile.age"),
+		Entry("array integer overflow", "values = [1, 9223372036854775808]\n", "values[1]"),
+	)
+
 	DescribeTable("normalizes TOML whitespace keys", func(input string, expected map[string]any) {
 		source, err := importTOMLSource("config.toml", input)
 		tAssert.NoError(err)
@@ -945,6 +953,12 @@ copy_a: *a
 		output := importedOutput(source)
 		copyA := output["copy_a"].(map[string]any)
 		tAssert.Equal("db.internal", copyA["target"].(map[string]any)["host"])
+	})
+
+	It("converts YAML timestamps into strings", func() {
+		source, err := importYAMLSource("config.yaml", "created_at: 2026-05-17T12:30:00Z\n")
+		tAssert.NoError(err)
+		tAssert.IsType("", importedOutput(source)["created_at"])
 	})
 
 	DescribeTable("converts YAML non-finite values into strings", func(input string, expected string) {
