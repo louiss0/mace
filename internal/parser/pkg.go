@@ -204,13 +204,8 @@ func (p *Parser) parseImportDeclaration() (ast.ImportDeclaration, error) {
 }
 
 func (p *Parser) consumeImportSeparator() error {
-	if p.consumeOptionalToken(lexer.TokenSemicolon) {
-		return nil
-	}
-	if p.current().Type == lexer.TokenScriptDelimiter {
-		return nil
-	}
-	return p.unexpectedTokenError("parser: expected ';' after import declaration")
+	_, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after import declaration")
+	return err
 }
 
 func (p *Parser) parseScriptBlock() (ast.ScriptBlock, error) {
@@ -362,7 +357,9 @@ func (p *Parser) parseSchemaDeclaration() (ast.Declaration, error) {
 		return nil, err
 	}
 
-	p.consumeOptionalToken(lexer.TokenSemicolon)
+	if _, err := p.consume(lexer.TokenSemicolon, "parser: expected ';' after schema declaration"); err != nil {
+		return nil, err
+	}
 
 	return ast.SchemaDeclaration{
 		NameToken: nameToken,
@@ -912,6 +909,9 @@ func (p *Parser) parseTypeReference() (ast.TypeReference, error) {
 				break
 			}
 			p.advance()
+			if p.current().Type == lexer.TokenRBracket {
+				break
+			}
 		}
 		if _, err := p.consume(lexer.TokenRBracket, "parser: expected ']' after variant type"); err != nil {
 			return nil, err
@@ -950,6 +950,9 @@ func (p *Parser) parseChoiceType() (ast.TypeReference, error) {
 			break
 		}
 		p.advance()
+		if p.current().Type == lexer.TokenRBracket {
+			break
+		}
 	}
 
 	if _, err := p.consume(lexer.TokenRBracket, "parser: expected ']' after choice type"); err != nil {
