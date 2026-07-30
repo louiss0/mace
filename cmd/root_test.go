@@ -74,6 +74,28 @@ var _ = Describe("CLI", func() {
 		tAssert.Contains(stderr.String(), "unknown command")
 	})
 
+	It("prints the build version", func() {
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+
+		exitCode := run([]string{"version"}, &stdout, &stderr)
+
+		tAssert.Equal(0, exitCode)
+		tAssert.Equal("devel\n", stdout.String())
+		tAssert.Equal("", stderr.String())
+	})
+
+	It("prints the build version with the version flag", func() {
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+
+		exitCode := run([]string{"--version"}, &stdout, &stderr)
+
+		tAssert.Equal(0, exitCode)
+		tAssert.Equal("mace version devel\n", stdout.String())
+		tAssert.Equal("", stderr.String())
+	})
+
 	Describe("helpers", func() {
 		It("returns the current working directory as the activation dir", func() {
 			dir, err := os.Getwd()

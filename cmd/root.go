@@ -21,6 +21,7 @@ import (
 )
 
 var cliActivationDir = "."
+var version = "devel"
 var getWorkingDir = os.Getwd
 var formatMaceFile = formatter.FormatFile
 var importFormatFn = importFormat
@@ -46,15 +47,28 @@ func newRootCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
 	command := &cobra.Command{
 		Use:           "mace",
 		Short:         "Process Mace configuration files",
+		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
 
 	command.SetOut(stdout)
 	command.SetErr(stderr)
-	command.AddCommand(newJSONCommand(), newImportCommand(), newCheckCommand(), newNodesCommand(), newOutputCommand(), newLSPCommand())
+	command.AddCommand(newJSONCommand(), newImportCommand(), newCheckCommand(), newNodesCommand(), newOutputCommand(), newLSPCommand(), newVersionCommand())
 
 	return command
+}
+
+func newVersionCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print the Mace version",
+		Args:  cobra.NoArgs,
+		RunE: func(command *cobra.Command, args []string) error {
+			_, err := fmt.Fprintln(command.OutOrStdout(), version)
+			return err
+		},
+	}
 }
 
 func newJSONCommand() *cobra.Command {
