@@ -20,6 +20,9 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       startsWith(github.event.workflow_run.head_branch, 'v'))
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release_tag.outputs.version }}
+      release_ref: ${{ steps.release_tag.outputs.release_ref }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -28,6 +31,7 @@ jobs:
           fetch-depth: 0
 
       - name: Resolve release tag
+        id: release_tag
         shell: bash
         run: |
           set -euo pipefail
@@ -36,7 +40,11 @@ jobs:
             echo "The selected commit is not tagged with a vMAJOR.MINOR.PATCH release tag." >&2
             exit 1
           fi
+          release_ref="$(git rev-parse HEAD)"
           echo "MACE_RELEASE_TAG=$tag" >> "$GITHUB_ENV"
+          echo "MACE_RELEASE_REF=$release_ref" >> "$GITHUB_ENV"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "release_ref=$release_ref" >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -137,7 +145,7 @@ jobs:
           {
             "version": "${VERSION}",
             "source_repository": "${GITHUB_REPOSITORY}",
-            "source_commit": "${GITHUB_SHA}"
+            "source_commit": "${MACE_RELEASE_REF}"
           }
           EOF
 
@@ -177,7 +185,7 @@ jobs:
           {
             "version": "${VERSION}",
             "source_repository": "${GITHUB_REPOSITORY}",
-            "source_commit": "${GITHUB_SHA}"
+            "source_commit": "${MACE_RELEASE_REF}"
           }
           EOF
 
@@ -201,3 +209,11 @@ jobs:
 
           git commit -m "Update Mace version to ${VERSION}"
           git push origin "$BRANCH_NAME"
+
+  publish-bindings:
+    needs: release
+    uses: ./.github/workflows/release-bindings.yml
+    with:
+      version: ${{ needs.release.outputs.version }}
+      release_ref: ${{ needs.release.outputs.release_ref }}
+    secrets: inherit

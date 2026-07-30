@@ -1,52 +1,29 @@
 name: release-bindings
 
 on:
-  workflow_run:
-    workflows:
-      - ci
-    types:
-      - completed
+  workflow_call:
+    inputs:
+      version:
+        description: Release version without the v prefix.
+        required: true
+        type: string
+      release_ref:
+        description: Commit SHA to publish.
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 jobs:
-  prepare-release:
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'release'
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      release_ref: ${{ github.event.workflow_run.head_sha }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-          fetch-depth: 0
-
-      - name: Resolve release version
-        id: version
-        shell: bash
-        run: |
-          set -euo pipefail
-          git fetch --tags --force
-          version_tag="$(git tag --points-at "${{ github.event.workflow_run.head_sha }}" | grep '^v' | head -n 1 || true)"
-          if [[ -z "$version_tag" ]]; then
-            echo "Unable to find a v-prefixed tag for release SHA ${{ github.event.workflow_run.head_sha }}" >&2
-            exit 1
-          fi
-          version="${version_tag#v}"
-          echo "tag=$version_tag" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
 
   publish-node:
-    needs: prepare-release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
-          ref: ${{ needs.prepare-release.outputs.release_ref }}
+          ref: ${{ inputs.release_ref }}
           fetch-depth: 0
 
       - name: Configure 1Password
@@ -78,7 +55,7 @@ jobs:
         working-directory: bindings/node
         shell: bash
         run: |
-          node -e "const fs=require('fs'); const path='package.json'; const pkg=JSON.parse(fs.readFileSync(path,'utf8')); pkg.version='${{ needs.prepare-release.outputs.version }}'; fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');"
+          node -e "const fs=require('fs'); const path='package.json'; const pkg=JSON.parse(fs.readFileSync(path,'utf8')); pkg.version='${{ inputs.version }}'; fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');"
 
       - name: Install and build Node binding
         working-directory: bindings/node
@@ -93,13 +70,12 @@ jobs:
         run: npm publish --access public
 
   publish-python:
-    needs: prepare-release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
-          ref: ${{ needs.prepare-release.outputs.release_ref }}
+          ref: ${{ inputs.release_ref }}
           fetch-depth: 0
 
       - name: Configure 1Password
@@ -132,7 +108,7 @@ jobs:
           path = Path('pyproject.toml')
           text = path.read_text()
           old = 'version = "0.1.0"'
-          new = 'version = "${{ needs.prepare-release.outputs.version }}"'
+          new = 'version = "${{ inputs.version }}"'
           if old not in text:
               raise SystemExit('expected version entry not found in pyproject.toml')
           path.write_text(text.replace(old, new, 1))
