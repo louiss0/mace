@@ -323,12 +323,12 @@ func formatOutputDirectives(directives []ast.OutputDirective) (string, error) {
 			parts = append(parts, "parse = "+directive.Value)
 		case ast.OutputDirectiveParseFile:
 			parts = append(parts, "parse_file = "+directive.Value)
-		case ast.OutputDirectiveDoc:
-			documentation, err := formatExpressionWithDepth(directive.Documentation, 0)
+		case ast.OutputDirectiveDescription:
+			description, err := formatExpressionWithDepth(directive.Description, 0)
 			if err != nil {
 				return "", err
 			}
-			parts = append(parts, "doc = "+documentation)
+			parts = append(parts, "description = "+description)
 		default:
 			return "", fmt.Errorf("format output directive: unsupported %d", directive.Kind)
 		}

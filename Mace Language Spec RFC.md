@@ -240,7 +240,7 @@ directive_pair =
   | "schema_file" , ws0 , "=" , ws0 , path_literal
   | "parse" , ws0 , "=" , ws0 , identifier
   | "parse_file" , ws0 , "=" , ws0 , path_literal
-  | "doc" , ws0 , "=" , ws0 , expression ;
+  | "description" , ws0 , "=" , ws0 , expression ;
 data_output_field =
     identifier , ws0 , ":" , ws0 , ( expression | null_literal ) ,
     [ ws0 , inline_description ]
@@ -342,7 +342,7 @@ The globally reserved complete-token keywords are `from`, `import`, `bind`,
 `alias`, `schema`, `gen_doc`, `schema_doc`, `array`, `record`, `fusion`,
 `variant`, `choice`, `match`, `string`, `int`, `float`, `hex_int`, `hex_float`,
 `boolean`, `true`, `false`, and `null`. `output`, `schema_file`, `parse`,
-`parse_file`, `doc`, `data`, `summary`, `description`, and `fields` are contextual
+`parse_file`, `description`, `data`, `summary`, and `fields` are contextual
 in their corresponding constructs. A keyword matches only a complete identifier
 token: `matcher` is one identifier, not `match` followed by `er`. Contextual
 keywords MAY be field names where the field grammar is unambiguous. A globally
@@ -358,7 +358,7 @@ Positive: `{ matcher: 1, output: 2, }`. Negative: `int match = 1;`.
 form are consumed only by `escape_sequence`.
 
 Choice members and structured documentation use `literal_string`; interpolation
-in either location is forbidden. The data-output `doc` directive is the sole
+in either location is forbidden. The data-output `description` directive is the sole
 documentation location that evaluates an expression, which MUST produce a
 string. A path is a single-line, non-interpolated, single-quoted `path_literal`.
 
@@ -673,8 +673,9 @@ nearest binary64 result is infinity.
 
 Documentation is metadata and MUST NOT affect evaluation. `gen_doc` applies to
 primitive/array variables, aliases, and choices. `schema_doc` applies to schemas
-and record-valued variables. Unknown, duplicate, premature, or inapplicable
-targets and keys are errors. `fields` exists only in `schema_doc` and each named
+and record-valued variables. Imported targets MUST instead be documented with
+the matching directive in the file that exports them. Unknown, duplicate,
+premature, or inapplicable targets and keys are errors. `fields` exists only in `schema_doc` and each named
 field MUST exist. Structured values are non-interpolating strings. Inline and
 structured documentation MUST NOT conflict.
 

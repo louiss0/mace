@@ -3002,7 +3002,7 @@ Hover should surface this documentation.
   },
 };
 |===|
-[output = 'schema', doc = """
+[output = 'schema', description = """
 # User Output
 """]
 {

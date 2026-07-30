@@ -1886,8 +1886,8 @@ gen_doc Alias {
 			}
 		})
 
-		It("parses output doc directives", func() {
-			input := `[output = 'schema', doc = """
+		It("parses output description directives", func() {
+			input := `[output = 'schema', description = """
 # Public User Output
 """]
 {
@@ -1897,11 +1897,11 @@ gen_doc Alias {
 			file, err := parseFileInput(input)
 			tAssert.NoError(err)
 			if tAssert.Len(file.Output.Directives, 2) {
-				tAssert.Equal(ast.OutputDirectiveDoc, file.Output.Directives[1].Kind)
-				documentation, ok := file.Output.Directives[1].Documentation.(ast.StringLiteral)
+				tAssert.Equal(ast.OutputDirectiveDescription, file.Output.Directives[1].Kind)
+				description, ok := file.Output.Directives[1].Description.(ast.StringLiteral)
 				tAssert.True(ok)
 				if ok {
-					tAssert.Equal("\"\"\"\n# Public User Output\n\"\"\"", documentation.Lexeme)
+					tAssert.Equal("\"\"\"\n# Public User Output\n\"\"\"", description.Lexeme)
 				}
 			}
 		})
@@ -1995,7 +1995,7 @@ Hover should surface this documentation.
   },
 };
 |===|
-[output = 'schema', doc = """
+[output = 'schema', description = """
 # User Output
 """]
 {
@@ -2027,10 +2027,10 @@ Hover should surface this documentation.
 			}
 
 			if tAssert.Len(file.Output.Directives, 2) {
-				documentation, ok := file.Output.Directives[1].Documentation.(ast.StringLiteral)
+				description, ok := file.Output.Directives[1].Description.(ast.StringLiteral)
 				tAssert.True(ok)
 				if ok {
-					tAssert.Contains(documentation.Lexeme, "# User Output")
+					tAssert.Contains(description.Lexeme, "# User Output")
 				}
 			}
 			if tAssert.Len(file.Output.SchemaFields, 1) {

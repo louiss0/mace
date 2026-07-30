@@ -1664,6 +1664,13 @@ func validateDocDeclaration(declaration ast.DocDeclaration, symbols *symbolTable
 	if !ok {
 		return validationErrorf("documentation target %q must reference an existing declaration", declaration.Target)
 	}
+	if targetKind == symbolKindImport {
+		keyword := "gen_doc"
+		if declaration.Kind == ast.DocumentationKindSchema {
+			keyword = "schema_doc"
+		}
+		return validationErrorf("%s target %q is imported; use %s in the file that exports it", keyword, declaration.Target, keyword)
+	}
 	if _, exists := seenDocs[declaration.Target]; exists {
 		return validationErrorf("duplicate documentation declaration for %q", declaration.Target)
 	}
@@ -1786,9 +1793,9 @@ func validateOutputDirectiveStructure(output ast.OutputBlock) error {
 			if output.Mode == ast.OutputModeSchema {
 				return validationErrorf("parse_file directive is invalid when output mode is schema")
 			}
-		case ast.OutputDirectiveDoc:
-			if directive.Documentation == nil {
-				return validationErrorf("doc directive requires a value")
+		case ast.OutputDirectiveDescription:
+			if directive.Description == nil {
+				return validationErrorf("description directive requires a value")
 			}
 		default:
 			return validationErrorf("unknown output directive")
@@ -1807,16 +1814,16 @@ func validateOutputDirectiveStructure(output ast.OutputBlock) error {
 
 func validateOutputDocumentation(directives []ast.OutputDirective, context processContext) error {
 	for _, directive := range directives {
-		if directive.Kind != ast.OutputDirectiveDoc {
+		if directive.Kind != ast.OutputDirectiveDescription {
 			continue
 		}
 
-		value, err := evaluateExpression(directive.Documentation, context.environment, Value{}, context.symbols, context.types, context.schemas, nil)
+		value, err := evaluateExpression(directive.Description, context.environment, Value{}, context.symbols, context.types, context.schemas, nil)
 		if err != nil {
 			return err
 		}
 		if value.Kind != ValueString {
-			return validationErrorf("doc directive must evaluate to a string")
+			return validationErrorf("description directive must evaluate to a string")
 		}
 	}
 
@@ -2808,8 +2815,8 @@ func directiveKindName(kind ast.OutputDirectiveKind) string {
 		return "parse"
 	case ast.OutputDirectiveParseFile:
 		return "parse_file"
-	case ast.OutputDirectiveDoc:
-		return "doc"
+	case ast.OutputDirectiveDescription:
+		return "description"
 	default:
 		return "unknown"
 	}

@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"github.com/louiss0/mace/internal/parser/ast"
 	. "github.com/onsi/ginkgo/v2"
 )
 
@@ -47,6 +48,26 @@ gen_doc greeting {
   summary: "Rendered greeting.",
 };
 |===|`),
+	)
+
+	DescribeTable("rejects documentation declarations for imported targets",
+		func(kind ast.DocumentationKind, keyword string) {
+			symbols := newSymbolTable()
+			symbols.Add("Imported", symbolKindImport)
+
+			err := validateDocDeclaration(
+				ast.DocDeclaration{Kind: kind, Target: "Imported", Documentation: ast.Documentation{}},
+				symbols,
+				newSchemaRegistry(),
+				newVariableRegistry(),
+				map[string]struct{}{},
+				map[string]symbolKind{},
+			)
+
+			tAssert.ErrorContains(err, keyword+` target "Imported" is imported; use `+keyword+" in the file that exports it")
+		},
+		Entry("schema documentation", ast.DocumentationKindSchema, "schema_doc"),
+		Entry("general documentation", ast.DocumentationKindGeneral, "gen_doc"),
 	)
 
 	DescribeTable("rejects invalid documentation declarations",
@@ -158,14 +179,14 @@ string name = "Ada";
 |===|`, "must appear after its type or non-object variable declaration"),
 	)
 
-	DescribeTable("accepts output doc directives for each string variation",
+	DescribeTable("accepts output description directives for each string variation",
 		func(mode, documentation string) {
 			field := `name: "Ada",`
 			if mode == "schema" {
 				field = "name: string,"
 			}
 
-			_, err := New().Process(`[output = '` + mode + `', doc = ` + documentation + `]
+			_, err := New().Process(`[output = '` + mode + `', description = ` + documentation + `]
 {
   ` + field + `
 }`)
@@ -183,26 +204,26 @@ string name = "Ada";
 """`),
 	)
 
-	It("accepts data output doc directives that reference variables", func() {
+	It("accepts data output description directives that reference variables", func() {
 		_, err := New().Process(`|===|
 string documentation = "Public output";
 |===|
-[output = 'data', doc = documentation]
+[output = 'data', description = documentation]
 {
   name: "Ada",
 }`)
 		tAssert.NoError(err)
 	})
 
-	DescribeTable("rejects invalid output doc directives",
+	DescribeTable("rejects invalid output description directives",
 		func(input, message string) {
 			_, err := New().Process(input)
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, message)
 		},
-		Entry("non-string doc value", `[output = 'data', doc = 1]
+		Entry("non-string description value", `[output = 'data', description = 1]
 {
-}`, "doc directive must evaluate to a string"),
+}`, "description directive must evaluate to a string"),
 	)
 
 	It("loads doc fixtures", func() {
