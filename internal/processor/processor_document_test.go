@@ -336,7 +336,7 @@ string name = "Ada";
 
 	It("processes output blocks independently", func() {
 		processor := New()
-		result, err := processor.ProcessOutputBlock(`[output = 'schema', doc = """
+		result, err := processor.ProcessOutputBlock(`[output = 'schema', description = """
 # Output Schema
 """]
 {
@@ -487,7 +487,7 @@ int value = 1;
 		}}
 		_, err = buildProcessContextWithState(nil, script, ".", ".", true, map[string]Value{}, map[string]map[string]importedDeclaration{}, map[string]struct{}{})
 		tAssert.Error(err)
-		_, err = prepareOutputContext(ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveOutput, Value: "data"}, {Kind: ast.OutputDirectiveDoc, Documentation: ast.StringLiteral{Lexeme: `"doc"`}}}}, newProcessContext(".", "."))
+		_, err = prepareOutputContext(ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveOutput, Value: "data"}, {Kind: ast.OutputDirectiveDescription, Description: ast.StringLiteral{Lexeme: `"description"`}}}}, newProcessContext(".", "."))
 		tAssert.NoError(err)
 		_, err = prepareOutputContext(ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParse, Value: "User"}, {Kind: ast.OutputDirectiveParseFile, Value: `"schema.mace"`}}}, newProcessContext(".", "."))
 		tAssert.Error(err)

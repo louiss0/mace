@@ -577,13 +577,13 @@ const (
 	OutputDirectiveSchema
 	OutputDirectiveParse
 	OutputDirectiveParseFile
-	OutputDirectiveDoc
+	OutputDirectiveDescription
 )
 
 type OutputDirective struct {
-	Kind          OutputDirectiveKind
-	Value         string
-	Documentation Expression
+	Kind        OutputDirectiveKind
+	Value       string
+	Description Expression
 }
 
 type OutputField struct {

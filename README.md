@@ -469,7 +469,7 @@ writing, the specification lists these as not yet implemented:
 
 ## License
 
-Add a license file if you intend to publish or distribute this project.
+Mace is distributed under the [MIT License](./LICENSE).
 
 ## Optional chaining
 

@@ -670,18 +670,18 @@ func (p *Parser) parseDirectivePair() (ast.OutputDirective, error) {
 			Kind:  ast.OutputDirectiveParseFile,
 			Value: pathToken.Lexeme,
 		}, nil
-	case "doc":
+	case "description":
 		p.advance()
-		if _, err := p.consume(lexer.TokenAssign, "parser: expected '=' after doc directive"); err != nil {
+		if _, err := p.consume(lexer.TokenAssign, "parser: expected '=' after description directive"); err != nil {
 			return ast.OutputDirective{}, err
 		}
 
-		documentation, err := p.parseExpression(precedenceLowest)
+		description, err := p.parseExpression(precedenceLowest)
 		if err != nil {
 			return ast.OutputDirective{}, err
 		}
 
-		return ast.OutputDirective{Kind: ast.OutputDirectiveDoc, Documentation: documentation}, nil
+		return ast.OutputDirective{Kind: ast.OutputDirectiveDescription, Description: description}, nil
 	case "schema":
 		p.advance()
 		if _, err := p.consume(lexer.TokenAssign, "parser: expected '=' after schema directive"); err != nil {

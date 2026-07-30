@@ -240,7 +240,7 @@ directive_pair =
   | "schema_file" , ws0 , "=" , ws0 , path_literal
   | "parse" , ws0 , "=" , ws0 , identifier
   | "parse_file" , ws0 , "=" , ws0 , path_literal
-  | "doc" , ws0 , "=" , ws0 , expression ;
+  | "description" , ws0 , "=" , ws0 , expression ;
 data_output_field =
     identifier , ws0 , ":" , ws0 , ( expression | null_literal ) ,
     [ ws0 , inline_description ]
@@ -342,7 +342,7 @@ The globally reserved complete-token keywords are `from`, `import`, `bind`,
 `alias`, `schema`, `gen_doc`, `schema_doc`, `array`, `record`, `fusion`,
 `variant`, `choice`, `match`, `string`, `int`, `float`, `hex_int`, `hex_float`,
 `boolean`, `true`, `false`, and `null`. `output`, `schema_file`, `parse`,
-`parse_file`, `doc`, `data`, `summary`, `description`, and `fields` are contextual
+`parse_file`, `description`, `data`, `summary`, and `fields` are contextual
 in their corresponding constructs. A keyword matches only a complete identifier
 token: `matcher` is one identifier, not `match` followed by `er`. Contextual
 keywords MAY be field names where the field grammar is unambiguous. A globally
@@ -358,7 +358,7 @@ Positive: `{ matcher: 1, output: 2, }`. Negative: `int match = 1;`.
 form are consumed only by `escape_sequence`.
 
 Choice members and structured documentation use `literal_string`; interpolation
-in either location is forbidden. The data-output `doc` directive is the sole
+in either location is forbidden. The data-output `description` directive is the sole
 documentation location that evaluates an expression, which MUST produce a
 string. A path is a single-line, non-interpolated, single-quoted `path_literal`.
 
@@ -673,8 +673,9 @@ nearest binary64 result is infinity.
 
 Documentation is metadata and MUST NOT affect evaluation. `gen_doc` applies to
 primitive/array variables, aliases, and choices. `schema_doc` applies to schemas
-and record-valued variables. Unknown, duplicate, premature, or inapplicable
-targets and keys are errors. `fields` exists only in `schema_doc` and each named
+and record-valued variables. Imported targets MUST instead be documented with
+the matching directive in the file that exports them. Unknown, duplicate,
+premature, or inapplicable targets and keys are errors. `fields` exists only in `schema_doc` and each named
 field MUST exist. Structured values are non-interpolating strings. Inline and
 structured documentation MUST NOT conflict.
 
@@ -725,100 +726,3 @@ Processors MUST treat source files, imports, runtime input, documentation,
 strings, and emitted values as data. They MUST validate runtime input before
 binding parsed references, enforce canonical-root containment, reject cycles,
 and never leak partial output.
-
-## 12. Interoperability
-
-Interoperability is a typed value lowering, not a concrete-syntax round trip.
-Importers MUST parse the source format before constructing Mace and MUST NOT
-interpret source comments, tags, object keys, schema annotations, or scalar text
-as executable Mace. Generated source MUST be accepted by the Mace lexer and
-parser and MUST have a canonical formatted representation.
-
-### 12.1 Common representation boundary
-
-A source mapping or object maps to a Mace record only when every key is a string
-matching `[A-Za-z_][A-Za-z0-9_]*`. Source quoting MUST NOT bypass this
-restriction. A sequence maps to an array and preserves order, subject to Mace's
-homogeneous-element rule. Strings and booleans map directly. Finite decimal
-integers and floats map to `int` and `float`; source radix, separators, exponent
-spelling, signed-zero spelling, and binary precision beyond Mace's runtime
-representation are not preserved.
-
-Source nulls map to omission rather than to a general nullable type. Omitting a
-mapping entry changes field presence; omitting a sequence item changes later
-indexes. A conversion MUST fail when omission leaves no representable required
-root record. Date/time, tag-defined, non-finite, and other source-only scalar
-families MUST be converted explicitly to a supported Mace type or rejected; they
-MUST NOT silently create a new Mace type.
-
-Comments, whitespace, quoting style, escape spelling, field presentation order,
-duplicate entries, anchors' source identity, table syntax, and block-scalar
-style are outside the Mace value model. A checker SHOULD report loss before
-conversion when it can locate it. Duplicate keys MUST NOT be represented as two
-Mace fields.
-
-### 12.2 JSON
-
-JSON data import accepts one strict JSON document with no trailing content. Its
-root MUST be an object. Integer tokens fitting signed 64-bit map to `int`; other
-finite number tokens map through binary `float64`. JSON `null` values are
-omitted recursively. Object ordering and duplicate-key behavior are not
-preserved. JSON comments, trailing commas, unquoted keys, non-finite numbers,
-and other JSON5/JSONC or JavaScript extensions are not accepted.
-
-A JSON object with a string `$schema` enters schema conversion rather than
-ordinary data conversion. JSON Schema primitives map as follows: `string` to
-`string`, `integer` to `int`, `number` to `float`, `boolean` to `boolean`, arrays
-with one item schema to `array<T>`, and object properties to closed record
-shapes. `required` controls field presence; a `null` alternative makes a field
-optional rather than nullable. Homogeneous string or integer enums map to
-`choice[...]`; `oneOf` and `anyOf` both map to closed `variant[...]`; and
-record-only `allOf` maps to `fusion[...]`. These mappings intentionally do not
-preserve `oneOf` overlap semantics, arbitrary predicate intersection, or
-validation keywords for bounds, patterns, formats, conditionals, tuple items,
-or unevaluated properties. Omitting `additionalProperties` also loses JSON
-Schema's open-by-default behavior because Mace records are closed.
-Additional-property schemas, null-only types, unsupported enum domains, and
-`$ref` values outside the supported local `#/...` form MUST be rejected when no
-exact Mace type can be constructed.
-
-When Mace emits JSON, `hex_int` and `hex_float` values MUST be serialized as
-canonical strings so a JSON number does not erase hexadecimal type identity.
-
-### 12.3 YAML
-
-YAML import operates on the representation graph so mappings, sequences,
-scalars, aliases, merge keys, and document boundaries can be distinguished.
-String, boolean, integer, and finite float nodes map to their Mace scalar
-families. Null nodes are omitted. Non-finite YAML floats are converted to
-strings by the CLI importer because Mace floats are finite. Timestamp and custom
-tag identity are not Mace types; tags MUST NOT invoke constructors or executable
-behavior.
-
-Aliases may lower to immutable Mace `$self` references when their anchor has a
-stable named target. Merge keys are resolved to records with later fields taking
-precedence. Unknown aliases, cyclic top-level dependencies, non-string or
-non-identifier mapping keys, and merge sources that do not resolve to mappings
-are not accepted. Multiple documents and non-record roots may be wrapped in
-`document_N` fields, but this wrapping is a Mace-specific migration and MUST NOT
-be described as a lossless YAML stream round trip. Comments, directives,
-flow/block presentation, tags, anchor locations, and block-scalar style are not
-preserved.
-
-### 12.4 TOML
-
-TOML strings, booleans, signed 64-bit integers, and finite floats map to Mace
-scalars. Offset and local temporal families map to strings because Mace has no
-temporal primitive. Tables, inline tables, dotted keys, and arrays of tables are
-lowered to records, nested records, and arrays; the source distinction among
-those table syntaxes is lost. Parser metadata MAY retain a best-effort field
-order, but order is not a record semantic.
-
-TOML has no null from which to infer Mace optionality. Duplicate or redefined
-keys remain TOML syntax errors. Non-identifier decoded keys, non-finite floats,
-and arrays that cannot satisfy one Mace element type are not accepted. Quoted
-TOML keys lose their quotes and MUST still satisfy the Mace field grammar.
-
-Detailed implementation-facing conversion matrices and migration limits are in
-[JSON Interoperability](JSON.md), [YAML Interoperability](YAML.md), and
-[TOML Interoperability](TOML.md).

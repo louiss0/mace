@@ -13,13 +13,13 @@ class MaceError(RuntimeError):
         self.exit_code = exit_code
 
 
-def json(path: str, inject: str | None = None, mace_path: str = "mace", cwd: str | None = None) -> Any:
-    output = _run_mace(_json_args(path, inject), mace_path=mace_path, cwd=cwd)
+def json(path: str, input: str | None = None, mace_path: str = "mace", cwd: str | None = None) -> Any:
+    output = _run_mace(_json_args(path, input), mace_path=mace_path, cwd=cwd)
     return json_module.loads(output)
 
 
-def json_text(path: str, inject: str | None = None, mace_path: str = "mace", cwd: str | None = None) -> str:
-    return _run_mace(_json_args(path, inject), mace_path=mace_path, cwd=cwd)
+def json_text(path: str, input: str | None = None, mace_path: str = "mace", cwd: str | None = None) -> str:
+    return _run_mace(_json_args(path, input), mace_path=mace_path, cwd=cwd)
 
 
 def output(path: str, mace_path: str = "mace", cwd: str | None = None) -> str:
@@ -59,10 +59,10 @@ def _import_text(name: str, input_text: str, mace_path: str, cwd: str | None) ->
         return import_file(str(path), mace_path=mace_path, cwd=cwd)
 
 
-def _json_args(path: str, inject: str | None) -> list[str]:
+def _json_args(path: str, input: str | None) -> list[str]:
     args = ["json", path]
-    if inject is not None:
-        args.extend(["--inject", inject])
+    if input is not None:
+        args.extend(["--input", input])
     return args
 
 

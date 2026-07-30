@@ -28,8 +28,8 @@ formatted = output("./config.mace")
 
 ## API
 
-- `json(path, inject=None, mace_path="mace", cwd=None)`
-- `json_text(path, inject=None, mace_path="mace", cwd=None)`
+- `json(path, input=None, mace_path="mace", cwd=None)`
+- `json_text(path, input=None, mace_path="mace", cwd=None)`
 - `output(path, mace_path="mace", cwd=None)`
 - `nodes(path, mace_path="mace", cwd=None)`
 - `import_json(input_text, mace_path="mace", cwd=None)`
