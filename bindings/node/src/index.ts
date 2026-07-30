@@ -9,7 +9,7 @@ export interface RunOptions {
 }
 
 export interface JsonOptions extends RunOptions {
-  inject?: string
+  input?: string
 }
 
 export class MaceError extends Error {
@@ -23,12 +23,7 @@ export class MaceError extends Error {
 }
 
 export async function json(path: string, options: JsonOptions = {}): Promise<unknown> {
-  const args = ['json', path]
-  if (options.inject) {
-    args.push('--inject', options.inject)
-  }
-
-  const output = await runMace(args, options)
+  const output = await runMace(buildJsonArgs(path, options), options)
   return JSON.parse(output)
 }
 
@@ -86,8 +81,8 @@ async function withTempFile(name: string, contents: string, action: (path: strin
 
 function buildJsonArgs(path: string, options: JsonOptions): string[] {
   const args = ['json', path]
-  if (options.inject) {
-    args.push('--inject', options.inject)
+  if (options.input) {
+    args.push('--input', options.input)
   }
   return args
 }

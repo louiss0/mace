@@ -25,13 +25,16 @@ jpd run build
 import { json, output } from '@code-fixer-23/mace-node'
 
 const value = await json('./config.mace')
+const runtimeValue = await json('./runtime.mace', {
+  input: '{ env: "prod", }',
+})
 const formatted = await output('./config.mace')
 ```
 
 ## API
 
-- `json(path, options?)`
-- `jsonText(path, options?)`
+- `json(path, { input?, macePath?, cwd? }?)`
+- `jsonText(path, { input?, macePath?, cwd? }?)`
 - `output(path, options?)`
 - `nodes(path, options?)`
 - `importJson(input, options?)`
