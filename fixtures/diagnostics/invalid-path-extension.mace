@@ -1,4 +1,0 @@
-|===|
-from './support/import-source' import Exposed;
-|===|
-[output = 'data'] {}

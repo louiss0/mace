@@ -1,8 +1,0 @@
-|===|
-from './schema-only.mace' import User;
-|===|
-
-[output = 'data', parse = User]
-{
-  result: $name,
-}

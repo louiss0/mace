@@ -1,4 +1,0 @@
-|===|
-alias Invalid: variant[string, string];
-|===|
-[output = 'data'] {}

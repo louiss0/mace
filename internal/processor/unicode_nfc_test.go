@@ -27,35 +27,38 @@ string café = "ok";
 		tAssert.ErrorContains(err, "duplicate declaration")
 	})
 
-	It("resolves the portable cross-file import fixtures", func() {
-		for _, fixture := range []string{
+	It("resolves portable cross-file import examples", func() {
+		workspace := newExampleWorkspace(unicodeImportExamples)
+		for _, name := range []string{
 			"consumer.mace",
 			"nfc-consumer.mace",
 			"alias-consumer.mace",
 			"bind-consumer.mace",
 			"schema-file-consumer.mace",
 		} {
-			result, err := New().ProcessFile("../../fixtures/unicode/import-canonical-equivalence/" + fixture)
-			if !tAssert.NoError(err, fixture) {
+			result, err := New().ProcessFile(examplePath(workspace, "import-canonical-equivalence/"+name))
+			if !tAssert.NoError(err, name) {
 				continue
 			}
-			if fixture == "schema-file-consumer.mace" {
-				tAssert.Equal("ok", result.Output["value"].String, fixture)
+			if name == "schema-file-consumer.mace" {
+				tAssert.Equal("ok", result.Output["value"].String, name)
 				continue
 			}
-			tAssert.NotEmpty(result.Output, fixture)
+			tAssert.NotEmpty(result.Output, name)
 		}
 	})
 
 	It("rejects canonical collisions in imported aliases and local declarations", func() {
-		for _, fixture := range []string{"duplicate-aliases.mace", "local-import-collision.mace"} {
-			_, err := New().ProcessFile("../../fixtures/unicode/import-canonical-equivalence/" + fixture)
+		workspace := newExampleWorkspace(unicodeImportExamples)
+		for _, name := range []string{"duplicate-aliases.mace", "local-import-collision.mace"} {
+			_, err := New().ProcessFile(examplePath(workspace, "import-canonical-equivalence/"+name))
 			tAssert.ErrorContains(err, "duplicate")
 		}
 	})
 
 	It("preserves decomposed import paths", func() {
-		result, err := New().ProcessFile("../../fixtures/unicode/path-not-normalized.mace")
+		workspace := newExampleWorkspace(unicodeImportExamples)
+		result, err := New().ProcessFile(examplePath(workspace, "path-not-normalized.mace"))
 		if !tAssert.NoError(err) {
 			return
 		}

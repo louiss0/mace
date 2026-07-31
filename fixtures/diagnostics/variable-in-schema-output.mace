@@ -1,5 +1,0 @@
-|===|
-string name = 'Ada';
-|===|
-[output = 'schema']
-{ name: name, }

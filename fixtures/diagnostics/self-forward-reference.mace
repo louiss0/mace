@@ -1,5 +1,0 @@
-[output = 'data']
-{
-  first: $self.second,
-  second: 2,
-}

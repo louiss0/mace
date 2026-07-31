@@ -1,6 +1,0 @@
-|===|
-schema Left: { value: string, };
-schema Right: { value: int, };
-alias Invalid: fusion[Left, Right];
-|===|
-[output = 'data'] {}

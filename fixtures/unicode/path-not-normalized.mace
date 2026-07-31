@@ -1,4 +1,0 @@
-|===|
-from './café.mace' import value;
-|===|
-[output = 'data'] { value: value, }

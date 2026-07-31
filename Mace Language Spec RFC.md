@@ -731,14 +731,14 @@ Required distinct categories include:
 * keyword in an identifier position, malformed/unterminated inline descriptions,
   and duplicate or conflicting documentation.
 
-The conformance fixtures are in `fixtures/diagnostics/`, with their message
-fragments in `internal/processor/processor_diagnostics_test.go`. Match fixtures
-that require revision include `match-variant-literal-pattern.mace` and its
-`variant match arms require a type pattern` expectation. New fixtures are needed
-for equal-specificity overlap, missing residual choice coverage, unrelated
-variant literals, interpolated choice/documentation strings, bind failures,
-file-selection failures, keyword misuse, malformed inline descriptions, and
-operator combinations.
+The conformance examples are inline in
+`internal/processor/diagnostic_examples_test.go`, with their expected message
+fragments in `internal/processor/processor_diagnostics_test.go`. The variant literal-pattern
+example requires the `variant match arms require a type pattern` expectation.
+New examples are needed for equal-specificity overlap, missing residual choice
+coverage, unrelated variant literals, interpolated choice/documentation strings,
+bind failures, file-selection failures, keyword misuse, malformed inline
+descriptions, and operator combinations.
 
 Processors MUST treat source files, imports, runtime input, documentation,
 strings, and emitted values as data. They MUST validate runtime input before

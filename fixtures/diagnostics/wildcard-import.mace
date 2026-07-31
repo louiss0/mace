@@ -1,4 +1,0 @@
-|===|
-from './support/import-source.mace' import *;
-|===|
-[output = 'data'] {}

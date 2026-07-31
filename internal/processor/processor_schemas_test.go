@@ -215,7 +215,7 @@ schema Runtime: { env: string, };
 			_ = os.RemoveAll(workspace)
 		}()
 
-		writeFixtureFile(workspace, "runtime.mace", `|===|
+		writeExampleFile(workspace, "runtime.mace", `|===|
 schema Runtime: { env: string, };
 schema Meta: { source: string, };
 |===|
@@ -246,7 +246,35 @@ schema Meta: { source: string, };
 				"root": {Kind: ValueString, String: "."},
 			}},
 		})
-		_, err := processor.ProcessFile("../../fixtures/processor/import_as/nx_consumer.mace")
+		workspace := newExampleWorkspace(map[string]string{
+			"nx_consumer.mace": `|===========================================|
+from './nx_inputs.mace' bind NxInputs;
+|===========================================|
+
+[output = 'data', parse = NxInputs]
+{
+  name: $project.name,
+  root: $project.root,
+  cwd: $workspace.root,
+}`,
+			"nx_inputs.mace": `|===================|
+schema Project: {
+  name: string,
+  root: string,
+};
+schema Workspace: {
+  name: string,
+  root: string,
+};
+|===================|
+
+[output='schema']
+{
+  project: Project,
+  workspace: Workspace,
+}`,
+		})
+		_, err := processor.ProcessFile(examplePath(workspace, "nx_consumer.mace"))
 		tAssert.NoError(err)
 	})
 

@@ -9,7 +9,8 @@ import (
 var _ = Describe("Diagnostic fixtures", func() {
 	DescribeTable("triggers the documented error",
 		func(name string, message string) {
-			path := filepath.Join("..", "..", "fixtures", "diagnostics", name+".mace")
+			workspace := newDiagnosticWorkspace()
+			path := filepath.Join(workspace, name+".mace")
 			_, err := New().ProcessFile(path)
 
 			if !tAssert.Error(err, name) {

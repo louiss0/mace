@@ -1,4 +1,0 @@
-|===|
-{ value: string, } item = { value: null, };
-|===|
-[output = 'data'] { item, }

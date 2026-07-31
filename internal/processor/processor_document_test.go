@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/louiss0/mace/internal/parser/ast"
 	. "github.com/onsi/ginkgo/v2"
@@ -32,13 +31,7 @@ Unknown value = 1;
 
 	DescribeTable("processes valid script blocks",
 		func(input string) {
-			processor := New()
-			if filepath.Ext(input) == ".mace" && !strings.Contains(input, "\n") {
-				_, err := processor.ProcessFile(filepath.Clean(input))
-				tAssert.NoError(err)
-				return
-			}
-			_, err := processor.ProcessInDir(input, "../..")
+			_, err := processWithImportExamples(input)
 			tAssert.NoError(err)
 		},
 		Entry("type and schema declarations", wrapScriptWithOutput(`|===|
@@ -66,24 +59,24 @@ string second = """Hello
 World""";
 |===|`)),
 		Entry("imports and script block", `|===|
-from 'fixtures/processor/imports/base.mace' import Name;
+from './base.mace' import Name;
 Name user = "Ada";
 |===|
 [output = 'data']
 { user: user, }`),
-		Entry("unicode web server fixture", "../../fixtures/unicode/web_server.mace"),
-		Entry("unicode database fixture", "../../fixtures/unicode/database.mace"),
-		Entry("unicode docker services fixture", "../../fixtures/unicode/docker_services.mace"),
-		Entry("unicode ci pipeline fixture", "../../fixtures/unicode/ci_pipeline.mace"),
-		Entry("unicode theme fixture", "../../fixtures/unicode/theme.mace"),
-		Entry("unicode kubernetes deployment fixture", "../../fixtures/unicode/kubernetes_deployment.mace"),
-		Entry("unicode ai agent fixture", "../../fixtures/unicode/ai_agent.mace"),
+		Entry("unicode identifiers", `[output = 'data']
+{
+  主机: "0.0.0.0",
+  ポート: 8443,
+  dominio: "例.example",
+  συμπίεση: true,
+}`),
 		Entry("variant declarations and assignments", wrapScriptWithOutput(`|===|
 alias Scalar: variant[string, int];
 Scalar value = "Ada";
 |===|`)),
 		Entry("line and block comments are ignored", `|===|
-from 'fixtures/processor/imports/base.mace' import Name; // trailing import comment
+from './base.mace' import Name; // trailing import comment
 // line comment before declaration
 schema Profile: {
   // line comment before field
@@ -127,8 +120,7 @@ int fallback_age = 0;
 
 	DescribeTable("rejects invalid script blocks",
 		func(input, message string) {
-			processor := New()
-			_, err := processor.ProcessInDir(input, "../..")
+			_, err := processWithImportExamples(input)
 			tAssert.Error(err)
 			tAssert.ErrorContains(err, message)
 		},
@@ -143,35 +135,31 @@ alias User: string;
 schema User: { name: string, };
 |===|`), "duplicate declaration"),
 		Entry("duplicate imports", `|===|
-from 'fixtures/processor/imports/base.mace' import User, User;
+from './base.mace' import User, User;
 |===|
 [output = 'data'] {}`, "duplicate import"),
 	)
 
-	It("rejects interpolation of non-primitives in diagnostic fixtures", func() {
-		processor := New()
-		_, err := processor.ProcessFile("../../fixtures/diagnostics/interpolation-rejects-non-primitives.mace")
+	It("rejects interpolation of non-primitives", func() {
+		_, err := New().Process(diagnosticExamples["interpolation-rejects-non-primitives"])
 		tAssert.Error(err)
 		tAssert.ErrorContains(err, "interpolation requires a scalar value")
 	})
 
-	It("rejects record shorthand fixtures that reference missing fields", func() {
-		processor := New()
-		_, err := processor.ProcessFile("../../fixtures/diagnostics/shorthand-rejects-missing-variable.mace")
+	It("rejects record shorthand examples that reference missing fields", func() {
+		_, err := New().Process(diagnosticExamples["shorthand-rejects-missing-variable"])
 		tAssert.Error(err)
 		tAssert.ErrorContains(err, "missing required field \"name\"")
 	})
 
-	It("rejects record shorthand fixtures that use values for required fields", func() {
-		processor := New()
-		_, err := processor.ProcessFile("../../fixtures/diagnostics/shorthand-rejects-nullable-required-field.mace")
+	It("rejects record shorthand examples that use values for required fields", func() {
+		_, err := New().Process(diagnosticExamples["shorthand-rejects-nullable-required-field"])
 		tAssert.Error(err)
 		tAssert.ErrorContains(err, "null is only allowed in output")
 	})
 
-	It("rejects output shorthand fixtures that reference missing variables", func() {
-		processor := New()
-		_, err := processor.ProcessFile("../../fixtures/diagnostics/output-shorthand-rejects-missing-variable.mace")
+	It("rejects output shorthand examples that reference missing variables", func() {
+		_, err := New().Process(diagnosticExamples["output-shorthand-rejects-missing-variable"])
 		tAssert.Error(err)
 		tAssert.ErrorContains(err, "unknown identifier \"missing\"")
 	})
@@ -184,7 +172,7 @@ var _ = Describe("Processor entrypoints", func() {
 		tAssert.NoError(err)
 		defer func() { _ = os.RemoveAll(workspace) }()
 
-		file := writeFixtureFile(workspace, "input.mace", `|===|
+		file := writeExampleFile(workspace, "input.mace", `|===|
 int value = 1;
 |===|
 [output = 'data']
@@ -389,7 +377,7 @@ var _ = Describe("Processor entrypoints", func() {
 		defer server.Close()
 
 		proc := NewWithInput(map[string]Value{"seed": {Kind: ValueInt, Int: 1}})
-		inputPath := writeFixtureFile(workspace, "input.mace", `[output = 'data']
+		inputPath := writeExampleFile(workspace, "input.mace", `[output = 'data']
 { result: seed, }`)
 		_, err = proc.Process(`{ result: 1, }`)
 		tAssert.NoError(err)
@@ -498,14 +486,14 @@ int value = 1;
 		tAssert.NoError(err)
 		defer func() { _ = os.RemoveAll(workspace) }()
 
-		writeFixtureFile(workspace, "base.mace", `[output = 'data']
+		writeExampleFile(workspace, "base.mace", `[output = 'data']
 { User: "Ada", }`)
-		writeFixtureFile(workspace, "duplicate-import.mace", `from './base.mace' import User, User; [output = 'data'] {}`)
-		writeFixtureFile(workspace, "script-dupe.mace", `|===|
+		writeExampleFile(workspace, "duplicate-import.mace", `from './base.mace' import User, User; [output = 'data'] {}`)
+		writeExampleFile(workspace, "script-dupe.mace", `|===|
 int value = 1;
 int value = 2;
 |===|`)
-		writeFixtureFile(workspace, "schema-variable.mace", `|===|
+		writeExampleFile(workspace, "schema-variable.mace", `|===|
 int value = 1;
 |===|
 [output = 'schema']
@@ -555,6 +543,7 @@ from './schema.mace' import User;
 		tAssert.Error(err)
 		_, err = buildProcessContext([]ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `""`}}}, nil, ".", ".", true, map[string]Value{})
 		tAssert.Error(err)
+		workspace := newExampleWorkspace(importExamples)
 		_, err = processor.ProcessVariablesInScope(`|===============================|
 from './base.mace' import User;
 from './base.mace' import User;
@@ -568,11 +557,9 @@ User result = {
 |===============================|
 
 [output = 'data']
-{ result: result, }`, "../../fixtures/processor/imports", "")
+{ result: result, }`, workspace, "")
 		tAssert.Error(err)
-		consumer, err := os.ReadFile("../../fixtures/processor/imports/consumer.mace")
-		tAssert.NoError(err)
-		_, err = processor.ProcessVariablesInScope(string(consumer), "../../fixtures/processor/imports", "")
+		_, err = processor.ProcessVariablesInScope(importExamples["consumer.mace"], workspace, "")
 		tAssert.NoError(err)
 	})
 })

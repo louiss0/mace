@@ -1,5 +1,0 @@
-[output = 'data']
-{
-  result: "ready",
-  count: 3,
-}

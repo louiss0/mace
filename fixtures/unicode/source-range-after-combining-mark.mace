@@ -1,5 +1,0 @@
-|===|
-string café = "ok";
-string next = café;
-|===|
-[output = 'data'] { value: next, }

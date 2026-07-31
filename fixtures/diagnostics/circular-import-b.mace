@@ -1,5 +1,0 @@
-|===|
-from './circular-import-a.mace' import Name;
-alias Name: string;
-|===|
-[output = 'data'] {}

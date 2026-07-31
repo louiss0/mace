@@ -1,7 +1,0 @@
-
-|===========================================================|
-from './nested/roles.mace' import Role;
-schema Organization: { name: string, roles: array<Role>, };
-|===========================================================|
-
-[output = 'data'] {}

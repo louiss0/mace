@@ -426,7 +426,7 @@ schema Result: { value: %s, };
 			tAssert.NoError(err)
 			defer func() { _ = os.RemoveAll(workspace) }()
 
-			writeFixtureFile(workspace, "schema.mace", fmt.Sprintf(`[output = 'schema']
+			writeExampleFile(workspace, "schema.mace", fmt.Sprintf(`[output = 'schema']
 {
   value: %s,
 }`, fieldType))
@@ -458,15 +458,15 @@ var _ = Describe("Data output helpers", func() {
 		tAssert.NoError(err)
 		defer func() { _ = os.RemoveAll(workspace) }()
 
-		writeFixtureFile(workspace, "schema-names.mace", `[output = 'schema']
+		writeExampleFile(workspace, "schema-names.mace", `[output = 'schema']
 { User: User, Other: Other, }`)
-		writeFixtureFile(workspace, "schema-empty.mace", `[output = 'schema']
+		writeExampleFile(workspace, "schema-empty.mace", `[output = 'schema']
 { title: string, }`)
-		writeFixtureFile(workspace, "parse-names.mace", `[output = 'schema']
+		writeExampleFile(workspace, "parse-names.mace", `[output = 'schema']
 { User: User, Other: Other, }`)
-		writeFixtureFile(workspace, "parse-one.mace", `[output = 'schema']
+		writeExampleFile(workspace, "parse-one.mace", `[output = 'schema']
 { User: User, }`)
-		writeFixtureFile(workspace, "parse-empty.mace", `[output = 'schema']
+		writeExampleFile(workspace, "parse-empty.mace", `[output = 'schema']
 { title: string, }`)
 
 		context := newProcessContext(workspace, workspace)

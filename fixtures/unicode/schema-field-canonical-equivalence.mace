@@ -1,5 +1,0 @@
-|===|
-schema Input: { café: string, };
-string value = "ok";
-|===|
-[output = 'data', schema = Input] { café: value, }

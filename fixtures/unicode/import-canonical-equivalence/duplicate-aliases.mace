@@ -1,4 +1,0 @@
-|===|
-from './exports.mace' import café:café, café:café;
-|===|
-[output = 'data'] {}

@@ -988,12 +988,35 @@ Catalog catalog = primary;
 		}
 	})
 
-	It("scopes every typed key in the user fixture", func() {
-		fixturePath := filepath.Join("..", "..", "fixtures", "processor", "optional_chaining", "nullable_user.mace")
-		contents, err := os.ReadFile(fixturePath)
-		tAssert.NoError(err)
-		text := string(contents)
-		snapshot := analyzeDocumentAt(text, fixturePath)
+	It("scopes every typed key in an inline user example", func() {
+		text := `|===================================================|
+schema Address: {
+  city?: string,
+};
+
+schema Profile: {
+  address: Address,
+};
+
+schema User: {
+  records: record<string>,
+  profile: Profile,
+};
+
+User user = {
+  records: { primary: "active", },
+  profile: { address: { city: "Paris", }, },
+};
+string fallback = "";
+|===================================================|
+
+[output = 'data']
+{
+  records: user ? user.records : { primary: 'inactive' },
+  city: user ? user.profile.address?.city ?? fallback : 3,
+}`
+		documentPath := filepath.Join("workspace", "nullable_user.mace")
+		snapshot := analyzeDocumentAt(text, documentPath)
 		cases := []struct {
 			needle   string
 			offset   int

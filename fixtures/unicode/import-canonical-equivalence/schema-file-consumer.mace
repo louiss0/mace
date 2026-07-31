@@ -1,1 +1,0 @@
-[output = 'data', schema_file = './schema-file-source.mace', schema = café] { value: "ok", }

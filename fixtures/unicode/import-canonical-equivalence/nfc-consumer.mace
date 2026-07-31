@@ -1,4 +1,0 @@
-|===|
-from './nfd-exports.mace' import café;
-|===|
-[output = 'data'] { value: café, }

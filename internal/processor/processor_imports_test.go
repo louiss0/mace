@@ -13,20 +13,19 @@ import (
 var _ = Describe("Imports", func() {
 	DescribeTable("merges imported declarations",
 		func(file string, expected expectedValue) {
-			processor := New()
-			result, err := processor.ProcessInDir(file, "../..")
+			result, err := processWithImportExamples(file)
 			tAssert.NoError(err)
 			assertExpectedValue(requireOutputValue(result, "result"), expected)
 		},
 		Entry("imports types and schemas", `|===|
-from 'fixtures/processor/imports/base.mace' import Name, User;
+from './base.mace' import Name, User;
 Name name = "Ada";
 User result = { name: name, age: 30, };
 |===|
 [output = 'data']
 { result: result, }`, expectedValue{kind: ValueRecord, record: map[string]expectedValue{"name": {kind: ValueString, string: "Ada"}, "age": {kind: ValueInt, int64: 30}}}),
 		Entry("imports values surfaced through output", `|===|
-from 'fixtures/processor/imports/values.mace' import count;
+from './values.mace' import count;
 |===|
 [output = 'data']
 { result: count + 2, }`, expectedValue{kind: ValueInt, int64: 5}),
@@ -40,82 +39,81 @@ from 'fixtures/processor/imports/values.mace' import count;
 [output = 'data']
 { result: ` + expression + `, }`
 
-			result, err := New().ProcessInDir(document, "../..")
+			result, err := processWithImportExamples(document)
 
 			tAssert.NoError(err)
 			tAssert.Equal("Ada", requireOutputValue(result, "result").String)
 		},
-		Entry("destructured name", `from 'fixtures/processor/imports/kebab.mace' import display-name;`, "display-name"),
-		Entry("destructured alias", `from 'fixtures/processor/imports/kebab.mace' import display-name:imported-name;`, "imported-name"),
-		Entry("bind alias", `from 'fixtures/processor/imports/kebab.mace' bind imported-data;`, "imported-data.display-name"),
+		Entry("destructured name", `from './kebab.mace' import display-name;`, "display-name"),
+		Entry("destructured alias", `from './kebab.mace' import display-name:imported-name;`, "imported-name"),
+		Entry("bind alias", `from './kebab.mace' bind imported-data;`, "imported-data.display-name"),
 	)
 
 	It("keeps hidden declarations internal", func() {
-		processor := New()
-		_, err := processor.ProcessInDir(`|===|
-from 'fixtures/processor/imports/base.mace' import Internal;
+		_, err := processWithImportExamples(`|===|
+from './base.mace' import Internal;
 |===|
-[output = 'data'] {}`, "../..")
+[output = 'data'] {}`)
 		tAssert.Error(err)
 		tAssert.ErrorContains(err, "imported identifier")
 	})
 
 	It("treats destructured optional imports as variables", func() {
 		unguardedDocument := `|===|
-from 'fixtures/processor/imports/optional_profile.mace' import profile;
+from './optional_profile.mace' import profile;
 |===|
 [output = 'data']
 { city: profile.city, }`
-		_, err := New().ProcessInDir(unguardedDocument, "../..")
+		_, err := processWithImportExamples(unguardedDocument)
 		requireOptionalFieldAccessError(err)
 
 		optionalChainDocument := `|===|
-from 'fixtures/processor/imports/optional_profile.mace' import profile;
+from './optional_profile.mace' import profile;
 |===|
 [output = 'data']
 { city?: profile?.city, }`
-		_, err = New().ProcessInDir(optionalChainDocument, "../..")
+		_, err = processWithImportExamples(optionalChainDocument)
 		requireOptionalFieldAccessError(err)
 
 		guardedDocument := `|===|
-from 'fixtures/processor/imports/optional_profile.mace' import profile;
+from './optional_profile.mace' import profile;
 |===|
 [output = 'data']
 { city: profile ? profile.city : "", }`
-		result, err := New().ProcessInDir(guardedDocument, "../..")
+		result, err := processWithImportExamples(guardedDocument)
 		tAssert.NoError(err)
 		tAssert.Equal("Paris", requireOutputValue(result, "city").String)
 	})
 
 	It("validates possibly absent expressions in imported data outputs", func() {
 		document := `|===|
-from 'fixtures/processor/imports/unguarded_optional_city.mace' import city;
+from './unguarded_optional_city.mace' import city;
 |===|
 [output = 'data']
 { city: city, }`
 
-		_, err := New().ProcessInDir(document, "../..")
+		_, err := processWithImportExamples(document)
 
 		requireAbsentValueError(err)
 	})
 
 	It("tracks optional properties from imported schemas as possibly absent", func() {
 		unguardedDocument := `|===|
-from 'fixtures/processor/imports/base.mace' import User;
+from './base.mace' import User;
 User user = { name: "Ada", age: 30, };
 |===|
 [output = 'data']
 { profile: user.profile, }`
-		_, err := New().ProcessInDir(unguardedDocument, "../..")
+		_, err := processWithImportExamples(unguardedDocument)
 		requireOptionalFieldAccessError(err)
 
 		resolvedDocument := `|===|
-from 'fixtures/processor/imports/base.mace' import User;
+from './base.mace' import User;
 User user = { name: "Ada", age: 30, };
 |===|
 [output = 'data']
 { bio: user?.profile?.bio ?? "unknown", }`
-		result, err := New().ProcessInDir(resolvedDocument, "../..")
+		result, err := processWithImportExamples(resolvedDocument)
 		tAssert.NoError(err)
 		tAssert.Equal("unknown", requireOutputValue(result, "bio").String)
 	})

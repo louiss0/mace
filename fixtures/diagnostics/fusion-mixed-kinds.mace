@@ -1,6 +1,0 @@
-|===|
-alias Status: choice['ready', 'pending'];
-schema User: { name: string, };
-alias Invalid: fusion[Status, User];
-|===|
-[output = 'data'] {}

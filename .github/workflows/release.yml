@@ -209,11 +209,3 @@ jobs:
 
           git commit -m "Update Mace version to ${VERSION}"
           git push origin "$BRANCH_NAME"
-
-  publish-bindings:
-    needs: release
-    uses: ./.github/workflows/release-bindings.yml
-    with:
-      version: ${{ needs.release.outputs.version }}
-      release_ref: ${{ needs.release.outputs.release_ref }}
-    secrets: inherit

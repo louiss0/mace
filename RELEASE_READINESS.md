@@ -1,16 +1,13 @@
 # Mace 1.0.0 release-readiness audit
 
 **Status: ready to tag after GitHub secrets and external publishing access are
-confirmed.** Core tooling, editor integrations, bindings, grammar, docs, and
-release configuration were verified locally.
+confirmed.** Core tooling, editor integrations, grammar, docs, and release
+configuration were verified locally.
 
 ## Changes made
 
 - The release workflow waits for successful tag CI before publishing and uses
   the tested commit and its resolved tag.
-- CI runs Node and Python binding integration tests against a freshly built
-  Mace CLI.
-- Node and Python bindings pass runtime input with `--input`.
 - Zed invokes downloaded release binaries as `mace lsp`.
 - Tree-sitter recognizes Unicode identifiers and has a regression corpus test.
 - The formal root and documentation-site specifications no longer include the
@@ -23,8 +20,6 @@ release configuration were verified locally.
 | --- | --- |
 | Core | `go test ./...`, `go vet ./...`, and GoReleaser validation passed. |
 | Workflows | `actionlint` accepted every root and grammar workflow. |
-| Node binding | Build and runtime-input integration test passed. |
-| Python binding | Package build and runtime-input integration test passed. |
 | Docs | Astro production build passed. |
 | Tree-sitter | `tree-sitter test` passed all 130 corpus cases; the Unicode fixture parses without errors. |
 | VS Code | Build and 17 tests passed. |
@@ -40,8 +35,7 @@ are present.
 ## Publication prerequisite
 
 A real GitHub release still requires configured and authorized GoReleaser deploy
-keys, 1Password access, the editor-extension repository token, npm credentials,
-and TestPyPI/PyPI credentials. Those external resources cannot be tested from
-this local workspace.
+keys, 1Password access, and the editor-extension repository token. Those external
+resources cannot be tested from this local workspace.
 
 All newly authored, non-generated files in this audit are under 1,500 lines.

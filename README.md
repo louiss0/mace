@@ -1,7 +1,8 @@
 # mace
 
 Mace is a typed configuration language and Go toolkit for producing
-deterministic object data.
+deterministic object data. Mace is a new language created in 2026, designed to
+make configuration contracts explicit, deterministic, and easy to validate.
 
 This repository contains:
 
@@ -9,7 +10,6 @@ This repository contains:
 - a CLI for inspecting, formatting, and evaluating Mace documents
 - a language server for editor integrations
 - a public Go package for parsing, unmarshalling, and marshalling Mace data
-- official Node and Python binding packages under `bindings&#x2f;`
 
 ## Status
 
@@ -27,8 +27,7 @@ is documented in [the formal specification](.&#x2f;docs&#x2f;src&#x2f;content&#x
 - Schema-validated runtime input through `parse = &lt;Schema&gt;` and `parse_file = &#x27;&lt;path&gt;&#x27;` in data outputs, including remote schema files over HTTP(S); parsed fields are exposed as `$`-prefixed variables, `parse` selects an already-available schema, and `parse_file` loads schema declarations and can infer the schema when the referenced file exports exactly one schema
 - Canonical source formatting
 - Language Server Protocol support over stdio
-- Go bindings for parsing, unmarshalling, and marshalling
-- Node and Python bindings that wrap the official CLI
+- a Go codec package for parsing, unmarshalling, marshalling, and format conversion
 
 ## Language overview
 
@@ -193,7 +192,11 @@ go build .&#x2f;cmd
 go install github.com&#x2f;louiss0&#x2f;mace&#x2f;cmd@latest
 ```
 
-Package managers will also be supported through Homebrew, Winget, and Nix.
+Package managers are supported through Homebrew, Winget, and Nix.
+
+Mace 1.0.0 is the first stable release of this new language, created in 2026.
+It defines a deterministic, strongly typed configuration format with a CLI,
+editor tooling, and a public Go codec.
 
 If you are working on this repository directly, you can also run:
 
@@ -466,7 +469,7 @@ go test .&#x2f;...
 ### Repository layout
 
 - `cmd&#x2f;` - CLI entrypoints and the LSP server command
-- `codec&#x2f;` - public Go API for parsing and marshalling
+- `codec&#x2f;` - public Go API for parsing, marshalling, and format conversion
 - `internal&#x2f;lexer&#x2f;` - tokenization
 - `internal&#x2f;parser&#x2f;` - parsing and AST construction
 - `internal&#x2f;processor&#x2f;` - validation, imports, evaluation, and schema checks

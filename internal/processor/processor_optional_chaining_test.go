@@ -1,8 +1,6 @@
 package processor
 
 import (
-	"path/filepath"
-
 	"github.com/louiss0/mace/internal/parser/ast"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -113,10 +111,29 @@ string fallback = "";`, `
 		tAssert.Equal("unknown", requireOutputValue(result, "city").String)
 	})
 
-	It("processes the null coalescing fixture", func() {
-		fixture, err := filepath.Abs("../../fixtures/processor/null_coalescing/optional_profile.mace")
-		tAssert.NoError(err)
-		result, err := New().ProcessFile(fixture)
+	It("processes a null coalescing example", func() {
+		result, err := New().Process(`|===================================================|
+schema Address: {
+  city: string,
+};
+
+schema Profile: {
+  address?: Address,
+};
+
+schema User: {
+  profile?: Profile,
+};
+
+User user = { profile: {}, };
+string fallback_city = "unknown";
+|===================================================|
+
+[output = 'data']
+{
+  city: user?.profile?.address?.city ?? fallback_city,
+  literal_city: user?.profile?.address?.city ?? "unknown",
+}`)
 
 		tAssert.NoError(err)
 		tAssert.Equal("unknown", requireOutputValue(result, "city").String)
@@ -183,10 +200,14 @@ string fallback = "missing";
 		tAssert.Equal("missing", requireOutputValue(result, "missing").String)
 	})
 
-	It("rejects optional chaining past the fixture's record depth", func() {
-		fixture, err := filepath.Abs("../../fixtures/processor/optional_chaining/nested_records.mace")
-		tAssert.NoError(err)
-		_, err = New().ProcessFile(fixture)
+	It("rejects optional chaining past a record's declared depth", func() {
+		_, err := New().Process(`|===|
+record<record<string>> packages = {
+  codefixer: { cn_efs: "enabled", },
+};
+|===|
+[output = 'data']
+{ value: packages?.codefixer?.cn_efs?.value ?? "missing", }`)
 
 		tAssert.Error(err)
 	})

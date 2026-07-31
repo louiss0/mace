@@ -142,7 +142,7 @@ func requireScriptVariable(result ScriptResult, name string) Value {
 	return value
 }
 
-func writeFixtureFile(root string, relativePath string, contents string) string {
+func writeExampleFile(root string, relativePath string, contents string) string {
 	path := filepath.Join(root, relativePath)
 	tAssert.NoError(os.MkdirAll(filepath.Dir(path), 0o755))
 	tAssert.NoError(os.WriteFile(path, []byte(contents), 0o644))

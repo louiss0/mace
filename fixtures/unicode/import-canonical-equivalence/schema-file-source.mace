@@ -1,4 +1,0 @@
-|===|
-schema café: { value: string, };
-|===|
-[output = 'schema'] { café: café, }

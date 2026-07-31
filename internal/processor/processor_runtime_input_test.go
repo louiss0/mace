@@ -50,7 +50,7 @@ schema Runtime: {
 		tAssert.NoError(err)
 		defer func() { _ = os.RemoveAll(workspace) }()
 
-		writeFixtureFile(workspace, "runtime.mace", `|===|
+		writeExampleFile(workspace, "runtime.mace", `|===|
 schema Runtime: {
   env: string,
   profile: { name: string, },

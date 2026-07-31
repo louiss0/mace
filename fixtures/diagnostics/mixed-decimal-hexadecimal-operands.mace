@@ -1,4 +1,0 @@
-|===|
-int value = 1 + 0x1;
-|===|
-[output = 'data'] { value, }

@@ -226,9 +226,41 @@ string documentation = "Public output";
 }`, "description directive must evaluate to a string"),
 	)
 
-	It("loads doc fixtures", func() {
-		processor := New()
-		_, err := processor.ProcessFile("../../fixtures/processor/doc_fixtures/public_contract.mace")
+	It("loads documentation examples", func() {
+		_, err := New().Process(`|=======================================|
+alias UserID: string;
+
+gen_doc UserID {
+  summary: "A stable user identifier.",
+};
+
+schema User: {
+  id: UserID,
+  name: string,
+  age?: int,
+};
+
+schema_doc User {
+  summary: "Represents a user",
+  description: """
+# User
+
+A reusable schema exposed to imports.
+""",
+  fields: {
+    id: "Stable user identifier",
+    name: "The user's display name",
+    age: "Optional age in years",
+  },
+};
+|=======================================|
+[output = 'schema', description = """
+# Public User Contract
+"""]
+{
+  user: User /# Public user schema,
+  user_id: UserID /# Public user identifier type,
+}`)
 		tAssert.NoError(err)
 	})
 })

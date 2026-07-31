@@ -1,5 +1,0 @@
-|===|
-record<string> packages = {};
-string value = packages.codefixer.cn_efs;
-|===|
-[output = 'data'] { value, }

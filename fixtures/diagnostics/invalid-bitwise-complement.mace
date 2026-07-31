@@ -1,4 +1,0 @@
-|===|
-int value = ~1.5;
-|===|
-[output = 'data'] { value, }

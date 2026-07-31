@@ -1,5 +1,0 @@
-|===|
-schema User: { name: string, age: int, };
-|===|
-[output = 'data', schema = User]
-{ name: 'Ada', }

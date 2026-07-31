@@ -1,6 +1,0 @@
-
-[output = 'schema']
-{
-  name: string,
-  version: int,
-}

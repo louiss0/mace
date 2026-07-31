@@ -1,7 +1,0 @@
-
-|==================================|
-from './cycle_a.mace' import Name;
-alias Name: string;
-|==================================|
-
-[output = 'data'] {}

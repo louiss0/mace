@@ -1,6 +1,0 @@
-|===|
-alias Exposed: string;
-alias Hidden: string;
-|===|
-[output = 'schema']
-{ Exposed: Exposed, }

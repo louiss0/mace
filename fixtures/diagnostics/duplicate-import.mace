@@ -1,5 +1,0 @@
-|===|
-from './support/import-source.mace' import Exposed;
-from './support/import-source.mace' import Exposed;
-|===|
-[output = 'data'] {}

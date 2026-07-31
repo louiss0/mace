@@ -1,5 +1,0 @@
-|===|
-from './exports.mace' import café;
-string café = "local";
-|===|
-[output = 'data'] {}

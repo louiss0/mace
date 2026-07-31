@@ -1,9 +1,0 @@
-|===|
-variant[string, int] value = 1;
-string selected = match (value) {
-  string => 'text',
-  boolean => 'flag',
-  int => 'number',
-};
-|===|
-[output = 'data'] { selected, }

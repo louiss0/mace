@@ -1,7 +1,0 @@
-|===|
-alias Name: string;
-gen_doc Name {
-  fields: { value: 'Invalid', },
-};
-|===|
-[output = 'data'] {}

@@ -1,8 +1,0 @@
-
-[output = 'schema']
-{
-  workflow_name: string,
-  runner: string,
-  matrix: boolean,
-  jobs: record<string>,
-}

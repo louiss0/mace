@@ -1,4 +1,0 @@
-|===|
-array<int> values = [1, 'two'];
-|===|
-[output = 'data'] { values, }

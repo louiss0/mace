@@ -1,4 +1,0 @@
-|===|
-string café = "ok";
-|===|
-[output = 'data'] { café: café, }

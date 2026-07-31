@@ -1,5 +1,0 @@
-|===|
-string local = 'value';
-from './support/import-source.mace' import Exposed;
-|===|
-[output = 'data'] { local, }
