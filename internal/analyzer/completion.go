@@ -14,6 +14,7 @@ import (
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
 	"github.com/louiss0/mace/internal/lexer"
+	"github.com/louiss0/mace/internal/name"
 	"github.com/louiss0/mace/internal/parser/ast"
 	"github.com/louiss0/mace/internal/processor"
 )
@@ -697,7 +698,7 @@ func scriptVariablesForOutput(text string, uri protocol.DocumentUri) map[string]
 			scriptStart = tokenStartIndex(text, token)
 			continue
 		}
-		scriptEnd = tokenStartIndex(text, token) + len(token.Lexeme)
+		scriptEnd = tokenStartIndex(text, token) + token.SourceLength()
 		break
 	}
 	if scriptStart < 0 || scriptEnd <= scriptStart {
@@ -2922,8 +2923,9 @@ func selfReferenceCompletionItems(prefix string, position protocol.Position) []p
 }
 
 func itemsFromDeclarations(declarations []declarationDefinition, prefix string) []protocol.CompletionItem {
+	semanticPrefix := string(name.NormalizeName(prefix))
 	items := lo.FilterMap(declarations, func(declaration declarationDefinition, _ int) (protocol.CompletionItem, bool) {
-		if declaration.Name == "" || !strings.HasPrefix(declaration.Name, prefix) {
+		if declaration.Name == "" || !strings.HasPrefix(declaration.Name, semanticPrefix) {
 			return protocol.CompletionItem{}, false
 		}
 

@@ -6,6 +6,8 @@ import (
 	"unicode"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/louiss0/mace/internal/name"
 )
 
 type Lexer struct {
@@ -182,20 +184,23 @@ func (l *Lexer) NextToken() (Token, error) {
 		for isIdentifierContinuation() {
 			l.advance()
 		}
-		lexeme := l.input[startPosition:l.position]
+		rawLexeme := l.input[startPosition:l.position]
+		lexeme := string(name.NormalizeName(rawLexeme))
 		if tokenType, ok := keywordToken(lexeme); ok {
 			return Token{
-				Type:   tokenType,
-				Lexeme: lexeme,
-				Line:   startLine,
-				Column: startColumn,
+				Type:      tokenType,
+				Lexeme:    lexeme,
+				RawLexeme: rawLexeme,
+				Line:      startLine,
+				Column:    startColumn,
 			}, nil
 		}
 		return Token{
-			Type:   TokenIdentifier,
-			Lexeme: lexeme,
-			Line:   startLine,
-			Column: startColumn,
+			Type:      TokenIdentifier,
+			Lexeme:    lexeme,
+			RawLexeme: rawLexeme,
+			Line:      startLine,
+			Column:    startColumn,
 		}, nil
 	}
 
@@ -502,7 +507,7 @@ func isDigit(value rune) bool {
 }
 
 func isIdentifierPart(value rune) bool {
-	return unicode.IsLetter(value) || unicode.IsDigit(value) || value == '_'
+	return unicode.IsLetter(value) || unicode.IsDigit(value) || unicode.IsMark(value) || value == '_'
 }
 
 func isHexDigit(value rune) bool {

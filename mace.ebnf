@@ -11,13 +11,17 @@ ws1 = ( whitespace | comment ) , ws0 ;
 
 unicode_letter = ? any Unicode character in category Letter ? ;
 unicode_digit = ? any Unicode character in category Number, decimal digit ? ;
+unicode_mark = ? any Unicode character in Unicode category Mark ? ;
 digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
 hex_digit = digit | "a"…"f" | "A"…"F" ;
-identifier_part = unicode_letter | unicode_digit | "_" ;
+identifier_part = unicode_letter | unicode_digit | unicode_mark | "_" ;
 identifier =
     unicode_letter ,
     { identifier_part } ,
     { "-" , identifier_part , { identifier_part } } ;
+(* After a complete identifier is recognized, processors normalize it to Unicode
+   NFC before keyword classification and semantic name operations. Source ranges
+   remain based on the original spelling. *)
 
 inline_description = "/#" , ws0 , description_text ;
 description_text =

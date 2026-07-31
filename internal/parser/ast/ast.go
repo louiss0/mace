@@ -23,7 +23,7 @@ type Node interface {
 func TokenRange(token lexer.Token) SourceRange {
 	end := SourcePosition{Line: token.Line, Column: token.Column}
 	previousWasCarriageReturn := false
-	for _, character := range token.Lexeme {
+	for _, character := range token.SourceLexeme() {
 		switch character {
 		case '\r':
 			end.Line++

@@ -1151,10 +1151,11 @@ func (p *Parser) parseDollarReference() (ast.Expression, error) {
 	}
 
 	identifierToken := lexer.Token{
-		Type:   lexer.TokenIdentifier,
-		Lexeme: "$" + nameToken.Lexeme,
-		Line:   dollarToken.Line,
-		Column: dollarToken.Column,
+		Type:      lexer.TokenIdentifier,
+		Lexeme:    "$" + nameToken.Lexeme,
+		RawLexeme: "$" + nameToken.SourceLexeme(),
+		Line:      dollarToken.Line,
+		Column:    dollarToken.Column,
 	}
 	return ast.Identifier{Token: identifierToken, Name: identifierToken.Lexeme}, nil
 }

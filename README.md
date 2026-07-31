@@ -115,6 +115,23 @@ Values tags = [&quot;api&quot;, &quot;web&quot;];
 Mace treats fusions as composition: schema members are combined into one closed
 record shape.
 
+### Unicode identifiers
+
+Mace accepts international Unicode identifiers and interprets every identifier
+using Unicode NFC. Canonically equivalent spellings therefore refer to the same
+name, while the formatter emits the canonical NFC spelling:
+
+```mace
+|===|
+string naïve = "ok";
+|===|
+[output = 'data'] { value: naïve, }
+```
+
+Declaring both `naïve` and `naïve` is a duplicate declaration. NFC does not
+normalize strings or paths, and it is not case folding or compatibility
+normalization; visually confusable characters can still be distinct.
+
 ```mace
 |===|
 schema Profile: { name: string };

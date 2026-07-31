@@ -16,6 +16,7 @@ import (
 
 	"github.com/louiss0/mace/internal/formatter"
 	"github.com/louiss0/mace/internal/lexer"
+	"github.com/louiss0/mace/internal/name"
 	"github.com/louiss0/mace/internal/parser/ast"
 	"github.com/louiss0/mace/internal/processor"
 )
@@ -59,8 +60,9 @@ type analysisSnapshot struct {
 	recovered            bool
 }
 
-func (snapshot analysisSnapshot) symbol(name string) (semanticSymbol, bool) {
-	symbol, ok := snapshot.symbolIndex[name]
+func (snapshot analysisSnapshot) symbol(rawName string) (semanticSymbol, bool) {
+	semanticName := string(name.NormalizeName(rawName))
+	symbol, ok := snapshot.symbolIndex[semanticName]
 	return symbol, ok
 }
 
@@ -137,14 +139,15 @@ func (snapshot analysisSnapshot) documentSymbolAt(position protocol.Position) (s
 	})
 }
 
-func (snapshot analysisSnapshot) definitionSymbol(name string) (semanticSymbol, bool) {
+func (snapshot analysisSnapshot) definitionSymbol(rawName string) (semanticSymbol, bool) {
+	semanticName := string(name.NormalizeName(rawName))
 	if symbol, ok := findLastSymbol(snapshot.symbols, func(symbol semanticSymbol) bool {
-		return symbol.Name == name && symbol.Definition.URI == snapshot.documentURI
+		return symbol.Name == semanticName && symbol.Definition.URI == snapshot.documentURI
 	}); ok {
 		return symbol, true
 	}
 
-	return snapshot.symbol(name)
+	return snapshot.symbol(rawName)
 }
 
 func findLastSymbol(symbols []semanticSymbol, predicate func(semanticSymbol) bool) (semanticSymbol, bool) {
@@ -2183,7 +2186,7 @@ func addStringRefactorActions(text string, uri protocol.DocumentUri, fullRange p
 		convertedText := strings.Replace(text, token.Lexeme, converted, 1)
 		*actions = append(*actions, textRefactorAction("Convert string form", rangeValue, uri, fullRange, convertedText))
 
-		quote := token.Lexeme[len(token.Lexeme)-1:]
+		quote := token.Lexeme[token.SourceLength()-1:]
 		interpolated := strings.TrimSuffix(token.Lexeme, quote) + ` $()` + quote
 		interpolatedText := strings.Replace(text, token.Lexeme, interpolated, 1)
 		*actions = append(*actions, textRefactorAction("Convert to interpolated string", rangeValue, uri, fullRange, interpolatedText))
@@ -2547,13 +2550,13 @@ func invalidDirectiveComboEditRange(text string, file ast.File, tokens []lexer.T
 	for index, token := range tokens {
 		if token.Type == lexer.TokenSchema || token.Type == lexer.TokenSchemaFile {
 			start := tokenStartIndex(text, token)
-			end := start + len(token.Lexeme)
+			end := start + token.SourceLength()
 			for index > 0 && tokens[index-1].Type == lexer.TokenComma {
 				start = tokenStartIndex(text, tokens[index-1])
 				break
 			}
 			for j := index; j < len(tokens) && tokens[j].Type != lexer.TokenComma && tokens[j].Type != lexer.TokenRBracket; j++ {
-				end = tokenStartIndex(text, tokens[j]) + len(tokens[j].Lexeme)
+				end = tokenStartIndex(text, tokens[j]) + tokens[j].SourceLength()
 			}
 			return protocol.Range{Start: positionFromIndex(text, start), End: positionFromIndex(text, end)}, true
 		}
@@ -2663,7 +2666,7 @@ func fieldEditRangeAt(text string, tokens []lexer.Token, nameIndex int) (protoco
 		return protocol.Range{}, false
 	}
 	start := tokenStartIndex(text, tokens[nameIndex])
-	end := tokenStartIndex(text, tokens[endIndex]) + len(tokens[endIndex].Lexeme)
+	end := tokenStartIndex(text, tokens[endIndex]) + tokens[endIndex].SourceLength()
 	for start > 0 && (text[start-1] == ' ' || text[start-1] == '\t') {
 		start--
 	}
@@ -2819,10 +2822,10 @@ func importIdentifierEditRange(text string, tokens []lexer.Token, nameToken lexe
 
 	start := tokenStartIndex(text, nameToken)
 	entryEndToken := tokens[entryEndIndex]
-	end := tokenStartIndex(text, entryEndToken) + len(entryEndToken.Lexeme)
+	end := tokenStartIndex(text, entryEndToken) + entryEndToken.SourceLength()
 
 	if entryEndIndex+1 < len(tokens) && tokens[entryEndIndex+1].Type == lexer.TokenComma {
-		end = tokenStartIndex(text, tokens[entryEndIndex+1]) + len(tokens[entryEndIndex+1].Lexeme)
+		end = tokenStartIndex(text, tokens[entryEndIndex+1]) + tokens[entryEndIndex+1].SourceLength()
 		for end < len(text) && (text[end] == ' ' || text[end] == '\t') {
 			end++
 		}
@@ -2854,7 +2857,7 @@ func importDeclarationEditRange(text string, tokens []lexer.Token, nameIndex int
 	}
 
 	start := tokenStartIndex(text, tokens[startIndex])
-	end := tokenStartIndex(text, tokens[endIndex]) + len(tokens[endIndex].Lexeme)
+	end := tokenStartIndex(text, tokens[endIndex]) + tokens[endIndex].SourceLength()
 	if end < len(text) && text[end] == '\r' {
 		end++
 	}
@@ -3097,7 +3100,7 @@ func declarationEditRange(text string, tokens []lexer.Token, nameToken lexer.Tok
 	}
 
 	start := tokenStartIndex(text, tokens[startIndex])
-	end := tokenStartIndex(text, tokens[endIndex]) + len(tokens[endIndex].Lexeme)
+	end := tokenStartIndex(text, tokens[endIndex]) + tokens[endIndex].SourceLength()
 	if end < len(text) && text[end] == '\r' {
 		end++
 	}
@@ -4200,10 +4203,11 @@ func indexSymbols(symbols []semanticSymbol) map[string]semanticSymbol {
 		if symbol.Name == "" {
 			return index
 		}
-		if _, ok := index[symbol.Name]; ok {
+		semanticName := string(name.NormalizeName(symbol.Name))
+		if _, ok := index[semanticName]; ok {
 			return index
 		}
-		index[symbol.Name] = symbol
+		index[semanticName] = symbol
 		return index
 	}, map[string]semanticSymbol{})
 }

@@ -69,13 +69,17 @@ ws1 = ( whitespace | comment ) , ws0 ;
 
 unicode_letter = ? any Unicode character in category Letter ? ;
 unicode_digit = ? any Unicode character in category Number, decimal digit ? ;
+unicode_mark = ? any Unicode character in Unicode category Mark ? ;
 digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
 hex_digit = digit | "a"…"f" | "A"…"F" ;
-identifier_part = unicode_letter | unicode_digit | "_" ;
+identifier_part = unicode_letter | unicode_digit | unicode_mark | "_" ;
 identifier =
     unicode_letter ,
     { identifier_part } ,
     { "-" , identifier_part , { identifier_part } } ;
+(* After a complete identifier is recognized, processors normalize it to Unicode
+   NFC before keyword classification and semantic name operations. Source ranges
+   remain based on the original spelling. *)
 
 inline_description = "/#" , ws0 , description_text ;
 description_text =
@@ -332,10 +336,24 @@ interpolation = "$" , "(" , expression , ")" ;
 Identifiers are case-sensitive and use the grammar's Unicode categories.
 Hyphenated segments may begin with a letter, decimal digit, or underscore.
 Consequently `用户配置`, `naïve-value`, `foo-1`, and `foo-_internal` are valid.
-Processors MUST compare identifier spelling by exact Unicode code-point sequence;
-they MUST NOT normalize spelling. Thus canonically equivalent NFC and NFD
-spellings are distinct identifiers. Tools SHOULD warn when visually confusable or
-non-normalized names occur, but MUST NOT silently rewrite them.
+After recognizing a complete identifier token, but before keyword classification or
+semantic name resolution, processors MUST normalize the identifier to Unicode
+Normalization Form C (NFC) as defined by Unicode Standard Annex #15. Identifier
+equality, duplicate detection, field lookup, import resolution, export resolution,
+and every other semantic name operation MUST use the NFC-normalized spelling.
+
+Processors MUST preserve source ranges against the original unnormalized source
+text. Normalization MUST NOT alter lexical source positions or diagnostic ranges.
+NFC normalization applies only to identifiers and identifier-derived semantic names.
+It MUST NOT alter string literals, path literals, comments, inline descriptions,
+structured documentation text, or runtime string data.
+
+If two source identifiers normalize to the same NFC spelling in a context where
+duplicate names are forbidden, they are duplicate identifiers and processing MUST
+fail using the applicable duplicate-name diagnostic. Processors MUST NOT apply
+compatibility normalization, case folding, locale-dependent transformations,
+transliteration, or confusable-character substitution. Tools SHOULD warn about
+visually confusable names; confusable detection is separate from NFC normalization.
 
 The globally reserved complete-token keywords are `from`, `import`, `bind`,
 `alias`, `schema`, `gen_doc`, `schema_doc`, `array`, `record`, `fusion`,

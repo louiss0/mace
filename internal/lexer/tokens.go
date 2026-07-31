@@ -89,8 +89,23 @@ const (
 )
 
 type Token struct {
-	Type   TokenType
+	Type TokenType
+	// Lexeme is the semantic spelling. For identifiers it is NFC-normalized.
 	Lexeme string
-	Line   int
-	Column int
+	// RawLexeme preserves the exact source spelling for source ranges and display.
+	RawLexeme string
+	Line      int
+	Column    int
+}
+
+// SourceLexeme returns the bytes occupied by this token in the original source.
+func (token Token) SourceLexeme() string {
+	if token.RawLexeme != "" {
+		return token.RawLexeme
+	}
+	return token.Lexeme
+}
+
+func (token Token) SourceLength() int {
+	return len(token.SourceLexeme())
 }

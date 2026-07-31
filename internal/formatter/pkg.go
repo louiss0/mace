@@ -8,6 +8,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/louiss0/mace/internal/lexer"
+	"github.com/louiss0/mace/internal/name"
 	"github.com/louiss0/mace/internal/parser/ast"
 )
 
@@ -29,6 +30,10 @@ func newFormatter() *formatter {
 	return &formatter{}
 }
 
+func formatName(raw string) string {
+	return string(name.NormalizeName(raw))
+}
+
 func (f *formatter) writeFile(file ast.File) error {
 	script, hasScript := normalizedScriptBlock(file)
 	if hasScript {
@@ -44,15 +49,15 @@ func (f *formatter) writeFile(file ast.File) error {
 func formatImportDeclaration(importDeclaration ast.ImportDeclaration) string {
 	path := formatStaticPath(importDeclaration.Path.Lexeme)
 	if importDeclaration.Binding != nil {
-		return "from " + path + " bind " + importDeclaration.Binding.LocalName() + ";"
+		return "from " + path + " bind " + formatName(importDeclaration.Binding.LocalName()) + ";"
 	}
 
 	parts := make([]string, 0, len(importDeclaration.Identifiers))
 	for _, id := range importDeclaration.Identifiers {
 		if id.Alias != "" {
-			parts = append(parts, id.Name+":"+id.Alias)
+			parts = append(parts, formatName(id.Name)+":"+formatName(id.Alias))
 		} else {
-			parts = append(parts, id.Name)
+			parts = append(parts, formatName(id.Name))
 		}
 	}
 	return "from " + path + " import " + strings.Join(parts, ", ") + ";"
@@ -165,7 +170,7 @@ func formatDeclaration(declaration ast.Declaration) (string, error) {
 		}
 
 		if !typedDeclaration.HasValue {
-			return fmt.Sprintf("%s %s;", typeReference, typedDeclaration.Name), nil
+			return fmt.Sprintf("%s %s;", typeReference, formatName(typedDeclaration.Name)), nil
 		}
 
 		value, err := formatExpressionWithDepth(typedDeclaration.Value, 0)
@@ -174,7 +179,7 @@ func formatDeclaration(declaration ast.Declaration) (string, error) {
 		}
 
 		description := formatInlineDescription(typedDeclaration.Description)
-		return fmt.Sprintf("%s %s = %s%s;", typeReference, typedDeclaration.Name, value, description), nil
+		return fmt.Sprintf("%s %s = %s%s;", typeReference, formatName(typedDeclaration.Name), value, description), nil
 	case ast.TypeDeclaration:
 		typeReference, err := formatTypeReference(typedDeclaration.Type)
 		if err != nil {
@@ -182,14 +187,14 @@ func formatDeclaration(declaration ast.Declaration) (string, error) {
 		}
 
 		description := formatInlineDescription(typedDeclaration.Description)
-		return fmt.Sprintf("alias %s: %s%s;", typedDeclaration.Name, typeReference, description), nil
+		return fmt.Sprintf("alias %s: %s%s;", formatName(typedDeclaration.Name), typeReference, description), nil
 	case ast.SchemaDeclaration:
 		recordType, err := formatRecordType(typedDeclaration.Type, 0)
 		if err != nil {
 			return "", err
 		}
 
-		return fmt.Sprintf("schema %s: %s", typedDeclaration.Name, recordType), nil
+		return fmt.Sprintf("schema %s: %s", formatName(typedDeclaration.Name), recordType), nil
 	case ast.DocDeclaration:
 		return formatDocDeclaration(typedDeclaration)
 	default:
@@ -200,7 +205,7 @@ func formatDeclaration(declaration ast.Declaration) (string, error) {
 func formatTypeReference(typeReference ast.TypeReference) (string, error) {
 	switch typedReference := typeReference.(type) {
 	case ast.PrimitiveType:
-		return typedReference.Name, nil
+		return formatName(typedReference.Name), nil
 	case ast.ArrayType:
 		element, err := formatTypeReference(typedReference.Element)
 		if err != nil {
@@ -248,7 +253,7 @@ func formatTypeReference(typeReference ast.TypeReference) (string, error) {
 	case ast.RecordType:
 		return formatRecordType(typedReference, 0)
 	case ast.NamedType:
-		return typedReference.Name, nil
+		return formatName(typedReference.Name), nil
 	default:
 		return "", fmt.Errorf("format type reference: unsupported %T", typeReference)
 	}
@@ -275,7 +280,7 @@ func formatRecordType(recordType ast.RecordType, depth int) (string, error) {
 		}
 
 		description := formatInlineDescription(field.Description)
-		line := fmt.Sprintf("%s%s%s: %s%s", indent, field.Name, optional, typeReference, description)
+		line := fmt.Sprintf("%s%s%s: %s%s", indent, formatName(field.Name), optional, typeReference, description)
 		lines = append(lines, formatTrailingComma(line, index < len(recordType.Fields)-1))
 	}
 
@@ -289,7 +294,7 @@ func formatDocDeclaration(declaration ast.DocDeclaration) (string, error) {
 		keyword = "schema_doc"
 	}
 
-	lines := []string{fmt.Sprintf("%s %s {", keyword, declaration.Target)}
+	lines := []string{fmt.Sprintf("%s %s {", keyword, formatName(declaration.Target))}
 	if declaration.Documentation.Summary != nil {
 		lines = append(lines, fmt.Sprintf("  summary: %s,", declaration.Documentation.Summary.Lexeme))
 	}
@@ -301,7 +306,7 @@ func formatDocDeclaration(declaration ast.DocDeclaration) (string, error) {
 		keys := lo.Keys(declaration.Documentation.Props)
 		slices.Sort(keys)
 		for _, key := range keys {
-			lines = append(lines, fmt.Sprintf("    %s: %s,", key, declaration.Documentation.Props[key].Lexeme))
+			lines = append(lines, fmt.Sprintf("    %s: %s,", formatName(key), declaration.Documentation.Props[key].Lexeme))
 		}
 		lines = append(lines, "  },")
 	}
@@ -345,7 +350,7 @@ func formatOutputField(field ast.OutputField, trailingComma bool) (string, error
 
 	description := formatInlineDescription(field.Description)
 	if field.Shorthand {
-		return formatTrailingComma(fmt.Sprintf("%s%s", field.Name, description), trailingComma), nil
+		return formatTrailingComma(fmt.Sprintf("%s%s", formatName(field.Name), description), trailingComma), nil
 	}
 
 	value, err := formatExpressionWithDepth(field.Value, 1)
@@ -353,7 +358,7 @@ func formatOutputField(field ast.OutputField, trailingComma bool) (string, error
 		return "", err
 	}
 
-	return formatTrailingComma(fmt.Sprintf("%s%s: %s%s", field.Name, optional, value, description), trailingComma), nil
+	return formatTrailingComma(fmt.Sprintf("%s%s: %s%s", formatName(field.Name), optional, value, description), trailingComma), nil
 }
 
 func formatOutputSchemaField(field ast.OutputSchemaField, trailingComma bool) (string, error) {
@@ -368,7 +373,7 @@ func formatOutputSchemaField(field ast.OutputSchemaField, trailingComma bool) (s
 	}
 
 	description := formatInlineDescription(field.Description)
-	return formatTrailingComma(fmt.Sprintf("%s%s: %s%s", field.Name, optional, typeReference, description), trailingComma), nil
+	return formatTrailingComma(fmt.Sprintf("%s%s: %s%s", formatName(field.Name), optional, typeReference, description), trailingComma), nil
 }
 
 func formatInlineDescription(description string) string {
@@ -401,7 +406,7 @@ func formatExpressionNode(expression ast.Expression, depth int) (string, int, er
 	case ast.GroupedExpression:
 		return formatExpressionNode(typedExpression.Expression, depth)
 	case ast.Identifier:
-		return typedExpression.Name, precedencePrimary, nil
+		return formatName(typedExpression.Name), precedencePrimary, nil
 	case ast.MemberAccess:
 		target, err := formatExpressionWithPrecedence(typedExpression.Target, precedencePrimary, depth)
 		if err != nil {
@@ -411,7 +416,7 @@ func formatExpressionNode(expression ast.Expression, depth int) (string, int, er
 		if typedExpression.Optional {
 			operator = "?."
 		}
-		return target + operator + typedExpression.Name, precedencePrimary, nil
+		return target + operator + formatName(typedExpression.Name), precedencePrimary, nil
 	case ast.MatchExpression:
 		matched, err := formatExpressionWithDepth(typedExpression.Value, depth)
 		if err != nil {
@@ -465,7 +470,7 @@ func formatExpressionNode(expression ast.Expression, depth int) (string, int, er
 		}
 		return record, precedencePrimary, nil
 	case ast.SelfReference:
-		return "$self." + strings.Join(typedExpression.Path, "."), precedencePrimary, nil
+		return "$self." + strings.Join(lo.Map(typedExpression.Path, func(segment string, _ int) string { return formatName(segment) }), "."), precedencePrimary, nil
 	case ast.PrefixExpression:
 		right, err := formatExpressionWithPrecedence(typedExpression.Right, precedencePrefix, depth)
 		if err != nil {
@@ -544,7 +549,7 @@ func formatRecordLiteral(record ast.RecordLiteral, depth int) (string, error) {
 		}
 
 		if field.Shorthand {
-			lines = append(lines, formatMultilineRecordFieldShorthand(field.Name, optional, indent, index < len(record.Fields)-1))
+			lines = append(lines, formatMultilineRecordFieldShorthand(formatName(field.Name), optional, indent, index < len(record.Fields)-1))
 			continue
 		}
 
@@ -553,7 +558,7 @@ func formatRecordLiteral(record ast.RecordLiteral, depth int) (string, error) {
 			return "", err
 		}
 
-		lines = append(lines, formatMultilineRecordField(field.Name, optional, value, indent, index < len(record.Fields)-1))
+		lines = append(lines, formatMultilineRecordField(formatName(field.Name), optional, value, indent, index < len(record.Fields)-1))
 	}
 
 	lines = append(lines, closingIndent+"}")

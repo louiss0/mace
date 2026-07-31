@@ -18,7 +18,7 @@ func typeArgumentAliasCodeActions(text string, tokens []lexer.Token, documentPat
 	for _, argument := range extractableTypeArguments(tokens) {
 		start := tokenStartIndex(text, tokens[argument.start])
 		endToken := tokens[argument.end]
-		end := tokenStartIndex(text, endToken) + len(endToken.Lexeme)
+		end := tokenStartIndex(text, endToken) + endToken.SourceLength()
 		if argument.closingOffset >= 0 {
 			end = tokenStartIndex(text, endToken) + argument.closingOffset
 		}

@@ -1,0 +1,5 @@
+|===|
+string café = "first";
+string café = "second";
+|===|
+[output = 'data'] {}

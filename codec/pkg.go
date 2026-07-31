@@ -18,6 +18,7 @@ import (
 	toml "github.com/pelletier/go-toml/v2"
 	"gopkg.in/yaml.v3"
 
+	namepkg "github.com/louiss0/mace/internal/name"
 	"github.com/louiss0/mace/internal/processor"
 )
 
@@ -594,7 +595,7 @@ func normalizedImportFieldName(name string) (string, error) {
 		return name, nil
 	}
 
-	normalized := strings.Join(strings.Fields(name), "_")
+	normalized := string(namepkg.NormalizeName(strings.Join(strings.Fields(name), "_")))
 	if !importFieldPattern.MatchString(normalized) {
 		return "", fmt.Errorf("import mace: unsupported field name %q", name)
 	}

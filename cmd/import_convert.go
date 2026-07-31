@@ -17,6 +17,7 @@ import (
 	yamlparser "github.com/goccy/go-yaml/parser"
 
 	"github.com/louiss0/mace/codec"
+	namepkg "github.com/louiss0/mace/internal/name"
 	"github.com/louiss0/mace/internal/parser"
 )
 
@@ -794,7 +795,7 @@ func defaultImportOutputPath(sourcePath string) string {
 }
 
 func normalizedImportFieldName(name string) (string, error) {
-	normalized := strings.Join(strings.Fields(name), "_")
+	normalized := string(namepkg.NormalizeName(strings.Join(strings.Fields(name), "_")))
 	if err := validateImportFieldName(normalized); err != nil {
 		return "", err
 	}

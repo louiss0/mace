@@ -1,0 +1,4 @@
+|===|
+from './bind-source.mace' bind café;
+|===|
+[output = 'data'] { value: café.café, }

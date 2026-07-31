@@ -20,6 +20,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/louiss0/mace/internal/lexer"
+	"github.com/louiss0/mace/internal/name"
 	"github.com/louiss0/mace/internal/parser"
 	"github.com/louiss0/mace/internal/parser/ast"
 )
@@ -111,8 +112,8 @@ func New() *Processor {
 
 func NewWithInput(input map[string]Value) *Processor {
 	cloned := make(map[string]Value, len(input))
-	for name, value := range input {
-		cloned[name] = value
+	for rawName, value := range input {
+		cloned[string(name.NormalizeName(rawName))] = normalizeInputValue(value)
 	}
 
 	return &Processor{input: cloned}
@@ -254,6 +255,19 @@ func cloneValueMap(values map[string]Value) map[string]Value {
 		cloned[name] = value
 	}
 	return cloned
+}
+
+func normalizeInputValue(value Value) Value {
+	if value.Kind != ValueRecord {
+		return value
+	}
+
+	record := make(map[string]Value, len(value.Record))
+	for rawName, nestedValue := range value.Record {
+		record[string(name.NormalizeName(rawName))] = normalizeInputValue(nestedValue)
+	}
+	value.Record = record
+	return value
 }
 
 func (p *Processor) processInput(input string, importBaseDir string, importRootDir string, enforceImportRoot bool) (Result, error) {
