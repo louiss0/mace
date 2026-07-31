@@ -29,7 +29,7 @@ func (p *Parser) unexpectedTokenErrorAt(token lexer.Token, message string) error
 		return p.diagnosticError(token, parserDiagnosticCode(formatted), formatted)
 	}
 
-	sanitizedLexeme := strings.ReplaceAll(token.Lexeme, "\n", "\\n")
+	sanitizedLexeme := strings.ReplaceAll(token.SourceLexeme(), "\n", "\\n")
 	sanitizedLexeme = strings.ReplaceAll(sanitizedLexeme, "\r", "\\r")
 	formatted := fmt.Sprintf("%s at %d:%d near %q", message, token.Line, token.Column, sanitizedLexeme)
 	return p.diagnosticError(token, parserDiagnosticCode(formatted), formatted)

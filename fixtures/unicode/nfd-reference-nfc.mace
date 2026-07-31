@@ -1,0 +1,4 @@
+|===|
+string café = "ok";
+|===|
+[output = 'data'] { value: café, }

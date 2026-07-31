@@ -9,13 +9,16 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/samber/lo"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
 	"github.com/louiss0/mace/internal/diagnostic"
 	"github.com/louiss0/mace/internal/lexer"
+	"github.com/louiss0/mace/internal/name"
 	"github.com/louiss0/mace/internal/parser"
 	"github.com/louiss0/mace/internal/parser/ast"
 	"github.com/louiss0/mace/internal/processor"
@@ -288,6 +291,7 @@ func Rename(text string, snapshot Snapshot, uri protocol.DocumentUri, position p
 	if !ok || newName == "" || symbol.Origin == symbolOriginParsed {
 		return nil, false
 	}
+	newName = string(name.NormalizeName(newName))
 
 	edits := map[protocol.DocumentUri][]protocol.TextEdit{}
 	currentURI := uri
@@ -719,17 +723,14 @@ func positionFromIndex(text string, index int) protocol.Position {
 
 func identifierPrefixAt(text string, position protocol.Position) string {
 	index := positionIndex(text, position)
-
 	start := index
 	for start > 0 {
-		character := text[start-1]
-		if isIdentifierCharacter(character) || character == '$' {
-			start--
-			continue
+		character, size := utf8.DecodeLastRuneInString(text[:start])
+		if size == 0 || (!isIdentifierRune(character) && character != '$') {
+			break
 		}
-		break
+		start -= size
 	}
-
 	return text[start:index]
 }
 
@@ -746,20 +747,22 @@ func identifierAt(text string, position protocol.Position) (string, bool) {
 
 func identifierRangeAt(text string, position protocol.Position) (protocol.Range, bool) {
 	index := positionIndex(text, position)
-
 	start := index
 	for start > 0 {
-		character := text[start-1]
-		if isIdentifierCharacter(character) || character == '$' {
-			start--
-			continue
+		character, size := utf8.DecodeLastRuneInString(text[:start])
+		if size == 0 || (!isIdentifierRune(character) && character != '$') {
+			break
 		}
-		break
+		start -= size
 	}
 
 	end := index
-	for end < len(text) && isIdentifierCharacter(text[end]) {
-		end++
+	for end < len(text) {
+		character, size := utf8.DecodeRuneInString(text[end:])
+		if size == 0 || !isIdentifierRune(character) {
+			break
+		}
+		end += size
 	}
 
 	if start == end {
@@ -767,6 +770,10 @@ func identifierRangeAt(text string, position protocol.Position) (protocol.Range,
 	}
 
 	return protocol.Range{Start: positionFromIndex(text, start), End: positionFromIndex(text, end)}, true
+}
+
+func isIdentifierRune(value rune) bool {
+	return unicode.IsLetter(value) || unicode.IsDigit(value) || unicode.IsMark(value) || value == '_' || value == '-'
 }
 
 func isDirectivePosition(text string, position protocol.Position) bool {
