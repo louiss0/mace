@@ -62,6 +62,37 @@ string café = "ok";
 		tAssert.Equal("ok", result.Output["value"].String)
 	})
 
+	It("rejects canonically equivalent host input keys", func() {
+		processor := NewWithInput(map[string]Value{
+			"café":  {Kind: ValueString, String: "nfc"},
+			"café": {Kind: ValueString, String: "nfd"},
+		})
+		_, err := processor.Process(`[output = 'data'] { value: $café, }`)
+		tAssert.ErrorContains(err, "duplicate input field")
+	})
+
+	It("normalizes record keys inside runtime input arrays", func() {
+		processor := NewWithInput(map[string]Value{
+			"items": {
+				Kind: ValueArray,
+				Array: []Value{{
+					Kind: ValueRecord,
+					Record: map[string]Value{
+						"café": {Kind: ValueString, String: "ok"},
+					},
+				}},
+			},
+		})
+		result, err := processor.Process(`|===|
+schema Input: { items: array<{ café: string, }>, };
+|===|
+[output = 'data', parse = Input] { value: $items, }`)
+		if !tAssert.NoError(err) {
+			return
+		}
+		tAssert.Equal("ok", result.Output["value"].Array[0].Record["café"].String)
+	})
+
 	It("normalizes parsed input keys without changing runtime strings", func() {
 		result, err := NewWithInput(map[string]Value{"café": {Kind: ValueString, String: "café"}}).Process(`|===|
 schema Input: { café: string, };

@@ -26,7 +26,8 @@ import (
 )
 
 type Processor struct {
-	input map[string]Value
+	input      map[string]Value
+	inputError error
 }
 
 type Result struct {
@@ -112,11 +113,33 @@ func New() *Processor {
 
 func NewWithInput(input map[string]Value) *Processor {
 	cloned := make(map[string]Value, len(input))
-	for rawName, value := range input {
-		cloned[string(name.NormalizeName(rawName))] = normalizeInputValue(value)
+	processor := &Processor{input: cloned}
+	rawNames := make([]string, 0, len(input))
+	for rawName := range input {
+		rawNames = append(rawNames, rawName)
+	}
+	slices.Sort(rawNames)
+
+	for _, rawName := range rawNames {
+		semanticName := string(name.NormalizeName(rawName))
+		if _, exists := cloned[semanticName]; exists {
+			if processor.inputError == nil {
+				processor.inputError = duplicateInputFieldError(semanticName)
+			}
+			continue
+		}
+
+		normalizedValue, err := normalizeInputValue(input[rawName])
+		if err != nil {
+			if processor.inputError == nil {
+				processor.inputError = err
+			}
+			continue
+		}
+		cloned[semanticName] = normalizedValue
 	}
 
-	return &Processor{input: cloned}
+	return processor
 }
 
 func NewWithInjections(injections map[string]Value) *Processor {
@@ -167,6 +190,10 @@ func (p *Processor) ProcessVariablesInDir(input string, importBaseDir string) (m
 }
 
 func (p *Processor) ProcessVariablesInScope(input string, importBaseDir string, importRootDir string) (map[string]Value, error) {
+	if err := p.validateInput(); err != nil {
+		return nil, err
+	}
+
 	if importBaseDir == "" {
 		importBaseDir = "."
 	}
@@ -257,20 +284,63 @@ func cloneValueMap(values map[string]Value) map[string]Value {
 	return cloned
 }
 
-func normalizeInputValue(value Value) Value {
-	if value.Kind != ValueRecord {
-		return value
-	}
+func normalizeInputValue(value Value) (Value, error) {
+	switch value.Kind {
+	case ValueArray:
+		array := make([]Value, len(value.Array))
+		for index, element := range value.Array {
+			normalizedElement, err := normalizeInputValue(element)
+			if err != nil {
+				return Value{}, err
+			}
+			array[index] = normalizedElement
+		}
+		value.Array = array
+		return value, nil
+	case ValueRecord:
+		rawNames := make([]string, 0, len(value.Record))
+		for rawName := range value.Record {
+			rawNames = append(rawNames, rawName)
+		}
+		slices.Sort(rawNames)
 
-	record := make(map[string]Value, len(value.Record))
-	for rawName, nestedValue := range value.Record {
-		record[string(name.NormalizeName(rawName))] = normalizeInputValue(nestedValue)
+		record := make(map[string]Value, len(value.Record))
+		for _, rawName := range rawNames {
+			semanticName := string(name.NormalizeName(rawName))
+			if _, exists := record[semanticName]; exists {
+				return Value{}, duplicateInputFieldError(semanticName)
+			}
+
+			normalizedValue, err := normalizeInputValue(value.Record[rawName])
+			if err != nil {
+				return Value{}, err
+			}
+			record[semanticName] = normalizedValue
+		}
+		value.Record = record
 	}
-	value.Record = record
-	return value
+	return value, nil
+}
+
+func duplicateInputFieldError(field string) error {
+	return diagnosticErrorf(
+		ErrorRuntime,
+		CodeRuntimeDuplicateInputField,
+		DiagnosticFields{Field: field},
+		"duplicate input field %q after NFC normalization",
+		field,
+	)
+}
+
+func (p *Processor) validateInput() error {
+	return p.inputError
 }
 
 func (p *Processor) processInput(input string, importBaseDir string, importRootDir string, enforceImportRoot bool) (Result, error) {
+	if err := p.validateInput(); err != nil {
+		return Result{}, err
+	}
+
 	tokens, err := lex(input)
 	if err != nil {
 		return Result{}, err
@@ -290,6 +360,10 @@ func (p *Processor) processInput(input string, importBaseDir string, importRootD
 }
 
 func (p *Processor) processScriptInput(input string, importBaseDir string) (ScriptResult, error) {
+	if err := p.validateInput(); err != nil {
+		return ScriptResult{}, err
+	}
+
 	tokens, err := lex(input)
 	if err != nil {
 		return ScriptResult{}, err
@@ -313,6 +387,10 @@ func (p *Processor) processScriptInput(input string, importBaseDir string) (Scri
 }
 
 func (p *Processor) processOutputInput(input string, scriptResult ScriptResult, importBaseDir string) (Result, error) {
+	if err := p.validateInput(); err != nil {
+		return Result{}, err
+	}
+
 	tokens, err := lex(input)
 	if err != nil {
 		return Result{}, err

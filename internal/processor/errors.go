@@ -42,6 +42,7 @@ const (
 	CodeSelfReferenceUnknown         ErrorCode = "mace.type.unknown-self-field"
 	CodeTypeMismatch                 ErrorCode = "mace.type.initializer-type-mismatch"
 	CodeTypeRecordDoesNotMatchSchema ErrorCode = "mace.type.record-does-not-match-schema"
+	CodeRuntimeDuplicateInputField   ErrorCode = "mace.runtime.duplicate-input-field"
 )
 
 type DiagnosticFields struct {
