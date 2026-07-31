@@ -36,6 +36,13 @@ var _ = Describe("Expressions", func() {
 		}
 	})
 
+	It("evaluates parenthesized logical expressions", func() {
+		result, err := New().Process(`[output = 'data'] { result: (true && false) || true, }`)
+
+		tAssert.NoError(err)
+		tAssert.True(result.Output["result"].Boolean)
+	})
+
 	DescribeTable("returns inline output blocks with multiple fields",
 		func(file string, expected map[string]expectedValue) {
 			processor := New()

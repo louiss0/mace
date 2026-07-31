@@ -14,7 +14,6 @@ var _ = Describe("Operator and operand relationship code actions", func() {
 		Entry("uses result type", preferredQuickFix("Change receiving type to operator result type", "mace.type.operator-result-mismatch", "|===|\nhex_int value = 0x4 / 0x2;\n|===|\n[output = 'data'] { value: value, }", "hex_float value")),
 		Entry("selects compatible operator", quickFix("Replace invalid operator with compatible operator", "mace.type.invalid-binary-operator", "[output = 'data'] { value: true + false, }", "true || false")),
 		Entry("groups arithmetic", rewrite("Add arithmetic grouping that changes precedence", "mace.expression.suspicious-precedence", "[output = 'data'] { value: 1 + 2 * 3, }", "(1 + 2) * 3")),
-		Entry("removes logical grouping", preferredQuickFix("Remove forbidden non-arithmetic grouping", "mace.syntax.forbidden-grouping", "[output = 'data'] { value: (true && false), }", "true && false")),
 		Entry("fixes exponent", quickFix("Make exponent non-negative integer", "mace.operator.invalid-exponent", "[output = 'data'] { value: 2 ** -1, }", "2 ** 1")),
 		Entry("fixes shift type", quickFix("Convert shift amount to integer literal", "mace.operator.invalid-shift", "[output = 'data'] { value: 1 << 2.0, }", "1 << 2")),
 		Entry("fixes negative shift", quickFix("Replace negative shift amount", "mace.operator.invalid-shift", "[output = 'data'] { value: 1 << -2, }", "1 << 0")),

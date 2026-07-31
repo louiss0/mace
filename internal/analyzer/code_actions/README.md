@@ -491,7 +491,7 @@ Cross-file actions require an index of files, exports, declarations, imports, re
 
 ### 1. File and syntax structure
 
-**Tests:** `file_and_syntax_structure_test.go` — 16 specs  
+**Tests:** `file_and_syntax_structure_test.go` — 14 specs
 **Suggested owner file:** `code_action_syntax.go`
 
 To pass:
@@ -500,7 +500,7 @@ To pass:
 - Preserve enough token information to insert commas and semicolons at the actual missing boundary.
 - Track both script fence tokens so either side can be replaced or a closing fence inserted.
 - Calculate declaration and output-block ranges for move, merge, and removal actions.
-- Distinguish arithmetic grouping from forbidden or redundant grouping.
+- Preserve valid parentheses while recovering other syntax errors.
 - Use token and symbol resolution to distinguish a kebab-case identifier from subtraction.
 - Mark only deterministic fixes preferred.
 

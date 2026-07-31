@@ -15,8 +15,6 @@ var (
 	outsideDeclarationPattern          = regexp.MustCompile(`(?m)^(?:alias\s+[A-Za-z_][A-Za-z0-9_]*\s*:|(?:string|int|float|boolean)\s+[A-Za-z_][A-Za-z0-9_]*\s*=)`)
 	fieldSemicolonPattern              = regexp.MustCompile(`(?s)(\{[^{}]*?:\s*[^,;{}]+);`)
 	trailingTokenPattern               = regexp.MustCompile(`(?s)(\}\s*)([A-Za-z_][A-Za-z0-9_]*)\s*$`)
-	redundantParenthesesPattern        = regexp.MustCompile(`\(([-]?(?:\d+(?:\.\d+)?|true|false|'[^']*'|"[^"]*"))\)`)
-	invalidGroupingPattern             = regexp.MustCompile(`1\s*\+\s*\(2\s*\*\s*3\)`)
 )
 
 // syntaxStructureAnalysis recognizes recoverable syntax errors whose precise
@@ -100,13 +98,6 @@ func syntaxStructureAnalysis(text string, documentPath string) ([]protocol.Diagn
 	}
 	if match := trailingTokenPattern.FindStringSubmatchIndex(text); match != nil && strings.Contains(text, "[output") {
 		add(diagnosticSyntaxUnexpectedTrailingToken, "Remove unexpected trailing token", protocol.CodeActionKindQuickFix, false, text[:match[3]])
-	}
-	if match := redundantParenthesesPattern.FindStringSubmatchIndex(text); match != nil {
-		updated := text[:match[0]] + text[match[2]:match[3]] + text[match[1]:]
-		add(diagnosticSyntaxRedundantParentheses, "Remove redundant parentheses", protocol.CodeActionKindQuickFix, true, updated)
-	}
-	if invalidGroupingPattern.MatchString(text) {
-		add(diagnosticSyntaxInvalidArithmeticGrouping, "Rewrite arithmetic grouping", protocol.CodeActionKindRefactorRewrite, false, invalidGroupingPattern.ReplaceAllString(text, "(1 + 2) * 3"))
 	}
 	if match := findUnspacedSubtraction(text); match != nil {
 		updated := text[:match[0]] + text[match[2]:match[3]] + " - " + text[match[4]:match[5]] + text[match[1]:]

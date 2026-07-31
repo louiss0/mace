@@ -356,10 +356,10 @@ var _ = Describe("Parser", func() {
 		Entry("prefix over addition", "-(1 + 2)"),
 	)
 
-	DescribeTable("rejects groups that do not alter arithmetic precedence",
+	DescribeTable("allows parentheses around any expression",
 		func(input string) {
 			_, err := parseExpressionInput(input)
-			tAssert.ErrorContains(err, "parentheses may only alter arithmetic precedence")
+			tAssert.NoError(err)
 		},
 		Entry("top-level arithmetic", "(1 + 2)"),
 		Entry("stronger left arithmetic", "(1 * 2) + 3"),
@@ -371,8 +371,17 @@ var _ = Describe("Parser", func() {
 		Entry("logical precedence", "(ready && enabled) || fallback"),
 		Entry("shift precedence", "(1 << 2) + 3"),
 		Entry("coalescing precedence", "(value ?? fallback) ?? other"),
-		Entry("conditional precedence", `(ready ? "yes" : "no") ? "one" : "two"`),
+		Entry("conditional branch", `ready ? (enabled || fallback) : "no"`),
 	)
+
+	It("uses parentheses to change logical precedence", func() {
+		expression, err := parseExpressionInput("(a || b) && c")
+		tAssert.NoError(err)
+
+		root := requireInfix(expression, lexer.TokenAndAnd)
+		requireInfix(root.Left, lexer.TokenOrOr)
+		requireIdentifier(root.Right, "c")
+	})
 
 	DescribeTable("parses right associative exponentiation",
 		func(input string) {
@@ -407,6 +416,7 @@ var _ = Describe("Parser", func() {
 		Entry("nested then branch", "a ? b ? c : d : e"),
 		Entry("nested else branch", "a ? b : c ? d : e"),
 		Entry("nested condition", "(a ? b : c) ? d : e"),
+		Entry("nested condition with extra grouping", "((a ? b : c)) ? d : e"),
 	)
 
 	It("parses variant and choice match arms", func() {

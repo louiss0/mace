@@ -26,8 +26,6 @@ const (
 	diagnosticSyntaxMissingDeclarationSemicolon      diagnosticCode = "mace.syntax.missing-declaration-semicolon"
 	diagnosticSyntaxFieldSemicolon                   diagnosticCode = "mace.syntax.field-semicolon"
 	diagnosticSyntaxUnexpectedTrailingToken          diagnosticCode = "mace.syntax.unexpected-trailing-token"
-	diagnosticSyntaxRedundantParentheses             diagnosticCode = "mace.syntax.redundant-parentheses"
-	diagnosticSyntaxInvalidArithmeticGrouping        diagnosticCode = "mace.syntax.invalid-arithmetic-grouping"
 	diagnosticSyntaxKebabIdentifierUsedAsSubtraction diagnosticCode = "mace.syntax.kebab-identifier-used-as-subtraction"
 	diagnosticFileMissingScriptBlock                 diagnosticCode = "mace.file-structure.missing-script-block"
 	diagnosticFileDeclarationOutsideScript           diagnosticCode = "mace.file-structure.declaration-outside-script"
