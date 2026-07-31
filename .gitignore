@@ -15,7 +15,7 @@ vendor/
 tree-sitter-mace/
 zed-extension-mace/
 vscode-extension-mace/
-docs/
+docs/*
 *.exe
 *.dll
 *.so
