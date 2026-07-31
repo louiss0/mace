@@ -1,0 +1,48 @@
+---
+title: CLI Reference
+description: Commands provided by the Mace CLI.
+---
+
+## Install
+
+```bash
+go install github.com/louiss0/mace/cmd@latest
+```
+
+You can also run directly from source:
+
+```bash
+go run ./cmd --help
+```
+
+## Root command
+
+The root command is `mace`.
+
+## Commands
+
+- `mace json <path>` evaluates a Mace file and prints computed JSON output
+- `mace import <path> [path...]` converts JSON, YAML, and TOML to `.mace`
+- `mace check <path> [path...]` reports JSON, YAML, and TOML compatibility issues as Mace data
+- `mace nodes <path>` prints parsed node structure
+- `mace output <path>` prints canonical formatted Mace source
+- `mace lsp` starts the Language Server Protocol server over stdio
+
+`json` is the computed-value command. `check` is the compatibility-audit command. `output` is the canonical-source command.
+
+## LSP support
+
+The built-in server currently supports:
+
+- diagnostics
+- completions
+- hover
+- definitions
+- document symbols
+- code actions
+- formatting
+
+## Related docs
+
+- [How to Run the Mace LSP](/how-to/run-the-mace-lsp/)
+- [How to Print Canonical Mace Output](/how-to/print-canonical-mace-output/)
