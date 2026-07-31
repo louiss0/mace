@@ -85,7 +85,6 @@ var _ = Describe("Diagnostic fixtures", func() {
 		Entry("plain optional field access", "optional-field-plain-access", "use optional chaining"),
 		Entry("unresolved optional chain", "optional-chain-unresolved", "must be resolved with '??'"),
 		Entry("record access past declared depth", "record-access-past-depth", "target is not a record"),
-		Entry("grouped non-mathematical access", "grouped-non-mathematical-access", "parentheses may only alter arithmetic precedence"),
 		Entry("unknown type", "unknown-type", "unknown type"),
 		Entry("variable without initializer", "variable-missing-initializer", "expected '=' in variable declaration"),
 		Entry("initializer type mismatch", "type-mismatch", "type mismatch"),

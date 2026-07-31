@@ -248,7 +248,6 @@ postfix_suffix = ws0 , ( "." | "?." ) , ws0 , identifier ;
 self_reference = "$self" , "." , identifier , { "." , identifier } ;
 parsed_input_reference = "$" , identifier ;
 grouped_expression = "(" , ws0 , expression , ws0 , ")" ;
-(* Grouping is valid only when it changes arithmetic precedence or associativity. *)
 array_literal =
     "[" , ws0 ,
     [ expression , { ws0 , "," , ws0 , expression } , [ ws0 , "," ] ] ,

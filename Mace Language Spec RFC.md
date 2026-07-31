@@ -306,7 +306,6 @@ postfix_suffix = ws0 , ( "." | "?." ) , ws0 , identifier ;
 self_reference = "$self" , "." , identifier , { "." , identifier } ;
 parsed_input_reference = "$" , identifier ;
 grouped_expression = "(" , ws0 , expression , ws0 , ")" ;
-(* Grouping is valid only when it changes arithmetic precedence or associativity. *)
 array_literal =
     "[" , ws0 ,
     [ expression , { ws0 , "," , ws0 , expression } , [ ws0 , "," ] ] ,
@@ -643,10 +642,11 @@ Examples: `false && (1 / 0 == 0)` and `true || (1 / 0 == 0)` do not divide;
 Negative examples include `1 + 0x1`, `true & false`, `1 << 64`, `1 / 0`, and
 `"1" == 1`.
 
-Grouping may alter only arithmetic precedence or associativity, for example
-`(1 + 2) * 3`, `1 - (2 - 3)`, or `(2 ** 3) ** 4`. Redundant groups and groups
-around shifts, comparisons, logical operations, coalescing, conditionals, or a
-value solely to enable member access are invalid.
+Parentheses may group any expression, just as in other languages. They can
+change precedence or associativity, such as `(1 + 2) * 3`, `1 - (2 - 3)`,
+or `(ready && enabled) || fallback`, and they may also be used for visual
+clarity. Redundant parentheses are valid. Formatters MAY remove parentheses
+when doing so preserves the expression's meaning.
 
 ## 9. Numeric representation
 
@@ -691,7 +691,7 @@ Required distinct categories include:
 * mismatched, unterminated, or empty script blocks; misplaced imports; missing
   terminators; malformed declarations/directives/fields; missing or extra output;
 * missing field separators (`expected ',' after field` or `expected ',' or '}'
-  after field`) and invalid grouping (`parentheses may only alter arithmetic precedence`);
+  after field`);
 * missing/duplicate/unknown directives and data-only directives in schema mode;
 * unknown, duplicate, private, or shadowed imports; `unresolved bind`; `bind target
   must use data output`; file-selection/mode failures; cycles and path escapes;

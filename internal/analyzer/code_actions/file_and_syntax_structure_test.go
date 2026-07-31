@@ -388,29 +388,6 @@ alias Name: string;
 		})
 	})
 
-	It("removes parentheses that do not alter arithmetic precedence", func() {
-		source := `|===|
-int count = (1);
-|===|
-[output = 'data']
-{
-  count: count,
-}`
-		expected := `|===|
-int count = 1;
-|===|
-[output = 'data']
-{
-  count: count,
-}`
-
-		newCodeActionFixture(source, nil).requirePreferredQuickFix(expectedQuickFix{
-			diagnosticCode: "mace.syntax.redundant-parentheses",
-			title:          "Remove redundant parentheses",
-			result:         expected,
-		})
-	})
-
 	DescribeTable("satisfies the remaining file and syntax contracts",
 		testCodeActionContract,
 		Entry("matches the opening delimiter", preferredQuickFix("Match opening script delimiter", "mace.syntax.inconsistent-script-delimiters", "|====|\nalias Name: string;\n|===|\n[output = 'schema'] { Name: Name, }", "|===|")),
@@ -423,7 +400,6 @@ int count = 1;
 		Entry("merges duplicate output fields", rewrite("Move output fields into the first output block", "mace.file-structure.multiple-output-blocks", "[output = 'data'] { first: 1, }\n[output = 'data'] { second: 2, }", "first: 1", "second: 2")),
 		Entry("replaces a field semicolon", preferredQuickFix("Replace semicolon with comma", "mace.syntax.field-semicolon", "[output = 'data'] { first: 1; second: 2, }", "first: 1,")),
 		Entry("removes a trailing token", quickFix("Remove unexpected trailing token", "mace.syntax.unexpected-trailing-token", "[output = 'data'] { value: 1, } garbage", "[output = 'data'] { value: 1, }")),
-		Entry("rewrites arithmetic grouping", rewrite("Rewrite arithmetic grouping", "mace.syntax.invalid-arithmetic-grouping", "|===|\nint value = 1 + (2 * 3);\n|===|\n[output = 'data'] { value: value, }", "(1 + 2) * 3")),
 		Entry("separates subtraction", preferredQuickFix("Separate subtraction operator with whitespace", "mace.syntax.kebab-identifier-used-as-subtraction", "|===|\nint first = 3; int second = 1; int result = first-second;\n|===|\n[output = 'data'] { result: result, }", "first - second")),
 	)
 })

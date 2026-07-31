@@ -384,6 +384,18 @@ schema_doc User {
 }`, output)
 	})
 
+	It("preserves logical precedence when formatting parentheses", func() {
+		file, err := parseMaceFile(`[output = 'data'] { result: (true || false) && true, }`)
+		tAssert.NoError(err)
+
+		output, err := FormatFile(file)
+		tAssert.NoError(err)
+		tAssert.Equal(`[output = 'data']
+{
+  result: (true || false) && true
+}`, output)
+	})
+
 	It("formats bare output blocks without injecting a directive", func() {
 		file, err := parseMaceFile(`{ result: 1 + 2, }`)
 		tAssert.NoError(err)
