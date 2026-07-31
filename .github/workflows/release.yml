@@ -1,11 +1,8 @@
 name: Release
 
+# This file documents the release environment and can be run manually after
+# validating the release locally. Publishing is intentionally not automatic.
 on:
-  workflow_run:
-    workflows:
-      - ci
-    types:
-      - completed
   workflow_dispatch:
 
 permissions:
@@ -14,11 +11,6 @@ permissions:
 
 jobs:
   release:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      startsWith(github.event.workflow_run.head_branch, 'v'))
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.release_tag.outputs.version }}
@@ -27,7 +19,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
 
       - name: Resolve release tag
