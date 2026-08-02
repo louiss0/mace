@@ -1551,30 +1551,6 @@ alias Matrix: array<array<int>>;
 			}
 		})
 
-		It("parses self references in recursive record type positions", func() {
-			file, err := parseFileInput(`|===|
-schema Node: {
-  value: string,
-  children?: array<$self>,
-};
-|===|
-[output = 'data'] {}`)
-			tAssert.NoError(err)
-
-			if tAssert.NotNil(file.Script) && tAssert.Len(file.Script.Items, 1) {
-				schema, ok := file.Script.Items[0].(ast.SchemaDeclaration)
-				tAssert.True(ok)
-				if ok && tAssert.Len(schema.Type.Fields, 2) {
-					children, ok := schema.Type.Fields[1].Type.(ast.ArrayType)
-					tAssert.True(ok)
-					if ok {
-						_, ok = children.Element.(ast.SelfType)
-						tAssert.True(ok)
-					}
-				}
-			}
-		})
-
 		It("parses record map and inline record type references", func() {
 			file, err := parseFileInput(`|===|
 alias Lookup: record<string>;

@@ -63,7 +63,6 @@ var _ = Describe("AST nodes", func() {
 			VariantType{Members: []TypeReference{PrimitiveType{Name: "string"}, PrimitiveType{Name: "int"}}},
 			ChoiceType{Members: []Expression{StringLiteral{Lexeme: "\"on\""}}},
 			NamedType{Name: "Profile"},
-			SelfType{},
 			RecordType{Fields: []SchemaField{{Name: "name", Type: PrimitiveType{Name: "string"}}}},
 		}
 
@@ -83,7 +82,7 @@ var _ = Describe("AST nodes", func() {
 			declaration.declarationNode()
 		}
 
-		types := []TypeReference{PrimitiveType{}, ArrayType{}, RecordMapType{}, UnionType{}, VariantType{}, ChoiceType{}, NamedType{}, SelfType{}, RecordType{}}
+		types := []TypeReference{PrimitiveType{}, ArrayType{}, RecordMapType{}, UnionType{}, VariantType{}, ChoiceType{}, NamedType{}, RecordType{}}
 		for _, typ := range types {
 			typ.typeReferenceNode()
 		}
@@ -122,7 +121,6 @@ var _ = Describe("AST nodes", func() {
 			VariantType{Token: token},
 			ChoiceType{Token: token},
 			NamedType{Token: token},
-			SelfType{Token: token},
 			RecordType{StartToken: token},
 			SchemaField{NameToken: token},
 			OutputField{NameToken: token},

@@ -254,8 +254,6 @@ func formatTypeReference(typeReference ast.TypeReference) (string, error) {
 		return formatRecordType(typedReference, 0)
 	case ast.NamedType:
 		return formatName(typedReference.Name), nil
-	case ast.SelfType:
-		return "$self", nil
 	default:
 		return "", fmt.Errorf("format type reference: unsupported %T", typeReference)
 	}

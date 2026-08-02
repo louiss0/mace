@@ -84,7 +84,6 @@ Mace supports:
 - output fields evaluate expressions directly; parentheses may group any expression for precedence, associativity, or readability
 - commas separate record, schema, and output fields; semicolons terminate declarations and statements
 - `$self` references inside output evaluation
-- recursive schema and inline-record types with guarded type-position `$self`, such as `array<$self>`
 - hexadecimal integer and fractional numeric types with canonical string JSON output
 
 Fusion and variant types are first-class across the language, including named

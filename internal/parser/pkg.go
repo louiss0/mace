@@ -919,10 +919,6 @@ func (p *Parser) parseTypeReference() (ast.TypeReference, error) {
 		return ast.VariantType{Token: token, Members: members}, nil
 	case lexer.TokenChoice:
 		return p.parseChoiceType()
-	case lexer.TokenSelf:
-		token := p.current()
-		p.advance()
-		return ast.SelfType{Token: token}, nil
 	case lexer.TokenLBrace:
 		return p.parseRecordType()
 	case lexer.TokenIdentifier, lexer.TokenAliasKeyword:

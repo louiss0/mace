@@ -598,8 +598,6 @@ func typeReferenceDetail(typeReference ast.TypeReference) string {
 		return value.Name
 	case ast.NamedType:
 		return value.Name
-	case ast.SelfType:
-		return "$self"
 	case ast.ArrayType:
 		return fmt.Sprintf("array<%s>", typeReferenceDetail(value.Element))
 	case ast.RecordMapType:
