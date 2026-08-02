@@ -136,17 +136,15 @@ type_reference =
   | choice_type
   | identifier ;
 primitive_type = "string" | "int" | "float" | "hex_int" | "hex_float" | "boolean" ;
-array_type = "array" , ws0 , "<" , ws0 , schema_type_reference , ws0 , ">" ;
-record_map_type = "record" , ws0 , "<" , ws0 , schema_type_reference , ws0 , ">" ;
+array_type = "array" , ws0 , "<" , ws0 , type_reference , ws0 , ">" ;
+record_map_type = "record" , ws0 , "<" , ws0 , type_reference , ws0 , ">" ;
 record_type =
     "{" , ws0 ,
     [ schema_field , { ws0 , "," , ws0 , schema_field } , [ ws0 , "," ] ] ,
     ws0 , "}" ;
 schema_field =
-    identifier , [ "?" ] , ws0 , ":" , ws0 , schema_type_reference ,
+    identifier , [ "?" ] , ws0 , ":" , ws0 , type_reference ,
     [ ws0 , inline_description ] ;
-schema_type_reference = type_reference | self_type_reference ;
-self_type_reference = "$self" ;
 fusion_type =
     "fusion" , ws0 , "[" , ws0 , type_reference ,
     { ws0 , "," , ws0 , type_reference } , [ ws0 , "," ] , ws0 , "]" ;

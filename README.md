@@ -76,7 +76,7 @@ Mace supports:
 - variants: `variant[T1, T2, ...]`
 - choices: `choice[&quot;a&quot;, 1, true, OtherChoice]`
 - named type aliases
-- schemas
+- schemas, including recursive named-schema references such as `array<Node>`
 - literal `choice[...]` aliases with mixed scalar members, reusable choice aliases,
   and variant-friendly autocomplete
 - record, array, arithmetic, logical, and conditional expressions

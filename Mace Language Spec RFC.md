@@ -194,17 +194,15 @@ type_reference =
   | choice_type
   | identifier ;
 primitive_type = "string" | "int" | "float" | "hex_int" | "hex_float" | "boolean" ;
-array_type = "array" , ws0 , "<" , ws0 , schema_type_reference , ws0 , ">" ;
-record_map_type = "record" , ws0 , "<" , ws0 , schema_type_reference , ws0 , ">" ;
+array_type = "array" , ws0 , "<" , ws0 , type_reference , ws0 , ">" ;
+record_map_type = "record" , ws0 , "<" , ws0 , type_reference , ws0 , ">" ;
 record_type =
     "{" , ws0 ,
     [ schema_field , { ws0 , "," , ws0 , schema_field } , [ ws0 , "," ] ] ,
     ws0 , "}" ;
 schema_field =
-    identifier , [ "?" ] , ws0 , ":" , ws0 , schema_type_reference ,
+    identifier , [ "?" ] , ws0 , ":" , ws0 , type_reference ,
     [ ws0 , inline_description ] ;
-schema_type_reference = type_reference | self_type_reference ;
-self_type_reference = "$self" ;
 fusion_type =
     "fusion" , ws0 , "[" , ws0 , type_reference ,
     { ws0 , "," , ws0 , type_reference } , [ ws0 , "," ] , ws0 , "]" ;
@@ -425,9 +423,22 @@ type. Empty schemas remain valid.
 A fusion resolves entirely to records or entirely to choices. Record fusion
 merges equal field types; required plus optional is required. Conflicting types
 are errors. Choice fusion deduplicates the union of literal domains. A fusion
-MUST NOT mix record and choice domains. Pure alias cycles are invalid. `$self` in
-a schema type is legal only behind a structural guard such as `array<$self>`;
-direct recursion and use outside a schema are errors.
+MUST NOT mix record and choice domains. Pure alias cycles are invalid.
+
+Named schema references may be recursive. A schema may refer to itself or to
+another named schema in a field, including through a container such as
+`array<Node>`:
+
+```mace
+schema Node: {
+    value: string,
+    children?: array<Node>,
+};
+```
+
+The named schema identity supplies the recursive record shape. Anonymous inline
+record types do not have a type-position `$self`; `$self` is reserved for
+expression references during output evaluation.
 
 ## 5. Choices, variants, and matching
 
