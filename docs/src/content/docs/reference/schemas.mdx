@@ -1,0 +1,338 @@
+---
+title: Schemas
+description: Define closed record contracts, validate output and input, publish schema metadata, and model recursion.
+sidebar:
+  order: 9
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A schema is a named, closed record shape. It belongs to Mace's schema plane: it
+validates records but is not itself a runtime value.
+
+## Schema declarations
+
+```mace
+|===|
+alias ServiceName: string;
+
+schema Service: {
+  name: ServiceName,
+  replicas: int,
+  owner?: string,
+};
+
+Service service = {
+  name: "catalog",
+  replicas: 3,
+};
+|===|
+
+{
+  service: service,
+}
+```
+
+A required field has no marker. An optional field has `?` immediately after its
+name. Schema fields are comma-separated, and the schema declaration ends with
+`;`. Schema names and field names may use kebab case, so declarations such as
+`schema user-profile` and fields such as `display-name: string` remain valid
+wherever those names are referenced.
+
+## Closed-shape rules
+
+A record conforms to a schema only when all of these rules hold:
+
+- every required field is present;
+- optional fields may be omitted;
+- every present field value conforms to its declared type;
+- no unknown fields are present;
+- field names are unique.
+
+Optionality affects presence only. `owner?: string` may be absent, but when
+present it cannot contain an integer or `null`.
+
+Schemas are structurally checked. A variable can use a schema name directly as
+its declared type, and aliases may refer to schemas or inline record shapes.
+
+## Nested schemas
+
+A field may reference another schema, allowing validation to continue through
+nested records and arrays.
+
+```mace
+|===|
+schema Endpoint: {
+  host: string,
+  port: int,
+};
+
+schema Service: {
+  name: string,
+  endpoint: Endpoint,
+  mirrors: array<Endpoint>,
+};
+
+Service service = {
+  name: "search",
+  endpoint: { host: "api.example.com", port: 443, },
+  mirrors: [
+    { host: "api-2.example.com", port: 443, },
+  ],
+};
+|===|
+
+{
+  service: service,
+}
+```
+
+The same missing-field, unknown-field, and type rules apply at every nesting
+level and to every array element.
+
+## Recursive named schemas
+
+Recursive types use the schema's name as the recursive reference. A schema can
+refer to itself through an array, a record map, a variant, or another named
+schema. The recursive field is still subject to its normal required/optional
+rule; recursion does not make a field optional by itself.
+
+```mace
+|===|
+schema Node: {
+  value: string,
+  children?: array<Node>,
+};
+
+Node root = {
+  value: "root",
+  children: [
+    { value: "leaf", },
+  ],
+};
+|===|
+
+{
+  root: root,
+}
+```
+
+A schema may also participate in mutual recursion by naming another schema in
+its fields. Arrays and optional fields provide natural terminating shapes for
+finite data. Type-position `$self` is not the recursive syntax for schemas or
+inline records; `$self.field` is reserved for expression references while an
+output record is being evaluated.
+
+## Optional-field access rules
+
+An optional schema field must be read with `?.`, and a possibly absent chain
+must be resolved with `??` before it becomes a value.
+
+```mace
+|===|
+schema Profile: {
+  display_name?: string,
+};
+
+schema User: {
+  profile?: Profile,
+};
+
+User user = {
+  profile: {},
+};
+
+string display_name = user?.profile?.display_name ?? "guest";
+|===|
+
+{
+  display_name: display_name,
+}
+```
+
+Rules specific to schema-backed access:
+
+1. A required field on a definitely present record uses `.`.
+2. An optional field uses `?.`; plain `.` is invalid even when the current
+   literal happens to include that field.
+3. After any optional step, every subsequent member step uses `?.` because the
+   intermediate record may be absent.
+4. The chain ends with `?? fallback` before assignment, interpolation,
+   comparison, or output.
+5. A nullable schema variable must first be guarded by a truthiness conditional;
+   `nullable_user?.field` is not a substitute for that guard.
+6. Access cannot continue beyond the record depth declared by the schema.
+
+The full record-map and variant access model is covered in
+[Records](/reference/records/).
+
+## Output validation with a local schema
+
+Add `schema = Name` to data output to validate the final record, not merely an
+intermediate variable.
+
+```mace
+|===|
+alias ServiceName: string;
+
+schema Service: {
+  name: ServiceName,
+  replicas: int,
+};
+
+ServiceName name = "catalog";
+int replicas = 3;
+|===|
+
+[output = 'data', schema = Service]
+{
+  name: name,
+  replicas: replicas,
+}
+```
+
+Validation checks required, optional, unknown, and nested fields. An error stops
+the entire evaluation; no partial output is emitted.
+
+## External schema files
+
+Use `schema_file` to load schema declarations from another Mace file. Without a
+`schema` directive, the referenced file's schema output body is the active
+output shape. With both directives, `schema` selects a named declaration loaded
+from that file.
+
+```mace
+|===|
+string name = "catalog";
+int replicas = 3;
+|===|
+
+[output = 'data', schema_file = './service-schema.mace', schema = Service]
+{
+  name: name,
+  replicas: replicas,
+}
+```
+
+Paths are static single-quoted `.mace` paths and are resolved under the project
+boundary. They cannot interpolate runtime values.
+
+## Schema output
+
+Schema output publishes type metadata for consumers and named imports. Field
+right sides are type references, and `?` marks optional schema-output fields.
+
+```mace
+|===|
+alias ServiceName: string;
+
+schema Endpoint: {
+  host: string,
+  port: int,
+};
+|===|
+
+[output = 'schema']
+{
+  name: ServiceName,
+  endpoint: Endpoint,
+  owner?: string,
+}
+```
+
+<Aside type="caution">
+
+Schema output has strict mode rules:
+
+- the script cannot contain variable declarations;
+- output fields are types, not expressions;
+- field shorthand is unavailable;
+- `schema`, `schema_file`, `parse`, and `parse_file` directives are forbidden;
+- aliases and schemas can be exposed, but not evaluated as values.
+
+</Aside>
+
+## Runtime input schemas
+
+`parse = Schema` validates host-provided input before output expressions run.
+Fields from valid input are introduced as `$`-prefixed values.
+
+```mace
+|===|
+schema BuildInput: {
+  branch: string,
+  commit: string,
+};
+|===|
+
+[output = 'data', parse = BuildInput]
+{
+  source: {
+    branch: $branch,
+    commit: $commit,
+  },
+}
+```
+
+`parse_file` loads the input contract from another Mace file. Input is data only:
+it cannot create declarations, directives, imports, file reads, or executable
+behavior. Missing input and schema violations fail before output evaluation.
+
+## Schemas in variants and fusions
+
+Schemas may be alternatives in a variant or members of a record fusion.
+
+```mace
+|===|
+schema FileSource: {
+  path: string,
+};
+
+schema InlineSource: {
+  content: string,
+};
+
+alias Source: variant[FileSource, InlineSource];
+Source source = { path: "./config.mace", };
+
+string source_kind = match (source) {
+  FileSource => "file",
+  InlineSource => "inline",
+};
+|===|
+
+{
+  source: source,
+  source_kind: source_kind,
+}
+```
+
+A variant keeps the closed shapes separate. A fusion composes compatible schema
+fields into one closed shape; it never resolves a field conflict by inventing a
+variant.
+
+## Empty records and expected schemas
+
+<Aside type="caution">
+
+`{}` is valid only when an expected record type permits it—for example an empty
+schema, an all-optional schema, or a compatible `record<T>` declaration. In
+schema-less data output, an empty collection has no expected shape and is a
+static error.
+
+</Aside>
+
+```mace
+|===|
+schema Metadata: {
+  owner?: string,
+};
+|===|
+
+[output = 'data', schema = Metadata]
+{}
+```
+
+Schema-directed output is also required when an empty record appears in one
+branch of a conditional or match expression. Mace does not infer its shape from
+a populated sibling branch.

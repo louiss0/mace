@@ -1,0 +1,171 @@
+---
+title: Records
+description: Construct fixed and homogeneous records and follow Mace's strict member-access rules.
+sidebar:
+  order: 8
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A record is a runtime collection of uniquely named fields. Mace supports closed
+record shapes for known fields and `record<T>` maps for open-ended field names
+whose values share one type.
+
+
+`record<T>` permits arbitrary identifier keys, but every value must conform to `T`.
+
+```mace
+|===|
+alias EnvironmentVariables: record<string>;
+
+EnvironmentVariables environment = {
+  LOG_LEVEL: "info",
+  REGION: "us-east",
+};
+|===|
+
+{
+  environment: environment,
+}
+```
+
+This differs from `{ LOG_LEVEL: string, REGION: string }`: an inline shape has a
+closed set of keys, while `record<string>` can contain any valid identifier key
+with a string value.
+
+An empty record map has no value evidence and therefore needs its declared
+`record<T>` type. An empty record in data output needs an output schema or other
+expected record shape.
+
+## Record Nesting 
+
+The `record<string>` type represents record of type string only! 
+If you wanted nested values you would use variants! 
+
+```mace
+|===|
+alias Record2: record<variant[string, record<string>]>;
+
+alias Record3: record<variant[string, record<string>, record<record<string>>]>;
+
+alias Record4: record<variant[
+string, 
+record<string>, 
+record<record<string>> 
+record<record<record<string>>>
+]>;
+
+alias Record5: record<variant[
+string, 
+record<string>, 
+record<record<string>>, 
+record<record<record<string>>>,
+record<record<record<record<string>>>>
+]>;
+
+|===|  
+```
+
+The reason `variant` is used is because it says that you can place string or other things in the record!
+
+## Record-map lookups are optional
+
+Because `record<T>` does not guarantee any particular key, each lookup uses
+`?.` and must eventually be resolved.
+
+```mace
+|===|
+alias PackageGroups: record<record<string>>;
+
+PackageGroups packages = {
+  codefixer: {
+    api: "enabled",
+  },
+};
+
+string api_state = packages?.codefixer?.api ?? "missing";
+|===|
+
+{
+  api_state: api_state,
+}
+```
+
+Every map layer consumes one declared `record<...>` layer:
+
+- `record<string>` supports one lookup before reaching a string;
+- `record<record<string>>` supports two lookups;
+- attempting a third member lookup from that result is invalid.
+
+Use `?.` at every map lookup, even when the current literal visibly contains the
+key. The declared map type allows that key to be absent in another valid value.
+
+## Optional access through nested record variants
+
+Optional chaining follows the declared type at every step. It propagates
+possible absence, but it does not narrow a `variant[...]` or turn a primitive
+into a record. When a map value is a variant of record schemas, narrow the value
+with `match` before following a branch-specific record path:
+
+```mace
+|===|
+schema LocalSource: {
+  path: string,
+  payload?: record<string>,
+};
+
+schema RemoteSource: {
+  url: string,
+  payload?: record<string>,
+};
+
+alias Source: variant[LocalSource, RemoteSource];
+Source source = {
+  path: "./config.mace",
+  payload: { name: "local", },
+};
+
+string name = match (source) {
+  LocalSource => source?.payload?.name ?? "missing",
+  RemoteSource => source?.payload?.name ?? "missing",
+};
+|===|
+
+{
+  name: name,
+}
+```
+
+Inside each arm, `source` has one closed record shape. The first `?.` handles
+the optional `payload` field, the second handles the arbitrary `record<string>`
+lookup, and `??` converts the possibly absent result into a string. The two
+schema alternatives can have different fields (`path` and `url`), so accessing
+`source?.path` outside the `LocalSource` arm would be invalid.
+
+The same rule applies when the primitive appears inside a variant member rather
+than as the variant's top-level value. For example, both members below are
+record maps, but their map values are different primitives:
+
+```mace
+|===|
+alias Payload: variant[record<string>, record<int>];
+Payload payload = { name: "Mace", };
+
+string name = match (payload) {
+  record<string> => payload?.name ?? "missing",
+  record<int> => "numeric payload",
+};
+|===|
+
+{
+  name: name,
+}
+```
+
+`payload?.name` is allowed only in the `record<string>` arm, where the lookup is
+known to produce a string. In the `record<int>` arm, the same lookup would
+produce an integer. If a variant has a primitive member at the current access
+point, such as `variant[string, record<string>]`, `?.field` cannot be used until
+a `match` narrows the value to its record member; optional chaining is not a
+variant type guard.
+
