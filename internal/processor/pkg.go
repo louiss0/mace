@@ -625,8 +625,9 @@ func (p *Processor) applyParsedOutputInput(output ast.OutputBlock, context *proc
 		return validationErrorf("unknown schema %q", schemaName)
 	}
 
+	self := &schema
 	for _, field := range schema.Fields {
-		fieldType, err := resolveValueType(field.Type, context.symbols, context.types, context.schemas, nil)
+		fieldType, err := resolveValueTypeInRecord(field.Type, self, context.symbols, context.types, context.schemas, nil)
 		if err != nil {
 			return err
 		}
@@ -1695,23 +1696,37 @@ func validateDeclaration(declaration ast.Declaration, symbols *symbolTable, type
 }
 
 func validateTypeReference(typeRef ast.TypeReference, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
+	return validateTypeReferenceWithContext(typeRef, symbols, types, schemas, enums, nil, false)
+}
+
+func validateTypeReferenceWithContext(typeRef ast.TypeReference, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any, self *ast.RecordType, guarded bool) error {
 	switch ref := typeRef.(type) {
 	case ast.PrimitiveType:
 		return nil
+	case ast.SelfType:
+		if self == nil || !guarded {
+			return validationErrorf("expected type reference")
+		}
+		return nil
 	case ast.ArrayType:
-		return validateTypeReference(ref.Element, symbols, types, schemas, enums)
+		return validateTypeReferenceWithContext(ref.Element, symbols, types, schemas, enums, self, true)
 	case ast.RecordMapType:
-		return validateTypeReference(ref.Value, symbols, types, schemas, enums)
+		return validateTypeReferenceWithContext(ref.Value, symbols, types, schemas, enums, self, true)
 	case ast.UnionType:
-		_, err := resolveValueType(ref, symbols, types, schemas, enums)
-		return err
-	case ast.VariantType:
 		for _, member := range ref.Members {
-			if err := validateTypeReference(member, symbols, types, schemas, enums); err != nil {
+			if err := validateTypeReferenceWithContext(member, symbols, types, schemas, enums, self, guarded); err != nil {
 				return err
 			}
 		}
-		resolved, err := resolveValueType(ref, symbols, types, schemas, enums)
+		_, err := resolveFusionValueTypeWithContext(ref, symbols, types, schemas, enums, self, map[string]struct{}{})
+		return err
+	case ast.VariantType:
+		for _, member := range ref.Members {
+			if err := validateTypeReferenceWithContext(member, symbols, types, schemas, enums, self, guarded); err != nil {
+				return err
+			}
+		}
+		resolved, err := resolveValueTypeWithContext(ref, symbols, types, schemas, enums, self, map[string]struct{}{})
 		if err != nil {
 			return err
 		}
@@ -1737,13 +1752,14 @@ func validateTypeReference(typeRef ast.TypeReference, symbols *symbolTable, type
 
 func validateRecordType(record ast.RecordType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
 	fieldNames := map[string]struct{}{}
+	self := &record
 	for _, field := range record.Fields {
 		if _, exists := fieldNames[field.Name]; exists {
 			return diagnosticErrorAtNode(validationErrorf("duplicate field %q", field.Name), field)
 		}
 		fieldNames[field.Name] = struct{}{}
 
-		if err := validateTypeReference(field.Type, symbols, types, schemas, enums); err != nil {
+		if err := validateTypeReferenceWithContext(field.Type, symbols, types, schemas, enums, self, false); err != nil {
 			return diagnosticErrorAtNode(err, field)
 		}
 	}
@@ -2406,6 +2422,7 @@ func validateOutputSchema(schemaName string, items []ast.OutputField, variables 
 	}
 
 	schemaFields := schemaFieldMap(schema)
+	self := &schema
 	for _, field := range schema.Fields {
 		item, exists := fieldsByName[field.Name]
 		if !exists {
@@ -2420,7 +2437,7 @@ func validateOutputSchema(schemaName string, items []ast.OutputField, variables 
 				item,
 			)
 		}
-		expectedType, err := resolveValueType(field.Type, symbols, types, schemas, enums)
+		expectedType, err := resolveValueTypeInRecord(field.Type, self, symbols, types, schemas, enums)
 		if err != nil {
 			return err
 		}
@@ -2672,6 +2689,7 @@ func validateRecordLiteralAgainstRecordType(expr ast.RecordLiteral, recordType a
 	}
 
 	schemaFields := schemaFieldMap(recordType)
+	self := &recordType
 	for _, field := range recordType.Fields {
 		recordField, exists := fieldsByName[field.Name]
 		if !exists {
@@ -2689,7 +2707,7 @@ func validateRecordLiteralAgainstRecordType(expr ast.RecordLiteral, recordType a
 			}
 			return validationErrorf("field %q is not optional", field.Name)
 		}
-		expectedType, err := resolveValueType(field.Type, symbols, types, schemas, enums)
+		expectedType, err := resolveValueTypeInRecord(field.Type, self, symbols, types, schemas, enums)
 		if err != nil {
 			return err
 		}
@@ -2730,6 +2748,7 @@ func validateEvaluatedOutputSchema(schemaName string, fields map[string]Value, s
 	}
 
 	schemaFields := schemaFieldMap(schema)
+	self := &schema
 	for _, field := range schema.Fields {
 		value, exists := fields[field.Name]
 		if !exists {
@@ -2739,7 +2758,7 @@ func validateEvaluatedOutputSchema(schemaName string, fields map[string]Value, s
 			return missingRequiredFieldError(field.Name, schemaName)
 		}
 
-		expectedType, err := resolveValueType(field.Type, symbols, types, schemas, enums)
+		expectedType, err := resolveValueTypeInRecord(field.Type, self, symbols, types, schemas, enums)
 		if err != nil {
 			return err
 		}
@@ -2829,7 +2848,7 @@ func validateEvaluatedValueAgainstType(value Value, expectedType valueType, symb
 				return missingRequiredFieldError(field.Name, expectedType.schemaName)
 			}
 
-			fieldType, err := resolveValueType(field.Type, symbols, types, schemas, enums)
+			fieldType, err := resolveValueTypeInRecord(field.Type, recordType, symbols, types, schemas, enums)
 			if err != nil {
 				return err
 			}
@@ -3529,7 +3548,7 @@ func evaluateMemberAccess(expr ast.MemberAccess, environment *valueEnvironment, 
 				if field.Optional && !expr.Optional {
 					return Value{}, optionalFieldAccessError(expr.Name)
 				}
-				resolved, resolveErr := resolveValueType(field.Type, symbols, types, schemas, enums)
+				resolved, resolveErr := resolveValueTypeInRecord(field.Type, record, symbols, types, schemas, enums)
 				if resolveErr != nil {
 					return Value{}, resolveErr
 				}
@@ -4266,21 +4285,34 @@ func (t valueType) name() string {
 }
 
 func resolveValueType(typeRef ast.TypeReference, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
-	return resolveValueTypeWithAliases(typeRef, symbols, types, schemas, enums, map[string]struct{}{})
+	return resolveValueTypeWithContext(typeRef, symbols, types, schemas, enums, nil, map[string]struct{}{})
+}
+
+func resolveValueTypeInRecord(typeRef ast.TypeReference, record *ast.RecordType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (valueType, error) {
+	return resolveValueTypeWithContext(typeRef, symbols, types, schemas, enums, record, map[string]struct{}{})
 }
 
 func resolveValueTypeWithAliases(typeRef ast.TypeReference, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any, aliases map[string]struct{}) (valueType, error) {
+	return resolveValueTypeWithContext(typeRef, symbols, types, schemas, enums, nil, aliases)
+}
+
+func resolveValueTypeWithContext(typeRef ast.TypeReference, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any, self *ast.RecordType, aliases map[string]struct{}) (valueType, error) {
 	switch ref := typeRef.(type) {
 	case ast.PrimitiveType:
 		return primitiveValueType(ref.Name)
+	case ast.SelfType:
+		if self == nil {
+			return valueType{}, validationErrorf("expected type reference")
+		}
+		return valueType{kind: ValueRecord, record: self}, nil
 	case ast.ArrayType:
-		element, err := resolveValueTypeWithAliases(ref.Element, symbols, types, schemas, enums, aliases)
+		element, err := resolveValueTypeWithContext(ref.Element, symbols, types, schemas, enums, self, aliases)
 		if err != nil {
 			return valueType{}, err
 		}
 		return valueType{kind: ValueArray, element: &element}, nil
 	case ast.RecordMapType:
-		value, err := resolveValueTypeWithAliases(ref.Value, symbols, types, schemas, enums, aliases)
+		value, err := resolveValueTypeWithContext(ref.Value, symbols, types, schemas, enums, self, aliases)
 		if err != nil {
 			return valueType{}, err
 		}
@@ -4288,11 +4320,11 @@ func resolveValueTypeWithAliases(typeRef ast.TypeReference, symbols *symbolTable
 	case ast.ChoiceType:
 		return resolveChoiceType(ref, types)
 	case ast.UnionType:
-		return resolveFusionValueType(ref, symbols, types, schemas, enums, aliases)
+		return resolveFusionValueTypeWithContext(ref, symbols, types, schemas, enums, self, aliases)
 	case ast.VariantType:
 		members := make([]valueType, 0, len(ref.Members))
 		for _, member := range ref.Members {
-			resolved, err := resolveValueTypeWithAliases(member, symbols, types, schemas, enums, aliases)
+			resolved, err := resolveValueTypeWithContext(member, symbols, types, schemas, enums, self, aliases)
 			if err != nil {
 				return valueType{}, err
 			}
@@ -4303,7 +4335,8 @@ func resolveValueTypeWithAliases(typeRef ast.TypeReference, symbols *symbolTable
 		}
 		return valueType{members: members}, nil
 	case ast.RecordType:
-		return valueType{kind: ValueRecord, record: &ref}, nil
+		record := ref
+		return valueType{kind: ValueRecord, record: &record}, nil
 	case ast.NamedType:
 		if _, exists := aliases[ref.Name]; exists {
 			return valueType{}, validationErrorf("cyclic type alias %q", ref.Name)
@@ -4313,7 +4346,7 @@ func resolveValueTypeWithAliases(typeRef ast.TypeReference, symbols *symbolTable
 			return valueType{}, err
 		}
 		if resolvedByAlias {
-			return resolveValueTypeWithAliases(resolved, symbols, types, schemas, enums, aliasesWith(aliases, ref.Name))
+			return resolveValueTypeWithContext(resolved, symbols, types, schemas, enums, self, aliasesWith(aliases, ref.Name))
 		}
 		if symbols.IsSchema(ref.Name) || symbols.IsImport(ref.Name) {
 			record, ok := schemas.Get(ref.Name)
@@ -4338,12 +4371,16 @@ func aliasesWith(aliases map[string]struct{}, name string) map[string]struct{} {
 }
 
 func resolveFusionValueType(reference ast.UnionType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any, aliases map[string]struct{}) (valueType, error) {
+	return resolveFusionValueTypeWithContext(reference, symbols, types, schemas, enums, nil, aliases)
+}
+
+func resolveFusionValueTypeWithContext(reference ast.UnionType, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any, self *ast.RecordType, aliases map[string]struct{}) (valueType, error) {
 	members := make([]valueType, 0, len(reference.Members))
 	allChoices := true
 	allRecords := true
 
 	for _, member := range reference.Members {
-		resolved, err := resolveValueTypeWithAliases(member, symbols, types, schemas, enums, aliases)
+		resolved, err := resolveValueTypeWithContext(member, symbols, types, schemas, enums, self, aliases)
 		if err != nil {
 			return valueType{}, err
 		}
@@ -4899,7 +4936,7 @@ func inferMemberAccessType(targetType valueType, expr ast.MemberAccess, symbols 
 		if field.Name != expr.Name {
 			continue
 		}
-		memberType, err := resolveValueType(field.Type, symbols, types, schemas, enums)
+		memberType, err := resolveValueTypeInRecord(field.Type, targetType.record, symbols, types, schemas, enums)
 		if err != nil {
 			return valueType{}, err
 		}

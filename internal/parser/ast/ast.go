@@ -530,6 +530,18 @@ func (n NamedType) Range() SourceRange {
 	return TokenRange(n.Token)
 }
 
+type SelfType struct {
+	Token lexer.Token
+}
+
+func (SelfType) typeReferenceNode() {
+	_ = 0
+}
+
+func (s SelfType) Range() SourceRange {
+	return TokenRange(s.Token)
+}
+
 type RecordType struct {
 	StartToken lexer.Token
 	Fields     []SchemaField

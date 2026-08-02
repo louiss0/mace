@@ -432,9 +432,28 @@ type. Empty schemas remain valid.
 A fusion resolves entirely to records or entirely to choices. Record fusion
 merges equal field types; required plus optional is required. Conflicting types
 are errors. Choice fusion deduplicates the union of literal domains. A fusion
-MUST NOT mix record and choice domains. Pure alias cycles are invalid. `$self` in
-a schema type is legal only behind a structural guard such as `array<$self>`;
-direct recursion and use outside a schema are errors.
+MUST NOT mix record and choice domains. Pure alias cycles are invalid.
+
+Inside a schema or inline record type, type-position `$self` denotes the
+currently enclosing record shape. A recursive reference MUST be structurally
+guarded by `array<...>` or `record<...>`; direct recursion and use outside a
+record type are errors. Each nested inline record establishes a new `$self`
+scope. For example:
+
+```mace
+schema Node: {
+    value: string,
+    children?: array<$self>,
+};
+
+{ value: string, children?: array<$self>, } root = {
+    value: "root",
+    children: [{ value: "leaf", }],
+};
+```
+
+The schema and inline variable above both describe records whose children have
+the same shape as their enclosing record.
 
 ## 5. Choices, variants, and matching
 
