@@ -47,9 +47,10 @@ Use these values in an editor's generic language-server configuration:
 | File extension | `.mace` |
 | Workspace root | Project directory containing the edited file |
 
-The exact setting names differ between editors. Prefer a dedicated Mace extension
-when one is available because it can also register the file type, syntax grammar,
-and language-server command.
+The exact setting names differ between editors. Prefer an
+[official Mace extension](/installation/#official-editor-extensions) when one is
+available because it can also register the file type, syntax grammar, and
+language-server command.
 
 ## Supported capabilities
 
