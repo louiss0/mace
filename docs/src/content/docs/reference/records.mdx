@@ -11,8 +11,10 @@ A record is a runtime collection of uniquely named fields. Mace supports closed
 record shapes for known fields and `record<T>` maps for open-ended field names
 whose values share one type.
 
+## Record maps
 
-`record<T>` permits arbitrary identifier keys, but every value must conform to `T`.
+`record<T>` permits arbitrary identifier keys, but every value must conform to
+`T`.
 
 ```mace
 |===|
@@ -37,36 +39,56 @@ An empty record map has no value evidence and therefore needs its declared
 `record<T>` type. An empty record in data output needs an output schema or other
 expected record shape.
 
-## Record Nesting 
+## Nested record maps
 
-The `record<string>` type represents record of type string only! 
-If you wanted nested values you would use variants! 
+Each `record<...>` layer describes one open-ended map level. Use
+`record<record<string>>` when every top-level value is another string map:
 
 ```mace
 |===|
-alias Record2: record<variant[string, record<string>]>;
+alias ServiceLabels: record<record<string>>;
 
-alias Record3: record<variant[string, record<string>, record<record<string>>]>;
+ServiceLabels labels = {
+  api: {
+    region: "us-east",
+    tier: "public",
+  },
+  worker: {
+    region: "us-west",
+  },
+};
+|===|
 
-alias Record4: record<variant[
-string, 
-record<string>, 
-record<record<string>> 
-record<record<record<string>>>
-]>;
-
-alias Record5: record<variant[
-string, 
-record<string>, 
-record<record<string>>, 
-record<record<record<string>>>,
-record<record<record<record<string>>>>
-]>;
-
-|===|  
+{
+  labels,
+}
 ```
 
-The reason `variant` is used is because it says that you can place string or other things in the record!
+If values at one map level may be either strings or nested maps, declare that
+alternative explicitly:
+
+```mace
+|===|
+alias ConfigValue: variant[string, record<string>];
+alias Config: record<ConfigValue>;
+
+Config config = {
+  environment: "production",
+  database: {
+    host: "db.internal",
+    port: "5432",
+  },
+};
+|===|
+
+{
+  config,
+}
+```
+
+The variant applies to each value independently. It does not make member access
+recursive: narrow a variant value with `match` before accessing fields that only
+a record alternative has.
 
 ## Record-map lookups are optional
 
