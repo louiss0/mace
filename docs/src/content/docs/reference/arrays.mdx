@@ -1,6 +1,6 @@
 ---
 title: Arrays
-description: Declare homogeneous arrays, model nesting, and provide expected types for empty collections.
+description: Declare homogeneous arrays, model nesting, and understand empty-array defaults and contextual types.
 sidebar:
   order: 7
 ---
@@ -62,46 +62,37 @@ must be handled as `Port`.
 
 ## Empty arrays
 
-`[]` contains no evidence from which to infer an element type. It therefore
-requires an expected `array<T>`.
+An unconstrained `[]` defaults to `array<string>`. This makes an empty array a
+valid data-output value without requiring a schema:
 
 ```mace
-|===|
-alias Labels: array<string>;
-Labels labels = [];
-|===|
-
-{
-  labels: labels,
-}
-```
-
-An empty array directly in data output needs an output schema:
-
-```mace
-|===|
-schema Result: {
-  labels: array<string>,
-};
-|===|
-
-[output = 'data', schema = Result]
+[output = 'data']
 {
   labels: [],
 }
 ```
 
-<Aside type="caution">
+A declared or schema-provided expected type can validate the same literal as a
+different array type:
 
-Without `schema = Result`, the output expression has no element type and is an
-error.
+```mace
+|===|
+alias RetryCodes: array<int>;
+RetryCodes retry_codes = [];
+|===|
 
-</Aside>
+{
+  retry_codes,
+}
+```
+
+Nested empty arrays apply the string fallback recursively. For example, `[[]]`
+has the default shape `array<array<string>>` when no expected type is available.
 
 ## Conditional inference
 
-The type requirement applies even when only one branch is empty. Mace does not
-copy the populated branch's element type into `[]`.
+A variable declaration or output schema provides context to every conditional
+branch, including an empty branch:
 
 ```mace
 |===|
@@ -111,40 +102,18 @@ Labels labels = include_defaults ? ["stable"] : [];
 |===|
 
 {
-  labels: labels,
+  labels,
 }
 ```
 
-For output expressions, give the field a schema type:
-
-```mace
-|===|
-boolean include_defaults = false;
-
-schema Result: {
-  labels: array<string>,
-};
-|===|
-
-[output = 'data', schema = Result]
-{
-  labels: include_defaults ? ["stable"] : [],
-}
-```
-
-<Aside type="caution">
-
-If two populated branches have different array element types, the result types
-stay distinct. A receiving type such as
-`variant[array<string>, array<int>]` must accept both arrays; Mace does not merge
-them into `array<variant[string, int]>` automatically.
-
-</Aside>
+Without a receiving type, the empty branch uses `array<string>`. Different array
+result types remain distinct: Mace does not automatically turn
+`array<string>` and `array<int>` into `array<variant[string, int]>`.
 
 ## Match inference
 
-Match arms follow the same rule. The expected variable or output schema must
-accept every arm and supply a type for any empty collection.
+Match arms use the same contextual rule. The receiving declaration below checks
+every arm as `array<string>`:
 
 ```mace
 |===|
@@ -159,11 +128,13 @@ Hosts hosts = match (environment) {
 |===|
 
 {
-  hosts: hosts,
+  hosts,
 }
 ```
 
-The `Hosts` declaration gives the empty development arm its element type.
+If the expected type is a variant containing multiple array alternatives, an
+empty collection must identify exactly one accepted member or validation fails
+as ambiguous.
 
 ## Nested arrays
 
