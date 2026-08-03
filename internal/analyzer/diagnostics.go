@@ -160,6 +160,8 @@ func classifyProcessorDiagnostic(message string) diagnosticCode {
 		return diagnosticSyntaxUnexpectedToken
 	case strings.Contains(message, "unknown output directive"):
 		return diagnosticDirectiveUnknownKey
+	case strings.Contains(message, "schema and schema_file directives cannot be used together"):
+		return diagnosticDirectiveSchemaAndSchemaFileCombined
 	case strings.Contains(message, "schema directive is invalid when output mode is schema") || strings.Contains(message, "schema_file directive is invalid when output mode is schema"):
 		return diagnosticDirectiveOutputSchemaCombined
 	case strings.Contains(message, "unknown schema "):

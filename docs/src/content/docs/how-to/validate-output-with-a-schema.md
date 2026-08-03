@@ -52,7 +52,7 @@ Load its schema-output body directly:
 The referenced file must use schema output. Paths are static, single-quoted, and
 must end in `.mace`.
 
-## Select a named schema from another file
+## Import a named schema from another file
 
 A schema file may declare more than one reusable contract:
 
@@ -76,10 +76,15 @@ schema Team: {
 }
 ```
 
-Pair `schema_file` with `schema` to select one named declaration from that file:
+Import the declarations needed by the selected schema, then use `schema` on its
+own:
 
 ```mace
-[output = 'data', schema_file = './account-schemas.mace', schema = Team]
+|===|
+from './account-schemas.mace' import User, Team;
+|===|
+
+[output = 'data', schema = Team]
 {
   name: "Compiler",
   members: [
@@ -88,8 +93,9 @@ Pair `schema_file` with `schema` to select one named declaration from that file:
 }
 ```
 
-When `schema_file` is present, the `schema` name resolves only inside that file;
-a same-named local declaration is not a fallback.
+`schema` selects an available named declaration. `schema_file` instead uses the
+referenced file's complete schema-output body. The two directives cannot be used
+together.
 
 ## Use an HTTP(S) schema source
 
@@ -117,6 +123,7 @@ Validation fails when:
 - a nested record or array element violates its declared shape;
 - `schema` names an unavailable declaration;
 - `schema_file` does not resolve to schema output;
+- `schema` and `schema_file` are used together;
 - a local path escapes the project root or a remote dependency escapes its root;
 - source loading, parsing, or dependency resolution fails.
 

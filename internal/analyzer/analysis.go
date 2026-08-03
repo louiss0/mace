@@ -954,18 +954,9 @@ func analyzeFileStructure(text string, file ast.File, tokens []lexer.Token, docu
 	diagnostics = append(diagnostics, directiveDiagnostics...)
 	actions = append(actions, directiveActions...)
 
-	hasSchemaFileConflict := false
-	if diagnostic, candidates, ok := schemaFileConflictAnalysis(text, file, documentPath); ok {
-		diagnostics = append(diagnostics, diagnostic)
-		actions = append(actions, candidates...)
-		hasSchemaFileConflict = true
-	}
-
-	if !hasSchemaFileConflict {
-		unusedImportDiagnostics, unusedImportActions := unusedImportAnalysis(text, file, tokens, documentPath)
-		diagnostics = append(diagnostics, unusedImportDiagnostics...)
-		actions = append(actions, unusedImportActions...)
-	}
+	unusedImportDiagnostics, unusedImportActions := unusedImportAnalysis(text, file, tokens, documentPath)
+	diagnostics = append(diagnostics, unusedImportDiagnostics...)
+	actions = append(actions, unusedImportActions...)
 	diagnostics = append(diagnostics, unavailableImportDiagnostics(file, tokens, documentPath)...)
 	actions = append(actions, importResolutionCodeActions(text, file, tokens, documentPath)...)
 	actions = append(actions, scriptBlockStructureCodeActions(text, documentPath)...)
@@ -1482,7 +1473,14 @@ func semanticCodeActions(text string, file ast.File, tokens []lexer.Token, docum
 	if rangeValue, textValue, ok := selfOrderingEdit(text, file, tokens, message); ok {
 		addAction("Move referenced field before $self use", rangeValue, textValue)
 	}
-	if rangeValue, ok := invalidDirectiveComboEditRange(text, file, tokens, message); ok {
+	if strings.Contains(message, "schema and schema_file directives cannot be used together") {
+		if rangeValue, ok := outputDirectiveEditRange(text, tokens, "schema_file"); ok {
+			addAction("Remove schema_file directive", rangeValue, "")
+		}
+		if rangeValue, ok := outputDirectiveEditRange(text, tokens, "schema"); ok {
+			addAction("Remove schema directive", rangeValue, "")
+		}
+	} else if rangeValue, ok := invalidDirectiveComboEditRange(text, file, tokens, message); ok {
 		addAction("Fix invalid output directive combination", rangeValue, "")
 	}
 	if rangeValue, textValue, ok := generateOutputFromSchemaEdit(text, file, tokens, message); ok {
@@ -3133,74 +3131,6 @@ func schemaOutputVariableDiagnostics(file ast.File, tokens []lexer.Token) []prot
 	})
 }
 
-func schemaFileConflictAnalysis(text string, file ast.File, documentPath string) (protocol.Diagnostic, []analysisCodeActionCandidate, bool) {
-	hasSchemaFile := lo.ContainsBy(file.Output.Directives, func(directive ast.OutputDirective) bool {
-		return directive.Kind == ast.OutputDirectiveSchemaFile
-	})
-	if !hasSchemaFile {
-		return protocol.Diagnostic{}, nil, false
-	}
-
-	if len(file.Imports) == 0 && file.Script == nil {
-		return protocol.Diagnostic{}, nil, false
-	}
-
-	directiveRange, schemaFileEditRange, found := schemaFileDirectiveRanges(text)
-	if !found {
-		return protocol.Diagnostic{}, nil, false
-	}
-
-	diagnostic := protocol.Diagnostic{
-		Severity: Ptr(protocol.DiagnosticSeverityWarning),
-		Code:     diagnosticCodeValue(diagnosticDirectiveSchemaAndSchemaFileCombined),
-		Source:   Ptr(serverName),
-		Message:  `schema_file makes local imports and script declarations redundant`,
-		Range:    directiveRange,
-	}
-
-	if documentPath == "" {
-		return diagnostic, nil, true
-	}
-
-	actions := []analysisCodeActionCandidate{
-		{
-			Range: directiveRange,
-			Action: protocol.CodeAction{
-				Title: "Remove schema_file directive",
-				Kind:  Ptr(protocol.CodeActionKindQuickFix),
-				Edit: &protocol.WorkspaceEdit{
-					Changes: map[protocol.DocumentUri][]protocol.TextEdit{
-						pathURI(documentPath): {{
-							Range:   schemaFileEditRange,
-							NewText: "",
-						}},
-					},
-				},
-			},
-		},
-	}
-
-	if cleanupRange, ok := importAndScriptCleanupRange(text); ok {
-		actions = append(actions, analysisCodeActionCandidate{
-			Range: directiveRange,
-			Action: protocol.CodeAction{
-				Title: "Remove imports and script block",
-				Kind:  Ptr(protocol.CodeActionKindQuickFix),
-				Edit: &protocol.WorkspaceEdit{
-					Changes: map[protocol.DocumentUri][]protocol.TextEdit{
-						pathURI(documentPath): {{
-							Range:   cleanupRange,
-							NewText: "",
-						}},
-					},
-				},
-			},
-		})
-	}
-
-	return diagnostic, actions, true
-}
-
 func shouldIgnoreParseValidationError(file ast.File, err error) bool {
 	var diagnosticError processor.DiagnosticError
 	if !errors.As(err, &diagnosticError) {
@@ -3259,6 +3189,13 @@ func semanticDiagnosticFromError(file ast.File, tokens []lexer.Token, err error)
 			diagnostic = diagnosticWithCode(diagnostic.Range, protocol.DiagnosticSeverityError, code, diagnosticError.Message)
 		}
 		return diagnostic, true
+	}
+
+	if hasDiagnosticError && diagnosticError.Code == processor.CodeSchemaAndSchemaFileCombined {
+		if rangeValue, ok := outputDirectiveTokenRange(tokens); ok {
+			return diagnosticWithCode(rangeValue, protocol.DiagnosticSeverityError, diagnosticDirectiveSchemaAndSchemaFileCombined, diagnosticError.Message), true
+		}
+		return diagnosticFromError(err), true
 	}
 
 	if hasDiagnosticError {
@@ -4226,6 +4163,39 @@ func pathURI(path string) protocol.DocumentUri {
 	return protocol.DocumentUri(fileURI(path))
 }
 
+func outputDirectiveTokenIndexes(tokens []lexer.Token) (int, int, bool) {
+	for start, token := range tokens {
+		if token.Type != lexer.TokenLBracket {
+			continue
+		}
+
+		directives := map[string]bool{}
+		for end := start + 1; end < len(tokens); end++ {
+			if end+1 < len(tokens) && tokens[end+1].Type == lexer.TokenAssign {
+				directives[tokens[end].Lexeme] = true
+			}
+			if tokens[end].Type != lexer.TokenRBracket {
+				continue
+			}
+			if directives["output"] || (directives["schema"] && directives["schema_file"]) {
+				return start, end, true
+			}
+			break
+		}
+	}
+
+	return 0, 0, false
+}
+
+func outputDirectiveTokenRange(tokens []lexer.Token) (protocol.Range, bool) {
+	start, end, ok := outputDirectiveTokenIndexes(tokens)
+	if !ok {
+		return protocol.Range{}, false
+	}
+
+	return protocol.Range{Start: tokenProtocolRange(tokens[start]).Start, End: tokenProtocolRange(tokens[end]).End}, true
+}
+
 func outputDirectiveListRange(text string) (protocol.Range, bool) {
 	openIndex := strings.Index(text, "[")
 	closeIndex := strings.Index(text, "]")
@@ -4239,37 +4209,39 @@ func outputDirectiveListRange(text string) (protocol.Range, bool) {
 	}, true
 }
 
-func schemaFileDirectiveRanges(text string) (protocol.Range, protocol.Range, bool) {
-	directiveRange, ok := outputDirectiveListRange(text)
+func outputDirectiveEditRange(text string, tokens []lexer.Token, target string) (protocol.Range, bool) {
+	directiveStart, directiveEnd, ok := outputDirectiveTokenIndexes(tokens)
 	if !ok {
-		return protocol.Range{}, protocol.Range{}, false
+		return protocol.Range{}, false
 	}
 
-	openIndex := strings.Index(text, "[")
-	closeIndex := strings.Index(text, "]")
-	directiveText := text[openIndex : closeIndex+1]
-	schemaFileIndex := strings.Index(directiveText, "schema_file")
-	if schemaFileIndex < 0 {
-		return protocol.Range{}, protocol.Range{}, false
+	for index := directiveStart + 1; index < directiveEnd; index++ {
+		token := tokens[index]
+		if token.Lexeme != target || index+1 >= directiveEnd || tokens[index+1].Type != lexer.TokenAssign {
+			continue
+		}
+
+		start := tokenStartIndex(text, token)
+		hasLeadingComma := index > directiveStart && tokens[index-1].Type == lexer.TokenComma
+		if hasLeadingComma {
+			start = tokenStartIndex(text, tokens[index-1])
+		}
+
+		end := start + token.SourceLength()
+		for following := index; following < directiveEnd; following++ {
+			if tokens[following].Type == lexer.TokenComma {
+				if !hasLeadingComma {
+					end = tokenStartIndex(text, tokens[following]) + tokens[following].SourceLength()
+				}
+				break
+			}
+			end = tokenStartIndex(text, tokens[following]) + tokens[following].SourceLength()
+		}
+
+		return protocol.Range{Start: positionFromIndex(text, start), End: positionFromIndex(text, end)}, true
 	}
 
-	start := openIndex + schemaFileIndex
-	end := closeIndex
-
-	for start > openIndex && directiveText[start-openIndex-1] != ',' {
-		start--
-	}
-
-	if start > openIndex && directiveText[start-openIndex-1] == ',' {
-		start--
-	}
-
-	schemaFileEditRange := protocol.Range{
-		Start: positionFromIndex(text, start),
-		End:   positionFromIndex(text, end),
-	}
-
-	return directiveRange, schemaFileEditRange, true
+	return protocol.Range{}, false
 }
 
 func importAndScriptCleanupRange(text string) (protocol.Range, bool) {

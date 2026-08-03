@@ -41,7 +41,7 @@ string café = "ok";
 				continue
 			}
 			if name == "schema-file-consumer.mace" {
-				tAssert.Equal("ok", result.Output["value"].String, name)
+				tAssert.Equal("ok", result.Output["café"].Record["value"].String, name)
 				continue
 			}
 			tAssert.NotEmpty(result.Output, name)

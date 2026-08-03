@@ -109,8 +109,9 @@ int replicas = 3;
 }
 ```
 
-Use `schema_file` to load a contract from another `.mace` file. It may be paired
-with `schema` to select a named declaration from that file.
+Use `schema_file` to load the complete schema-output body from another `.mace`
+file. To select an exported named declaration instead, import it and use
+`schema = Name`. `schema` and `schema_file` cannot be combined.
 
 ## Validate runtime input
 

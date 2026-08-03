@@ -1376,7 +1376,7 @@ from './shared' import name;
 		tAssert.NoError(err)
 
 		documentPath := filepath.Join(workspace, "consumer.mace")
-		snapshot := analyzeDocumentAt(`[output = 'data', schema = User, schema_file = 'https://example.com/schema']
+		snapshot := analyzeDocumentAt(`[output = 'data', schema_file = 'https://example.com/schema']
 {
   name: "Ada",
 }`, documentPath)
@@ -2327,9 +2327,8 @@ from './shared.mace' import User;
   name: "Ada",
 }`, documentPath)
 
-		if tAssert.Len(snapshot.diagnostics, 2) {
-			tAssert.Equal("mace.directive.schema-file-required", requireDiagnosticCode(snapshot.diagnostics[0]))
-			tAssert.Equal("mace.import.name-not-exposed", requireDiagnosticCode(snapshot.diagnostics[1]))
+		if tAssert.Len(snapshot.diagnostics, 1) {
+			tAssert.Equal("mace.import.name-not-exposed", requireDiagnosticCode(snapshot.diagnostics[0]))
 		}
 	})
 
@@ -2565,13 +2564,12 @@ schema Plot: { points: array<Point>, };
 		}
 	})
 
-	It("warns when schema_file overlaps with local imports and script context and offers two cleanup fixes", func() {
+	It("errors when schema and schema_file are combined and offers a fix for either directive", func() {
 		workspace, err := os.MkdirTemp("", "mace-analysis-schema-file-conflict-*")
 		tAssert.NoError(err)
 
 		documentPath := filepath.Join(workspace, "consumer.mace")
 		snapshot := analyzeDocumentAt(`|===|
-from './shared.mace' import User;
 schema User: { name: string, };
 |===|
 [output = 'data', schema = User, schema_file = './shared.mace']
@@ -2580,17 +2578,17 @@ schema User: { name: string, };
 }`, documentPath)
 
 		if tAssert.Len(snapshot.diagnostics, 1) {
-			tAssert.Contains(snapshot.diagnostics[0].Message, "redundant")
-			tAssert.Equal(protocol.DiagnosticSeverityWarning, *snapshot.diagnostics[0].Severity)
+			tAssert.Contains(snapshot.diagnostics[0].Message, "cannot be used together")
+			tAssert.Equal(protocol.DiagnosticSeverityError, *snapshot.diagnostics[0].Severity)
 			tAssert.Equal(string(diagnosticDirectiveSchemaAndSchemaFileCombined), requireDiagnosticCode(snapshot.diagnostics[0]))
 		}
 
 		diagnosticRange := snapshot.diagnostics[0].Range
-		removeDirective := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), diagnosticRange, "Remove schema_file directive")
-		removeContext := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), diagnosticRange, "Remove imports and script block")
+		removeSchemaFile := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), diagnosticRange, "Remove schema_file directive")
+		removeSchema := requireCodeAction(snapshot, protocol.DocumentUri(fileURI(documentPath)), diagnosticRange, "Remove schema directive")
 
-		tAssert.NotEmpty(removeDirective.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))])
-		tAssert.NotEmpty(removeContext.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))])
+		tAssert.NotEmpty(removeSchemaFile.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))])
+		tAssert.NotEmpty(removeSchema.Edit.Changes[protocol.DocumentUri(fileURI(documentPath))])
 	})
 
 	It("errors when script variables are present in schema output mode", func() {
@@ -3029,7 +3027,7 @@ var _ = Describe("analyzer branch boost helpers", func() {
 		tAssert.NotEmpty(indexSymbols([]semanticSymbol{{Name: "value"}}))
 		_, ok := outputDirectiveListRange("[output = 'data']")
 		tAssert.True(ok)
-		_, _, ok = schemaFileDirectiveRanges("[output = 'data']")
+		_, ok = outputDirectiveEditRange("[output = 'data']", lexAnalysisTokens("[output = 'data']"), "schema_file")
 		tAssert.False(ok)
 		_, ok = importAndScriptCleanupRange("from \"./shared.mace\" import User;\n|===|\n|===|\n[output = 'data']\n{}")
 		tAssert.True(ok)
@@ -3265,19 +3263,12 @@ Profile record = { age: 1, };
 	})
 
 	It("covers direct helper branch combinations", func() {
-		workspace := GinkgoT().TempDir()
-		documentPath := filepath.Join(workspace, "helpers.mace")
-		conflictText := "from \"./shared.mace\" import User;\n|===|\nstring value = \"x\";\n|===|\n[output = 'data', schema_file = \"./schema.mace\"]\n{}"
-		conflictFile := ast.File{Imports: []ast.ImportDeclaration{{Path: ast.StringLiteral{Lexeme: `"./shared.mace"`}, Identifiers: []ast.ImportedIdentifier{{Name: "User"}}}}, Script: &ast.ScriptBlock{Items: []ast.Declaration{ast.VariableDeclaration{Name: "value"}}}, Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveSchemaFile, Value: `"./schema.mace"`}}}}
-		diagnosticConflict, conflictActions, ok := schemaFileConflictAnalysis(conflictText, conflictFile, documentPath)
+		conflictText := "[output = 'data', schema = User, schema_file = \"./schema.mace\"]\n{}"
+		conflictTokens := lexAnalysisTokens(conflictText)
+		_, ok := outputDirectiveEditRange(conflictText, conflictTokens, "schema_file")
 		tAssert.True(ok)
-		tAssert.NotEmpty(conflictActions)
-		tAssert.Equal(string(diagnosticDirectiveSchemaAndSchemaFileCombined), requireDiagnosticCode(diagnosticConflict))
-		_, conflictActions, ok = schemaFileConflictAnalysis(conflictText, conflictFile, "")
+		_, ok = outputDirectiveEditRange(conflictText, conflictTokens, "schema")
 		tAssert.True(ok)
-		tAssert.Nil(conflictActions)
-		_, _, ok = schemaFileConflictAnalysis("[output = 'data']{}", ast.File{Output: ast.OutputBlock{}}, documentPath)
-		tAssert.False(ok)
 		warning, ok := parseDirectiveWarningDiagnostic("[output = 'data', parse_file = \"./input.mace\"]", ast.File{Output: ast.OutputBlock{Directives: []ast.OutputDirective{{Kind: ast.OutputDirectiveParseFile, Value: `"./input.mace"`}}}})
 		tAssert.True(ok)
 		tAssert.Equal(string(diagnosticDirectiveParseValuesUnknown), requireDiagnosticCode(warning))

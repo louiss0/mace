@@ -1894,6 +1894,11 @@ func validateOutputDirectiveStructure(output ast.OutputBlock) error {
 		}
 	}
 
+	_, hasSchema := seenKinds[ast.OutputDirectiveSchema]
+	_, hasSchemaFile := seenKinds[ast.OutputDirectiveSchemaFile]
+	if hasSchema && hasSchemaFile {
+		return validationErrorf("schema and schema_file directives cannot be used together")
+	}
 	if hasParse && hasParseFile {
 		return validationErrorf("parse and parse_file directives cannot be used together")
 	}

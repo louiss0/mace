@@ -3480,7 +3480,6 @@ from './shared' import name;
 		tAssert.NoError(err)
 
 		uri := protocol.DocumentUri(writeWorkspaceFile(workspace, "consumer.mace", `|===|
-from './shared.mace' import User;
 schema User: { name: string, };
 |===|
 [output = 'data', schema = User, schema_file = './shared.mace']
@@ -3489,7 +3488,6 @@ schema User: { name: string, };
 }`))
 
 		didOpen(server, uri, `|===|
-from './shared.mace' import User;
 schema User: { name: string, };
 |===|
 [output = 'data', schema = User, schema_file = './shared.mace']
@@ -3500,8 +3498,8 @@ schema User: { name: string, };
 		resultValue, validMethod, validParams, err := invoke(server.Handler(), protocol.MethodTextDocumentCodeAction, protocol.CodeActionParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
 			Range: protocol.Range{
-				Start: protocol.Position{Line: 4, Character: 0},
-				End:   protocol.Position{Line: 4, Character: 60},
+				Start: protocol.Position{Line: 3, Character: 0},
+				End:   protocol.Position{Line: 3, Character: 60},
 			},
 			Context: protocol.CodeActionContext{},
 		}, nil)
@@ -3516,7 +3514,7 @@ schema User: { name: string, };
 		}
 
 		tAssert.Equal("Remove schema_file directive", actions[0].Title)
-		tAssert.Equal("Remove imports and script block", actions[1].Title)
+		tAssert.Equal("Remove schema directive", actions[1].Title)
 	})
 
 	It("does not rename unrelated field keys", func() {

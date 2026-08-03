@@ -53,15 +53,6 @@ func directiveActionAnalysis(text string, documentPath string) ([]protocol.Diagn
 	if strings.Contains(text, "schema = Usre") && strings.Contains(text, "schema User:") {
 		add("mace.directive.unknown-schema-name", "Select matching local schema", protocol.CodeActionKindQuickFix, false, strings.Replace(text, "schema = Usre", "schema = User", 1))
 	}
-	if strings.Contains(text, "schema = User") && !strings.Contains(text, "schema_file =") && !strings.Contains(text, "schema User:") {
-		add("mace.directive.schema-file-required", "Add `schema_file` for selected schema", protocol.CodeActionKindQuickFix, false, strings.Replace(text, "schema = User", "schema = User, schema_file = './schema.mace'", 1))
-	}
-	if strings.Contains(text, "schema_file = './schema.mace', schema = Usre") {
-		add("mace.directive.unknown-schema-name", "Select schema from loaded schema file", protocol.CodeActionKindQuickFix, false, strings.Replace(text, "schema = Usre", "schema = User", 1))
-	}
-	if strings.Contains(text, "schema_file = './schema.mace', schema = User") {
-		add("mace.directive.redundant-schema", "Remove redundant `schema` directive", protocol.CodeActionKindQuickFix, false, strings.Replace(text, ", schema = User", "", 1))
-	}
 	if strings.Contains(text, "parse = Runtime") && !strings.Contains(text, "parse_file =") {
 		add("mace.directive.parse-file-required", "Add `parse_file` for parse schema", protocol.CodeActionKindQuickFix, false, strings.Replace(text, "parse = Runtime", "parse = Runtime, parse_file = './runtime.mace'", 1))
 	}

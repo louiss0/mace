@@ -38,6 +38,7 @@ text.
 | Match must be exhaustive | Add every missing choice literal or variant type member |
 | Variant arms require a type pattern | Replace literal arms with source-member type references |
 | Choice arms require a literal pattern | Replace type arms with each exact choice literal |
+| `schema` and `schema_file` cannot be used together | Keep `schema` for a named available declaration, or keep `schema_file` for the referenced file's complete schema-output body |
 | Import path escapes root | Keep the dependency under the local or remote source root |
 | Null is only allowed in output | Use omission only as a direct data-output field value |
 

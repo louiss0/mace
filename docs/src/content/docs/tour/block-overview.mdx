@@ -104,7 +104,7 @@ the list is present, it must contain exactly one `output` directive.
 Data output can also select contracts for emitted data or external input:
 
 - `schema = Name` validates the final output;
-- `schema_file = './contract.mace'` loads output schema declarations;
+- `schema_file = './contract.mace'` uses another file's schema-output body;
 - `parse = Name` validates host-provided input;
 - `parse_file = './input-contract.mace'` loads an input contract.
 

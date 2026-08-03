@@ -71,11 +71,22 @@ string value = null;
 		},
 		Entry("duplicate output directive", "[output = 'data', output = 'schema'] {}", "duplicate output directive"),
 		Entry("unknown schema in directive", "[output = 'data', schema = Missing] {}", "unknown schema"),
+		Entry("schema and schema_file directives are mutually exclusive", `[output = 'data', schema = User, schema_file = './user.mace'] {}`, "schema and schema_file directives cannot be used together"),
 		Entry("schema directive is invalid in schema mode", "[output = 'schema', schema = User] {}", "schema directive"),
 		Entry("schema_file directive is invalid in schema mode", `[output = 'schema', schema_file = './user.mace'] {}`, "schema_file"),
 		Entry("parse directive is invalid in schema mode", `[output = 'schema', parse = User] {}`, "parse directive is invalid when output mode is schema"),
 		Entry("parse_file directive is invalid in schema mode", `[output = 'schema', parse_file = './user.mace'] {}`, "parse_file directive is invalid when output mode is schema"),
 	)
+
+	It("returns a stable diagnostic code for schema and schema_file conflicts", func() {
+		_, err := New().Process(`[output = 'data', schema = User, schema_file = './user.mace'] {}`)
+		tAssert.Error(err)
+
+		var diagnostic DiagnosticError
+		if tAssert.ErrorAs(err, &diagnostic) {
+			tAssert.Equal(CodeSchemaAndSchemaFileCombined, diagnostic.Code)
+		}
+	})
 
 	DescribeTable("returns schema output fields",
 		func(input string, expected map[expectedSchemaField]SchemaType) {

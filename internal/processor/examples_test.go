@@ -134,7 +134,7 @@ from './nfd-exports.mace' import café;
 string café = "nfd";
 |===|
 [output = 'data'] { café: café, }`,
-	"import-canonical-equivalence/schema-file-consumer.mace": `[output = 'data', schema_file = './schema-file-source.mace', schema = café] { value: "ok", }`,
+	"import-canonical-equivalence/schema-file-consumer.mace": `[output = 'data', schema_file = './schema-file-source.mace'] { café: { value: "ok", }, }`,
 	"import-canonical-equivalence/schema-file-source.mace": `|===|
 schema café: { value: string, };
 |===|

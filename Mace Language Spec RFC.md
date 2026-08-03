@@ -541,7 +541,8 @@ file. In data mode, fields use `data_output_field`: right sides are expressions
 or direct `null`, and `?` marks an output field as optional for importers. When
 an output schema is selected, the marker is valid only if the corresponding
 schema field is optional. `schema`, `schema_file`, `parse`, and `parse_file` are
-invalid in schema mode.
+invalid in schema mode. `schema` and `schema_file` are mutually exclusive, as
+are `parse` and `parse_file`.
 
 The `description` directive may appear once in either mode and may be any
 expression statically producing `string`. Schema-output files cannot declare
@@ -604,21 +605,20 @@ from 'service.mace' import host:service-host;
 from 'service.mace' bind service;
 ```
 
-`schema_file = 'file.mace'` requires a schema-output file. Its output body is the
-active output shape when `schema` is absent. When `schema = Name` is also present,
-`Name` is resolved only among named schemas loaded from that same file; unrelated
-local declarations are not candidates. `parse_file` behaves in parallel for
-runtime input: without `parse`, its schema-output body is the input shape; with
-`parse = Name`, the name resolves only in that file. File declarations needed to
-resolve the selected exported schema are available internally but do not enter
-the caller's namespace. Name collisions therefore cannot be resolved by leaking
-private declarations. Wrong output mode, absent selection, duplicate selection,
-or an incompatible directive combination is an error.
+`schema_file = 'file.mace'` requires a schema-output file. Its complete output
+body is the active output shape, and it cannot be combined with `schema`.
+`parse_file` behaves in parallel for runtime input: the referenced file's
+complete schema-output body is the input shape, and it cannot be combined with
+`parse`. File declarations needed to resolve an exported schema-output body are
+available internally but do not enter the caller's namespace. Name collisions
+therefore cannot be resolved by leaking private declarations. Wrong output mode,
+absent selection, duplicate selection, or an incompatible directive combination
+is an error.
 
-A `schema` or `parse` without its corresponding file resolves in the current
-file's local named schemas. `schema_file` and `parse_file` relationships,
-imports, and binds all participate in one dependency graph; any cycle is an
-error.
+A `schema` or `parse` selector resolves a named schema available in the current
+file's context, including imported declarations. `schema_file` and `parse_file`
+relationships, imports, and binds all participate in one dependency graph; any
+cycle is an error.
 
 An optional field imported from a data output is a nullable imported variable.
 When absent, direct use and member access are errors. `??` resolves a possibly

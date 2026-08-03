@@ -43,6 +43,7 @@ const (
 	CodeTypeMismatch                 ErrorCode = "mace.type.initializer-type-mismatch"
 	CodeTypeRecordDoesNotMatchSchema ErrorCode = "mace.type.record-does-not-match-schema"
 	CodeRuntimeDuplicateInputField   ErrorCode = "mace.runtime.duplicate-input-field"
+	CodeSchemaAndSchemaFileCombined  ErrorCode = "mace.directive.schema-and-schema-file-combined"
 )
 
 type DiagnosticFields struct {
@@ -212,6 +213,8 @@ func inferErrorCode(message string) ErrorCode {
 		return ErrorCode("mace.directive.duplicate-key")
 	case strings.Contains(message, "unknown output directive"):
 		return ErrorCode("mace.directive.unknown-key")
+	case strings.Contains(message, "schema and schema_file directives cannot be used together"):
+		return CodeSchemaAndSchemaFileCombined
 	case strings.Contains(message, "schema directive is invalid when output mode is schema") || strings.Contains(message, "schema_file directive is invalid when output mode is schema"):
 		return ErrorCode("mace.directive.output-schema-combined")
 	case strings.Contains(message, "parse and parse_file directives cannot be used together"):

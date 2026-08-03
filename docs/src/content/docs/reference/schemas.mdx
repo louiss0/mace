@@ -197,10 +197,17 @@ the entire evaluation; no partial output is emitted.
 
 ## External schema files
 
-Use `schema_file` to load schema declarations from another Mace file. Without a
-`schema` directive, the referenced file's schema output body is the active
-output shape. With both directives, `schema` selects a named declaration loaded
-from that file.
+Use `schema_file` to make another Mace file's complete schema-output body the
+active output shape:
+
+```mace
+// service-schema.mace
+[output = 'schema']
+{
+  name: string,
+  replicas: int,
+}
+```
 
 ```mace
 |===|
@@ -208,12 +215,15 @@ string name = "catalog";
 int replicas = 3;
 |===|
 
-[output = 'data', schema_file = './service-schema.mace', schema = Service]
+[output = 'data', schema_file = './service-schema.mace']
 {
   name: name,
   replicas: replicas,
 }
 ```
+
+Use an ordinary import followed by `schema = Name` when selecting a named schema
+exported by another file. `schema` and `schema_file` cannot appear together.
 
 Paths are static, single-quoted, and end in `.mace`. Local paths resolve under
 the project boundary. Explicit HTTP(S) URLs are also accepted; relative

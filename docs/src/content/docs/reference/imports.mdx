@@ -92,19 +92,24 @@ host-provided input:
 }
 ```
 
-Without a `schema` or `parse` selector, the referenced schema-output body is the
-contract. Pair the file directive with a selector to choose a named schema from
-that same file:
+Each file directive uses the referenced file's complete schema-output body as
+its contract. To select a named schema exported by another file, import it and
+use `schema` without `schema_file`:
 
 ```mace
-[output = 'data', schema_file = './schemas.mace', schema = PublicResult]
+|===|
+from './schemas.mace' import PublicResult;
+|===|
+
+[output = 'data', schema = PublicResult]
 {
   name: "Ada",
 }
 ```
 
-A selector paired with a file never falls back to a same-named local schema.
-`schema` or `parse` without the corresponding file resolves in the current file.
+`schema` and `schema_file` are mutually exclusive, as are `parse` and
+`parse_file`. Named selectors resolve declarations available through the current
+file's script context; file directives do not act as declaration selectors.
 
 ## Local path boundaries
 
