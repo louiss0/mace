@@ -141,9 +141,10 @@ produce a string.
 
 <Aside type="caution">
 
-Empty collections remain strict too. If an arm returns `[]` or `{}`, provide an
-expected collection type through the variable declaration or output schema;
-Mace does not infer the empty arm from another arm.
+An empty array arm defaults to `array<string>` unless a receiving declaration or
+output schema supplies another array type. An empty record arm always needs an
+expected record shape. Every arm must still be accepted by the match result's
+receiving type.
 
 </Aside>
 
