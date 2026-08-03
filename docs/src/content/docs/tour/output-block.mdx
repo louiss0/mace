@@ -55,13 +55,18 @@ int replicas = 3;
 }
 ```
 
-<Aside type="caution">
+A data-output field may use `?` to publish that field as optional to importers:
 
-Data-output fields cannot use `?`. Optionality belongs to schema shapes; data
-represents absence by omitting an optional field under schema-directed
-validation, never by emitting `null`.
+```mace
+[output = 'data']
+{
+  profile?: { name: "Ada" },
+}
+```
 
-</Aside>
+When a validation schema is selected, `?` is valid only when the corresponding
+schema field is optional. A direct `null` omits an output field; Mace never emits
+a general null runtime value.
 
 ## `$self` and source order
 
@@ -158,12 +163,10 @@ the script cannot declare variables, shorthand is unavailable, and `schema`,
 
 ## Empty collections in output
 
-<Aside type="caution">
-
-An empty array or record has no element or field evidence. In data output, every
-empty collection needs an expected type from `schema` or `schema_file`.
-
-</Aside>
+An unconstrained empty array is valid and defaults to `array<string>`. Use
+`schema` or `schema_file` when another element type is required. An empty record
+has no default shape and always requires an expected record type from the output
+schema.
 
 ```mace
 |===|
