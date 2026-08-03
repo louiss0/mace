@@ -1,0 +1,174 @@
+---
+title: Script Block
+description: Declare imports, aliases, schemas, documentation, and immutable variables.
+sidebar:
+  order: 4
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+The optional script block is the declaration area at the start of a Mace file.
+It prepares names and values for the required output block.
+
+## Delimiters
+
+Both delimiters must match and must contain at least three `=` characters.
+
+```mace
+|=======|
+string application_name = "storefront";
+|=======|
+
+{
+  application: application_name,
+}
+```
+
+<Aside type="caution">
+
+A second script block, a script block after output, or mismatched delimiters is
+invalid.
+
+</Aside>
+
+## Declaration order
+
+<Aside type="caution">
+
+Imports must appear first. Other declarations then share one namespace, so an
+alias, schema, variable, or imported symbol cannot reuse another declaration's
+name.
+
+</Aside>
+
+```mace
+|===|
+from './shared.mace' import Region;
+
+alias ServiceName: string;
+
+schema Service: {
+  name: ServiceName,
+  region: Region,
+};
+
+Service service = {
+  name: "checkout",
+  region: "us-east",
+};
+|===|
+
+{
+  service: service,
+}
+```
+
+Imports are named-only. `from` paths are static single-quoted `.mace` paths and
+cannot interpolate. An imported file exposes only names published by its output
+block; its script declarations stay private.
+
+Kebab-case names work for imported symbols, destructured aliases, and bound
+record names:
+
+```mace
+from './profile.mace' import display-name;
+from './profile.mace' import DisplayName:display-name;
+from './profile.mace' bind shared-data;
+```
+
+## Alias declarations
+
+Use `alias Name: Type;` to give any valid type reference a reusable name.
+<Aside type="caution">
+
+Aliases may refer forward to local type declarations, but a pure alias cycle is
+invalid.
+
+</Aside>
+
+```mace
+|===|
+alias PortList: array<Port>;
+alias Port: int;
+PortList ports = [80, 443];
+|===|
+
+{
+  ports: ports,
+}
+```
+
+## Schema declarations
+
+A schema gives a closed record shape a name. Schema fields are comma-separated;
+a field with `?` may be absent.
+
+```mace
+|===|
+schema Endpoint: {
+  host: string,
+  port?: int,
+};
+
+Endpoint endpoint = {
+  host: "localhost",
+};
+|===|
+
+{
+  endpoint: endpoint,
+}
+```
+
+Type-like declarations can refer forward to other local declarations. Runtime
+variables, however, are evaluated in order and may use only values already in
+the environment.
+
+## Variable declarations
+
+A variable declaration has a type, a name, an initializer, and a terminating
+semicolon. Variables are immutable.
+
+```mace
+|===|
+alias Region: string;
+Region primary_region = "eu-west";
+Region backup_region = primary_region;
+|===|
+
+{
+  primary: primary_region,
+  backup: backup_region,
+}
+```
+
+## Documentation declarations
+
+`gen_doc` documents aliases and non-record variables. `schema_doc` documents
+schemas and record-valued variables. Documentation must appear after its target
+and never changes evaluation.
+
+```mace
+|===|
+alias Region: string;
+
+gen_doc Region {
+  summary: "A deployment region.",
+};
+
+Region region = "eu-west";
+|===|
+
+{
+  region: region,
+}
+```
+
+## What the script emits
+
+Nothing by itself. Imports, aliases, schemas, docs, and variables support the
+output, but only output fields form the document result.
+
+## Next
+
+Continue to [Output Block](/tour/output-block/).
