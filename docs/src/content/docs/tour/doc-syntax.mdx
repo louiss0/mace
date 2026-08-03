@@ -1,0 +1,184 @@
+---
+title: Doc Syntax
+description: Attach inline and structured documentation without changing configuration behavior.
+sidebar:
+  order: 6
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Mace documentation is validated metadata. It can describe declarations, fields,
+and output blocks, but cannot alter types, evaluation, or emitted values.
+
+## Inline descriptions
+
+Use `/#` for a short description on an alias, variable, schema field, inline
+record-type field, record field, or output field. The description continues to
+the comma or line ending.
+
+```mace
+|===|
+alias Name: string /# A public display name;
+string greeting = "Hello" /# Text shown before the name;
+
+schema User: {
+  name: Name /# The user's display name,
+  email?: string /# Optional contact address,
+};
+
+User user = {
+  name: "Ada" /# Primary account name,
+};
+|===|
+
+[output = 'data']
+{
+  greeting: "$(greeting), $(user.name)" /# Rendered welcome message,
+}
+```
+
+Inline descriptions are static text. They are not comments and remain available
+to documentation-aware tooling.
+
+## Output `description` directives
+
+The `description` directive documents an entire output block. It accepts every
+string literal form. In data output, it may also reference a string variable or
+use a string expression.
+
+```mace
+|===|
+string documentation = "Service manifest";
+|===|
+[output = 'data', description = documentation]
+{
+  service: "search",
+}
+```
+
+Schema output supports the same single-quoted, double-quoted, and block string
+forms:
+
+```mace
+[output = 'schema', description = """
+# Service manifest
+
+Emits the values consumed by the deployment tool.
+"""]
+{
+  service: string,
+}
+```
+
+A `description` directive must evaluate to a string and may appear only once.
+
+## `gen_doc`
+
+`gen_doc` adds `summary` and `description` metadata to an alias or a non-record
+variable. The target must already be declared.
+
+```mace
+|===|
+alias Region: string;
+
+gen_doc Region {
+  summary: "A cloud deployment region.",
+  description: """
+Use the provider's canonical region identifier.
+""",
+};
+
+Region primary_region = "us-east";
+
+gen_doc primary_region {
+  summary: "The default deployment region.",
+};
+|===|
+
+{
+  region: primary_region,
+}
+```
+
+## `schema_doc`
+
+`schema_doc` documents a schema or record-valued variable. In addition to
+`summary` and `description`, it accepts `fields`, whose keys must exist on the
+target shape.
+
+```mace
+|===|
+schema Service: {
+  name: string,
+  replicas?: int,
+};
+
+schema_doc Service {
+  summary: "A deployed service.",
+  description: """
+Describes one independently deployed application component.
+""",
+  fields: {
+    name: "Stable service identifier.",
+    replicas: "Optional desired process count.",
+  },
+};
+
+Service service = {
+  name: "search",
+};
+|===|
+
+{
+  service: service,
+}
+```
+
+Structured entries and `fields` entries use commas. The declaration itself ends
+with `;`.
+
+<Aside type="caution">
+
+`fields` documents only fields directly declared by the target schema or record.
+It does not apply to fields in nested records.
+
+</Aside>
+
+## Target rules
+
+| Target | `gen_doc` | `schema_doc` |
+| --- | --- | --- |
+| Primitive or array variable | Yes | No |
+| Record-valued variable | No | Yes |
+| Type or choice alias | Yes | No |
+| Schema | No | Yes |
+
+<Aside type="caution">
+
+Each target can have at most one structured documentation declaration.
+Documentation declared before its target, duplicate keys, unknown fields, or an
+inapplicable documentation kind are errors. Imported targets must be documented
+with the matching directive in the file that exports them.
+
+</Aside>
+
+## Conflict rules
+
+<Aside type="caution">
+
+Do not describe the same target or field with both inline and structured forms.
+For example, an alias with an inline `/#` description cannot also receive a
+`gen_doc`; a schema field documented in `schema_doc ... fields` cannot also have
+an inline description.
+
+</Aside>
+
+## Comments are different
+
+`//` line comments and `/* ... */` block comments are discarded by parsing.
+Use comments for source notes and documentation syntax for metadata that tools
+should preserve.
+
+## Next
+
+You now know the concepts assumed by the [Variables reference](/reference/variables/).
