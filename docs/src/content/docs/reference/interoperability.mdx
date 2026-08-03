@@ -1,0 +1,270 @@
+---
+title: Interoperability
+description: Convert JSON, TOML, and YAML into validated Mace documents.
+sidebar:
+  order: 12
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Mace interoperability turns existing JSON, TOML, and YAML into ordinary Mace
+records. This is useful when adopting Mace incrementally: existing configuration
+can be converted first, then extended with Mace schemas, variables, and
+validation.
+
+The converters use these source-language baselines:
+
+| Format | Supported specification |
+| --- | --- |
+| JSON | Standard JSON as defined by RFC 8259. JSON comments and JSONC extensions are not enabled. |
+| JSON Schema | The implemented conversion subset targets JSON Schema Draft 2020-12. Unsupported constraints are rejected rather than discarded. |
+| TOML | TOML 1.0.0 documents. Standalone value fragments are not enabled. |
+| YAML | YAML 1.2 syntax and scalar behavior, plus explicitly documented anchor, alias, merge, and multi-document stream conversion. |
+
+Specification support describes accepted source syntax, not a promise that every
+source feature has a lossless Mace equivalent. The rejection tables below define
+where conversion deliberately stops.
+
+Two supported entry points make conversion available to users and applications:
+
+- The CLI converts files with `mace import <path> [path...]` and audits source
+  compatibility with `mace check <path> [path...]`.
+- The Go `codec` package exposes `ImportJSON`, `ImportYAML`, `ImportTOML`, and
+  their checker counterparts for applications that need conversion in process.
+
+```go
+import "github.com/louiss0/mace/codec"
+
+source, err := codec.ImportJSON(`{"name":"Ada","roles":["admin"]}`)
+if err != nil {
+    // Conversion is all-or-nothing. No partial Mace document is returned.
+}
+```
+
+Every converter produces a Mace data output record. Conversion fails instead of
+silently inventing semantics for incompatible input.
+
+## JSON
+
+### Convert
+
+<Aside title="JSON object → Mace record">
+
+Object fields become record fields. Strings, booleans, signed 64-bit integers,
+and finite binary64 floats retain their value types. Nested objects and arrays
+remain nested records and arrays.
+
+```json
+{"name":"Ada","active":true,"scores":[98,100]}
+```
+
+```mace
+[output = 'data']
+{
+  name: "Ada",
+  active: true,
+  scores: [98, 100]
+}
+```
+
+</Aside>
+
+<Aside title="Whitespace key → snake_case field">
+
+Whitespace in keys becomes underscores: `"first name"` becomes `first_name`,
+`"database host"` becomes `database_host`, and `"server 2 address"` becomes
+`server_2_address`. Conversion checks for collisions before producing output.
+
+</Aside>
+
+<Aside title="JSON null → omission">
+
+A field containing `null` uses Mace's omission behavior. Nulls nested inside
+records or arrays are removed. If removal leaves an empty array, schema
+inference uses `array<string>`; this fallback applies recursively to nested
+empty arrays.
+
+</Aside>
+
+<Aside title="JSON Schema → closed Mace schema">
+
+Recognized JSON Schema objects become closed Mace schemas. Declared properties,
+required fields, nested object shapes, arrays, supported enums, unions, and
+variants are converted when Mace can represent their complete meaning.
+`additionalProperties` never opens the generated Mace schema.
+
+</Aside>
+
+### Reject
+
+| Rejected input | Why conversion stops |
+| --- | --- |
+| Invalid JSON or JSON comments | Standard JSON syntax does not permit malformed tokens or comments. |
+| Duplicate object keys | Accepting the final occurrence would silently discard an earlier value. |
+| Keys with unsupported characters, leading digits, empty normalized names, or reserved Mace names | The result would not be a valid, unambiguous Mace field. |
+| Keys that collide after whitespace normalization | Two source values cannot safely become the same Mace field. |
+| Integers outside signed 64-bit range | Mace cannot represent the original integer without corruption. |
+| Floats that do not produce a finite binary64 value | Overflow and non-finite JSON numbers cannot retain their JSON numeric meaning. |
+| `null`, scalar, or array document roots | JSON import requires a record root; root arrays have no implicit envelope mode. |
+| Required JSON Schema properties that accept `null` | Required-null semantics cannot be represented by Mace omission. |
+| Unsupported JSON Schema constraints such as `pattern`, numeric bounds, or length bounds | Silently dropping a constraint would make the generated schema less strict than its source. |
+
+Numeric errors include the complete data path, such as `$.profile.age` or
+`$.values[1]`.
+
+## TOML
+
+### Convert
+
+<Aside title="TOML document → Mace record">
+
+The TOML root table becomes a Mace record. Tables and dotted keys become nested
+records, inline tables become inline records, and arrays of tables become arrays
+of records.
+
+```toml
+name = "api"
+database.host = "db.internal"
+
+[[workers]]
+id = 1
+```
+
+```mace
+[output = 'data']
+{
+  name: "api",
+  database: { host: "db.internal" },
+  workers: [{ id: 1 }]
+}
+```
+
+</Aside>
+
+<Aside title="TOML special values → strings">
+
+TOML `nan`, `+inf`, and `-inf` become `"NaN"`, `"Infinity"`, and
+`"-Infinity"`. Offset date-times, local date-times, local dates, and local
+times also become strings because Mace has no temporal scalar type.
+
+</Aside>
+
+<Aside title="TOML arrays → typed Mace arrays">
+
+Homogeneous and representable mixed arrays retain their values and infer a
+shared or variant element type. Empty arrays infer `array<string>`, including at
+every level of nested empty arrays.
+
+</Aside>
+
+### Reject
+
+| Rejected input | Why conversion stops |
+| --- | --- |
+| Invalid TOML | A partial or guessed document would not preserve source meaning. |
+| Duplicate keys, conflicting tables, or dotted-key/table redefinitions | TOML requires each final key path to have one predictable value. |
+| Unsupported, leading-digit, empty, reserved, or colliding normalized keys | The source cannot produce unique valid Mace fields. |
+| Integers outside signed 64-bit range | Mace cannot retain the numeric value. |
+| Finite floats outside binary64 representation | Narrowing would corrupt the original value. |
+| Standalone TOML value fragments | Standard TOML roots are tables; fragment mode is not implicitly enabled. |
+| Unsupported decoded values | Conversion is all-or-nothing and never emits a partial record. |
+
+Numeric failures identify the table or field path and array position when one is
+available, for example `profile.age` and `values[1]`.
+
+## YAML
+
+### Convert
+
+<Aside title="YAML mapping and sequence → Mace record and array">
+
+String-keyed mappings become records and sequences become arrays. A sequence at
+the document root is wrapped in a synthetic `root` field.
+
+```yaml
+- Ada
+- Linus
+```
+
+```mace
+[output = 'data']
+{
+  root: ["Ada", "Linus"]
+}
+```
+
+</Aside>
+
+<Aside title="YAML stream → document fields">
+
+A stream containing multiple YAML documents becomes one Mace record with
+numbered fields. Record documents remain nested records.
+
+```yaml
+---
+name: Ada
+---
+name: Linus
+```
+
+```mace
+[output = 'data']
+{
+  document_1: { name: "Ada" },
+  document_2: { name: "Linus" }
+}
+```
+
+</Aside>
+
+<Aside title="YAML normalization">
+
+Whitespace keys become snake_case fields. Nulls are omitted, timestamps become
+strings, and `.nan`, `.inf`, and `-.inf` become `"NaN"`, `"Infinity"`, and
+`"-Infinity"`. Empty sequences use the recursive `array<string>` inference
+fallback.
+
+</Aside>
+
+<Aside title="Anchors, merges, and comments">
+
+Acyclic anchors and aliases are expanded into ordinary values. Merge keys use
+deterministic precedence, with explicit fields overriding merged fields.
+Attached top-level field comments become inline Mace documentation using `/#`.
+
+```yaml
+# Public account name
+name: Ada
+```
+
+```mace
+name: "Ada" /# Public account name
+```
+
+</Aside>
+
+### Reject
+
+| Rejected input | Why conversion stops |
+| --- | --- |
+| Invalid YAML | Conversion cannot safely recover a complete source document. |
+| Non-string or structurally complex mapping keys | Arrays, mappings, and other key types have no unambiguous Mace field representation. |
+| Duplicate or colliding normalized mapping keys | More than one value would target the same Mace field. |
+| Unsupported, leading-digit, empty, or reserved field names | The generated field would not be a valid Mace identifier. |
+| Integers or finite floats outside Mace numeric ranges | The original numeric value cannot be retained. |
+| Cyclic alias graphs | Expanding the graph would recurse forever and cannot produce a finite Mace value. |
+| Unresolvable alias or merge conflicts | The final record would not have deterministic field values. |
+| Unknown or application-specific tags such as `!custom` | Mace does not execute application-specific tag behavior or silently erase its meaning. |
+| A `null` or scalar single-document root | A single YAML document must produce a record, except for the supported root-sequence envelope. |
+
+Built-in scalar meanings are converted only when they have a defined Mace
+representation. Unknown tags remain an error rather than being treated as an
+untagged value.
+
+## All-or-nothing conversion
+
+Importers return either a complete Mace document or an error. Duplicate keys,
+invalid names, unsupported values, and numeric failures prevent output from
+being emitted. Use `mace check` before `mace import` when migrating a large
+source tree so incompatibilities can be reviewed without writing converted
+files.
