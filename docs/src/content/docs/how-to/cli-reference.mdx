@@ -1,48 +1,261 @@
 ---
 title: CLI Reference
-description: Commands provided by the Mace CLI.
+description: Install the Mace CLI and use evaluation, conversion, checking, formatting, inspection, completion, and LSP commands.
 ---
 
+import { Aside } from '@astrojs/starlight/components';
+
+The `mace` CLI evaluates configuration, converts existing formats, checks
+migration compatibility, formats source, and runs the language server.
+
 ## Install
+
+Install the latest published command with Go:
 
 ```bash
 go install github.com/louiss0/mace/cmd@latest
 ```
 
-You can also run directly from source:
+Verify the executable is available:
+
+```bash
+mace version
+```
+
+From a repository checkout, run the same command tree without installing it:
 
 ```bash
 go run ./cmd --help
 ```
 
-## Root command
+## Command overview
 
-The root command is `mace`.
+| Command | Purpose | Normal stdout |
+| --- | --- | --- |
+| `mace json <path>` | Evaluate one Mace data file | Indented JSON result |
+| `mace import <path> [path...]` | Convert JSON, YAML, or TOML files | Written `.mace` paths and a summary |
+| `mace check <path> [path...]` | Audit conversion compatibility without writing files | A Mace-formatted compatibility report |
+| `mace output <path>` | Parse and print canonical Mace source | Formatted Mace source |
+| `mace nodes <path>` | Inspect the parsed syntax structure | Go-style AST dump |
+| `mace lsp` | Run the language server over stdio | LSP protocol messages |
+| `mace completion <shell>` | Generate shell completion | Completion script |
+| `mace version` | Print the build version | Version string |
 
-## Commands
+Run `mace <command> --help` for command-specific usage.
 
-- `mace json <path>` evaluates a Mace file and prints computed JSON output
-- `mace import <path> [path...]` converts JSON, YAML, and TOML to `.mace`
-- `mace check <path> [path...]` reports JSON, YAML, and TOML compatibility issues as Mace data
-- `mace nodes <path>` prints parsed node structure
-- `mace output <path>` prints canonical formatted Mace source
-- `mace lsp` starts the Language Server Protocol server over stdio
+## `mace json`
 
-`json` is the computed-value command. `check` is the compatibility-audit command. `output` is the canonical-source command.
+```text
+mace json <path> [--input <record>]
+```
 
-## LSP support
+`json` resolves the file's imports and schema dependencies, validates any runtime
+input, evaluates data output, validates the final output schema, and prints
+indented JSON.
 
-The built-in server currently supports:
+```bash
+mace json ./service.mace
+```
 
-- diagnostics
-- completions
-- hover
-- definitions
-- document symbols
-- code actions
-- formatting
+Hexadecimal values remain distinguishable in JSON by being emitted as canonical
+strings such as `"0xFF"` and `"0x1.8"`.
 
-## Related docs
+### Supply parsed input
 
-- [How to Run the Mace LSP](/how-to/run-the-mace-lsp/)
-- [How to Print Canonical Mace Output](/how-to/print-canonical-mace-output/)
+Files using `parse` or `parse_file` require host input. Pass one Mace record
+literal with `--input`:
+
+```mace
+// build.mace
+|===|
+schema BuildInput: {
+  branch: string,
+  attempt: int,
+};
+|===|
+
+[output = 'data', parse = BuildInput]
+{
+  label: "$($branch)-$($attempt)",
+}
+```
+
+```bash
+mace json ./build.mace --input '{ branch: "main", attempt: 3 }'
+```
+
+The input must be one record literal. It is parsed as data, not as declarations
+or executable Mace source.
+
+## `mace import`
+
+```text
+mace import <path> [path...] [--output-dir <directory>]
+```
+
+`import` converts `.json`, `.yaml`/`.yml`, and `.toml` documents into `.mace`
+files. Without `--output-dir`, each generated file is written beside its source.
+
+```bash
+mace import ./service.json
+mace import ./configs/*.yaml --output-dir ./mace-configs
+```
+
+Each successful path is printed to stdout. When processing multiple files, one
+failure does not prevent independent valid files from being written; diagnostics
+go to stderr and the command still exits non-zero. Target collisions are rejected
+instead of overwriting another generated file.
+
+<Aside type="caution">
+
+Conversion is strict. Unsupported constraints, duplicate keys, invalid Mace
+field names, out-of-range numbers, and unrepresentable source values fail rather
+than being silently discarded.
+
+</Aside>
+
+See [Interoperability](/reference/interoperability/) for format-specific rules.
+
+## `mace check`
+
+```text
+mace check <path> [path...]
+```
+
+`check` runs the same compatibility analysis as import without writing files.
+Use it before a migration or in CI:
+
+```bash
+mace check ./config.json ./deploy.yaml
+```
+
+Exit status communicates the result:
+
+| Status | Meaning |
+| ---: | --- |
+| `0` | Every source is compatible |
+| `1` | At least one source was read successfully but has compatibility issues |
+| `2` | At least one source could not be read or checked |
+
+The report is written to stdout. File access and command errors are written to
+stderr.
+
+## `mace output`
+
+```text
+mace output <path>
+```
+
+`output` parses a Mace file and prints its canonical formatter representation. It
+does not evaluate expressions and does not print the configuration's JSON value.
+
+```bash
+mace output ./service.mace
+mace output ./service.mace > ./service.formatted.mace
+```
+
+See [How to Print Canonical Mace Source](/how-to/print-canonical-mace-output/) for
+the formatting workflow and its distinction from `mace json`.
+
+## `mace nodes`
+
+```text
+mace nodes <path>
+```
+
+`nodes` prints the parser's syntax structure. It is mainly useful when developing
+the parser, formatter, analyzer, or editor integrations.
+
+```bash
+mace nodes ./service.mace
+```
+
+Its output is an implementation-oriented AST dump, not a stable interchange
+format.
+
+## Documentation parsing and metadata
+
+Yes—the parser recognizes all Mace documentation forms:
+
+- inline `/#` descriptions;
+- `gen_doc` declarations;
+- `schema_doc` declarations and field documentation;
+- output-level `description` directives;
+- ordinary `//` and `/* ... */` comments.
+
+The commands use that parsed information differently:
+
+| Command | Documentation behavior |
+| --- | --- |
+| `mace json` | Validates documentation declarations and conflicts, but emits only evaluated configuration data |
+| `mace output` | Preserves and canonically formats documentation syntax |
+| `mace nodes` | Exposes documentation nodes and descriptions in the implementation-oriented AST dump |
+| `mace lsp` | Uses documentation for hover text, diagnostics, completion context, and documentation code actions |
+
+For example, `mace nodes` represents a `gen_doc` declaration as an
+`ast.DocDeclaration`, while inline field descriptions appear on their field AST
+nodes. This is useful for parser and tooling development, but it is not a stable
+machine-readable documentation API.
+
+<Aside type="note">
+
+There is currently no dedicated `mace docs` command that renders or exports a
+documentation artifact. Mace parses and validates the metadata, preserves it
+through formatting, and surfaces it through the language server.
+
+</Aside>
+
+See [Doc Syntax](/tour/doc-syntax/) for the language forms and target rules.
+
+## `mace lsp`
+
+```text
+mace lsp
+```
+
+The language server communicates over stdin/stdout. Editors should launch it as
+a subprocess and reserve stdout for protocol traffic.
+
+Current capabilities include diagnostics, completion, hover, definitions,
+document symbols, code actions, watched-file reanalysis, and formatting.
+
+See [How to Run the Mace LSP](/how-to/run-the-mace-lsp/).
+
+## Shell completion
+
+Generate completion for Bash, Fish, PowerShell, or Zsh:
+
+```bash
+mace completion bash
+mace completion fish
+mace completion powershell
+mace completion zsh
+```
+
+Follow the installation instructions included at the top of the generated
+script or in `mace completion <shell> --help`.
+
+## Version flags
+
+Both forms print the build version:
+
+```bash
+mace version
+mace --version
+```
+
+Development builds report `devel`; released binaries receive their release
+version during the build.
+
+## Output, errors, and automation
+
+- Normal command results go to stdout.
+- Human-readable failures go to stderr.
+- Successful commands return status `0`.
+- Usage, parse, validation, evaluation, and formatting failures return non-zero.
+- `check` uses the more specific statuses documented above.
+- Commands are deterministic and non-interactive, making them suitable for CI.
+
+When piping output, choose the command by intent: use `json` for evaluated data,
+`output` for canonical source, `check` for a compatibility report, and `nodes`
+only for implementation diagnostics.
