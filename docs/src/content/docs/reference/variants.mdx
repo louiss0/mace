@@ -46,7 +46,9 @@ rather than using first-match behavior.
 
 </Aside>
 
-The one intentional overlap is `string` with a string-valued `choice[...]`:
+The intentional overlap is a choice with its underlying primitive type. Choice
+members are tested first, while the primitive accepts values outside the finite
+choice. For example:
 
 ```mace
 |===|
@@ -61,6 +63,8 @@ Region custom_region = "local-lab";
 ```
 
 The choice supplies editor suggestions while `string` allows additional values.
+The same rule applies to numeric and boolean choices with their corresponding
+primitive type.
 
 ## Record alternatives stay closed
 
@@ -210,9 +214,9 @@ Normalized normalized = match (input) {
 }
 ```
 
-The current runtime value does not let Mace ignore the other arm. Empty arrays
-and records in an arm also require an expected collection type; they are never
-inferred from a populated sibling arm.
+The current runtime value does not let Mace ignore another arm. An empty array
+arm uses `array<string>` unless a receiving type supplies another array type. An
+empty record arm always requires an expected record shape.
 
 ## Arrays of variant values
 
