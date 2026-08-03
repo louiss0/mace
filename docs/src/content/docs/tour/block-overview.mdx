@@ -57,12 +57,11 @@ the output.
 
 </Aside>
 
-The script may contain, in order:
-
-1. imports, before every other declaration;
-2. aliases and schemas;
-3. documentation declarations;
-4. explicitly typed variables.
+Imports must appear before every local declaration. After imports, aliases,
+schemas, documentation declarations, and explicitly typed variables may be
+interleaved subject to their own rules: structured documentation follows its
+target, type-like declarations may refer forward, and variables may use only
+values already introduced.
 
 Types and schemas are metadata. Variables are values. Declaring either does not
 emit a field automatically.
