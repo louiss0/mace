@@ -20,9 +20,9 @@ Create `hello.mace`:
 |===|
 string name = "Ada";
 |===|
-[output = data]
+[output = 'data']
 {
-  greeting: "Hello $(name)"
+  greeting: "Hello $(name)",
 }
 ```
 
@@ -56,5 +56,5 @@ Expected output:
 ## What to read next
 
 - [How to validate output with a schema](/how-to/validate-output-with-a-schema/)
-- [How to print canonical Mace output](/how-to/print-canonical-mace-output/)
+- [How to print canonical Mace source](/how-to/print-canonical-mace-output/)
 - [Motivation](/tour/motivation/)
