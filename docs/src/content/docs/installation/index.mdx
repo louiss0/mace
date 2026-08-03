@@ -1,6 +1,6 @@
 ---
 title: Installation
-description: Install official Mace binaries and editor extensions.
+description: Install official Mace binaries, language bindings, and editor extensions.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -123,6 +123,19 @@ public WinGet catalog. A `winget install` command should not be treated as an
 official installation method until this page marks it as available.
 
 </Aside>
+
+## Language bindings
+
+Official packages embed Mace in Node.js, Python, and Go applications:
+
+- `@code-fixer-23/mace-node` provides an asynchronous Node.js API over a bundled
+  Mace executable;
+- `mace-python` provides a synchronous Python API over a bundled Mace executable;
+- `github.com/louiss0/mace/codec` parses, evaluates, decodes, and encodes Mace
+  directly inside a Go process.
+
+See [Language Bindings](/installation/bindings/) for package installation,
+supported platforms, API examples, executable overrides, and version behavior.
 
 ## Official editor extensions
 
