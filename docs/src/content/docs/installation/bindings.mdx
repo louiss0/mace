@@ -1,0 +1,274 @@
+---
+title: Language Bindings
+description: Install and use the official Node.js, Python, and Go integrations for Mace.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Mace provides official integrations for Node.js, Python, and Go. The Node.js and
+Python packages wrap a bundled `mace` executable. The Go `codec` package runs the
+parser and processor directly in the calling process.
+
+## Choose an integration
+
+| Ecosystem | Package | Execution model | Official source |
+| --- | --- | --- | --- |
+| Node.js | [`@code-fixer-23/mace-node`](https://www.npmjs.com/package/@code-fixer-23/mace-node) | Asynchronous API over a bundled Mace CLI | [`packages/node`](https://github.com/louiss0/mace-bindings/tree/main/packages/node) |
+| Python | [`mace-python`](https://pypi.org/project/mace-python/) | Synchronous API over a bundled Mace CLI | [`packages/python`](https://github.com/louiss0/mace-bindings/tree/main/packages/python) |
+| Go | [`github.com/louiss0/mace/codec`](https://pkg.go.dev/github.com/louiss0/mace/codec) | In-process parsing, evaluation, decoding, and encoding | [`codec`](https://github.com/louiss0/mace/tree/main/codec) |
+
+The Node.js and Python bindings are maintained together in
+[`louiss0/mace-bindings`](https://github.com/louiss0/mace-bindings). The Go codec
+is versioned with the main Mace module.
+
+## Bundled binary platforms
+
+The Node.js and Python packages include Mace executables for:
+
+| Operating system | Architectures |
+| --- | --- |
+| Linux | x64 and ARM64 |
+| macOS | Intel and Apple silicon |
+| Windows | x64 and ARM64 |
+
+A separate CLI installation is not required on these targets. On another target,
+or when the bundled executable is unavailable, the packages fall back to a
+`mace` executable on `PATH`. Both bindings also accept an explicit executable
+path.
+
+<Aside type="note" title="Binding and CLI versions can differ">
+
+Node.js and Python binding version 1.0.0 bundles Mace 1.0.0. Set `macePath` or
+`mace_path` to use another installed Mace version. The Go codec version always
+comes from the selected `github.com/louiss0/mace` module version.
+
+</Aside>
+
+## Node.js
+
+Install the public npm package:
+
+```bash
+npm install @code-fixer-23/mace-node
+```
+
+The same package can be installed with another npm-compatible client:
+
+```bash
+pnpm add @code-fixer-23/mace-node
+```
+
+### Evaluate a Mace file
+
+```ts
+import { json } from '@code-fixer-23/mace-node'
+
+const config = await json('./config.mace')
+console.log(config)
+```
+
+`json` parses the CLI's JSON output and returns the resulting JavaScript value.
+Use `jsonText` when the serialized JSON text is needed instead.
+
+Pass runtime input as a Mace record literal:
+
+```ts
+const config = await json('./runtime.mace', {
+  input: '{ env: "prod", replicas: 3, }',
+})
+```
+
+### Format and inspect source
+
+```ts
+import { nodes, output } from '@code-fixer-23/mace-node'
+
+const formattedSource = await output('./config.mace')
+const syntaxTree = await nodes('./config.mace')
+```
+
+### Convert another format
+
+```ts
+import { importJson, importToml, importYaml } from '@code-fixer-23/mace-node'
+
+const fromJson = await importJson('{"name":"Ada"}')
+const fromYaml = await importYaml('name: Ada')
+const fromToml = await importToml('name = "Ada"')
+```
+
+`importFile(path)` performs the same conversion for a JSON, YAML, or TOML file.
+Each import function returns generated Mace source.
+
+### Select the executable
+
+Every operation accepts common run options:
+
+```ts
+const config = await json('./config.mace', {
+  macePath: '/opt/mace/bin/mace',
+  cwd: '/workspace/service',
+})
+```
+
+- `macePath` overrides the bundled executable.
+- `cwd` sets the working directory used for relative file and import resolution.
+- `json` and `jsonText` additionally accept `input`.
+
+Failed commands reject with `MaceError`, which exposes the CLI `exitCode`.
+
+## Python
+
+`mace-python` requires Python 3.13 or later. Install it from PyPI:
+
+```bash
+python -m pip install mace-python
+```
+
+With uv:
+
+```bash
+uv add mace-python
+```
+
+### Evaluate a Mace file
+
+```python
+from mace_python import json
+
+config = json("./config.mace")
+print(config)
+```
+
+`json` decodes the CLI result into Python dictionaries, lists, strings, numbers,
+and booleans. Use `json_text` to keep the serialized JSON text.
+
+Pass runtime input with:
+
+```python
+config = json(
+    "./runtime.mace",
+    input='{ env: "prod", replicas: 3, }',
+)
+```
+
+### Format, inspect, and convert
+
+```python
+from mace_python import import_json, import_toml, import_yaml, nodes, output
+
+formatted_source = output("./config.mace")
+syntax_tree = nodes("./config.mace")
+from_json = import_json('{"name":"Ada"}')
+from_yaml = import_yaml("name: Ada")
+from_toml = import_toml('name = "Ada"')
+```
+
+`import_file(path)` converts a JSON, YAML, or TOML file and returns generated Mace
+source.
+
+### Select the executable
+
+```python
+config = json(
+    "./config.mace",
+    mace_path="/opt/mace/bin/mace",
+    cwd="/workspace/service",
+)
+```
+
+- `mace_path` overrides the bundled executable.
+- `cwd` sets the working directory used for relative file and import resolution.
+- `json` and `json_text` additionally accept `input`.
+
+Failed commands raise `MaceError`, which exposes the CLI `exit_code`.
+
+## Go codec
+
+Add the codec package to a Go module:
+
+```bash
+go get github.com/louiss0/mace/codec@latest
+```
+
+Unlike the Node.js and Python bindings, the Go codec does not spawn a subprocess
+or require a Mace binary.
+
+### Parse evaluated data
+
+```go
+package main
+
+import (
+    "fmt"
+
+    "github.com/louiss0/mace/codec"
+)
+
+func main() {
+    result, err := codec.ParseFile("./config.mace")
+    if err != nil {
+        panic(err)
+    }
+
+    fmt.Println(result.Data["name"])
+}
+```
+
+`codec.Parse` accepts Mace source text. `codec.ParseFile` reads a file and retains
+its path for relative source resolution. Use `ParseWithInput` or
+`ParseFileWithInput` when the output declares `parse` or `parse_file` input.
+
+```go
+result, err := codec.ParseFileWithInput("./runtime.mace", map[string]any{
+    "env":      "prod",
+    "replicas": 3,
+})
+```
+
+For schema output, `Result.Schema` contains structured schema metadata.
+
+### Decode into a Go value
+
+```go
+type Config struct {
+    Name    string `json:"name"`
+    Enabled bool   `json:"enabled"`
+}
+
+var config Config
+err := codec.Unmarshal(`[output = 'data']
+{
+  name: "Ada",
+  enabled: true,
+}`, &config)
+```
+
+`UnmarshalWithInput` supplies runtime input while decoding. The target must be a
+non-nil pointer.
+
+### Encode Go values as Mace
+
+```go
+source, err := codec.MarshalOutput(map[string]any{
+    "name":    "Ada",
+    "enabled": true,
+    "roles":   []string{"admin", "operator"},
+})
+```
+
+- `Marshal` converts any supported Go value to a Mace expression.
+- `MarshalOutput` requires a record at the root and returns a Mace output body.
+- `ImportJSON`, `ImportYAML`, and `ImportTOML` convert serialized documents.
+- `ImportJSONSchema` converts a supported JSON Schema document to schema output.
+- `CheckJSON`, `CheckYAML`, and `CheckTOML` report conversion compatibility.
+
+All codec operations return errors to the caller; they do not write diagnostics
+or partial results to stdout.
+
+## Related installation pages
+
+- [Install the Mace CLI](/installation/)
+- [Install official editor extensions](/installation/#official-editor-extensions)
+- [CLI Reference](/how-to/cli-reference/)
+- [Interoperability Reference](/reference/interoperability/)
