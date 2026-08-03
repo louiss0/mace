@@ -31,7 +31,7 @@ FeatureFlag debug_enabled = false;
 | Logical OR | `left \|\| right` | two booleans | `boolean` |
 | Equality | `==`, `!=` | compatible scalar values | `boolean` |
 | Numeric comparison | `<`, `<=`, `>`, `>=` | compatible numeric family | `boolean` |
-| Conditional | `condition ? then : else` | boolean or nullable truthiness guard | inferred branch type |
+| Conditional | `condition ? then : else` | `boolean`, or a nullable imported record | inferred branch type |
 
 ```mace
 |===|
@@ -82,7 +82,10 @@ Both operands must still type-check as booleans.
 ## Conditional selection
 
 Use a boolean before `?` to select one branch. Only the selected branch
-evaluates, but both branches participate in static type inference.
+evaluates, but both branches participate in static type inference. The other
+accepted condition is a nullable record imported from an optional data-output
+field: presence selects the true branch and absence selects the false branch.
+Ordinary local records are not boolean conditions.
 
 ```mace
 |===|
@@ -123,9 +126,18 @@ boolean selected = 3 > 2 && 2 > 1 || false;
 }
 ```
 
-<Aside type="caution">
+Parentheses may group any expression. Use them to override precedence or make
+intent explicit:
 
-Parentheses cannot be used merely to group logical or comparison expressions;
-the precedence rules are intentionally fixed.
+```mace
+|===|
+boolean selected = (3 > 2 && 2 > 1) || false;
+|===|
 
-</Aside>
+{
+  selected,
+}
+```
+
+Redundant parentheses are valid, although a formatter may remove them when that
+preserves meaning.
