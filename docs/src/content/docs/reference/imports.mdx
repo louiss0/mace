@@ -1,0 +1,158 @@
+---
+title: Imports and Source Paths
+description: Import exposed names, bind complete data outputs, select schema files, and resolve local or remote Mace sources safely.
+sidebar:
+  order: 11
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Imports and file directives are the only Mace constructs that load other source
+files. They use static, single-quoted paths ending in `.mace`.
+
+## Import exposed names
+
+```mace
+|===|
+from './service.mace' import host, port;
+from './service.mace' import environment:deployment_environment;
+|===|
+
+[output = 'data']
+{
+  host,
+  port,
+  environment: deployment_environment,
+}
+```
+
+A data-output file exposes its output fields as values. A schema-output file
+exposes its output fields as types. Script declarations in the referenced file
+remain private unless its output publishes them.
+
+Imports must appear before local declarations. Imported, renamed, and local
+names share one namespace, so duplicates and shadowing are errors. Wildcard
+imports are not supported.
+
+## Bind a complete data output
+
+```mace
+|===|
+from './service.mace' bind service;
+|===|
+
+[output = 'data']
+{
+  endpoint: "$(service.host):$(service.port)",
+}
+```
+
+`bind` fully processes the referenced data file and stores its complete output
+record under one immutable name. Binding a schema-output file is invalid. If the
+referenced file fails, no bound value or partial caller output is produced.
+
+## Optional imported data
+
+A `?` on a data-output field marks that exported field as optional:
+
+```mace
+// profile.mace
+[output = 'data']
+{
+  profile?: { city: "Paris" },
+}
+```
+
+A consumer importing `profile` receives a nullable imported record. Guard its
+presence with a conditional before plain member access:
+
+```mace
+|===|
+from './profile.mace' import profile;
+|===|
+
+[output = 'data']
+{
+  city: profile ? profile.city : "unknown",
+}
+```
+
+Optional member access is a separate mechanism. Use `?.` for optional schema
+fields and `record<T>` lookups, then resolve possible absence with `??`.
+
+## Select output and input contracts
+
+Use `schema_file` to validate the final data output and `parse_file` to validate
+host-provided input:
+
+```mace
+[output = 'data', schema_file = './output-schema.mace', parse_file = './input-schema.mace']
+{
+  name: $name,
+}
+```
+
+Without a `schema` or `parse` selector, the referenced schema-output body is the
+contract. Pair the file directive with a selector to choose a named schema from
+that same file:
+
+```mace
+[output = 'data', schema_file = './schemas.mace', schema = PublicResult]
+{
+  name: "Ada",
+}
+```
+
+A selector paired with a file never falls back to a same-named local schema.
+`schema` or `parse` without the corresponding file resolves in the current file.
+
+## Local path boundaries
+
+A local path resolves relative to the file containing it. Processors normalize
+`.` and `..`, resolve symlinks, and reject a target outside the canonical project
+root.
+
+```mace
+from './shared/types.mace' import Region;
+```
+
+Absolute filesystem paths, root escapes, unsupported extensions, unreadable
+files, and dependency cycles are errors.
+
+## HTTP(S) sources
+
+An explicit `http://` or `https://` URL may be used wherever a Mace source path
+is accepted:
+
+```mace
+[output = 'data', schema_file = 'https://config.example/schemas/service.mace']
+{
+  name: "search",
+}
+```
+
+Relative dependencies inside a remote source resolve against that source URL.
+Nested remote resolution preserves the root scheme, host, and path boundary.
+FTP and other URL schemes are rejected.
+
+<Aside type="caution">
+
+Source URLs are static syntax. Expressions and runtime input cannot construct a
+path, trigger a fetch, or change dependency resolution.
+
+</Aside>
+
+## Dependency failures
+
+Imports, binds, `schema_file`, and `parse_file` participate in one dependency
+graph. Processing fails on:
+
+- a cycle;
+- an unavailable or malformed source;
+- a requested name that is private or absent;
+- the wrong output mode for an operation;
+- a local or remote boundary escape;
+- a duplicate local name;
+- an ambiguous or unavailable schema selection.
+
+No failure produces a partial output.
