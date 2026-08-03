@@ -1,0 +1,102 @@
+---
+title: Motivation
+description: Why Mace is a typed, deterministic configuration language.
+sidebar:
+  order: 1
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Why Mace? I'm [Shelton Louis](https://github.com/louiss0) I created Mace because I thought! 
+What if config languages were type safe, had first class support for schemas and allowed the user to respond to input. 
+In other config languages the ideas that I just introduced aren't first class citizens! 
+In others they are just broken! JSON is the only language that has tried to implement native schemas! 
+But it's version is broken! When it comes to Config languages we also inject random variables! 
+When we do there's no understanding of where they come from what they are about! 
+We just copy and paste code! 
+
+
+<Aside title="What if!">
+1. The structure of our configs could be checked? 
+2. The input's we receive could be understood 
+3. How the developer is suppossed to write the config is not only known but checked by the language itself
+4. What if we could have good documentation for our configs?
+</Aside>
+
+
+## Writing a typical config 
+
+Let's say that you were writing a `package` config! 
+It has to have a name, version, dev dependencies and dependencies! 
+
+You'd write it like this in Mace! 
+
+```mace
+{
+  name: "",
+  version: "",
+  devDependencies: [],
+  dependencies: [],
+}
+```
+
+But you'd type it like this! 
+```mace
+// ./package-config_schema.mace
+[output='schema']
+{
+  name: string, /# The name of your package
+  version: string, /# The version of your package
+  devDependencies: record<string>, /# The dev dependencies of your package
+  dependencies: record<string>, /# The production dependencies of your package
+}
+```
+
+To use the above schema you'd type it like this! 
+
+```mace
+[schema_file='./package-config_schema.mace']
+{
+  name: "",
+  version: "",
+  devDependencies: {},
+  dependencies: {},
+}
+```
+
+The `record<string>` type means you can make a **key value pair** with any key but only strings! 
+The `/# ` is a doc comment that tells the user what the prop is for and how to use it!
+
+
+## Writing a config based on input 
+
+In config languages values seem to randomly be injected all the time! 
+
+You've seen things like this!
+
+```yaml
+  name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+```
+
+In the above example you see that there are 4 values that will be injected into the file! 
+The problem with this is that you have to continously read the docs to know about those variables! 
+You don't know what they represent in your program! Even If you had to read the docs! Why not have them in the LSP! 
+
+Instead of doing something like that maybe the variables could be known! 
+
+That's where the `parse_file` directive comes in! 
+
+```mace
+[parse_file='https://pkg-releaser.com/input.mace']
+{
+  name_template: "$($project_name)_$($version)_$($os)_$($arch)"
+}
+```
+
+The parse directive takes in a schema from a URL or a mace file!
+It validates whether input that is passed conforms to the schema! 
+Then it makes the values that conform go into the scope of where you'd write the config file! 
+
+<Aside title="The `$` is a sign that signifies that Magic is happening here!">
+    I did this so that parsed variables can be distinguished from regular variables.
+</Aside>
