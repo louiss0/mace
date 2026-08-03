@@ -1,0 +1,88 @@
+---
+title: Diagnostics and Failure Behavior
+description: Understand Mace error categories, source locations, exit behavior, and all-or-nothing processing.
+sidebar:
+  order: 13
+---
+
+Mace returns either one complete result or an error. Lexing, parsing, resolution,
+type checking, input validation, evaluation, and final schema validation all
+finish before a result is exposed.
+
+## Diagnostic stages
+
+| Stage | Typical failures |
+| --- | --- |
+| Lexing | Invalid characters, malformed numbers, unterminated strings or comments |
+| Parsing | Missing separators or terminators, malformed declarations, mismatched script fences |
+| Resolution | Unknown names, private imports, duplicate declarations, dependency cycles, path escapes |
+| Type checking | Invalid operands, schema mismatch, ambiguous variants, incomplete matches, unresolved absence |
+| Input validation | Missing host input, unknown input fields, wrong input value types |
+| Evaluation | Division by zero, hexadecimal overflow, non-finite floats, invalid `$self` access |
+| Output validation | Missing required output fields, unknown fields, nested schema violations |
+
+A source-backed error identifies the failing range. Language-server diagnostics
+also use stable codes such as `mace.match.not-exhaustive` and
+`mace.import.path-outside-root` so editor actions do not have to parse message
+text.
+
+## Common corrections
+
+| Message concept | Correction |
+| --- | --- |
+| Unknown identifier | Declare/import the name or fix its spelling |
+| Missing required field | Add the field required by the selected schema |
+| Unknown field | Remove it or update the closed schema intentionally |
+| Use optional chaining `?.` | Access an optional schema field or record-map key with `?.` |
+| Resolve with `??` | Supply a guaranteed-present fallback of the same type |
+| Match must be exhaustive | Add every missing choice literal or variant type member |
+| Variant arms require a type pattern | Replace literal arms with source-member type references |
+| Choice arms require a literal pattern | Replace type arms with each exact choice literal |
+| Import path escapes root | Keep the dependency under the local or remote source root |
+| Null is only allowed in output | Use omission only as a direct data-output field value |
+
+## CLI behavior
+
+Human-readable command failures go to stderr and return non-zero. Normal results
+go to stdout. `mace check` reserves status `1` for compatibility issues and `2`
+for files that could not be checked; other command failures generally return
+status `1`.
+
+```bash
+mace json ./service.mace > result.json
+```
+
+When evaluation fails, the command does not write a partial JSON record. If a
+script redirects stdout, use a temporary file when preserving an older artifact
+matters.
+
+## Import and conversion batches
+
+`mace import` may process multiple independent source files. Successful files can
+be written even when another source fails, but the command reports each failed
+path and exits non-zero. This per-file batch behavior is different from processing
+one Mace dependency graph, which is always all-or-nothing.
+
+## Security failures
+
+Source paths are validated before use:
+
+- local paths must remain inside the canonical project root after symlink
+  resolution;
+- remote nested paths must remain under the remote root and use HTTP(S);
+- every source path must end in `.mace`;
+- dependency cycles are rejected;
+- runtime input is treated as data and cannot introduce imports or executable
+  source.
+
+## Reporting a diagnostic problem
+
+When a diagnostic is unclear, include:
+
+1. the smallest complete `.mace` file that reproduces it;
+2. the exact command and Mace version;
+3. the complete message and source range;
+4. any referenced local or remote schema files, with secrets removed.
+
+The normative diagnostic requirements are in
+[Spec §11](/reference/spec/#11-diagnostics-and-security).
