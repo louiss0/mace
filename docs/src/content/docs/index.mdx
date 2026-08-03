@@ -1,13 +1,13 @@
 ---
-title: What is Mace? 
-description: This is the intro page to the Mace language.
+title: What is Mace?
+description: A typed, deterministic language for configuration data, schemas, and validated input.
 ---
-import { Aside } from '@astrojs/starlight/components';
 
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
 <img
 	src="/mace-intro-usage.gif"
-	alt="Mace usage preview"
+	alt="Mace configuration being edited with language-server support"
 	style={{
 		width: 'min(100%, 48rem)',
 		marginBlock: '0 2rem',
@@ -16,155 +16,148 @@ import { Aside } from '@astrojs/starlight/components';
 	}}
 />
 
+Mace—**M**ain **A**pplication **C**onfiguration **E**ngine—is a strongly typed
+configuration language. A Mace file declares any reusable types and values in an
+optional script block, then exposes exactly one record-shaped data or schema
+output.
 
-Mace stands for **M**ain **A**pplication **C**onfiguration **E**ngine. It's a language that's designed for type safe configuration.
-Instead of relying on Editors to decide how to enforce schemas it's built in! External data can be validated by the CLI itself! 
-The built in LSP server allows the developer to warned about what data will be inserted into the app! 
+Mace is designed to make configuration contracts visible to the parser, CLI,
+and language server instead of leaving validation and injected values to prose
+documentation.
 
+<CardGrid>
+	<Card title="Validate output" icon="seti:config">
+		Use closed schemas to catch missing, unknown, and mistyped fields before a
+		consumer receives the configuration.
+	</Card>
+	<Card title="Validate runtime input" icon="seti:json">
+		Use `parse` or `parse_file` to type host-provided input before `$`-prefixed
+		values enter scope.
+	</Card>
+	<Card title="Publish contracts" icon="document">
+		Schema-output files expose reusable type metadata to other Mace files.
+	</Card>
+	<Card title="Stay deterministic" icon="approve-check-circle">
+		Evaluation has no mutation, shell execution, arbitrary host calls, or partial
+		results.
+	</Card>
+</CardGrid>
 
-<Aside title="Need reuse values that have already been writen in the config">
-
-Just use `$self`! 
-
-```mace 
-{
-  first_name: 'Shelton',
-  last_name: 'Louis', 
-  full_name: "$($self.first_name)  $($self.last_name)"
-
-}
-```
-</Aside>
-
-<Aside title="Need to write schemas for other files to use?">
-
-Make a mace file using the output directive to `schema` to indicate that you're making a schema instead of writing data.
+## A minimal data file
 
 ```mace
-[output=schema]
+|===|
+string first_name = "Shelton";
+string last_name = "Louis";
+|===|
+
+[output = 'data']
 {
-  name: string, 
+  first_name,
+  last_name,
+  full_name: "$($self.first_name) $($self.last_name)",
+}
+```
+
+The output fields evaluate from top to bottom. `$self` can read a completed
+field, so `full_name` can reuse `first_name` and `last_name` without exposing the
+script's private declarations.
+
+## Validate a data output
+
+A schema-output file publishes a contract:
+
+```mace
+// package-schema.mace
+[output = 'schema']
+{
+  name: string,
   version: string,
-  dependencies: array<{
-    name: string,
-    version: string,
-    scope?: string,
-  }>,
+  dependencies: record<string>,
 }
 ```
 
-You can then import the schema you have made and make sure that the config you're writing conforms to it! 
+A data file can load that contract and validate its final output:
 
 ```mace
-[schema_file='./package-schema.mace']
-  {
-    name: '@code-fixer-23/cn-efs',
-    version: "3.0.1",
-    dependencies: [
-      {
-        name: 'clsx',
-        version: '^2.0.0',
-      }
-    ],
-  }
-
-```
-
-</Aside>
-
-<Aside title="Need to make sure that data that is supposed to be used for the config exists?">
-
-Use the parse file directive to link to a file!
-
-```mace
-
-[parse_file='./github-context.mace']
+[output = 'data', schema_file = './package-schema.mace']
 {
-name: 'CI',
-on: 'push',
-jobs:{
-  prod_check:{
-    if: $github.ref == 'refs/heads/main',
-    runs_on: 'ubuntu-latest',
-    steps: [
-      { run: "echo 'Deploying to production server on branch $GITHUB_REF'",}
-    
-    ]
-  
-  }
-
-}
-
+  name: "@example/widget",
+  version: "3.0.1",
+  dependencies: {
+    clsx: "^2.0.0",
+  },
 }
 ```
-</Aside>
 
-## What this language about? 
+Schemas are closed: required fields must exist, unknown fields are rejected, and
+every present value must have the declared type.
 
-This one is a structural, strongly typed config language that's designed to allow developers to write config's that are modern and understandable.
-Developers write config data using records that all come together to make a big record for people to use! 
-The config data is typed using schemas! Which are record shaped types enforce the structure of records. 
-It gives developers, strings, ints hex ints, floats, hex floats and booleans as data values.
-As data structures it gives developers arrays and records. 
+## Validate input before using it
 
-If a developers want's to specify that a value must be one or more type's the `variant` type exists; 
-If a developer wants to specify that two or more schemas can be combined to make a new one the `union` type exists;
-If a developer wants to indicate that a value must be a literal set of values they have the choice type.
+```mace
+// github-context.mace
+[output = 'schema']
+{
+  branch: string,
+  commit: string,
+}
+```
 
-## Before using this Language
+```mace
+[output = 'data', parse_file = './github-context.mace']
+{
+  workflow: "CI",
+  revision: "$($branch)@$($commit)",
+}
+```
 
-When it comes to using Mace I need you to know that this language was created so that other languages could easily use it.
-For other tools to make marshallers for it without any friction. To make sure that this language expreses the ideas most developers need! 
+The host supplies a record when evaluating the second file. Mace validates the
+entire input first and introduces its fields as `$branch` and `$commit`. Missing
+or invalid input stops processing before any output is emitted.
 
-<Aside title="Here are the restrictions and reasons!" type="caution">
+<Aside title="Parsed values are visibly external">
 
-| Restriction                                                                    | DX Reason                                                                                                                                                                                            |
-| :----------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Field names cannot be string literals                                          | Mace uses one consistent field-access model based on identifiers and the `.` operator. This avoids forcing developers and tooling to support both `record.field` and `record["field-name"]`.         |
-| Identifiers must begin with a Unicode letter                                   | This prevents identifiers from being confused with numeric literals, operators, directives, or other syntax.                                                                                         |
-| Identifiers are case-sensitive                                                 | Case-sensitive names avoid implicit name transformations and ensure that source text, imports, schemas, and generated output refer to exactly the same symbol.                                       |
-| Reserved keywords cannot be used as identifiers                                | Reserving language keywords prevents declarations from becoming ambiguous as Mace adds syntax and tooling features.                                                                                  |
-| Mace has no `null` runtime value                                               | Mace models absence through optional fields rather than requiring every consumer to handle both omission and `null`. This produces clearer schemas and fewer defensive checks.                       |
-| Optional fields are omitted rather than assigned `null`                        | A field is either present with a valid value or absent. Developers do not have to distinguish between missing, explicitly null, and incorrectly typed values.                                        |
-| Script variables require explicit type annotations                             | Explicit declaration types document intent, improve diagnostics and autocomplete, and keep imported and injectable values predictable. Mace may still determine the types of expressions internally. |
-| Every variable must have an initializer                                        | Variables always enter the value environment with a validated value, preventing partially initialized configuration state.                                                                           |
-| Variables are immutable                                                        | Configuration values cannot silently change during evaluation. A declaration always means the same thing everywhere it is referenced.                                                                |
-| A Mace document must contain exactly one output block                          | Every file has one explicit export surface. Tooling never has to guess which value represents the document result.                                                                                   |
-| The output block must be a record                                              | Named fields provide a stable export surface for imports, schemas, documentation, autocomplete, and `$self`. Arrays remain available as field values.                                                |
-| An output block may be empty, but it cannot be omitted                         | `{}` explicitly communicates that the document exports an empty record. An absent output block is more likely to indicate an incomplete file or authoring error.                                     |
-| A document may contain at most one script block                                | A single declaration area gives developers and tools one predictable place to find imports, types, schemas, documentation, and variables.                                                            |
-| The script block must appear before the output block                           | Declarations and imports are established before output evaluation. Readers and tools can process the document from top to bottom without forward execution dependencies.                             |
-| Imports must appear before other script declarations                           | Developers can see external dependencies immediately, while processors can resolve the complete import environment before validating local declarations.                                             |
-| Wildcard imports are not allowed                                               | Named imports make dependencies visible, improve autocomplete, prevent accidental name collisions, and avoid silently expanding a file’s public API.                                                 |
-| Only names surfaced through an imported file’s output block are importable     | Script declarations remain private by default. A file’s output block acts as an explicit public interface rather than exposing implementation details.                                               |
-| Imported names cannot be shadowed by local declarations                        | A name always resolves to one predictable declaration. Refactoring an import cannot silently change the meaning of local expressions.                                                                |
-| All declarations share one namespace                                           | A type, schema, choice, variable, or imported symbol cannot reuse the same name. This eliminates context-dependent name resolution and makes navigation clearer.                                     |
-| Duplicate declarations, fields, and directives are rejected                    | Mace never relies on “first value wins” or “last value wins” behavior. Duplicate names are surfaced as mistakes instead of silently changing configuration.                                          |
-| Schemas are closed by default                                                  | Records validated against a schema cannot contain unknown fields. Typos and unsupported configuration options are reported instead of being silently ignored.                                        |
-| Required schema fields cannot be omitted                                       | Consumers can rely on required data being present after validation rather than repeating existence checks.                                                                                           |
-| Optional schema fields must still satisfy their declared type when present     | Optionality controls presence, not type safety. A present optional field receives the same validation as a required field.                                                                           |
-| Arrays must be homogeneous unless their element type explicitly uses a variant | Array consumers receive a predictable element type. Mixed arrays must be intentionally modeled rather than occurring accidentally.                                                                   |
-| `$self` is available only during data-output construction                      | `$self` has one clear meaning: the output record currently being produced. It cannot expose unrelated script or host state.                                                                          |
-| `$self` can access only fields that were already evaluated                     | Output dependencies remain visible in source order. Forward references and circular field dependencies cannot occur implicitly.                                                                      |
-| Schema output is type-only                                                     | Schema files describe shapes rather than runtime values. Variables and value expressions cannot accidentally leak into a schema export.                                                              |
-| Schema output cannot be combined with data-validation directives               | A block either produces schema metadata or runtime data. Keeping the modes separate gives tooling and importers one unambiguous result kind.                                                         |
-| Type declarations are not runtime values                                       | Schemas, aliases, and choices cannot be accidentally emitted, interpolated, or used as normal data. The schema plane and value plane remain separate.                                                |
-| String interpolation accepts runtime values only                               | Interpolation produces text from evaluated data. Types and schemas cannot be unintentionally converted into unstable implementation-specific strings.                                                |
-| Single-line strings cannot span multiple lines                                 | Accidental missing quotes are diagnosed close to their source. Multiline content must use an explicit block-string form.                                                                             |
-| Mace does not perform implicit numeric conversions                             | An `int`, `float`, `hex_int`, and `hex_float` remain distinct unless the language explicitly defines an operation between them. This prevents silent precision or representation changes.            |
-| Decimal and hexadecimal numeric families cannot be mixed implicitly            | Hexadecimal values preserve their intended representation and operator semantics rather than quietly becoming decimal numbers.                                                                       |
-| Fusion members must be schemas                                                 | Fusion represents composition of record contracts, not a general-purpose union of unrelated scalar values. Developers can predict that its result is one combined schema shape.                      |
-| Conflicting fusion fields are rejected                                         | Schema composition cannot silently choose one field definition over another. Conflicts must be resolved deliberately by the author.                                                                  |
-| A variant value must match exactly one member                                  | A value that matches multiple alternatives is ambiguous. Requiring one exact match makes validation results and autocomplete deterministic.                                                          |
-| Expressions cannot perform arbitrary code execution                            | Configuration evaluation cannot launch processes, call host-language functions, or execute strings as code. Opening a configuration file does not execute application behavior.                      |
-| Expressions cannot perform network or arbitrary filesystem operations          | Evaluation depends only on declared source files, imports, and explicit runtime input. Builds remain reproducible and safe to inspect.                                                               |
-| Import and schema-file paths must remain inside the project root               | A configuration file cannot escape its project and read unrelated or sensitive files through path traversal.                                                                                         |
-| Circular imports are rejected                                                  | Import resolution always terminates, and exported values never depend on an incomplete declaration cycle.                                                                                            |
-| Runtime input must satisfy a selected schema before output evaluation          | External data is validated at the trust boundary. Output expressions never receive malformed or partially valid input.                                                                               |
-| Runtime input is treated only as data                                          | Input strings cannot create imports, directives, declarations, file reads, or executable expressions.                                                                                                |
-| Source files must use UTF-8                                                    | One required encoding eliminates platform-dependent decoding behavior while still supporting international strings and identifiers.                                                                  |
-| Unicode text is not automatically normalized                                   | Mace preserves the exact code points written by the developer instead of silently modifying identifiers or string values.                                                                            |
-| Documentation cannot affect evaluation                                         | Documentation remains safe metadata. Adding or changing documentation cannot alter configuration results.                                                                                            |
-| The processor emits no partial result after an error                           | Consumers receive either a completely valid result or a diagnostic. They never have to determine which portion of a failed configuration is trustworthy.                                             |
+The `$` prefix distinguishes validated host input from ordinary script variables.
+It does not bypass type checking.
 
 </Aside>
+
+## Type vocabulary
+
+Mace provides:
+
+- scalar types: `string`, `int`, `float`, `hex_int`, `hex_float`, and `boolean`;
+- homogeneous arrays with `array<T>`;
+- open homogeneous maps with `record<T>`;
+- closed inline records and named `schema` declarations;
+- finite literal domains with `choice[...]`;
+- explicit alternatives with `variant[...]`;
+- compatible record or choice composition with `fusion[...]`.
+
+Optional fields model absence. `null` is not a general runtime value; it is only
+an output-field omission marker.
+
+## Deliberate restrictions
+
+Mace keeps configuration predictable by requiring:
+
+- exactly one record-shaped output block;
+- at most one script block before the output;
+- explicit types and initializers for immutable variables;
+- imports before local declarations and no shadowing;
+- named imports rather than wildcards;
+- closed schemas and explicit variants for mixed values;
+- static single-quoted `.mace` source paths;
+- complete validation before any result is returned.
+
+Expressions cannot run commands, call arbitrary host functions, mutate state, or
+initiate I/O. Only explicit imports and file directives may resolve local or
+HTTP(S) Mace sources.
+
+## Start here
+
+1. Follow [First Mace File](/tutorials/first-mace-file/).
+2. Read the [Tour](/tour/motivation/) for the language model.
+3. Use the [CLI Reference](/how-to/cli-reference/) while running files.
+4. Consult the [language specification](/reference/spec/) for normative details.
