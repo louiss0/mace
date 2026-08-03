@@ -1,0 +1,163 @@
+---
+title: Expressions
+description: Evaluate values with deterministic operators, optional access, coalescing, conditionals, match, interpolation, and $self.
+sidebar:
+  order: 12
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Mace expressions construct configuration values without mutation, loops,
+functions, indexing, or arbitrary host calls. Operands evaluate left to right
+except where short-circuiting selects or skips an expression.
+
+## Value sources
+
+An expression may read:
+
+- literals;
+- earlier immutable script variables;
+- imported values;
+- validated input fields such as `$branch`;
+- completed output fields through `$self.name`;
+- fields on records through `.` or `?.`.
+
+Aliases and schemas are types, not runtime values.
+
+## `$self`
+
+Data-output fields evaluate from top to bottom. `$self` is the output record
+constructed so far:
+
+```mace
+[output = 'data']
+{
+  host: "api.example.com",
+  port: 443,
+  url: "https://$($self.host):$($self.port)",
+}
+```
+
+`$self` cannot read the current field, a later field, parsed input, or a private
+script declaration. It is unavailable in schema output and type positions.
+
+## Parsed input
+
+`parse` and `parse_file` validate one host-provided record before output
+evaluation. Each top-level field becomes a `$`-prefixed value:
+
+```mace
+|===|
+schema Input: {
+  branch: string,
+  attempt: int,
+};
+|===|
+
+[output = 'data', parse = Input]
+{
+  label: "$($branch)-$($attempt)",
+}
+```
+
+Use `mace json --input '{ branch: "main", attempt: 3 }'` to supply input from
+the CLI.
+
+## Member access and absence
+
+Use `.` for a required member on a definitely present closed record. Use `?.`
+for an optional schema field and every `record<T>` map lookup:
+
+```mace
+|===|
+schema User: {
+  display_name?: string,
+};
+
+User user = {};
+string display_name = user?.display_name ?? "guest";
+|===|
+
+{
+  display_name,
+}
+```
+
+Optional access produces possible absence, not `null`. After one optional step,
+every later step in that chain uses `?.`. Resolve the chain with `??` before
+assignment, interpolation, comparison, insertion into another collection, or
+output.
+
+`??` evaluates its right side only when the left side is absent. Its final
+fallback must be guaranteed present and have the same resolved type.
+
+## Nullable imported records
+
+An optional field imported from another data output may be absent. A nullable
+imported record can be a conditional guard:
+
+```mace
+|===|
+from './profile.mace' import profile;
+|===|
+
+[output = 'data']
+{
+  city: profile ? profile.city : "unknown",
+}
+```
+
+Presence selects the true branch and narrows that stable imported variable;
+absence selects the false branch. Ordinary local records are not truthy.
+
+## Conditional expressions
+
+```mace
+condition ? value_when_true : value_when_false
+```
+
+The condition runs first and exactly one branch evaluates. Both branches still
+type-check. Equal result types remain concrete; different types form a flattened,
+deduplicated variant that the receiving declaration or schema must accept.
+Nested conditional expressions are forbidden.
+
+## Match expressions
+
+`match` accepts only a choice or variant value and evaluates its input once.
+
+- A choice match uses one literal arm for every choice member.
+- A variant match uses type-reference arms covering every flattened variant
+  member.
+- A variant alias may group several members into one disjoint arm.
+- Every arm ends with a comma.
+- There is no wildcard or default arm.
+- Patterns do not create bindings.
+
+A stable variable or member path is narrowed inside a matching variant arm.
+See [Choice](/reference/choice/) and [Variants](/reference/variants/) for complete
+examples.
+
+## Interpolation
+
+Double and block strings interpolate scalar expressions with `$(...)`. Strings
+are inserted unchanged; decimal and hexadecimal numbers use their canonical
+text; booleans use `true` or `false`. Arrays, records, types, and unresolved
+absence are errors.
+
+## Parentheses and precedence
+
+Parentheses may group any expression, including values, comparisons, shifts,
+logic, and redundant visual groups. A formatter may remove them only when the
+meaning is preserved.
+
+From tightest to loosest, postfix member access is followed by unary operators,
+exponentiation, multiplication, addition, shifts, relational comparison,
+equality, bitwise operators, logical AND, logical OR, coalescing, and the
+conditional operator. The normative table is in [Spec §8](/reference/spec/#8-expressions-and-operators).
+
+<Aside type="caution">
+
+Mace strings support equality but not `+` concatenation or relational ordering.
+Use interpolation to compose text.
+
+</Aside>
