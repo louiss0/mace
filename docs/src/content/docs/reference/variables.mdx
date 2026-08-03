@@ -1,0 +1,181 @@
+---
+title: Variables
+description: Declare immutable typed values, use nullability, and understand conditional inference.
+sidebar:
+  order: 1
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+This page assumes you have completed the [Tour](/tour/motivation/). Variables
+live in the script block and hold the runtime values used to construct output.
+
+## Declaration
+
+A variable always has an explicit type, a name, an initializer, and a terminating
+semicolon.
+
+```mace
+|===|
+alias ServiceName: string;
+alias ReplicaCount: int;
+
+ServiceName service_name = "catalog";
+ReplicaCount replicas = 3;
+|===|
+
+{
+  service: service_name,
+  replicas: replicas,
+}
+```
+
+<Aside type="caution">
+
+Mace does not support untyped declarations, declarations without initializers,
+or reassignment. Variables evaluate in source order, so an initializer may use
+an earlier value but not a later one.
+
+</Aside>
+
+```mace
+|===|
+string base_name = "catalog";
+string qualified_name = "prod-$(base_name)";
+|===|
+
+{
+  name: qualified_name,
+}
+```
+
+Aliases are transparent names for types; variables are values. `ServiceName`
+cannot be emitted by itself, while `service_name` can.
+
+Variable names may use kebab case, such as `service-name`. A joined hyphen is
+part of the name everywhere it is referenced. Write subtraction with whitespace:
+`total-discount` is one variable name, while `total - discount` is arithmetic.
+
+## Conditional operator
+
+The conditional, or ternary, operator selects one of two expressions:
+
+```mace
+condition ? value_when_true : value_when_false
+```
+
+The condition is evaluated first and only the selected branch is evaluated.
+Boolean values are ordinary conditions; a nullable record variable can also be
+used as the truthiness guard shown above.
+
+```mace
+|===|
+alias EnvironmentName: string;
+boolean is_production = true;
+EnvironmentName environment = is_production ? "production" : "development";
+|===|
+
+{
+  environment: environment,
+}
+```
+
+### Conditional inference is strict
+
+<Aside type="caution">
+
+Mace checks **both possible branch types**, even though only one branch runs.
+The receiving declaration or output schema must accept every inferred result.
+
+- Equal branch types produce that concrete type.
+- Different branch types produce a flattened, deduplicated `variant[...]`.
+- Mace does not convert `int` to `float` merely to unify branches.
+- An empty array or record does not gain a type from the other branch.
+- A conditional cannot contain another conditional in its condition or either
+  branch, even through parentheses.
+
+</Aside>
+
+```mace
+|===|
+alias TextOrCode: variant[string, int];
+boolean use_code = true;
+TextOrCode selected = use_code ? 200 : "unavailable";
+|===|
+
+{
+  selected: selected,
+}
+```
+
+Declaring `string selected` in this example would be invalid because the `true`
+branch can produce an `int`.
+
+### Empty collections need their own expected type
+
+A variable declaration can supply the missing collection type:
+
+```mace
+|===|
+alias Labels: array<string>;
+boolean include_defaults = false;
+Labels labels = include_defaults ? ["stable"] : [];
+|===|
+
+{
+  labels: labels,
+}
+```
+
+In a data output, put the expected type in an output schema:
+
+```mace
+|===|
+boolean include_defaults = false;
+
+schema Result: {
+  labels: array<string>,
+};
+|===|
+
+[output = 'data', schema = Result]
+{
+  labels: include_defaults ? ["stable"] : [],
+}
+```
+
+<Aside type="caution">
+
+Without `Labels` or `schema = Result`, the empty branch is intentionally not
+inferred.
+
+</Aside>
+
+## Shorthand output fields
+
+In data output, a field containing only a variable name expands to
+`name: name`.
+
+```mace
+|===|
+string service = "catalog";
+int replicas = 3;
+|===|
+
+{
+  service,
+  replicas,
+}
+```
+
+Shorthand still performs normal type and nullability checks. A nullable variable
+cannot silently fill a required output field.
+
+## Declaration checklist
+
+- Put variables only in a data-output document's script block.
+- Declare the type and initializer explicitly.
+- Declare values before other variables that use them.
+- Resolve nullable values before storing or emitting them.
+- Give every possible conditional result an accepted expected type.
+- Use aliases when a type expression deserves a reusable name.
