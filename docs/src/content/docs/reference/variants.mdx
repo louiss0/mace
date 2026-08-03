@@ -1,0 +1,234 @@
+---
+title: Variants
+description: Model closed alternatives, validate exact members, and narrow them with match.
+sidebar:
+  order: 6
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A `variant[...]` type permits a value from one of several explicitly named type
+alternatives. Use it when a field can have genuinely different shapes—not when
+a finite set of scalar literals would be better expressed as a choice.
+
+## Declaring variants
+
+```mace
+|===|
+alias Port: variant[int, string];
+alias Payload: variant[array<string>, array<int>];
+
+Port automatic_port = "automatic";
+Port fixed_port = 8080;
+Payload labels = ["public", "stable"];
+|===|
+
+{
+  automatic_port: automatic_port,
+  fixed_port: fixed_port,
+  labels: labels,
+}
+```
+
+Variant members may resolve to primitives, choices, arrays, inline record types,
+or schemas. Aliases keep long alternatives readable.
+
+## Identity and ambiguity
+
+Variant identity is the unordered set of resolved members. Member order does
+not change the type, and duplicate equivalent members are invalid.
+
+<Aside type="caution">
+
+A value normally must conform to exactly one member. If it matches none, it is
+invalid; if member types provably overlap, the variant declaration is rejected
+rather than using first-match behavior.
+
+</Aside>
+
+The one intentional overlap is `string` with a string-valued `choice[...]`:
+
+```mace
+|===|
+alias SuggestedRegion: choice["us-east", "eu-west"];
+alias Region: variant[SuggestedRegion, string];
+Region custom_region = "local-lab";
+|===|
+
+{
+  region: custom_region,
+}
+```
+
+The choice supplies editor suggestions while `string` allows additional values.
+
+## Record alternatives stay closed
+
+Schemas in a variant remain separate closed shapes. A record must satisfy one
+complete member and cannot merge fields from different alternatives.
+
+```mace
+|===|
+schema LocalSource: {
+  path: string,
+};
+
+schema RemoteSource: {
+  url: string,
+};
+
+alias Source: variant[LocalSource, RemoteSource];
+Source source = {
+  url: "https://example.com/config.mace",
+};
+|===|
+
+{
+  source: source,
+}
+```
+
+<Aside type="caution">
+
+A record containing both `path` and `url` satisfies neither closed schema and is
+rejected.
+
+</Aside>
+
+## Matching a variant
+
+Variant matches use **type-reference patterns**, unlike the literal patterns on
+the Choice page.
+
+```mace
+|===|
+alias Port: variant[int, string];
+Port port = 8080;
+
+string port_kind = match (port) {
+  int => "fixed",
+  string => "automatic",
+};
+|===|
+
+{
+  port: port,
+  kind: port_kind,
+}
+```
+
+<Aside type="caution">
+
+Every resolved source member must be covered exactly once. Literal patterns,
+missing members, duplicate or overlapping arms, extra members, and default arms
+are invalid.
+
+</Aside>
+
+## Narrowing record members
+
+A match pattern creates no new binding. When the matched expression is a stable
+variable or member path, Mace narrows that existing path while checking the
+arm.
+
+```mace
+|===|
+schema LocalSource: {
+  path: string,
+};
+
+schema RemoteSource: {
+  url: string,
+};
+
+alias Source: variant[LocalSource, RemoteSource];
+Source source = {
+  url: "https://example.com/config.mace",
+};
+
+string location = match (source) {
+  LocalSource => source.path,
+  RemoteSource => source.url,
+};
+|===|
+
+{
+  source: source,
+  location: location,
+}
+```
+
+`source.path` is available only while checking the `LocalSource` arm, and
+`source.url` only in the `RemoteSource` arm.
+
+## Grouping match members
+
+A variant alias may group multiple source members into one pattern. Grouped
+patterns must be disjoint and must still cover the complete source variant.
+
+```mace
+|===|
+alias TextOrNumber: variant[string, int];
+alias ConfigValue: variant[string, int, boolean];
+ConfigValue value = 7;
+
+string category = match (value) {
+  TextOrNumber => "content",
+  boolean => "flag",
+};
+|===|
+
+{
+  value: value,
+  category: category,
+}
+```
+
+Adding a separate `int` arm here would overlap `TextOrNumber` and fail.
+
+## Result inference
+
+Match arms and conditional branches follow the same strict inference model.
+Equal result types remain concrete; different types form a flattened,
+deduplicated variant. The receiving declaration or output schema must accept
+all possible results.
+
+```mace
+|===|
+alias Input: variant[string, int];
+alias Normalized: variant[string, boolean];
+Input input = 7;
+
+Normalized normalized = match (input) {
+  string => input,
+  int => true,
+};
+|===|
+
+{
+  normalized: normalized,
+}
+```
+
+The current runtime value does not let Mace ignore the other arm. Empty arrays
+and records in an arm also require an expected collection type; they are never
+inferred from a populated sibling arm.
+
+## Arrays of variant values
+
+An array is homogeneous by its element type. To permit mixed element shapes,
+make the element type a variant explicitly.
+
+```mace
+|===|
+alias Scalar: variant[string, int, boolean];
+alias Scalars: array<Scalar>;
+Scalars values = ["ready", 3, true];
+|===|
+
+{
+  values: values,
+}
+```
+
+Without `Scalar`, the mixed literal would be rejected.
