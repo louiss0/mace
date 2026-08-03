@@ -1,0 +1,131 @@
+---
+title: Boolean
+description: Boolean literals, logical operators, comparisons, short-circuiting, and conditions.
+sidebar:
+  order: 4
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A `boolean` is either `true` or `false`.
+
+```mace
+|===|
+alias FeatureFlag: boolean;
+FeatureFlag cache_enabled = true;
+FeatureFlag debug_enabled = false;
+|===|
+
+{
+  cache_enabled: cache_enabled,
+  debug_enabled: debug_enabled,
+}
+```
+
+## Boolean operators
+
+| Action | Operator | Operand rule | Result |
+| --- | --- | --- | --- |
+| Logical NOT | `!value` | `boolean` | `boolean` |
+| Logical AND | `left && right` | two booleans | `boolean` |
+| Logical OR | `left \|\| right` | two booleans | `boolean` |
+| Equality | `==`, `!=` | compatible scalar values | `boolean` |
+| Numeric comparison | `<`, `<=`, `>`, `>=` | compatible numeric family | `boolean` |
+| Conditional | `condition ? then : else` | boolean or nullable truthiness guard | inferred branch type |
+
+```mace
+|===|
+boolean healthy = true;
+boolean maintenance = false;
+boolean accepts_traffic = healthy && !maintenance;
+boolean requires_attention = !healthy || maintenance;
+boolean same_state = healthy == true;
+boolean enough_replicas = 3 >= 2;
+|===|
+
+{
+  accepts_traffic: accepts_traffic,
+  requires_attention: requires_attention,
+  same_state: same_state,
+  enough_replicas: enough_replicas,
+}
+```
+
+<Aside type="caution">
+
+Relational operators do not order booleans. `true > false` is invalid.
+
+</Aside>
+
+## Short-circuiting
+
+`&&` evaluates its right operand only when the left side is `true`. `||`
+evaluates its right operand only when the left side is `false`. This is fixed
+evaluation behavior, not an optimization.
+
+```mace
+|===|
+boolean enabled = false;
+boolean production = true;
+boolean deploy = enabled && production;
+boolean preview = !production || enabled;
+|===|
+
+{
+  deploy: deploy,
+  preview: preview,
+}
+```
+
+Both operands must still type-check as booleans.
+
+## Conditional selection
+
+Use a boolean before `?` to select one branch. Only the selected branch
+evaluates, but both branches participate in static type inference.
+
+```mace
+|===|
+alias ReplicaCount: int;
+boolean production = true;
+ReplicaCount replicas = production ? 6 : 1;
+|===|
+
+{
+  production: production,
+  replicas: replicas,
+}
+```
+
+Equal branch types retain that type. Different branch types infer a deduplicated
+`variant[...]`, so the receiving variable or output schema must permit every
+result.
+
+<Aside type="caution">
+
+A conditional cannot contain another conditional in any of its three
+parts.
+
+</Aside>
+
+## Precedence
+
+`!` binds tightly. Comparisons produce booleans before logical operators run.
+`&&` binds more tightly than `||`, and both bind more tightly than `? :`.
+
+```mace
+|===|
+boolean selected = 3 > 2 && 2 > 1 || false;
+|===|
+
+{
+  selected: selected,
+}
+```
+
+<Aside type="caution">
+
+Parentheses cannot be used merely to group logical or comparison expressions;
+the precedence rules are intentionally fixed.
+
+</Aside>
