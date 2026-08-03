@@ -1,0 +1,194 @@
+---
+title: String
+description: Use single, double, and block strings, escapes, Unicode, and interpolation.
+sidebar:
+  order: 2
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Mace has one `string` type and three literal forms. The form controls multiline
+text and interpolation; it does not create a different string type.
+
+## Literal forms
+
+| Form | Multiline | `$(...)` interpolation | Typical use |
+| --- | --- | --- | --- |
+| `'text'` | No | No | Static text |
+| `"text"` | No | Yes | Short rendered values |
+| `"""text"""` | Yes | Yes | Templates and long text |
+
+```mace
+|===|
+alias Message: string;
+string static_name = 'Mace';
+string rendered_name = "Config: $(static_name)";
+Message description = """
+$(static_name) is a typed
+configuration language.
+""";
+|===|
+
+{
+  static_name: static_name,
+  rendered_name: rendered_name,
+  description: description,
+}
+```
+
+Single and double strings cannot cross a line ending. Use the triple-double-
+quoted block form for multiline text.
+
+## Escapes and Unicode
+
+General string literals support these escapes:
+
+| Escape | Meaning |
+| --- | --- |
+| `\\` | Backslash |
+| `\'` | Single quote |
+| `\"` | Double quote |
+| `\n` | Newline |
+| `\r` | Carriage return |
+| `\t` | Tab |
+| `\uXXXX` | Four-digit Unicode code point |
+| `\UXXXXXXXX` | Eight-digit Unicode code point |
+
+Unicode may also be written directly. Mace preserves code-point sequences and
+does not normalize visually equivalent text.
+
+```mace
+|===|
+alias Greeting: string;
+Greeting greeting = "Hello\nMace \U0001F680";
+string direct_unicode = "Olá, 世界";
+|===|
+
+{
+  greeting: greeting,
+  direct_unicode: direct_unicode,
+}
+```
+
+<Aside type="caution">
+
+Escapes above `U+10FFFF` and surrogate code points from `U+D800` through
+`U+DFFF` are invalid.
+
+</Aside>
+
+## Interpolation
+
+Double and block strings interpolate an expression written as `$(...)`.
+
+```mace
+|===|
+string service = "checkout";
+int replicas = 3;
+boolean public = true;
+string summary = "$(service) has $(replicas) replicas; public=$(public)";
+|===|
+
+{
+  summary: summary,
+}
+```
+
+<Aside type="caution">
+
+Interpolation accepts concrete scalar runtime values. It rejects aliases,
+schemas, arrays, records, and unavailable nullable values. Resolve nullability
+before interpolation.
+
+</Aside>
+
+For example:
+
+```mace
+|===|
+schema Release: {
+  version?: string,
+};
+
+Release release = {};
+string visible_version = release?.version ?? "next";
+string label = "release-$(visible_version)";
+|===|
+
+{
+  label: label,
+}
+```
+
+<Aside type="caution">
+
+Mace does not use `+` for string concatenation. Prefer interpolation for
+combining text.
+
+</Aside>
+
+## Conditional string values
+
+The conditional operator was introduced on the Variables page. Equal string
+branches infer `string`:
+
+```mace
+|===|
+alias StageLabel: string;
+boolean production = false;
+StageLabel stage = production ? "Production" : "Development";
+|===|
+
+{
+  stage: stage,
+}
+```
+
+If one branch is not a string, the result is a `variant[...]`; Mace does not
+convert the other value to text to satisfy a `string` variable.
+
+## Equality
+
+Strings support `==` and `!=`. Equality compares the represented string value;
+Mace does not normalize case or Unicode before comparison.
+
+```mace
+|===|
+string expected = "production";
+string actual = "production";
+boolean matches = actual == expected;
+boolean differs = actual != "Production";
+|===|
+
+{
+  matches: matches,
+  differs: differs,
+}
+```
+
+Relational ordering such as `<` is numeric, not string ordering.
+
+## Static string contexts
+
+Some syntax looks string-like but is deliberately more restricted:
+
+- import, `schema_file`, and `parse_file` paths are static single-quoted path
+  literals with no escapes or interpolation;
+- `output` directive values are the static controls `'data'` and `'schema'`;
+- `description` directives must evaluate to strings; in data output they may use
+  string expressions and variables.
+
+```mace
+|===|
+from './shared.mace' import Region;
+Region region = "eu-west";
+|===|
+
+[output = 'data']
+{
+  region: region,
+}
+```
+
+These contexts remain deterministic and cannot derive file paths or processor
+behavior from runtime expressions.
