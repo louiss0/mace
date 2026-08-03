@@ -65,8 +65,10 @@ condition ? value_when_true : value_when_false
 ```
 
 The condition is evaluated first and only the selected branch is evaluated.
-Boolean values are ordinary conditions; a nullable record variable can also be
-used as the truthiness guard shown above.
+Boolean values are ordinary conditions. A nullable record imported from an
+optional data-output field may also be a condition: presence selects the true
+branch and absence selects the false branch. Ordinary local records are not
+truthiness conditions.
 
 ```mace
 |===|
@@ -90,7 +92,7 @@ The receiving declaration or output schema must accept every inferred result.
 - Equal branch types produce that concrete type.
 - Different branch types produce a flattened, deduplicated `variant[...]`.
 - Mace does not convert `int` to `float` merely to unify branches.
-- An empty array or record does not gain a type from the other branch.
+- An empty array uses its expected array type or defaults to `array<string>`; an empty record requires an expected shape.
 - A conditional cannot contain another conditional in its condition or either
   branch, even through parentheses.
 
@@ -111,9 +113,10 @@ TextOrCode selected = use_code ? 200 : "unavailable";
 Declaring `string selected` in this example would be invalid because the `true`
 branch can produce an `int`.
 
-### Empty collections need their own expected type
+### Empty collections and expected types
 
-A variable declaration can supply the missing collection type:
+An empty array defaults to `array<string>`, but a variable declaration can supply
+a different array type:
 
 ```mace
 |===|
@@ -146,8 +149,9 @@ schema Result: {
 
 <Aside type="caution">
 
-Without `Labels` or `schema = Result`, the empty branch is intentionally not
-inferred.
+Without `Labels` or `schema = Result`, `[]` uses the `array<string>` fallback.
+An empty record has no comparable fallback and still requires an expected record
+shape.
 
 </Aside>
 
@@ -168,14 +172,14 @@ int replicas = 3;
 }
 ```
 
-Shorthand still performs normal type and nullability checks. A nullable variable
-cannot silently fill a required output field.
+Shorthand still performs normal type and presence checks. A possibly absent
+import cannot silently fill a required output field.
 
 ## Declaration checklist
 
 - Put variables only in a data-output document's script block.
 - Declare the type and initializer explicitly.
 - Declare values before other variables that use them.
-- Resolve nullable values before storing or emitting them.
+- Resolve possibly absent imported or optional values before storing or emitting them.
 - Give every possible conditional result an accepted expected type.
 - Use aliases when a type expression deserves a reusable name.
