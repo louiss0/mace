@@ -26,6 +26,7 @@ export default defineConfig({
 				},
 			},
 			sidebar: [
+				{ label: 'Installation', link: '/installation/' },
 				{
 					label: 'Tour',
 					items: [
