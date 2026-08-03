@@ -1,0 +1,314 @@
+---
+title: Number
+description: Decimal and hexadecimal numeric types, operations, result types, limits, and practical uses.
+sidebar:
+  order: 3
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Mace keeps decimal and hexadecimal numbers in separate families so a
+configuration never changes representation by accident.
+
+## Numeric types
+
+| Type | Literal examples | Storage and intent |
+| --- | --- | --- |
+| `int` | `0`, `42`, `-7` | Signed 64-bit whole numbers |
+| `float` | `0.0`, `3.14`, `-2.5` | IEEE-754 binary64 decimal-spelled values |
+| `hex_int` | `0x0`, `0xFF`, `-0xA` | Signed 64-bit whole numbers kept in the hexadecimal family |
+| `hex_float` | `0x0.0`, `0x1.8`, `-0xA.F` | Binary64 values written as fixed-point hexadecimal |
+
+A leading `+` or `-` is a unary operator, not part of the literal. Hexadecimal
+input accepts upper- or lowercase digits; canonical output uses uppercase.
+
+```mace
+|===|
+alias RetryCount: int;
+alias LoadFactor: float;
+alias PermissionMask: hex_int;
+alias BinaryScale: hex_float;
+
+RetryCount retries = 3;
+LoadFactor threshold = 0.75;
+PermissionMask writable = 0x02;
+BinaryScale gain = 0x1.8;
+|===|
+
+{
+  retries: retries,
+  threshold: threshold,
+  writable: writable,
+  gain: gain,
+}
+```
+
+## What each type can do
+
+**Same family** means decimal with decimal or hexadecimal with hexadecimal.
+**Same integer type** means `int` with `int` or `hex_int` with `hex_int`.
+
+| Action | `int` | `float` | `hex_int` | `hex_float` |
+| --- | --- | --- | --- | --- |
+| Unary `+`, `-` | Yes | Yes | Yes | Yes |
+| `+`, `-`, `*` | Decimal family | Decimal family | Hex family | Hex family |
+| `/` | Yes; `int / int` stays `int` | Yes; result `float` | Yes; hex division returns `hex_float` | Yes; result `hex_float` |
+| `%` | Yes | Yes | Yes, with `hex_int` operands | No |
+| `**` | Yes | Yes | Yes | Yes |
+| `<`, `<=`, `>`, `>=` | Decimal family | Decimal family | Hex family | Hex family |
+| `==`, `!=` | Decimal family | Decimal family | Hex family | Hex family |
+| `&`, `\|`, `^` | With `int` | No | With `hex_int` | No |
+| `~` | Yes | No | No | No |
+| `<<`, `>>`, `>>>` | With `int` | No | With `hex_int` | No |
+| Implicit decimal/hex mixing | No | No | No | No |
+
+<Aside type="caution">
+
+The operand restrictions apply to both sides. For example, `int & hex_int` and
+`hex_int << int` are invalid even though both operands represent whole numbers.
+
+</Aside>
+
+## Every numeric operation
+
+The following complete file provides a visible example of every numeric
+operator:
+
+```mace
+|===|
+alias Count: int;
+alias Mask: hex_int;
+
+Count base = 8;
+Count divisor = 3;
+Mask read = 0x01;
+Mask write = 0x02;
+|===|
+
+[output = 'data']
+{
+  unary_plus: +base,
+  unary_minus: -base,
+
+  add: base + divisor,
+  subtract: base - divisor,
+  multiply: base * divisor,
+  divide: base / divisor,
+  remainder: base % divisor,
+  power: base ** divisor,
+
+  less: divisor < base,
+  less_or_equal: divisor <= base,
+  greater: base > divisor,
+  greater_or_equal: base >= divisor,
+  equal: base == 8,
+  not_equal: base != divisor,
+
+  bitwise_and: read & write,
+  bitwise_or: read | write,
+  bitwise_xor: read ^ write,
+  bitwise_not: ~base,
+  shift_left: base << divisor,
+  shift_right: base >> divisor,
+  unsigned_shift_right: base >>> divisor,
+}
+```
+
+Hexadecimal arithmetic uses the same operator spellings:
+
+```mace
+|===|
+alias Mask: hex_int;
+alias Scale: hex_float;
+
+Mask flags = 0x0F;
+Mask high_bit = 0x10;
+Scale gain = 0x1.8;
+|===|
+
+{
+  add: flags + high_bit,
+  subtract: high_bit - flags,
+  multiply: flags * 0x02,
+  divide: 0x05 / 0x02,
+  remainder: 0x05 % 0x02,
+  power: 0x02 ** 0x03,
+  negate: -flags,
+  combine: flags | high_bit,
+  intersect: flags & high_bit,
+  toggle: flags ^ high_bit,
+  shift: high_bit >> 0x01,
+  compare: gain >= 0x1.0,
+}
+```
+
+<Aside type="caution">
+
+`~flags` is intentionally absent: bitwise NOT is defined only for decimal
+`int`. Use an explicit mask with `^` when toggling selected hexadecimal bits.
+
+</Aside>
+
+## Result-type rules
+
+| Operands | Operation | Result |
+| --- | --- | --- |
+| `int`, `int` | `+ - * / % **` | `int` |
+| `int` and `float`, or two `float` values | decimal arithmetic | `float` |
+| `hex_int`, `hex_int` | `+ - * %`, non-negative integer `**` | `hex_int` |
+| Any hexadecimal numeric operands | `/` | `hex_float` |
+| Hex arithmetic involving `hex_float` | `+ - * **` | `hex_float` |
+| Numeric comparison | `< <= > >= == !=` | `boolean` |
+| Same integer type | bitwise or shift | the same integer type |
+
+`int / int` truncates toward zero. Thus `7 / 2` is `3`, not `3.5`. Use a
+`float` operand when a fractional decimal result is required. Conversely,
+`0x05 / 0x02` is `0x2.8` because hexadecimal division always returns
+`hex_float`.
+
+Modulo supports decimal floating-point operands, but hexadecimal modulo requires
+two `hex_int` operands.
+
+## Conditional inference does not convert numbers
+
+The conditional operator checks both branches. Different numeric types remain
+different and infer a variant; they are not promoted merely because one branch
+is selected.
+
+```mace
+|===|
+alias DecimalAmount: variant[int, float];
+boolean use_fraction = true;
+DecimalAmount amount = use_fraction ? 2.5 : 2;
+|===|
+
+{
+  amount: amount,
+}
+```
+
+A `float amount` declaration would not accept the `int` branch by implicit
+conversion. Decimal and hexadecimal branches are distinct in exactly the same
+way.
+
+## Practical hexadecimal integers
+
+Use `hex_int` when hexadecimal notation communicates the domain better than a
+decimal count.
+
+### Permission and feature masks
+
+```mace
+|===|
+alias Permissions: hex_int;
+Permissions read = 0x01;
+Permissions write = 0x02;
+Permissions execute = 0x04;
+Permissions read_write = read | write;
+Permissions writable_bits = read_write & write;
+boolean can_write = writable_bits == write;
+|===|
+
+{
+  permissions: read_write,
+  can_write: can_write,
+}
+```
+
+### Packed colors and protocol identifiers
+
+```mace
+|===|
+alias RgbColor: hex_int;
+alias MessageId: hex_int;
+RgbColor accent = 0x33AAFF;
+MessageId heartbeat = 0x7E;
+|===|
+
+{
+  accent: accent,
+  heartbeat_message: heartbeat,
+}
+```
+
+Hex notation keeps byte and nibble boundaries visible for colors, register
+values, flags, file signatures, and wire-protocol identifiers.
+
+## Practical hexadecimal floats
+
+A Mace `hex_float` is fixed-point, not C-style hexadecimal scientific notation.
+Both sides of the point are required, and fractional positions represent powers
+of 16:
+
+- `0x1.8` = `1 + 8/16` = `1.5`;
+- `0xA.F` = `10 + 15/16` = `10.9375`;
+- `0x0.01` = `1/256`.
+
+This is useful when a configuration value is naturally described by exact
+binary fractions—for example hardware scaling, image processing, DSP gains, or
+values copied from a binary-oriented specification.
+
+```mace
+|===|
+alias BinaryGain: hex_float;
+BinaryGain half = 0x0.8;
+BinaryGain one_and_half = 0x1.8;
+BinaryGain calibrated = one_and_half * half;
+|===|
+
+{
+  half: half,
+  one_and_half: one_and_half,
+  calibrated: calibrated,
+}
+```
+
+<Aside type="caution">
+
+Do not write `0x1p4`, omit either side of the point, or use a decimal operand in
+the same expression.
+
+</Aside>
+
+## Ranges and errors
+
+`int` and `hex_int` are signed 64-bit. The hexadecimal range is:
+
+```text
+-0x8000000000000000 through 0x7FFFFFFFFFFFFFFF
+```
+
+<Aside type="caution">
+
+The positive literal `0x8000000000000000` is out of range. Hex integer addition,
+subtraction, multiplication, exponentiation, negation, and left shift fail on
+overflow rather than wrapping.
+
+`float` and `hex_float` use binary64. NaN, infinity, division by zero, negative
+integer exponents, negative shift counts, and operations that produce a
+non-finite result are errors. Canonical `hex_float` output is uppercase,
+fixed-point, and preserves the exact binary64 value; `.0` remains for an
+integer-valued float.
+
+</Aside>
+
+## Precedence
+
+From tightest to loosest, numeric operators bind as follows:
+
+1. unary `+`, unary `-`, and `~`;
+2. `**` (right-associative);
+3. `*`, `/`, `%`;
+4. `+`, `-`;
+5. `<<`, `>>`, `>>>`;
+6. `<`, `<=`, `>`, `>=`;
+7. `==`, `!=`;
+8. `&`, then `^`, then `|`.
+
+<Aside type="caution">
+
+Parentheses are accepted only when they actually change arithmetic precedence
+or associativity, such as `(1 + 2) * 3` or `(2 ** 3) ** 4`. Redundant grouping
+and grouping solely around comparisons, shifts, logic, or values are invalid.
+
+</Aside>
