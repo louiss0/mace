@@ -1,0 +1,156 @@
+---
+title: Block Overview
+description: See how the optional script block and required output block form a Mace document.
+sidebar:
+  order: 2
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Every Mace document has one required output block and may have one script block
+before it.
+
+```text
+Mace document
+├── script block       optional declarations
+└── output block       required public result
+```
+
+## A complete file
+
+```mace
+|===|
+alias ServiceName: string;
+ServiceName service_name = "billing";
+|===|
+
+[output = 'data']
+{
+  service: service_name,
+  enabled: true,
+}
+```
+
+The script block prepares named building blocks. The output block constructs the
+record returned by the processor.
+
+## Script block
+
+A script block begins and ends with matching delimiters. Each delimiter has a
+`|`, at least three `=`, and a final `|`.
+
+```mace
+|=====|
+string region = "us-east";
+|=====|
+
+{
+  region: region,
+}
+```
+
+<Aside type="caution">
+
+The opening and closing delimiter must contain the same number of `=`
+characters. A file can contain at most one script block, and it must come before
+the output.
+
+</Aside>
+
+The script may contain, in order:
+
+1. imports, before every other declaration;
+2. aliases and schemas;
+3. documentation declarations;
+4. explicitly typed variables.
+
+Types and schemas are metadata. Variables are values. Declaring either does not
+emit a field automatically.
+
+## Output block
+
+The required `{ ... }` at document level is the file's public surface. Without
+a directive list it produces data.
+
+```mace
+{
+  name: "Mace",
+  stable: true,
+}
+```
+
+<Aside type="caution">
+
+An empty output record is valid as `{}`, but the block itself cannot be omitted.
+Arrays may be field values; they cannot replace the root output record.
+
+</Aside>
+
+## Directive list
+
+<Aside type="caution">
+
+A bracketed list immediately before the output changes how it is processed. If
+the list is present, it must contain exactly one `output` directive.
+
+</Aside>
+
+```mace
+[output = 'data']
+{
+  name: "Mace",
+}
+```
+
+Data output can also select contracts for emitted data or external input:
+
+- `schema = Name` validates the final output;
+- `schema_file = './contract.mace'` loads output schema declarations;
+- `parse = Name` validates host-provided input;
+- `parse_file = './input-contract.mace'` loads an input contract.
+
+<Aside type="caution">
+
+`[output = 'schema']` changes output fields from expressions to type references.
+Schema output cannot use data-validation directives or script variables.
+
+</Aside>
+
+## Field and declaration separators
+
+Commas separate record, schema, documentation, and output fields. A trailing
+comma is allowed. Semicolons terminate declarations inside the script block.
+
+```mace
+|===|
+string name = "Mace";
+|===|
+
+{
+  name: name,
+  tags: ["typed", "deterministic"],
+}
+```
+
+## Evaluation order
+
+Script variables evaluate in declaration order. Data-output fields then evaluate
+from top to bottom. `$self` can read an output field only after that field has
+finished evaluating.
+
+```mace
+{
+  base: 4,
+  doubled: $self.base * 2,
+}
+```
+
+<Aside type="caution">
+
+Here `doubled` can read `base`; reversing the fields would be an error.
+
+</Aside>
+
+## Next
+
+Continue to [Type System Overview](/tour/type-system-overview/).
