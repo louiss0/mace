@@ -97,8 +97,8 @@ string summary = "$(service) has $(replicas) replicas; public=$(public)";
 <Aside type="caution">
 
 Interpolation accepts concrete scalar runtime values. It rejects aliases,
-schemas, arrays, records, and unavailable nullable values. Resolve nullability
-before interpolation.
+schemas, arrays, records, and unresolved absence. If an optional imported value
+or optional member may be absent, resolve it with `??` before interpolation.
 
 </Aside>
 
@@ -122,8 +122,8 @@ string label = "release-$(visible_version)";
 
 <Aside type="caution">
 
-Mace does not use `+` for string concatenation. Prefer interpolation for
-combining text.
+Mace does not use `+` for string concatenation. Use interpolation to combine
+text.
 
 </Aside>
 
@@ -166,7 +166,8 @@ boolean differs = actual != "Production";
 }
 ```
 
-Relational ordering such as `<` is numeric, not string ordering.
+Relational operators such as `<` accept numeric operands only; strings are not
+ordered.
 
 ## Static string contexts
 
