@@ -1,52 +1,133 @@
 ---
 title: How to Validate Output with a Schema
-description: Validate a data output block against a named schema.
+description: Validate a data output against a local, local-file, or HTTP(S) Mace schema.
 ---
 
-Use `output = data, schema = <Name>` when you want your emitted object to be
-checked against a schema declared in the same file.
+A data output can select one closed record contract. Validation occurs after its
+fields evaluate and before any result is returned.
 
-## Declare a schema
+## Use a schema from the same file
 
-```mace
-|===|
-schema User: {
-  name: string,
-  age?: int
-};
-|===|
-```
-
-## Validate the output block against it
+Declare a named schema in the script block:
 
 ```mace
 |===|
 schema User: {
   name: string,
-  age?: int
+  age?: int,
 };
 |===|
 
-[output = data, schema = User]
+[output = 'data', schema = User]
 {
   name: "Ada",
-  age: 27
+  age: 27,
 }
 ```
 
-## Use `schema_file` when the schema lives elsewhere
+`name` is required. `age` may be omitted, but if present it must be an `int`.
+Unknown output fields are rejected because schemas are closed.
+
+## Use the exported shape of another file
+
+Create `user-schema.mace`:
 
 ```mace
-[output = data, schema_file = "./schemas.mace"]
+[output = 'schema']
 {
-  name: "Ada"
+  name: string,
+  age?: int,
 }
 ```
 
-`schema_file` also accepts `http://` and `https://` URLs when the schema is
-hosted remotely.
+Load its schema-output body directly:
+
+```mace
+[output = 'data', schema_file = './user-schema.mace']
+{
+  name: "Ada",
+}
+```
+
+The referenced file must use schema output. Paths are static, single-quoted, and
+must end in `.mace`.
+
+## Select a named schema from another file
+
+A schema file may declare more than one reusable contract:
+
+```mace
+// account-schemas.mace
+|===|
+schema User: {
+  name: string,
+};
+
+schema Team: {
+  name: string,
+  members: array<User>,
+};
+|===|
+
+[output = 'schema']
+{
+  User: User,
+  Team: Team,
+}
+```
+
+Pair `schema_file` with `schema` to select one named declaration from that file:
+
+```mace
+[output = 'data', schema_file = './account-schemas.mace', schema = Team]
+{
+  name: "Compiler",
+  members: [
+    { name: "Ada" },
+  ],
+}
+```
+
+When `schema_file` is present, the `schema` name resolves only inside that file;
+a same-named local declaration is not a fallback.
+
+## Use an HTTP(S) schema source
+
+Explicit remote Mace sources are supported:
+
+```mace
+[output = 'data', schema_file = 'https://config.example/schemas/user.mace']
+{
+  name: "Ada",
+}
+```
+
+Only `http://` and `https://` URLs ending in `.mace` are accepted. Relative
+imports inside a remote source resolve relative to that source and remain within
+its remote root. Retrieval or validation failures stop processing without a
+partial result.
+
+## Understand failures
+
+Validation fails when:
+
+- a required field is missing;
+- an unknown field is present;
+- a field value has the wrong type;
+- a nested record or array element violates its declared shape;
+- `schema` names an unavailable declaration;
+- `schema_file` does not resolve to schema output;
+- a local path escapes the project root or a remote dependency escapes its root;
+- source loading, parsing, or dependency resolution fails.
+
+Run the file with `mace json` to receive a diagnostic and a non-zero exit code:
+
+```bash
+mace json ./user.mace
+```
 
 ## Related docs
 
 - [Schemas](/reference/schemas/)
-- [Doc Syntax](/tour/doc-syntax/)
+- [Imports and source paths](/reference/imports/)
+- [CLI Reference](/how-to/cli-reference/)
