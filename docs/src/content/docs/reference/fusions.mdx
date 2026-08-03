@@ -1,0 +1,190 @@
+---
+title: Fusions
+description: Compose compatible record shapes or choice domains without weakening their constraints.
+sidebar:
+  order: 10
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A `fusion[...]` combines compatible types into one resolved type. A fusion is
+not a general union: all members must resolve consistently to either record
+shapes or choice domains.
+
+## Record fusions
+
+Use record fusion to compose schemas, inline record types, record aliases, or
+other record fusions.
+
+```mace
+|===|
+schema Profile: {
+  name: string,
+  email?: string,
+};
+
+schema Audit: {
+  created_at: string,
+  updated_at: string,
+};
+
+alias AuditedProfile: fusion[Profile, Audit];
+
+AuditedProfile user = {
+  name: "Ada",
+  created_at: "2026-07-16",
+  updated_at: "2026-07-16",
+};
+|===|
+
+{
+  user: user,
+}
+```
+
+The fused result is one closed record shape containing fields from both
+members. It does not mean "Profile or Audit"—that behavior belongs to a
+`variant[...]`.
+
+## Same-name field rules
+
+When record members define the same field, Mace resolves both the type and
+optionality.
+
+| Left field | Right field | Result |
+| --- | --- | --- |
+| Same type, required | Same type, required | Required |
+| Same type, required | Same type, optional | Required |
+| Same type, optional | Same type, optional | Optional |
+| Different resolved types | Any optionality | Error |
+
+```mace
+|===|
+schema Identified: {
+  id: string,
+};
+
+schema Displayable: {
+  id?: string,
+  label: string,
+};
+
+alias Item: fusion[Identified, Displayable];
+Item item = {
+  id: "item-7",
+  label: "Featured",
+};
+|===|
+
+{
+  item: item,
+}
+```
+
+`id` is required because at least one member requires it. A fusion never
+silently turns conflicting field types into a variant; resolve the conflict in
+the source schemas instead.
+
+## Nested and inline record composition
+
+Fusions flatten other record fusions and may include inline record shapes.
+
+```mace
+|===|
+schema Named: {
+  name: string,
+};
+
+alias VersionedName: fusion[
+  Named,
+  { version: string, },
+];
+
+VersionedName package = {
+  name: "mace",
+  version: "7.0",
+};
+|===|
+
+{
+  package: package,
+}
+```
+
+The final shape remains closed: `package` must contain all required fields and
+cannot contain unknown ones.
+
+## Choice fusions
+
+A fusion may instead compose choice domains. Every member must resolve to a
+choice, and repeated values contributed by different members are deduplicated.
+
+```mace
+|===|
+alias StableEnvironment: choice["staging", "production"];
+alias LocalEnvironment: choice["development", "staging"];
+alias Environment: fusion[StableEnvironment, LocalEnvironment];
+
+Environment environment = "staging";
+
+int replicas = match (environment) {
+  "staging" => 2,
+  "production" => 6,
+  "development" => 1,
+};
+|===|
+
+{
+  environment: environment,
+  replicas: replicas,
+}
+```
+
+Although `"staging"` appears in both source choices, the resolved domain
+contains it once, so the exhaustive match contains one staging arm. A duplicate
+written directly inside one `choice[...]` remains an error.
+
+## Invalid fusions
+
+<Aside type="caution">
+
+The following categories are rejected:
+
+- scalar members such as `fusion[string, int]`;
+- a record member mixed with a choice member;
+- incompatible same-name record fields;
+- members that do not resolve to a record or choice;
+- alias cycles through nested fusions.
+
+</Aside>
+
+Use a variant for alternative values, a choice for one finite literal domain,
+and a fusion only when combining compatible contracts or choice sets.
+
+## Fusion in schemas and schema output
+
+A fusion alias can be referenced wherever its resolved type is valid, including
+schema fields and schema output.
+
+```mace
+|===|
+schema Coordinates: {
+  latitude: float,
+  longitude: float,
+};
+
+schema Label: {
+  name: string,
+};
+
+alias NamedLocation: fusion[Coordinates, Label];
+|===|
+
+[output = 'schema']
+{
+  location: NamedLocation,
+}
+```
+
+Schema output publishes the composed type itself; data output would instead
+publish a variable or record that conforms to it.
