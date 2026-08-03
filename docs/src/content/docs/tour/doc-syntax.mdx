@@ -56,8 +56,9 @@ string documentation = "Service manifest";
 }
 ```
 
-Schema output supports the same single-quoted, double-quoted, and block string
-forms:
+Schema output supports the same string forms and may evaluate an imported string
+value. Schema-output files cannot declare local variables, so literals are the
+usual form:
 
 ```mace
 [output = 'schema', description = """
