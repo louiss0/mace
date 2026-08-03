@@ -26,7 +26,13 @@ export default defineConfig({
 				},
 			},
 			sidebar: [
-				{ label: 'Installation', link: '/installation/' },
+				{
+					label: 'Installation',
+					items: [
+						{ label: 'Install Mace', link: '/installation/' },
+						{ label: 'Language Bindings', link: '/installation/bindings/' },
+					],
+				},
 				{
 					label: 'Tour',
 					items: [
