@@ -186,7 +186,7 @@ directive_pair =
   | "parse_file" , ws0 , "=" , ws0 , path_literal
   | "description" , ws0 , "=" , ws0 , expression ;
 data_output_field =
-    identifier , ws0 , ":" , ws0 , ( expression | null_literal ) ,
+    identifier , [ "?" ] , ws0 , ":" , ws0 , ( expression | null_literal ) ,
     [ ws0 , inline_description ]
   | identifier , [ ws0 , inline_description ] ;
 schema_output_field =
