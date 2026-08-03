@@ -8,8 +8,11 @@ working result quickly.
 
 ## Install the CLI
 
+Choose an official binary or package repository from the
+[Installation page](/installation/), then verify the command:
+
 ```bash
-go install github.com/louiss0/mace/cmd@latest
+mace version
 ```
 
 ## Create a file
