@@ -1,0 +1,183 @@
+---
+title: Output Block
+description: Construct data records, publish schemas, and use output directives safely.
+sidebar:
+  order: 5
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+The output block is the one required part of every Mace document. It is always
+record-shaped and is the only public surface available to consumers and
+imports.
+
+## Data output
+
+Without directives, output defaults to data mode. Field right sides are value
+expressions.
+
+```mace
+|===|
+alias Name: string;
+Name service_name = "search";
+|===|
+
+{
+  service: service_name,
+  replicas: 3,
+}
+```
+
+`[output = 'data']` states the same mode explicitly:
+
+```mace
+[output = 'data']
+{
+  service: "search",
+}
+```
+
+## Output fields
+
+Output fields are comma-separated and may have a trailing comma. Data output
+also supports shorthand: `name` means `name: name` when a compatible value is
+in scope.
+
+```mace
+|===|
+string name = "search";
+int replicas = 3;
+|===|
+
+{
+  name,
+  replicas,
+}
+```
+
+<Aside type="caution">
+
+Data-output fields cannot use `?`. Optionality belongs to schema shapes; data
+represents absence by omitting an optional field under schema-directed
+validation, never by emitting `null`.
+
+</Aside>
+
+## `$self` and source order
+
+Data fields evaluate from top to bottom. `$self` is the output record built so
+far.
+
+```mace
+{
+  host: "api.example.com",
+  url: "https://$($self.host)",
+}
+```
+
+<Aside type="caution">
+
+`$self.host` is valid because `host` already exists. `$self` cannot read the
+current field, a later field, script internals, or host runtime data.
+
+</Aside>
+
+## Validate emitted data
+
+Select a local schema with `schema`:
+
+```mace
+|===|
+schema Service: {
+  name: string,
+  replicas: int,
+};
+
+string name = "search";
+int replicas = 3;
+|===|
+
+[output = 'data', schema = Service]
+{
+  name: name,
+  replicas: replicas,
+}
+```
+
+Use `schema_file` to load a contract from another `.mace` file. It may be paired
+with `schema` to select a named declaration from that file.
+
+## Validate runtime input
+
+`parse` and `parse_file` validate host-provided input before any output
+expression runs. Parsed fields become `$`-prefixed values.
+
+```mace
+|===|
+schema BuildInput: {
+  branch: string,
+};
+|===|
+
+[output = 'data', parse = BuildInput]
+{
+  source_branch: $branch,
+}
+```
+
+<Aside type="caution">
+
+Missing or invalid input stops processing; Mace emits no partial record.
+
+</Aside>
+
+## Schema output
+
+`[output = 'schema']` interprets field right sides as type references rather than
+expressions.
+
+```mace
+|===|
+alias ServiceName: string;
+|===|
+
+[output = 'schema']
+{
+  name: ServiceName,
+  replicas?: int,
+}
+```
+
+<Aside type="caution">
+
+Schema output can publish types for another Mace file to import. It is type-only:
+the script cannot declare variables, shorthand is unavailable, and `schema`,
+`schema_file`, `parse`, and `parse_file` directives are forbidden.
+
+</Aside>
+
+## Empty collections in output
+
+<Aside type="caution">
+
+An empty array or record has no element or field evidence. In data output, every
+empty collection needs an expected type from `schema` or `schema_file`.
+
+</Aside>
+
+```mace
+|===|
+schema Result: {
+  labels: array<string>,
+};
+|===|
+
+[output = 'data', schema = Result]
+{
+  labels: [],
+}
+```
+
+## Next
+
+Continue to [Doc Syntax](/tour/doc-syntax/).
