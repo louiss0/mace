@@ -1,102 +1,126 @@
 ---
 title: Motivation
-description: Why Mace is a typed, deterministic configuration language.
+description: Why Mace makes schemas, runtime input, and configuration documentation first-class.
 sidebar:
   order: 1
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-Why Mace? I'm [Shelton Louis](https://github.com/louiss0) I created Mace because I thought! 
-What if config languages were type safe, had first class support for schemas and allowed the user to respond to input. 
-In other config languages the ideas that I just introduced aren't first class citizens! 
-In others they are just broken! JSON is the only language that has tried to implement native schemas! 
-But it's version is broken! When it comes to Config languages we also inject random variables! 
-When we do there's no understanding of where they come from what they are about! 
-We just copy and paste code! 
+I created Mace after repeatedly seeing configuration contracts split across a
+data file, a schema format, application code, and prose documentation. Editors
+could sometimes suggest fields, but the configuration language itself did not
+know which values were valid or where injected values came from.
 
+Mace asks a different set of questions:
 
-<Aside title="What if!">
-1. The structure of our configs could be checked? 
-2. The input's we receive could be understood 
-3. How the developer is suppossed to write the config is not only known but checked by the language itself
-4. What if we could have good documentation for our configs?
-</Aside>
+1. Can the configuration's final shape be checked before it reaches the app?
+2. Can externally supplied values enter the file with known names and types?
+3. Can the same contract drive diagnostics, completion, and documentation?
+4. Can evaluation remain deterministic and safe to inspect?
 
+The language answers those questions with built-in schemas, explicit runtime
+input contracts, typed immutable variables, and documentation metadata.
 
-## Writing a typical config 
+## Put the contract next to the configuration
 
-Let's say that you were writing a `package` config! 
-It has to have a name, version, dev dependencies and dependencies! 
-
-You'd write it like this in Mace! 
+Suppose a package configuration requires a name, version, development
+dependencies, and production dependencies. Its contract can be published as a
+Mace schema output:
 
 ```mace
+// package-schema.mace
+[output = 'schema']
 {
-  name: "",
-  version: "",
-  devDependencies: [],
-  dependencies: [],
+  name: string /# Public package name,
+  version: string /# Published package version,
+  dev_dependencies: record<string> /# Development-only packages,
+  dependencies: record<string> /# Runtime packages,
 }
 ```
 
-But you'd type it like this! 
-```mace
-// ./package-config_schema.mace
-[output='schema']
-{
-  name: string, /# The name of your package
-  version: string, /# The version of your package
-  devDependencies: record<string>, /# The dev dependencies of your package
-  dependencies: record<string>, /# The production dependencies of your package
-}
-```
-
-To use the above schema you'd type it like this! 
+A data file loads and validates against that contract:
 
 ```mace
-[schema_file='./package-config_schema.mace']
+[output = 'data', schema_file = './package-schema.mace']
 {
-  name: "",
-  version: "",
-  devDependencies: {},
+  name: "@example/widget",
+  version: "1.0.0",
+  dev_dependencies: {
+    test_runner: "^2.0.0",
+  },
   dependencies: {},
 }
 ```
 
-The `record<string>` type means you can make a **key value pair** with any key but only strings! 
-The `/# ` is a doc comment that tells the user what the prop is for and how to use it!
+`record<string>` means that any valid identifier key is allowed but every value
+must be a string. The `/#` descriptions are metadata for documentation-aware
+tooling; changing them cannot change evaluation.
 
+<Aside title="Schemas validate the final output">
 
-## Writing a config based on input 
+A schema does more than improve autocomplete. Missing required fields, unknown
+fields, and wrong value types stop processing, and Mace emits no partial record.
 
-In config languages values seem to randomly be injected all the time! 
+</Aside>
 
-You've seen things like this!
+## Make injected values explicit
+
+Template-driven configuration often uses names that only exist in external
+documentation:
 
 ```yaml
-  name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 ```
 
-In the above example you see that there are 4 values that will be injected into the file! 
-The problem with this is that you have to continously read the docs to know about those variables! 
-You don't know what they represent in your program! Even If you had to read the docs! Why not have them in the LSP! 
-
-Instead of doing something like that maybe the variables could be known! 
-
-That's where the `parse_file` directive comes in! 
+Mace instead lets the host select a schema for runtime input:
 
 ```mace
-[parse_file='https://pkg-releaser.com/input.mace']
+// release-input.mace
+[output = 'schema']
 {
-  name_template: "$($project_name)_$($version)_$($os)_$($arch)"
+  project_name: string,
+  version: string,
+  os: string,
+  arch: string,
 }
 ```
 
-The parse directive takes in a schema from a URL or a mace file!
-It validates whether input that is passed conforms to the schema! 
-Then it makes the values that conform go into the scope of where you'd write the config file! 
+```mace
+[output = 'data', parse_file = './release-input.mace']
+{
+  name_template: "$($project_name)_$($version)_$($os)_$($arch)",
+}
+```
 
-<Aside title="The `$` is a sign that signifies that Magic is happening here!">
-    I did this so that parsed variables can be distinguished from regular variables.
-</Aside>
+Before the second file evaluates, the host must provide a complete record that
+satisfies the selected input schema. Its fields enter scope as `$project_name`,
+`$version`, `$os`, and `$arch`, making their external origin visible in source
+and to the language server.
+
+A contract may also be an explicit HTTP(S) `.mace` URL:
+
+```mace
+[output = 'data', parse_file = 'https://pkg-releaser.example/input.mace']
+{
+  name_template: "$($project_name)_$($version)_$($os)_$($arch)",
+}
+```
+
+Only imports and file directives resolve sources. Runtime expressions cannot
+construct paths or initiate network requests.
+
+## Prefer constraints over executable configuration
+
+Mace deliberately omits loops, functions, mutation, shell execution, array
+indexing, and arbitrary host calls. It provides enough expression behavior to
+assemble a final record while keeping evaluation bounded and understandable.
+
+That trade-off makes a Mace file useful as both configuration and contract:
+applications receive validated data, authors receive precise diagnostics, and
+tooling can explain the available structure without executing application code.
+
+## Next
+
+Continue to [Block Overview](/tour/block-overview/) to see how a Mace document is
+organized.
