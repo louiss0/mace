@@ -159,8 +159,9 @@ Rules specific to schema-backed access:
    intermediate record may be absent.
 4. The chain ends with `?? fallback` before assignment, interpolation,
    comparison, or output.
-5. A nullable schema variable must first be guarded by a truthiness conditional;
-   `nullable_user?.field` is not a substitute for that guard.
+5. A nullable record imported from an optional data-output field must first be
+   guarded by a truthiness conditional; optional chaining does not replace that
+   presence guard.
 6. Access cannot continue beyond the record depth declared by the schema.
 
 The full record-map and variant access model is covered in
@@ -214,8 +215,10 @@ int replicas = 3;
 }
 ```
 
-Paths are static single-quoted `.mace` paths and are resolved under the project
-boundary. They cannot interpolate runtime values.
+Paths are static, single-quoted, and end in `.mace`. Local paths resolve under
+the project boundary. Explicit HTTP(S) URLs are also accepted; relative
+references inside a remote source remain under that remote source root. Paths
+cannot interpolate runtime values.
 
 ## Schema output
 
@@ -317,8 +320,8 @@ variant.
 
 `{}` is valid only when an expected record type permits it—for example an empty
 schema, an all-optional schema, or a compatible `record<T>` declaration. In
-schema-less data output, an empty collection has no expected shape and is a
-static error.
+schema-less data output, an empty record has no expected shape and is a static
+error. An empty array differs: it defaults to `array<string>` when unconstrained.
 
 </Aside>
 
@@ -334,5 +337,5 @@ schema Metadata: {
 ```
 
 Schema-directed output is also required when an empty record appears in one
-branch of a conditional or match expression. Mace does not infer its shape from
-a populated sibling branch.
+branch of a conditional or match expression. Its record shape comes from the
+selected schema rather than from a populated sibling branch.
