@@ -1,0 +1,246 @@
+---
+title: Arrays
+description: Declare homogeneous arrays, model nesting, and provide expected types for empty collections.
+sidebar:
+  order: 7
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+An array is an ordered list whose elements conform to one declared element type.
+Write its type as `array<T>` and its value with `[ ... ]`.
+
+## Array variables and aliases
+
+```mace
+|===|
+alias Tag: string;
+alias Tags: array<Tag>;
+Tags tags = ["typed", "deterministic", "documented"];
+|===|
+
+{
+  tags: tags,
+}
+```
+
+The element type may be any valid schema type reference, including an alias,
+choice, variant, schema, inline record type, `record<T>`, or another array.
+
+## Homogeneity
+
+Every element must satisfy the declared element type.
+
+```mace
+|===|
+alias Ports: array<int>;
+Ports ports = [80, 443, 8080];
+|===|
+
+{
+  ports: ports,
+}
+```
+
+`[80, "443"]` is not inferred as a convenient mixed array. Model intentional
+alternatives in the element type:
+
+```mace
+|===|
+alias Port: variant[int, string];
+alias Ports: array<Port>;
+Ports ports = [80, "automatic", 443];
+|===|
+
+{
+  ports: ports,
+}
+```
+
+A variant is explicit at each element, so consumers know that every position
+must be handled as `Port`.
+
+## Empty arrays
+
+`[]` contains no evidence from which to infer an element type. It therefore
+requires an expected `array<T>`.
+
+```mace
+|===|
+alias Labels: array<string>;
+Labels labels = [];
+|===|
+
+{
+  labels: labels,
+}
+```
+
+An empty array directly in data output needs an output schema:
+
+```mace
+|===|
+schema Result: {
+  labels: array<string>,
+};
+|===|
+
+[output = 'data', schema = Result]
+{
+  labels: [],
+}
+```
+
+<Aside type="caution">
+
+Without `schema = Result`, the output expression has no element type and is an
+error.
+
+</Aside>
+
+## Conditional inference
+
+The type requirement applies even when only one branch is empty. Mace does not
+copy the populated branch's element type into `[]`.
+
+```mace
+|===|
+alias Labels: array<string>;
+boolean include_defaults = false;
+Labels labels = include_defaults ? ["stable"] : [];
+|===|
+
+{
+  labels: labels,
+}
+```
+
+For output expressions, give the field a schema type:
+
+```mace
+|===|
+boolean include_defaults = false;
+
+schema Result: {
+  labels: array<string>,
+};
+|===|
+
+[output = 'data', schema = Result]
+{
+  labels: include_defaults ? ["stable"] : [],
+}
+```
+
+<Aside type="caution">
+
+If two populated branches have different array element types, the result types
+stay distinct. A receiving type such as
+`variant[array<string>, array<int>]` must accept both arrays; Mace does not merge
+them into `array<variant[string, int]>` automatically.
+
+</Aside>
+
+## Match inference
+
+Match arms follow the same rule. The expected variable or output schema must
+accept every arm and supply a type for any empty collection.
+
+```mace
+|===|
+alias Environment: choice["development", "production"];
+alias Hosts: array<string>;
+Environment environment = "development";
+
+Hosts hosts = match (environment) {
+  "development" => [],
+  "production" => ["api-1", "api-2"],
+};
+|===|
+
+{
+  hosts: hosts,
+}
+```
+
+The `Hosts` declaration gives the empty development arm its element type.
+
+## Nested arrays
+
+Each `array<...>` layer describes exactly one literal nesting level.
+
+```mace
+|===|
+alias Matrix: array<array<int>>;
+alias Cube: array<array<array<int>>>;
+
+Matrix matrix = [
+  [1, 2],
+  [3, 4],
+];
+
+Cube cube = [
+  [[1, 2]],
+  [[3, 4]],
+];
+|===|
+
+{
+  matrix: matrix,
+  cube: cube,
+}
+```
+
+<Aside type="caution">
+
+`array<string>` does not accept `[ ["nested"] ]`, and
+`array<array<string>>` does not accept `["flat"]`. If both depths are truly
+valid values, declare those alternatives explicitly with a variant.
+
+</Aside>
+
+```mace
+|===|
+alias FlatOrNestedText: variant[string, array<string>];
+alias MixedDepthText: array<FlatOrNestedText>;
+MixedDepthText values = ["one", ["two", "three"]];
+|===|
+
+{
+  values: values,
+}
+```
+
+## Arrays of records
+
+Use a schema when each element has a known closed shape.
+
+```mace
+|===|
+schema Service: {
+  name: string,
+  replicas: int,
+};
+
+alias Services: array<Service>;
+Services services = [
+  { name: "api", replicas: 3, },
+  { name: "worker", replicas: 2, },
+];
+|===|
+
+{
+  services: services,
+}
+```
+
+Every element is checked independently for missing, unknown, or mistyped
+fields. For open-ended names whose values share one type, an element may instead
+use `record<T>`.
+
+## Array limits
+
+Mace arrays are data, not mutable collections. The language does not provide
+push, map, filtering, or arbitrary indexing syntax in expressions. Construct
+the final ordered values declaratively and expose them through the output
+block.
