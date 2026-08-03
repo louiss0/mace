@@ -1,0 +1,180 @@
+---
+title: Choice
+description: Constrain scalar values to a finite domain and handle them with exhaustive match expressions.
+sidebar:
+  order: 5
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A `choice[...]` type defines a finite set of allowed scalar literals. It is
+appropriate for environments, modes, levels, protocol codes, and other closed
+configuration domains.
+
+## Declaring choices
+
+Choice members may be strings, integers, floats, hexadecimal integers,
+hexadecimal floats, or booleans.
+
+```mace
+|===|
+alias Environment: choice["development", "staging", "production"];
+alias HttpPort: choice[80, 443];
+alias FeatureState: choice[true, false];
+
+Environment environment = "production";
+HttpPort port = 443;
+FeatureState telemetry = true;
+|===|
+
+{
+  environment: environment,
+  port: port,
+  telemetry: telemetry,
+}
+```
+
+A variable may also use an inline choice type:
+
+```mace
+|===|
+choice[0x01, 0x02, 0x04] permission = 0x02;
+|===|
+
+{
+  permission: permission,
+}
+```
+
+<Aside type="caution">
+
+The initializer must equal a member of the resolved domain. `"preview"` cannot
+initialize the `Environment` alias above. A literal repeated directly in one
+choice is an error.
+
+</Aside>
+
+## Choice is a type, not a value
+
+An alias such as `Environment` provides validation and autocomplete, but cannot
+be emitted by itself. Emit a variable whose declared type is that choice.
+
+Choices also preserve literal kinds. The values `1`, `1.0`, `0x1`, and `0x1.0`
+do not become interchangeable merely because they describe similar
+magnitudes.
+
+## Match expressions
+
+This is the first reference page to introduce `match`. A match expression
+selects a result by exhaustively handling a `choice[...]` or `variant[...]`
+value.
+
+For a choice, each arm pattern is one exact literal from the choice domain:
+
+```mace
+|===|
+alias Environment: choice["development", "staging", "production"];
+Environment environment = "production";
+
+int replicas = match (environment) {
+  "development" => 1,
+  "staging" => 2,
+  "production" => 6,
+};
+|===|
+
+{
+  environment: environment,
+  replicas: replicas,
+}
+```
+
+The matched expression is evaluated once, and only the selected arm value is
+evaluated.
+
+### Exhaustiveness rules
+
+<Aside type="caution">
+
+A choice match must cover every resolved member exactly once.
+
+- There is no default or wildcard arm.
+- A missing member is an error.
+- A duplicate or unknown member is an error.
+- Choice arms require literal patterns, not type patterns such as `string`.
+- Every arm ends with a comma, including the last arm.
+- Patterns do not declare a binding.
+
+</Aside>
+
+These rules make adding a new choice member visible everywhere that must handle
+it.
+
+## Match result inference
+
+All arm result types are checked before evaluation.
+
+- If every arm returns the same type, the match keeps that concrete type.
+- Distinct compatible arm types form a flattened, deduplicated `variant[...]`.
+- The receiving variable or output schema must accept every inferred member.
+- Mace does not choose the currently selected arm as the static result type.
+
+```mace
+|===|
+alias Environment: choice["development", "production"];
+alias Capacity: variant[int, string];
+Environment environment = "production";
+
+Capacity capacity = match (environment) {
+  "development" => "automatic",
+  "production" => 6,
+};
+|===|
+
+{
+  capacity: capacity,
+}
+```
+
+Declaring `int capacity` would be invalid because the development arm can
+produce a string.
+
+<Aside type="caution">
+
+Empty collections remain strict too. If an arm returns `[]` or `{}`, provide an
+expected collection type through the variable declaration or output schema;
+Mace does not infer the empty arm from another arm.
+
+</Aside>
+
+## Match and the conditional operator
+
+A match may be a branch of the conditional operator, but a second conditional
+may not be nested there. Both constructs infer from all possible result paths.
+
+```mace
+|===|
+alias Environment: choice["development", "production"];
+Environment environment = "production";
+boolean enabled = true;
+
+string label = enabled ? match (environment) {
+  "development" => "dev-on",
+  "production" => "prod-on",
+} : "disabled";
+|===|
+
+{
+  label: label,
+}
+```
+
+The match returns `string`, and the other conditional branch is also `string`,
+so `label` remains concrete.
+
+## Composing choice domains
+
+Use a `fusion[...]` alias to compose separately named choice domains. Values
+repeated through the composition are deduplicated; direct duplicates within one
+choice remain errors. Record and choice fusion rules are covered in
+[Fusions](/reference/fusions/).
