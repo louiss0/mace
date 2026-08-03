@@ -67,14 +67,24 @@ Imports are named-only. `from` paths are static single-quoted `.mace` paths and
 cannot interpolate. An imported file exposes only names published by its output
 block; its script declarations stay private.
 
-Kebab-case names work for imported symbols, destructured aliases, and bound
-record names:
+Kebab-case names work for imported symbols, renamed imports, and bound record
+names:
 
 ```mace
 from './profile.mace' import display-name;
 from './profile.mace' import DisplayName:display-name;
 from './profile.mace' bind shared-data;
 ```
+
+An ordinary `import` selects names exposed by the referenced output. A `bind`
+processes a data-output file and binds its complete output record under one name;
+binding a schema-output file is invalid.
+
+Local paths resolve relative to the containing source and cannot escape the
+project root. Explicit HTTP(S) URLs ending in `.mace` are also supported. A
+remote source's relative dependencies remain under that remote source root.
+Imports, binds, `schema_file`, and `parse_file` share one dependency graph, so
+cycles are rejected.
 
 ## Alias declarations
 
