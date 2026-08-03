@@ -113,13 +113,10 @@ contains no unknown fields. Optionality controls presence, not type: when
 
 ## Expected types drive collection checking
 
-<Aside type="caution">
-
-Non-empty arrays and records provide evidence about their contents, but Mace
-does not invent a type for an empty collection. `[]` needs an expected
-`array<T>`, and `{}` needs a compatible expected record shape.
-
-</Aside>
+Non-empty arrays and records provide evidence about their contents. An empty
+array defaults to `array<string>` when no expected type is available; an expected
+variable or schema type can validate it as another `array<T>`. An empty record
+has no default shape and always needs a compatible expected record type.
 
 ```mace
 |===|
@@ -132,8 +129,9 @@ Labels labels = [];
 }
 ```
 
-This rule applies at every nesting depth. A variable declaration or output
-schema must provide the collection shape instead of relying on a guess.
+Expected types apply at every nesting depth. Nested unconstrained empty arrays
+use the string fallback recursively, while nested empty records still require a
+declared shape.
 
 ## Values are not types
 
