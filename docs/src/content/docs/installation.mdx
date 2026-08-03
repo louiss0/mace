@@ -1,0 +1,179 @@
+---
+title: Installation
+description: Install official Mace binaries and editor extensions.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+This page lists every installation source maintained by the Mace project. The
+canonical binary releases are published from
+[`louiss0/mace`](https://github.com/louiss0/mace). The project does not publish
+binaries from mirrors or third-party download sites.
+
+## Supported platforms
+
+Each stable release provides these prebuilt archives:
+
+| Operating system | Architecture | Release asset |
+| --- | --- | --- |
+| Linux | x64 | `mace_<version>_linux_amd64.tar.gz` |
+| Linux | ARM64 | `mace_<version>_linux_arm64.tar.gz` |
+| macOS | Intel | `mace_<version>_darwin_amd64.tar.gz` |
+| macOS | Apple silicon | `mace_<version>_darwin_arm64.tar.gz` |
+| Windows | x64 | `mace_<version>_windows_amd64.zip` |
+| Windows | ARM64 | `mace_<version>_windows_arm64.zip` |
+
+All archives contain the `mace` executable, `LICENSE`, and `README.md`.
+
+## Install a prebuilt binary
+
+1. Open the [latest Mace release](https://github.com/louiss0/mace/releases/latest).
+2. Download the archive matching your operating system and architecture.
+3. Download `checksums.txt` from the same release.
+4. Verify the archive before extracting it.
+5. Put `mace` or `mace.exe` in a directory on your `PATH`.
+
+On Linux, verify and install an x64 archive with:
+
+```bash
+sha256sum -c checksums.txt --ignore-missing
+tar -xzf mace_<version>_linux_amd64.tar.gz
+install -m 0755 mace ~/.local/bin/mace
+```
+
+On macOS, print the archive checksum with:
+
+```bash
+shasum -a 256 mace_<version>_darwin_arm64.tar.gz
+```
+
+Compare it with the matching line in `checksums.txt`, extract the archive, and
+move `mace` into a directory on your `PATH`, such as `/usr/local/bin` or
+`~/.local/bin`.
+
+On Windows, verify and extract an x64 archive from PowerShell with:
+
+```powershell
+Get-FileHash .\mace_<version>_windows_amd64.zip -Algorithm SHA256
+Expand-Archive .\mace_<version>_windows_amd64.zip
+```
+
+Compare the hash with `checksums.txt`, then move `mace.exe` into a directory on
+your user or system `PATH`.
+
+Verify every installation with:
+
+```bash
+mace version
+mace lsp --help
+```
+
+## Install with Go
+
+With Go 1.25.5 or later, build and install the latest tagged release:
+
+```bash
+go install github.com/louiss0/mace/cmd@latest
+```
+
+Go writes the executable to `GOBIN`, or to `GOPATH/bin` when `GOBIN` is not
+set. That directory must be on your `PATH`.
+
+Pin a release when reproducibility matters:
+
+```bash
+go install github.com/louiss0/mace/cmd@v1.0.1
+```
+
+## Official package repositories
+
+The following repositories are maintained by the Mace publisher and install the
+same GitHub release archives:
+
+| Package manager | Availability | Official repository |
+| --- | --- | --- |
+| Homebrew | macOS and Linux, x64 and ARM64 | [`Sheltons-CLI-Projects/homebrew-the-code-fixer-23`](https://github.com/Sheltons-CLI-Projects/homebrew-the-code-fixer-23) |
+| Nix | Linux and macOS, x64 and ARM64 | [`Sheltons-CLI-Projects/the-code-fixer-23-nur`](https://github.com/Sheltons-CLI-Projects/the-code-fixer-23-nur) |
+| Scoop | Windows ARM64 | [`louiss0/the-code-fixer-23-buckets`](https://github.com/louiss0/the-code-fixer-23-buckets) |
+| WinGet | Not published yet | Approval is pending; use a release archive instead |
+
+Install through Homebrew with:
+
+```bash
+brew install --cask Sheltons-CLI-Projects/the-code-fixer-23/mace
+```
+
+Install through the Nix flake with:
+
+```bash
+nix profile install github:Sheltons-CLI-Projects/the-code-fixer-23-nur#mace
+```
+
+Install the currently published ARM64 Scoop package with:
+
+```powershell
+scoop bucket add the-code-fixer-23 https://github.com/louiss0/the-code-fixer-23-buckets
+scoop install mace
+```
+
+<Aside type="caution" title="WinGet is not an installation source yet">
+
+The Mace WinGet manifest has not been approved and is not available from the
+public WinGet catalog. A `winget install` command should not be treated as an
+official installation method until this page marks it as available.
+
+</Aside>
+
+## Official editor extensions
+
+Only the extensions listed here are maintained by the Mace project. Other
+extensions using the Mace name are not official unless they link to one of these
+source repositories.
+
+### Visual Studio Code
+
+The official Visual Studio Code extension is available now:
+
+- Marketplace:
+  [`SheltonLouis.mace`](https://marketplace.visualstudio.com/items?itemName=SheltonLouis.mace)
+- Source:
+  [`louiss0/vscode-extension-mace`](https://github.com/louiss0/vscode-extension-mace)
+- Offline VSIX:
+  [VS Code extension releases](https://github.com/louiss0/vscode-extension-mace/releases/latest)
+
+Install it from the command line with:
+
+```bash
+code --install-extension SheltonLouis.mace
+```
+
+The extension provides syntax highlighting, snippets, diagnostics, completion,
+hovers, definitions, symbols, code actions, and formatting. It can download its
+pinned Mace language server automatically. To force the editor and terminal to
+use the same CLI installation, set `mace.server.path` to the absolute path of
+`mace` or `mace.exe`.
+
+### Zed
+
+The official Zed extension is maintained at
+[`louiss0/zed-extension-mace`](https://github.com/louiss0/zed-extension-mace),
+but it has **not been approved or published in the Zed extension registry**.
+There is currently no supported gallery installation for it.
+
+Do not expect Mace to appear in Zed's Extensions panel yet. This page will link
+directly to the Zed registry listing after approval. The source repository is
+available for development and review, but it is not presented here as a stable
+end-user installation channel.
+
+## Other editors
+
+Mace includes a language server in every CLI binary. Editors with a generic LSP
+client can launch it with:
+
+```bash
+mace lsp
+```
+
+Use stdio transport, the language identifier `mace`, and the `.mace` file
+extension. See [How to Run the Mace LSP](/how-to/run-the-mace-lsp/) for the full
+client configuration.
