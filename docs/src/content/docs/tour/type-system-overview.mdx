@@ -1,0 +1,150 @@
+---
+title: Type System Overview
+description: Learn how Mace separates values, types, aliases, schemas, and composite types.
+sidebar:
+  order: 3
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Mace uses types to reject invalid configuration before emitting it. Variables,
+schema fields, aliases, arrays, and schema output all use the same type
+vocabulary.
+
+## Primitive types
+
+Mace has six primitive types:
+
+| Family | Types | Values |
+| --- | --- | --- |
+| Text | `string` | `'prod'`, `"service-$(name)"` |
+| Decimal numbers | `int`, `float` | `3`, `3.5` |
+| Hexadecimal numbers | `hex_int`, `hex_float` | `0xFF`, `0x1.8` |
+| Logic | `boolean` | `true`, `false` |
+
+Decimal and hexadecimal numbers belong to distinct families. Mace does not
+silently reinterpret one family as the other.
+
+## Structural and domain types
+
+Types can describe more than one scalar:
+
+- `array<T>` is an ordered homogeneous list;
+- `record<T>` is a record whose named values all conform to `T`;
+- `{ name: string, ... }` is an inline closed record shape;
+- `choice[...]` permits a finite set of scalar literals;
+- `variant[...]` permits one of several types;
+- `fusion[...]` composes compatible record shapes or compatible choice domains;
+- a `schema` gives a closed record shape a stable declaration name.
+
+```mace
+|===|
+alias Tags: array<string>;
+alias Port: choice[80, 443];
+
+schema Service: {
+  name: string,
+  tags: Tags,
+  port: Port,
+};
+
+Service api = {
+  name: "accounts",
+  tags: ["public", "stable"],
+  port: 443,
+};
+|===|
+
+{
+  service: api,
+}
+```
+
+## Aliases name types
+
+An alias is a transparent reusable name for a type. It does not create a value
+or a nominal wrapper.
+
+```mace
+|===|
+alias Name: string;
+alias Names: array<Name>;
+Name primary_name = "Ada";
+Names maintainers = [primary_name, "Lin"];
+|===|
+
+{
+  primary: primary_name,
+  maintainers: maintainers,
+}
+```
+
+<Aside type="caution">
+
+Type checking resolves aliases to their targets. Alias cycles are invalid.
+
+</Aside>
+
+## Schemas describe closed records
+
+A schema defines required and optional fields. Required fields have no marker;
+optional fields use `?` after the field name.
+
+```mace
+|===|
+schema Build: {
+  command: string,
+  working_directory?: string,
+};
+
+Build build = {
+  command: "astro build",
+};
+|===|
+
+{
+  build: build,
+}
+```
+
+A conforming record includes every required field, may omit optional fields, and
+contains no unknown fields. Optionality controls presence, not type: when
+`working_directory` exists it must still be a string.
+
+## Expected types drive collection checking
+
+<Aside type="caution">
+
+Non-empty arrays and records provide evidence about their contents, but Mace
+does not invent a type for an empty collection. `[]` needs an expected
+`array<T>`, and `{}` needs a compatible expected record shape.
+
+</Aside>
+
+```mace
+|===|
+alias Labels: array<string>;
+Labels labels = [];
+|===|
+
+{
+  labels: labels,
+}
+```
+
+This rule applies at every nesting depth. A variable declaration or output
+schema must provide the collection shape instead of relying on a guess.
+
+## Values are not types
+
+<Aside type="caution">
+
+Aliases, choices, and schemas belong to the schema plane. They can be referenced
+from declarations and schema output, but cannot be emitted or interpolated as
+runtime values. Variables and literals belong to the record plane.
+
+</Aside>
+
+## Next
+
+Continue to [Script Block](/tour/script-block/).
