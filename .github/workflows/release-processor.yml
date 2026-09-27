@@ -125,7 +125,8 @@ jobs:
           set -euo pipefail
           tag="${{ inputs.tag }}"
           if [[ -z "$tag" ]]; then
-            tag="$(git tag --points-at HEAD | grep -E '^processor/v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
+            # A shallow tag checkout does not always carry a local tag ref.
+            tag="${GITHUB_REF_NAME}"
           fi
           if [[ ! "$tag" =~ ^processor/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "The release requires an existing processor/vMAJOR.MINOR.PATCH tag." >&2
@@ -152,30 +153,38 @@ jobs:
           fi
 
       - name: Stage artifacts and checksums
-        id: stage
         run: |
           set -euo pipefail
           mkdir -p stage
+          # processor.h is identical for every target, so it is published once.
+          cp "artifacts/darwin-amd64/processor.h" stage/processor.h
           jq -r '.targets[] | [.target, .filename] | @tsv' processor-targets.json | while read -r target filename; do
             mkdir -p "stage/$target"
             cp "artifacts/$target/$filename" "stage/$target/$filename"
-            cp "artifacts/$target/processor.h" "stage/$target/processor.h"
           done
-          (cd stage && find . -type f ! -name checksums.txt -print0 | sort -z | xargs -0 sha256sum > checksums.txt)
+          # Generated from the workspace root so every recorded path is already
+          # stage/<target>/<filename>, which is what the manifest looks up.
+          find stage -type f ! -name checksums.txt -print0 | sort -z | xargs -0 sha256sum > stage/checksums.txt
           cp stage/checksums.txt .
 
       - name: Build the release manifest
         run: |
           set -euo pipefail
+          # sha256sum separates the hash and the path with two spaces.
           jq --rawfile checksums checksums.txt '
             .version = $version |
             .targets = [
               .targets[] |
               .artifact = "mace-processor/\(.target)/\(.filename)" |
-              .sha256 = ($checksums | split("\n") | map(select(length > 0) | split(" ") | {(.[1] | ltrimstr("./")): .[0]}) | add)["stage/\(.target)/\(.filename)"]
+              .sha256 = (
+                $checksums | split("\n")
+                | map(select(length > 0) | split("  ") | {(.[1] | ltrimstr("./")): .[0]})
+                | add
+              )["stage/\(.target)/\(.filename)"]
             ]
           ' --arg version "${PROCESSOR_TAG#processor/}" processor-targets.json > processor-manifest.json
           jq -e '[.targets[] | select(.sha256 == null or .sha256 == "")] | length == 0' processor-manifest.json > /dev/null
+          cat processor-manifest.json
 
       - name: Attest the build provenance
         uses: actions/attest-build-provenance@v2
@@ -193,4 +202,7 @@ jobs:
             --verify-tag \
             processor-manifest.json \
             checksums.txt \
-            stage/*/*
+            stage/processor.h \
+            stage/*/*.so \
+            stage/*/*.dll \
+            stage/*/*.dylib
