@@ -169,7 +169,10 @@ jobs:
           cp "artifacts/processor-darwin-amd64/processor.h" stage/processor.h
           jq -r '.targets[] | [.target, .filename] | @tsv' processor-targets.json | while read -r target filename; do
             mkdir -p "stage/$target"
-            cp "artifacts/processor-$target/$filename" "stage/$target/$filename"
+            # Release asset names must be unique, and several targets share a
+            # library basename, so each asset carries its target.
+            asset="mace-processor-$target.${filename##*.}"
+            cp "artifacts/processor-$target/$filename" "stage/$target/$asset"
           done
           # Generated from the workspace root so every recorded path is already
           # stage/<target>/<filename>, which is what the manifest looks up.
@@ -184,7 +187,7 @@ jobs:
             .version = $version |
             .targets = [
               .targets[] |
-              .artifact = "mace-processor/\(.target)/\(.filename)" |
+              .artifact = "mace-processor/mace-processor-\(.target).\(.filename | split(".") | last)" |
               .sha256 = (
                 $checksums | split("\n")
                 | map(select(length > 0) | split("  ") | {(.[1] | ltrimstr("./")): .[0]})
@@ -212,6 +215,4 @@ jobs:
             processor-manifest.json \
             checksums.txt \
             stage/processor.h \
-            stage/*/*.so \
-            stage/*/*.dll \
-            stage/*/*.dylib
+            stage/*/*
