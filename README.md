@@ -468,10 +468,11 @@ The official Node, Python, and Dart bindings call the processor through a
 separate, cgo-built shared library rather than invoking the `mace` CLI. The
 current C ABI, ownership rules, and local build instructions are in
 [`cmd/processor-abi/README.md`](cmd/processor-abi/README.md). Processor
-artifacts are built and published for eight platform variants under their own
-`processor/vX.Y.Z` tag, separately from the `vX.Y.Z` CLI release. That
-release gate is implemented but has not yet run end to end, so the library is
-not a published processor release yet.
+artifacts are built and published for five platform variants under their own
+`processor/vX.Y.Z` tag, separately from the `vX.Y.Z` CLI release. musl and
+Windows arm64 are not published yet; the reasons, including an unresolved
+segfault in the musl build, are listed in
+[`processor-targets.json`](processor-targets.json).
 
 The CLI's `json` command now treats its working directory as the workspace
 root. An entry file and its local imports must remain inside that root after

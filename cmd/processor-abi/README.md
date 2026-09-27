@@ -61,16 +61,34 @@ network input, not merely as untrusted data.
 
 Processor artifacts ship on their own `processor/vX.Y.Z` cadence, separately
 from the `vX.Y.Z` CLI release. [`processor-targets.json`](../../processor-targets.json)
-is the canonical list of the eight supported variants and is verified by
+is the canonical list of supported variants and is verified by
 `cmd/processor-abi/targets_test.go`. `.github/workflows/release-processor.yml`
-builds each variant on its native runner, runs `abi_test.py` against the
-freshly built library, and refuses to publish unless all eight variants
-upload successfully. The published release contains
-`processor-manifest.json` (version, target, artifact path, SHA-256) plus
-`checksums.txt`, and every staged artifact carries a build-provenance
+builds each variant on its native runner, compiles and runs the C smoke test
+plus `abi_test.py` against the freshly built library, and refuses to publish
+unless every listed variant uploads successfully. The published release
+contains `processor-manifest.json` (version, target, artifact path, SHA-256)
+plus `checksums.txt`, and every staged artifact carries a build-provenance
 attestation. Bindings pin a version and verify the manifest hash before
 staging a library.
 
-**Migration status:** The eight-variant release gate now exists but has not run
-end to end, and installed-package tests do not yet cover every variant in a
-single run.
+## Platforms that are not built
+
+Five variants are published. Three platforms are deliberately excluded, and
+`processor-targets.json` records the reason for each under `unsupported`:
+
+| Platform | Why it is not published |
+| --- | --- |
+| `linux-amd64-musl`, `linux-arm64-musl` | The library builds with `musl-gcc`, but a C program that calls it **segfaults**. The cause is not yet understood, so no musl artifact may ship. |
+| `windows-arm64` | The `windows-11-arm` runner has no aarch64 mingw sysroot, so cgo cannot resolve `stdlib.h` for a cross build. A cross toolchain is required first. |
+
+The musl segfault is the important one. It was found by the C smoke test in
+CI, not by inspection, and it is unresolved: it is not yet known whether the
+fault is in this ABI or in the musl build. Until that is answered, do not add
+musl back to the target list, and do not publish a hand-built musl library.
+The bindings are expected to report a clear "unsupported platform" error on
+these platforms rather than attempting a download.
+
+**Migration status:** The release gate exists and has published five of the
+eight intended variants. `linux-amd64-musl`, `linux-arm64-musl`, and
+`windows-arm64` are excluded and documented above; the musl segfault must be
+resolved before musl can ship.

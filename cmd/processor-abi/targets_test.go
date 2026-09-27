@@ -20,9 +20,10 @@ type releaseTarget struct {
 }
 
 type releaseTargets struct {
-	ABIMajor int             `json:"abiMajor"`
-	Library  string          `json:"library"`
-	Targets  []releaseTarget `json:"targets"`
+	ABIMajor    int               `json:"abiMajor"`
+	Library     string            `json:"library"`
+	Targets     []releaseTarget   `json:"targets"`
+	Unsupported map[string]string `json:"unsupported"`
 }
 
 func loadReleaseTargets(t *testing.T) releaseTargets {
@@ -48,11 +49,8 @@ func TestProcessorReleaseTargetsCoverEverySupportedPlatform(t *testing.T) {
 		"darwin-amd64",
 		"darwin-arm64",
 		"linux-amd64-glibc",
-		"linux-amd64-musl",
 		"linux-arm64-glibc",
-		"linux-arm64-musl",
 		"windows-amd64",
-		"windows-arm64",
 	}
 
 	names := make([]string, 0, len(targets.Targets))
@@ -74,24 +72,42 @@ func TestProcessorReleaseTargetsMatchTheirGoPlatform(t *testing.T) {
 	}
 }
 
-// Every musl target names the C compiler the release workflow builds it with,
-// so a target can never claim a libc the build does not produce.
-func TestMuslTargetsDeclareTheirCrossCompiler(t *testing.T) {
-	for _, target := range loadReleaseTargets(t).Targets {
-		if target.Libc == "musl" && target.goCompiler() != "musl-gcc" {
-			t.Errorf("target %q libc %q builds with %q, want musl-gcc", target.Target, target.Libc, target.goCompiler())
+// A platform that is not built must say why, so a gap is never silent.
+func TestUnsupportedTargetsExplainWhyTheyAreExcluded(t *testing.T) {
+	targets := loadReleaseTargets(t)
+
+	published := make(map[string]struct{}, len(targets.Targets))
+	for _, target := range targets.Targets {
+		published[target.Target] = struct{}{}
+	}
+
+	for name, reason := range targets.Unsupported {
+		if reason == "" {
+			t.Errorf("unsupported target %q has no documented reason", name)
+		}
+		if _, listed := published[name]; listed {
+			t.Errorf("target %q is both published and listed as unsupported", name)
+		}
+		if name != nameTarget(name) {
+			t.Errorf("unsupported entry %q is not a well-formed target name", name)
 		}
 	}
 }
 
-func (target releaseTarget) goCompiler() string {
-	if target.Libc == "musl" {
-		return "musl-gcc"
+// nameTarget renders the canonical GOOS-GOARCH-libc spelling so a malformed key
+// is caught before it is mistaken for a real platform.
+func nameTarget(name string) string {
+	parts := strings.Split(name, "-")
+	if len(parts) < 2 {
+		return name
 	}
-	if target.GOOS == "windows" {
-		return "clang"
+
+	suffix := ""
+	if len(parts) == 3 {
+		suffix = "-" + parts[2]
 	}
-	return "cc"
+
+	return parts[0] + "-" + parts[1] + suffix
 }
 
 func TestProcessorReleaseTargetsUseTheSharedLibraryName(t *testing.T) {
@@ -120,9 +136,9 @@ func TestProcessorReleaseTargetsAgreeWithTheBuiltLibrary(t *testing.T) {
 		if target.GOOS != runtime.GOOS || target.GOARCH != runtime.GOARCH {
 			continue
 		}
-		// A musl or system build of the host platform must still be listed so the
-		// release cannot silently publish fewer variants than the bindings expect.
-		if target.Libc == "musl" || target.Libc == "system" {
+		// A system build of the host platform counts, so the release cannot
+		// silently publish fewer variants than the bindings expect.
+		if target.Libc == "system" {
 			return
 		}
 	}
