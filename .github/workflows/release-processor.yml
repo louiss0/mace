@@ -46,13 +46,18 @@ jobs:
           sudo apt-get install --yes musl-tools
           musl-gcc --version | head -n 1
           # A musl-linked test program needs the musl loader, which the glibc
-          # runner does not provide under its expected name.
+          # runner does not provide under its expected name. musl-gcc reports the
+          # system glibc for -print-file-name, so use the musl package path.
           case "$GOARCH" in
-            amd64) loader=/lib/ld-musl-x86_64.so.1 ;;
-            arm64) loader=/lib/ld-musl-aarch64.so.1 ;;
+            amd64) loader=/lib/ld-musl-x86_64.so.1; musl=/usr/lib/x86_64-linux-musl/libc.so ;;
+            arm64) loader=/lib/ld-musl-aarch64.so.1; musl=/usr/lib/aarch64-linux-musl/libc.so ;;
             *) echo "unsupported arch" >&2; exit 1 ;;
           esac
-          sudo ln --force --symbolic "$(musl-gcc -print-file-name=libc.so)" "$loader"
+          if [[ ! -f "$musl" ]]; then
+            echo "musl libc not found at $musl" >&2
+            exit 1
+          fi
+          sudo ln --force --symbolic "$musl" "$loader"
           ls -l "$loader"
 
       - name: Build the shared library
