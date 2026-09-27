@@ -96,6 +96,13 @@ func newProcessContext(importBaseDir string, importRootDir string) processContex
 	}
 }
 
+// bindOperation attaches an evaluation's cancellation signal to the state every
+// value evaluation reads, so checkpoints cover the whole CPU-bound evaluation.
+func (context *processContext) bindOperation(operation context.Context) {
+	context.operation = operation
+	context.environment.operation = operation
+}
+
 func (context processContext) clone() processContext {
 	if context.symbols == nil {
 		return processContext{}
@@ -483,7 +490,7 @@ func (p *Processor) processOutputInput(input string, scriptResult ScriptResult, 
 		}
 	}
 
-	context.operation = operation
+	context.bindOperation(operation)
 	file := ast.File{
 		Script: &scriptResult.Script,
 		Output: outputBlock,
@@ -614,7 +621,7 @@ func buildProcessContextWithState(imports []ast.ImportDeclaration, script *ast.S
 
 func buildProcessContextWithStateFor(operation context.Context, imports []ast.ImportDeclaration, script *ast.ScriptBlock, importBaseDir string, importRootDir string, enforceImportRoot bool, input map[string]Value, cache map[string]map[string]importedDeclaration, stack map[string]struct{}) (processContext, error) {
 	context := newProcessContext(importBaseDir, importRootDir)
-	context.operation = operation
+	context.bindOperation(operation)
 
 	imported, err := resolveImportsWithStateFor(operation, ast.File{Imports: imports}, importBaseDir, importRootDir, enforceImportRoot, cache, stack)
 	if err != nil {
@@ -3096,13 +3103,21 @@ type Value struct {
 }
 
 type valueEnvironment struct {
-	values map[string]Value
+	operation context.Context
+	values    map[string]Value
 }
 
 func newValueEnvironment() *valueEnvironment {
 	return &valueEnvironment{
-		values: map[string]Value{},
+		operation: context.Background(),
+		values:    map[string]Value{},
 	}
+}
+
+// Err reports the cancellation state of the evaluation that owns this
+// environment so value evaluation can stop at a checkpoint.
+func (environment *valueEnvironment) Err() error {
+	return environment.operation.Err()
 }
 
 func (environment *valueEnvironment) Add(name string, value Value) {
@@ -3125,6 +3140,7 @@ func (environment *valueEnvironment) Values() map[string]Value {
 
 func (environment *valueEnvironment) Clone() *valueEnvironment {
 	cloned := newValueEnvironment()
+	cloned.operation = environment.operation
 	cloned.values = environment.Values()
 
 	return cloned
@@ -3150,6 +3166,10 @@ func evaluateSchemaOutput(output ast.OutputBlock, types *typeRegistry) (map[Sche
 
 func evaluateScript(items []ast.Declaration, environment *valueEnvironment, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) error {
 	for _, declaration := range items {
+		if err := environment.Err(); err != nil {
+			return err
+		}
+
 		variable, ok := declaration.(ast.VariableDeclaration)
 		if !ok {
 			continue
@@ -3184,6 +3204,10 @@ func evaluateOutputFields(items []ast.OutputField, environment *valueEnvironment
 	fields := map[string]Value{}
 	self := Value{Kind: ValueRecord, Record: fields}
 	for _, item := range items {
+		if err := environment.Err(); err != nil {
+			return nil, err
+		}
+
 		value, err := evaluateExpression(item.Value, environment, self, symbols, types, schemas, enums)
 		if err != nil {
 			return nil, diagnosticErrorAtNode(err, item)
@@ -3222,6 +3246,12 @@ func coerceEvaluatedValueAgainstType(expression ast.Expression, value Value, exp
 }
 
 func evaluateExpression(expression ast.Expression, environment *valueEnvironment, self Value, symbols *symbolTable, types *typeRegistry, schemas *schemaRegistry, enums any) (Value, error) {
+	// Every value evaluation passes through here, so this is the checkpoint that
+	// bounds CPU-bound evaluation by the caller's deadline.
+	if err := environment.Err(); err != nil {
+		return Value{}, err
+	}
+
 	switch expr := expression.(type) {
 	case ast.GroupedExpression:
 		return evaluateExpression(expr.Expression, environment, self, symbols, types, schemas, enums)

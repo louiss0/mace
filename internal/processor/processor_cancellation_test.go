@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/louiss0/mace/internal/parser/ast"
 )
 
 func TestCancelledOperationReturnsBeforeEvaluating(t *testing.T) {
@@ -18,6 +20,26 @@ func TestCancelledOperationReturnsBeforeEvaluating(t *testing.T) {
 	_, err := NewWithContext(operation, nil).Process("[output = 'data']\n{ enabled: true, }")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected cancellation, got %v", err)
+	}
+}
+
+func TestValueEvaluationStopsWhenTheOperationIsCancelled(t *testing.T) {
+	operation, cancel := context.WithCancel(context.Background())
+	cancel()
+	environment := newValueEnvironment()
+	environment.operation = operation
+
+	_, err := evaluateExpression(
+		ast.IntLiteral{Lexeme: "1"},
+		environment,
+		Value{},
+		newSymbolTable(),
+		newTypeRegistry(),
+		newSchemaRegistry(),
+		nil,
+	)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected value evaluation to stop, got %v", err)
 	}
 }
 
