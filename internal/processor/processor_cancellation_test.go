@@ -37,6 +37,30 @@ func TestDeadlineCancelsStalledRemoteImport(t *testing.T) {
 	}
 }
 
+func TestDeadlineCancelsStalledRemoteSchemaFile(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		select {
+		case <-request.Context().Done():
+		case <-time.After(time.Second):
+			_, _ = writer.Write([]byte("[output = 'schema']\n{ Age: int, }"))
+		}
+	}))
+	defer server.Close()
+
+	workspace := t.TempDir()
+	operation, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	input := "[output = 'data', schema_file = '" + server.URL + "/schema.mace']\n{ age: 42, }"
+	started := time.Now()
+	_, err := NewWithContext(operation, nil).ProcessInScope(input, workspace, workspace)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected a deadline error, got %v", err)
+	}
+	if time.Since(started) >= 500*time.Millisecond {
+		t.Fatalf("schema-file request exceeded its deadline")
+	}
+}
+
 func TestEntryFileOutsideWorkspaceIsRejected(t *testing.T) {
 	workspace := t.TempDir()
 	outside := t.TempDir()

@@ -73,6 +73,7 @@ type SchemaType struct {
 }
 
 type processContext struct {
+	operation     context.Context
 	importBaseDir string
 	importRootDir string
 	symbols       *symbolTable
@@ -84,6 +85,7 @@ type processContext struct {
 
 func newProcessContext(importBaseDir string, importRootDir string) processContext {
 	return processContext{
+		operation:     context.Background(),
 		importBaseDir: importBaseDir,
 		importRootDir: importRootDir,
 		symbols:       newSymbolTable(),
@@ -100,6 +102,7 @@ func (context processContext) clone() processContext {
 	}
 
 	return processContext{
+		operation:     context.operation,
 		importBaseDir: context.importBaseDir,
 		importRootDir: context.importRootDir,
 		symbols:       context.symbols.Clone(),
@@ -443,6 +446,8 @@ func (p *Processor) processScriptInput(input string, importBaseDir string) (Scri
 }
 
 func (p *Processor) processOutputInput(input string, scriptResult ScriptResult, importBaseDir string) (Result, error) {
+	operation, cancel := p.operationContext()
+	defer cancel()
 	if err := p.validateInput(); err != nil {
 		return Result{}, err
 	}
@@ -468,12 +473,17 @@ func (p *Processor) processOutputInput(input string, scriptResult ScriptResult, 
 		}
 	}
 
+	context.operation = operation
 	file := ast.File{
 		Script: &scriptResult.Script,
 		Output: outputBlock,
 	}
 
-	return p.processParsedOutput(outputBlock, file, context)
+	result, err := p.processParsedOutput(outputBlock, file, context)
+	if operation.Err() != nil {
+		return Result{}, operation.Err()
+	}
+	return result, err
 }
 
 func (p *Processor) processParsedOutput(outputBlock ast.OutputBlock, file ast.File, context processContext) (Result, error) {
@@ -594,6 +604,7 @@ func buildProcessContextWithState(imports []ast.ImportDeclaration, script *ast.S
 
 func buildProcessContextWithStateFor(operation context.Context, imports []ast.ImportDeclaration, script *ast.ScriptBlock, importBaseDir string, importRootDir string, enforceImportRoot bool, input map[string]Value, cache map[string]map[string]importedDeclaration, stack map[string]struct{}) (processContext, error) {
 	context := newProcessContext(importBaseDir, importRootDir)
+	context.operation = operation
 
 	imported, err := resolveImportsWithStateFor(operation, ast.File{Imports: imports}, importBaseDir, importRootDir, enforceImportRoot, cache, stack)
 	if err != nil {
@@ -642,13 +653,14 @@ func prepareOutputContext(output ast.OutputBlock, context processContext) (proce
 	outputContext := context.clone()
 	if outputContext.symbols == nil {
 		outputContext = newProcessContext(context.importBaseDir, context.importRootDir)
+		outputContext.operation = context.operation
 	}
 
 	if err := validateOutputDirectiveStructure(output); err != nil {
 		return processContext{}, err
 	}
 
-	schemaFileDeclarations, err := resolveSchemaFileDeclarations(output.Directives, outputContext.importBaseDir, outputContext.importRootDir)
+	schemaFileDeclarations, err := resolveSchemaFileDeclarationsFor(outputContext.operation, output.Directives, outputContext.importBaseDir, outputContext.importRootDir)
 	if err != nil {
 		return processContext{}, err
 	}
@@ -1222,6 +1234,13 @@ func loadImportExportsFor(operation context.Context, path string, importRootDir 
 }
 
 func resolveSchemaFileDeclarations(directives []ast.OutputDirective, importBaseDir string, importRootDir string) ([]importedDeclaration, error) {
+	return resolveSchemaFileDeclarationsFor(context.Background(), directives, importBaseDir, importRootDir)
+}
+
+func resolveSchemaFileDeclarationsFor(operation context.Context, directives []ast.OutputDirective, importBaseDir string, importRootDir string) ([]importedDeclaration, error) {
+	if err := operation.Err(); err != nil {
+		return nil, err
+	}
 	var path string
 	for _, directive := range directives {
 		if directive.Kind != ast.OutputDirectiveSchemaFile && directive.Kind != ast.OutputDirectiveParseFile {
@@ -1251,7 +1270,7 @@ func resolveSchemaFileDeclarations(directives []ast.OutputDirective, importBaseD
 	if err != nil {
 		return nil, err
 	}
-	declarations, err := loadSchemaFileDeclarations(resolvedPath, importRootDir, map[string]map[string]ast.Declaration{}, map[string]struct{}{})
+	declarations, err := loadSchemaFileDeclarationsFor(operation, resolvedPath, importRootDir, map[string]map[string]ast.Declaration{}, map[string]struct{}{})
 	if err != nil {
 		return nil, err
 	}
@@ -1275,7 +1294,7 @@ func resolveSchemaFileDeclarations(directives []ast.OutputDirective, importBaseD
 	}
 
 	if hasSchemaFile(directives) {
-		record, err := loadOutputSchemaRecord(resolvedPath, importRootDir, "schema_file")
+		record, err := loadOutputSchemaRecordFor(operation, resolvedPath, importRootDir, "schema_file")
 		if err != nil {
 			return nil, err
 		}
@@ -1287,7 +1306,7 @@ func resolveSchemaFileDeclarations(directives []ast.OutputDirective, importBaseD
 	}
 
 	if hasParseFile(directives) {
-		record, err := loadOutputSchemaRecord(resolvedPath, importRootDir, "parse_file")
+		record, err := loadOutputSchemaRecordFor(operation, resolvedPath, importRootDir, "parse_file")
 		if err != nil {
 			return nil, err
 		}
@@ -1302,8 +1321,15 @@ func resolveSchemaFileDeclarations(directives []ast.OutputDirective, importBaseD
 }
 
 func loadOutputSchemaRecord(path string, importRootDir string, directiveName string) (ast.RecordType, error) {
-	contents, err := readMaceSource(path)
+	return loadOutputSchemaRecordFor(context.Background(), path, importRootDir, directiveName)
+}
+
+func loadOutputSchemaRecordFor(operation context.Context, path string, importRootDir string, directiveName string) (ast.RecordType, error) {
+	contents, err := readMaceSourceFor(operation, path)
 	if err != nil {
+		if operation.Err() != nil {
+			return ast.RecordType{}, operation.Err()
+		}
 		return ast.RecordType{}, validationErrorf("unable to read import file %q", path)
 	}
 	tokens, err := lex(contents)
@@ -1317,7 +1343,7 @@ func loadOutputSchemaRecord(path string, importRootDir string, directiveName str
 	if file.Output.Mode != ast.OutputModeSchema {
 		return ast.RecordType{}, validationErrorf("%s target %q must output a schema", directiveName, path)
 	}
-	context, err := buildProcessContext(file.Imports, file.Script, basePathDir(path), importRootDir, true, nil)
+	context, err := buildProcessContextFor(operation, file.Imports, file.Script, basePathDir(path), importRootDir, true, nil)
 	if err != nil {
 		return ast.RecordType{}, err
 	}
@@ -1333,6 +1359,13 @@ func loadOutputSchemaRecord(path string, importRootDir string, directiveName str
 }
 
 func loadSchemaFileDeclarations(path string, importRootDir string, cache map[string]map[string]ast.Declaration, stack map[string]struct{}) (map[string]ast.Declaration, error) {
+	return loadSchemaFileDeclarationsFor(context.Background(), path, importRootDir, cache, stack)
+}
+
+func loadSchemaFileDeclarationsFor(operation context.Context, path string, importRootDir string, cache map[string]map[string]ast.Declaration, stack map[string]struct{}) (map[string]ast.Declaration, error) {
+	if err := operation.Err(); err != nil {
+		return nil, err
+	}
 	if declarations, ok := cache[path]; ok {
 		return declarations, nil
 	}
@@ -1343,8 +1376,11 @@ func loadSchemaFileDeclarations(path string, importRootDir string, cache map[str
 	stack[path] = struct{}{}
 	defer delete(stack, path)
 
-	contents, err := readMaceSource(path)
+	contents, err := readMaceSourceFor(operation, path)
 	if err != nil {
+		if operation.Err() != nil {
+			return nil, operation.Err()
+		}
 		return nil, validationErrorf("unable to read import file %q", path)
 	}
 
@@ -1368,7 +1404,7 @@ func loadSchemaFileDeclarations(path string, importRootDir string, cache map[str
 		if err != nil {
 			return nil, err
 		}
-		if _, err := loadSchemaFileDeclarations(resolvedPath, importRootDir, cache, stack); err != nil {
+		if _, err := loadSchemaFileDeclarationsFor(operation, resolvedPath, importRootDir, cache, stack); err != nil {
 			return nil, err
 		}
 	}

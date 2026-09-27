@@ -37,9 +37,9 @@ reported byte length where available and always release them with
 Use `mace_request_new(timeout_ms)` and the `_with_request` entrypoints for
 per-call deadlines or cancellation from another thread. The default deadline
 is 30 seconds. The request must be freed after its result; cancelled calls
-return a diagnostic instead of a value. Remote file imports use cancellable
-HTTP requests. Cancellation checkpoints for every CPU-bound stage and all
-schema-file reads remain incomplete.
+return a diagnostic instead of a value. Remote file imports and schema-file
+reads use cancellable HTTP requests. Cancellation checkpoints for every
+CPU-bound stage and synchronous local-file read remain incomplete.
 
 **Migration status:** Production artifact staging, the eight-platform release
 gate, and full cancellation coverage remain to be implemented before this ABI
