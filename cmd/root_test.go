@@ -34,7 +34,9 @@ func writeTempFile(name string, contents string) string {
 }
 
 func writeMaceFile(contents string) string {
-	return writeTempFile("config.mace", contents)
+	path := writeTempFile("config.mace", contents)
+	cliActivationDir = filepath.Dir(path)
+	return path
 }
 
 type failingWriter struct{}
@@ -274,6 +276,9 @@ schema Runtime: { env: string, };
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer
 
+			previousWorkingDir := getWorkingDir
+			getWorkingDir = func() (string, error) { return filepath.Dir(path), nil }
+			defer func() { getWorkingDir = previousWorkingDir }()
 			exitCode := run([]string{"json", path}, &stdout, &stderr)
 
 			tAssert.Equal(1, exitCode)

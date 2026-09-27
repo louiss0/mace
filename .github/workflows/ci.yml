@@ -29,7 +29,17 @@ jobs:
 
       - name: Run Go tests with coverage
         run: |
-          go test -covermode=atomic -coverprofile=coverage.out ./...
+          # The C ABI is exercised below as a shared library; Go coverage cannot
+          # observe calls crossing the C boundary in an external process.
+          packages=$(go list ./... | grep -v '^github.com/louiss0/mace/cmd/processor-abi$')
+          go test -covermode=atomic -coverprofile=coverage.out $packages
           coverage=$(go tool cover -func=coverage.out | awk '/^total:/ {gsub("%", "", $3); print $3}')
           echo "total coverage: ${coverage}%"
           awk -v coverage="$coverage" 'BEGIN { if (coverage < 90) exit 1 }'
+
+      - name: Build and exercise the processor C ABI
+        run: |
+          CGO_ENABLED=1 go build -buildmode=c-shared -o "$RUNNER_TEMP/libmace_processor.so" ./cmd/processor-abi
+          gcc -Icmd/processor-abi cmd/processor-abi/tests/abi_smoke.c -L"$RUNNER_TEMP" -lmace_processor -o "$RUNNER_TEMP/abi_smoke"
+          LD_LIBRARY_PATH="$RUNNER_TEMP" "$RUNNER_TEMP/abi_smoke"
+          MACE_PROCESSOR_LIBRARY="$RUNNER_TEMP/libmace_processor.so" python3 cmd/processor-abi/abi_test.py

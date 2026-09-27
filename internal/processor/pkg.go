@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/samber/lo"
@@ -28,6 +30,7 @@ import (
 type Processor struct {
 	input      map[string]Value
 	inputError error
+	operation  context.Context
 }
 
 type Result struct {
@@ -146,6 +149,19 @@ func NewWithInjections(injections map[string]Value) *Processor {
 	return NewWithInput(injections)
 }
 
+func NewWithContext(operation context.Context, input map[string]Value) *Processor {
+	instance := NewWithInput(input)
+	instance.operation = operation
+	return instance
+}
+
+func (p *Processor) operationContext() (context.Context, context.CancelFunc) {
+	if p.operation != nil {
+		return context.WithCancel(p.operation)
+	}
+	return context.WithTimeout(context.Background(), 30*time.Second)
+}
+
 var getwd = os.Getwd
 
 func (p *Processor) Process(input string) (Result, error) {
@@ -190,6 +206,8 @@ func (p *Processor) ProcessVariablesInDir(input string, importBaseDir string) (m
 }
 
 func (p *Processor) ProcessVariablesInScope(input string, importBaseDir string, importRootDir string) (map[string]Value, error) {
+	operation, cancel := p.operationContext()
+	defer cancel()
 	if err := p.validateInput(); err != nil {
 		return nil, err
 	}
@@ -211,11 +229,13 @@ func (p *Processor) ProcessVariablesInScope(input string, importBaseDir string, 
 		return nil, err
 	}
 
-	context, err := buildProcessContext(file.Imports, file.Script, importBaseDir, importRootDir, false, p.input)
+	context, err := buildProcessContextFor(operation, file.Imports, file.Script, importBaseDir, importRootDir, false, p.input)
 	if err != nil {
 		return nil, err
 	}
-
+	if err := operation.Err(); err != nil {
+		return nil, err
+	}
 	return context.environment.Values(), nil
 }
 
@@ -238,16 +258,36 @@ func (p *Processor) ProcessFile(path string) (Result, error) {
 }
 
 func (p *Processor) ProcessFileInDir(path string, importRootDir string) (Result, error) {
-	contents, err := os.ReadFile(path)
-	if err != nil {
-		return Result{}, validationErrorf("unable to read file %q", path)
-	}
-
 	if importRootDir == "" {
 		importRootDir = filepath.Dir(path)
 	}
 
-	return p.processInput(string(contents), filepath.Dir(path), importRootDir, true)
+	resolvedPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return Result{}, validationErrorf("unable to read file %q", path)
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(importRootDir)
+	if err != nil {
+		return Result{}, validationErrorf("unable to resolve workspace %q", importRootDir)
+	}
+	absolutePath, err := filepath.Abs(resolvedPath)
+	if err != nil {
+		return Result{}, validationErrorf("unable to resolve file %q", path)
+	}
+	absoluteRoot, err := filepath.Abs(resolvedRoot)
+	if err != nil {
+		return Result{}, validationErrorf("unable to resolve workspace %q", importRootDir)
+	}
+	relativePath, err := filepath.Rel(absoluteRoot, absolutePath)
+	if err != nil || relativePath == ".." || strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) {
+		return Result{}, validationErrorf("entry file escapes workspace: %q", path)
+	}
+
+	contents, err := os.ReadFile(absolutePath)
+	if err != nil {
+		return Result{}, validationErrorf("unable to read file %q", path)
+	}
+	return p.processInput(string(contents), filepath.Dir(absolutePath), absoluteRoot, true)
 }
 
 func ParseInputRecord(input string) (map[string]Value, error) {
@@ -337,6 +377,11 @@ func (p *Processor) validateInput() error {
 }
 
 func (p *Processor) processInput(input string, importBaseDir string, importRootDir string, enforceImportRoot bool) (Result, error) {
+	operation, cancel := p.operationContext()
+	defer cancel()
+	if err := operation.Err(); err != nil {
+		return Result{}, err
+	}
 	if err := p.validateInput(); err != nil {
 		return Result{}, err
 	}
@@ -351,12 +396,21 @@ func (p *Processor) processInput(input string, importBaseDir string, importRootD
 		return Result{}, err
 	}
 
-	context, err := buildProcessContext(file.Imports, file.Script, importBaseDir, importRootDir, enforceImportRoot, p.input)
+	if err := operation.Err(); err != nil {
+		return Result{}, err
+	}
+	context, err := buildProcessContextFor(operation, file.Imports, file.Script, importBaseDir, importRootDir, enforceImportRoot, p.input)
 	if err != nil {
 		return Result{}, err
 	}
-
-	return p.processParsedOutput(file.Output, file, context)
+	if err := operation.Err(); err != nil {
+		return Result{}, err
+	}
+	result, err := p.processParsedOutput(file.Output, file, context)
+	if err := operation.Err(); err != nil {
+		return Result{}, err
+	}
+	return result, err
 }
 
 func (p *Processor) processScriptInput(input string, importBaseDir string) (ScriptResult, error) {
@@ -374,7 +428,9 @@ func (p *Processor) processScriptInput(input string, importBaseDir string) (Scri
 		return ScriptResult{}, err
 	}
 
-	context, err := buildProcessContext(script.Imports, &script, importBaseDir, importBaseDir, true, p.input)
+	operation, cancel := p.operationContext()
+	defer cancel()
+	context, err := buildProcessContextFor(operation, script.Imports, &script, importBaseDir, importBaseDir, true, p.input)
 	if err != nil {
 		return ScriptResult{}, err
 	}
@@ -515,7 +571,12 @@ func lex(input string) ([]lexer.Token, error) {
 }
 
 func buildProcessContext(imports []ast.ImportDeclaration, script *ast.ScriptBlock, importBaseDir string, importRootDir string, enforceImportRoot bool, input map[string]Value) (processContext, error) {
-	return buildProcessContextWithState(
+	return buildProcessContextFor(context.Background(), imports, script, importBaseDir, importRootDir, enforceImportRoot, input)
+}
+
+func buildProcessContextFor(operation context.Context, imports []ast.ImportDeclaration, script *ast.ScriptBlock, importBaseDir string, importRootDir string, enforceImportRoot bool, input map[string]Value) (processContext, error) {
+	return buildProcessContextWithStateFor(
+		operation,
 		imports,
 		script,
 		importBaseDir,
@@ -528,14 +589,21 @@ func buildProcessContext(imports []ast.ImportDeclaration, script *ast.ScriptBloc
 }
 
 func buildProcessContextWithState(imports []ast.ImportDeclaration, script *ast.ScriptBlock, importBaseDir string, importRootDir string, enforceImportRoot bool, input map[string]Value, cache map[string]map[string]importedDeclaration, stack map[string]struct{}) (processContext, error) {
+	return buildProcessContextWithStateFor(context.Background(), imports, script, importBaseDir, importRootDir, enforceImportRoot, input, cache, stack)
+}
+
+func buildProcessContextWithStateFor(operation context.Context, imports []ast.ImportDeclaration, script *ast.ScriptBlock, importBaseDir string, importRootDir string, enforceImportRoot bool, input map[string]Value, cache map[string]map[string]importedDeclaration, stack map[string]struct{}) (processContext, error) {
 	context := newProcessContext(importBaseDir, importRootDir)
 
-	imported, err := resolveImportsWithState(ast.File{Imports: imports}, importBaseDir, importRootDir, enforceImportRoot, cache, stack)
+	imported, err := resolveImportsWithStateFor(operation, ast.File{Imports: imports}, importBaseDir, importRootDir, enforceImportRoot, cache, stack)
 	if err != nil {
 		return processContext{}, err
 	}
 
 	for _, importedDecl := range imported {
+		if err := operation.Err(); err != nil {
+			return processContext{}, err
+		}
 		if context.symbols.Has(importedDecl.name) {
 			return processContext{}, validationErrorf("duplicate import %q", importedDecl.name)
 		}
@@ -730,6 +798,13 @@ type importedDeclaration struct {
 }
 
 func resolveImportsWithState(file ast.File, importBaseDir string, importRootDir string, enforceImportRoot bool, cache map[string]map[string]importedDeclaration, stack map[string]struct{}) ([]importedDeclaration, error) {
+	return resolveImportsWithStateFor(context.Background(), file, importBaseDir, importRootDir, enforceImportRoot, cache, stack)
+}
+
+func resolveImportsWithStateFor(operation context.Context, file ast.File, importBaseDir string, importRootDir string, enforceImportRoot bool, cache map[string]map[string]importedDeclaration, stack map[string]struct{}) ([]importedDeclaration, error) {
+	if err := operation.Err(); err != nil {
+		return nil, err
+	}
 	if len(file.Imports) == 0 {
 		return nil, nil
 	}
@@ -737,6 +812,9 @@ func resolveImportsWithState(file ast.File, importBaseDir string, importRootDir 
 	imports := map[string]importedDeclaration{}
 
 	for _, importDecl := range file.Imports {
+		if err := operation.Err(); err != nil {
+			return nil, err
+		}
 		path, err := parseImportPath(importDecl.Path)
 		if err != nil {
 			return nil, err
@@ -749,7 +827,7 @@ func resolveImportsWithState(file ast.File, importBaseDir string, importRootDir 
 		if err != nil {
 			return nil, err
 		}
-		declarations, err := loadImportExports(resolvedPath, importRootDir, enforceImportRoot, cache, stack)
+		declarations, err := loadImportExportsFor(operation, resolvedPath, importRootDir, enforceImportRoot, cache, stack)
 		if err != nil {
 			return nil, err
 		}
@@ -949,7 +1027,24 @@ func resolveBoundedPath(importBaseDir string, importRootDir string, importPath s
 		return "", validationErrorf("import path %q escapes root: root=%q, base=%q, resolved=%q", importPath, formatImportRoot(importRootDir), importBaseDir, resolvedPath)
 	}
 
-	return absolutePath, nil
+	// Lexically bounded imports must also remain inside the root after symlinks resolve.
+	resolvedRoot, err := filepath.EvalSymlinks(absoluteRoot)
+	if err != nil {
+		return "", validationErrorf("unable to resolve import root %q", importRootDir)
+	}
+	resolvedFile, err := filepath.EvalSymlinks(absolutePath)
+	if os.IsNotExist(err) {
+		return absolutePath, nil
+	}
+	if err != nil {
+		return "", validationErrorf("unable to resolve import path %q", importPath)
+	}
+	resolvedRelative, err := filepath.Rel(resolvedRoot, resolvedFile)
+	if err != nil || resolvedRelative == ".." || strings.HasPrefix(resolvedRelative, ".."+string(filepath.Separator)) {
+		return "", validationErrorf("import path %q escapes root: root=%q, base=%q, resolved=%q", importPath, formatImportRoot(importRootDir), importBaseDir, resolvedFile)
+	}
+
+	return resolvedFile, nil
 }
 
 func resolveBoundedRemotePath(importBaseDir string, importRootDir string, importPath string, resolvedPath string) (string, error) {
@@ -1032,6 +1127,13 @@ func validateMaceSourcePath(sourcePath string) error {
 }
 
 func readMaceSource(sourcePath string) (string, error) {
+	return readMaceSourceFor(context.Background(), sourcePath)
+}
+
+func readMaceSourceFor(operation context.Context, sourcePath string) (string, error) {
+	if err := operation.Err(); err != nil {
+		return "", err
+	}
 	if _, ok := parseRemoteURL(sourcePath); !ok {
 		contents, err := os.ReadFile(sourcePath)
 		if err != nil {
@@ -1040,7 +1142,11 @@ func readMaceSource(sourcePath string) (string, error) {
 		return string(contents), nil
 	}
 
-	response, err := http.Get(sourcePath)
+	request, err := http.NewRequestWithContext(operation, http.MethodGet, sourcePath, nil)
+	if err != nil {
+		return "", err
+	}
+	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return "", err
 	}
@@ -1058,6 +1164,13 @@ func readMaceSource(sourcePath string) (string, error) {
 }
 
 func loadImportExports(path string, importRootDir string, enforceImportRoot bool, cache map[string]map[string]importedDeclaration, stack map[string]struct{}) (map[string]importedDeclaration, error) {
+	return loadImportExportsFor(context.Background(), path, importRootDir, enforceImportRoot, cache, stack)
+}
+
+func loadImportExportsFor(operation context.Context, path string, importRootDir string, enforceImportRoot bool, cache map[string]map[string]importedDeclaration, stack map[string]struct{}) (map[string]importedDeclaration, error) {
+	if err := operation.Err(); err != nil {
+		return nil, err
+	}
 	if declarations, ok := cache[path]; ok {
 		return declarations, nil
 	}
@@ -1068,8 +1181,11 @@ func loadImportExports(path string, importRootDir string, enforceImportRoot bool
 	stack[path] = struct{}{}
 	defer delete(stack, path)
 
-	contents, err := readMaceSource(path)
+	contents, err := readMaceSourceFor(operation, path)
 	if err != nil {
+		if operation.Err() != nil {
+			return nil, operation.Err()
+		}
 		return nil, validationErrorf("unable to read import file %q", path)
 	}
 
@@ -1083,7 +1199,8 @@ func loadImportExports(path string, importRootDir string, enforceImportRoot bool
 		return nil, validationErrorf("unable to parse import file %q: %s", path, err)
 	}
 
-	context, err := buildProcessContextWithState(
+	context, err := buildProcessContextWithStateFor(
+		operation,
 		file.Imports,
 		file.Script,
 		basePathDir(path),

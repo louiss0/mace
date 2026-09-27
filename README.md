@@ -458,6 +458,20 @@ schemaSource, err := codec.ImportJSONSchema(`{
 For schema output, `codec.Parse` also returns structured schema metadata in
 `Result.Schema`.
 
+## Embedding and the processor library
+
+The official Node, Python, and Dart bindings call the processor through a
+separate, cgo-built shared library rather than invoking the `mace` CLI. The
+current C ABI, ownership rules, and local build instructions are in
+[`cmd/processor-abi/README.md`](cmd/processor-abi/README.md). This library is
+still in development; it is not a published processor release yet. CLI
+releases remain separate.
+
+The CLI's `json` command now treats its working directory as the workspace
+root. An entry file and its local imports must remain inside that root after
+symlinks resolve. HTTP(S) imports remain available; this check does not make
+configuration evaluation a network sandbox.
+
 ## Development
 
 ### Run tests
