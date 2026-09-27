@@ -166,7 +166,7 @@ jobs:
           set -euo pipefail
           mkdir -p stage
           # processor.h is identical for every target, so it is published once.
-          cp "artifacts/darwin-amd64/processor.h" stage/processor.h
+          cp "artifacts/processor-darwin-amd64/processor.h" stage/processor.h
           jq -r '.targets[] | [.target, .filename] | @tsv' processor-targets.json | while read -r target filename; do
             mkdir -p "stage/$target"
             cp "artifacts/processor-$target/$filename" "stage/$target/$filename"
