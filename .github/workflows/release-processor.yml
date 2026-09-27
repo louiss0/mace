@@ -38,11 +38,22 @@ jobs:
       - name: Install the musl toolchain
         if: matrix.target.libc == 'musl'
         shell: bash
+        env:
+          GOARCH: ${{ matrix.target.goarch }}
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install --yes musl-tools
           musl-gcc --version | head -n 1
+          # A musl-linked test program needs the musl loader, which the glibc
+          # runner does not provide under its expected name.
+          case "$GOARCH" in
+            amd64) loader=/lib/ld-musl-x86_64.so.1 ;;
+            arm64) loader=/lib/ld-musl-aarch64.so.1 ;;
+            *) echo "unsupported arch" >&2; exit 1 ;;
+          esac
+          sudo ln --force --symbolic "$(musl-gcc -print-file-name=libc.so)" "$loader"
+          ls -l "$loader"
 
       - name: Build the shared library
         # Windows runners default to PowerShell, which cannot run these steps.
@@ -85,7 +96,7 @@ jobs:
             clang cmd/processor-abi/tests/abi_smoke_windows.c -Icmd/processor-abi -o "dist/$TARGET/abi_smoke.exe"
             "dist/$TARGET/abi_smoke.exe" "$LIBRARY"
           elif [[ "${{ matrix.target.libc }}" == "musl" ]]; then
-            musl-gcc cmd/processor-abi/tests/abi_smoke.c -Icmd/processor-abi "$LIBRARY" -static -o "dist/$TARGET/abi_smoke"
+            musl-gcc cmd/processor-abi/tests/abi_smoke.c -Icmd/processor-abi "$LIBRARY" -o "dist/$TARGET/abi_smoke"
             "dist/$TARGET/abi_smoke"
           else
             gcc cmd/processor-abi/tests/abi_smoke.c -Icmd/processor-abi "$LIBRARY" -o "dist/$TARGET/abi_smoke"
