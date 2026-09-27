@@ -826,10 +826,6 @@ type importedDeclaration struct {
 	vtype   valueType
 }
 
-func resolveImportsWithState(file ast.File, importBaseDir string, importRootDir string, enforceImportRoot bool, cache map[string]map[string]importedDeclaration, stack map[string]struct{}) ([]importedDeclaration, error) {
-	return resolveImportsWithStateFor(context.Background(), file, importBaseDir, importRootDir, enforceImportRoot, cache, stack)
-}
-
 func resolveImportsWithStateFor(operation context.Context, file ast.File, importBaseDir string, importRootDir string, enforceImportRoot bool, cache map[string]map[string]importedDeclaration, stack map[string]struct{}) ([]importedDeclaration, error) {
 	if err := operation.Err(); err != nil {
 		return nil, err
