@@ -183,18 +183,18 @@ jobs:
         run: |
           set -euo pipefail
           # sha256sum separates the hash and the path with two spaces.
-          jq --rawfile checksums checksums.txt '
-            .version = $version |
-            .targets = [
-              .targets[] |
-              .artifact = "mace-processor/mace-processor-\(.target).\(.filename | split(".") | last)" |
-              .sha256 = (
-                $checksums | split("\n")
-                | map(select(length > 0) | split("  ") | {(.[1] | ltrimstr("./")): .[0]})
-                | add
-              )["stage/\(.target)/\(.filename)"]
-            ]
-          ' --arg version "${PROCESSOR_TAG#processor/}" processor-targets.json > processor-manifest.json
+          jq --rawfile checksums checksums.txt --arg version "${PROCESSOR_TAG#processor/}" '
+            ($checksums | split("\n")
+             | map(select(length > 0) | split("  ") | {(.[1] | ltrimstr("./")): .[0]})
+             | add) as $digests
+            | .version = $version
+            | .targets = [
+                .targets[]
+                | .asset = "mace-processor-\(.target).\(.filename | split(".") | last)"
+                | .artifact = "mace-processor/\(.asset)"
+                | .sha256 = $digests["stage/\(.target)/\(.asset)"]
+              ]
+          ' processor-targets.json > processor-manifest.json
           jq -e '[.targets[] | select(.sha256 == null or .sha256 == "")] | length == 0' processor-manifest.json > /dev/null
           cat processor-manifest.json
 
