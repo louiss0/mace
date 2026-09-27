@@ -103,9 +103,24 @@ jobs:
     outputs:
       targets: ${{ steps.read.outputs.targets }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # An empty or unreadable target list would silently produce a zero-job
+      # matrix, so this fails loudly instead of publishing nothing.
       - name: Read the target list
         id: read
-        run: echo "targets=$(jq -c '.targets' processor-targets.json)" >> "$GITHUB_OUTPUT"
+        shell: bash
+        run: |
+          set -euo pipefail
+          targets="$(jq -c '.targets' processor-targets.json)"
+          count="$(jq '.targets | length' processor-targets.json)"
+          if [[ "$count" -eq 0 ]]; then
+            echo "processor-targets.json lists no targets." >&2
+            exit 1
+          fi
+          echo "Building $count processor variants"
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
 
   publish:
     needs: [targets, build]
