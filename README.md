@@ -467,9 +467,11 @@ For schema output, `codec.Parse` also returns structured schema metadata in
 The official Node, Python, and Dart bindings call the processor through a
 separate, cgo-built shared library rather than invoking the `mace` CLI. The
 current C ABI, ownership rules, and local build instructions are in
-[`cmd/processor-abi/README.md`](cmd/processor-abi/README.md). This library is
-still in development; it is not a published processor release yet. CLI
-releases remain separate.
+[`cmd/processor-abi/README.md`](cmd/processor-abi/README.md). Processor
+artifacts are built and published for eight platform variants under their own
+`processor/vX.Y.Z` tag, separately from the `vX.Y.Z` CLI release. That
+release gate is implemented but has not yet run end to end, so the library is
+not a published processor release yet.
 
 The CLI's `json` command now treats its working directory as the workspace
 root. An entry file and its local imports must remain inside that root after

@@ -1,0 +1,70 @@
+{
+  "abiMajor": 1,
+  "library": "mace_processor",
+  "targets": [
+    {
+      "target": "darwin-amd64",
+      "goos": "darwin",
+      "goarch": "amd64",
+      "libc": "system",
+      "runner": "macos-13",
+      "filename": "libmace_processor.dylib"
+    },
+    {
+      "target": "darwin-arm64",
+      "goos": "darwin",
+      "goarch": "arm64",
+      "libc": "system",
+      "runner": "macos-14",
+      "filename": "libmace_processor.dylib"
+    },
+    {
+      "target": "windows-amd64",
+      "goos": "windows",
+      "goarch": "amd64",
+      "libc": "system",
+      "runner": "windows-2022",
+      "filename": "mace_processor.dll"
+    },
+    {
+      "target": "windows-arm64",
+      "goos": "windows",
+      "goarch": "arm64",
+      "libc": "system",
+      "runner": "windows-11-arm",
+      "filename": "mace_processor.dll"
+    },
+    {
+      "target": "linux-amd64-glibc",
+      "goos": "linux",
+      "goarch": "amd64",
+      "libc": "glibc",
+      "runner": "ubuntu-24.04",
+      "filename": "libmace_processor.so"
+    },
+    {
+      "target": "linux-arm64-glibc",
+      "goos": "linux",
+      "goarch": "arm64",
+      "libc": "glibc",
+      "runner": "ubuntu-24.04-arm",
+      "filename": "libmace_processor.so"
+    },
+    {
+      "target": "linux-amd64-musl",
+      "goos": "linux",
+      "goarch": "amd64",
+      "libc": "musl",
+      "runner": "ubuntu-24.04",
+      "filename": "libmace_processor.so"
+    },
+    {
+      "target": "linux-arm64-musl",
+      "goos": "linux",
+      "goarch": "arm64",
+      "libc": "musl",
+      "runner": "ubuntu-24.04-arm",
+      "filename": "libmace_processor.so"
+    }
+  ]
+}

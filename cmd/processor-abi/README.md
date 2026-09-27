@@ -41,6 +41,20 @@ return a diagnostic instead of a value. Remote file imports and schema-file
 reads use cancellable HTTP requests. Cancellation checkpoints for every
 CPU-bound stage and synchronous local-file read remain incomplete.
 
-**Migration status:** Production artifact staging, the eight-platform release
-gate, and full cancellation coverage remain to be implemented before this ABI
-can be published independently of the CLI.
+## Releasing processor artifacts
+
+Processor artifacts ship on their own `processor/vX.Y.Z` cadence, separately
+from the `vX.Y.Z` CLI release. [`processor-targets.json`](../../processor-targets.json)
+is the canonical list of the eight supported variants and is verified by
+`cmd/processor-abi/targets_test.go`. `.github/workflows/release-processor.yml`
+builds each variant on its native runner, runs `abi_test.py` against the
+freshly built library, and refuses to publish unless all eight variants
+upload successfully. The published release contains
+`processor-manifest.json` (version, target, artifact path, SHA-256) plus
+`checksums.txt`, and every staged artifact carries a build-provenance
+attestation. Bindings pin a version and verify the manifest hash before
+staging a library.
+
+**Migration status:** The eight-variant release gate now exists but has not run
+end to end, installed-package tests do not yet cover every variant, and full
+CPU-bound cancellation coverage is still incomplete.
