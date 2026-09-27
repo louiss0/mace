@@ -1005,11 +1005,6 @@ func resolveBoundedPath(importBaseDir string, importRootDir string, importPath s
 		return resolveBoundedRemotePath(importBaseDir, importRootDir, importPath, resolvedPath)
 	}
 
-	cleanPath := filepath.Clean(filepath.FromSlash(importPath))
-	if cleanPath == ".." || strings.HasPrefix(cleanPath, ".."+string(filepath.Separator)) {
-		return "", validationErrorf("import path %q escapes root: root=%q, base=%q, resolved=%q", importPath, formatImportRoot(importRootDir), importBaseDir, resolvedPath)
-	}
-
 	absoluteRoot, err := filepath.Abs(importRootDir)
 	if err != nil {
 		return "", validationErrorf("unable to resolve path %q", importPath)
