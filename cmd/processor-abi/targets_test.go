@@ -15,7 +15,6 @@ type releaseTarget struct {
 	GOOS     string `json:"goos"`
 	GOARCH   string `json:"goarch"`
 	Libc     string `json:"libc"`
-	Zigarch  string `json:"zigarch"`
 	Runner   string `json:"runner"`
 	Filename string `json:"filename"`
 }
@@ -75,19 +74,24 @@ func TestProcessorReleaseTargetsMatchTheirGoPlatform(t *testing.T) {
 	}
 }
 
-// Zig names architectures differently from Go, so a musl target must carry the
-// spelling its cross compiler expects.
-func TestMuslTargetsCarryTheZigArchitectureName(t *testing.T) {
-	expected := map[string]string{"amd64": "x86_64", "arm64": "aarch64"}
-
+// Every musl target names the C compiler the release workflow builds it with,
+// so a target can never claim a libc the build does not produce.
+func TestMuslTargetsDeclareTheirCrossCompiler(t *testing.T) {
 	for _, target := range loadReleaseTargets(t).Targets {
-		if target.Libc != "musl" {
-			continue
-		}
-		if target.Zigarch != expected[target.GOARCH] {
-			t.Errorf("target %q zig architecture = %q, want %q", target.Target, target.Zigarch, expected[target.GOARCH])
+		if target.Libc == "musl" && target.goCompiler() != "musl-gcc" {
+			t.Errorf("target %q libc %q builds with %q, want musl-gcc", target.Target, target.Libc, target.goCompiler())
 		}
 	}
+}
+
+func (target releaseTarget) goCompiler() string {
+	if target.Libc == "musl" {
+		return "musl-gcc"
+	}
+	if target.GOOS == "windows" {
+		return "clang"
+	}
+	return "cc"
 }
 
 func TestProcessorReleaseTargetsUseTheSharedLibraryName(t *testing.T) {

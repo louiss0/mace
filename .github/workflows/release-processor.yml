@@ -35,12 +35,14 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Install the musl cross toolchain
+      - name: Install the musl toolchain
         if: matrix.target.libc == 'musl'
-        # Pinned to an immutable commit so a moved tag cannot alter a release build.
-        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-        with:
-          version: '0.13.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes musl-tools
+          musl-gcc --version | head -n 1
 
       - name: Build the shared library
         # Windows runners default to PowerShell, which cannot run these steps.
@@ -49,8 +51,9 @@ jobs:
           CGO_ENABLED: '1'
           GOOS: ${{ matrix.target.goos }}
           GOARCH: ${{ matrix.target.goarch }}
-          CC: ${{ matrix.target.libc == 'musl' && 'zig cc -target' || 'cc' }}
-          CGO_CFLAGS: ${{ matrix.target.libc == 'musl' && format('-target {0}-linux-musl', matrix.target.zigarch) || '' }}
+          # clang is used on Windows so the compiler matches the runner's
+          # architecture; an x64 gcc cannot assemble an arm64 cgo object.
+          CC: ${{ matrix.target.libc == 'musl' && 'musl-gcc' || (startsWith(matrix.target.goos, 'windows') && 'clang' || 'cc') }}
         run: |
           set -euo pipefail
           mkdir -p "dist/${{ matrix.target.target }}"
@@ -67,6 +70,8 @@ jobs:
 
       # The C smoke test is the only check that proves the exported symbols are
       # reachable and correctly shaped through a real C toolchain on this target.
+      # Windows has no import library for a Go c-shared DLL, so its test loads
+      # the library by name instead of linking against it.
       - name: Verify the C ABI from a C program
         shell: bash
         env:
@@ -75,15 +80,11 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "${{ matrix.target.goos }}" == "windows" ]]; then
-            cc=clang
-            smoke=abi_smoke.exe
-            "$cc" cmd/processor-abi/tests/abi_smoke.c -Icmd/processor-abi "$LIBRARY" -o "dist/$TARGET/$smoke"
-            "dist/$TARGET/$smoke"
+            clang cmd/processor-abi/tests/abi_smoke_windows.c -Icmd/processor-abi -o "dist/$TARGET/abi_smoke.exe"
+            "dist/$TARGET/abi_smoke.exe" "$LIBRARY"
           else
-            cc=gcc
-            smoke=abi_smoke
-            "$cc" cmd/processor-abi/tests/abi_smoke.c -Icmd/processor-abi "$LIBRARY" -o "dist/$TARGET/$smoke"
-            DYLD_LIBRARY_PATH="$PWD/dist/$TARGET" LD_LIBRARY_PATH="$PWD/dist/$TARGET" "dist/$TARGET/$smoke"
+            gcc cmd/processor-abi/tests/abi_smoke.c -Icmd/processor-abi "$LIBRARY" -o "dist/$TARGET/abi_smoke"
+            DYLD_LIBRARY_PATH="$PWD/dist/$TARGET" LD_LIBRARY_PATH="$PWD/dist/$TARGET" "dist/$TARGET/abi_smoke"
           fi
 
       - name: Verify the library reports the expected ABI

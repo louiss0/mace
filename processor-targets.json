@@ -55,7 +55,6 @@
       "goos": "linux",
       "goarch": "amd64",
       "libc": "musl",
-      "zigarch": "x86_64",
       "runner": "ubuntu-24.04",
       "filename": "libmace_processor.so"
     },
@@ -64,7 +63,6 @@
       "goos": "linux",
       "goarch": "arm64",
       "libc": "musl",
-      "zigarch": "aarch64",
       "runner": "ubuntu-24.04-arm",
       "filename": "libmace_processor.so"
     }
