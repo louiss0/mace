@@ -37,7 +37,8 @@ jobs:
 
       - name: Install the musl cross toolchain
         if: matrix.target.libc == 'musl'
-        uses: mymindstorm/setup-zig@v2
+        # Pinned to an immutable commit so a moved tag cannot alter a release build.
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: '0.13.0'
 
