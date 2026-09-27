@@ -7,7 +7,7 @@
       "goos": "darwin",
       "goarch": "amd64",
       "libc": "system",
-      "runner": "macos-13",
+      "runner": "macos-15-intel",
       "filename": "libmace_processor.dylib"
     },
     {
@@ -55,6 +55,7 @@
       "goos": "linux",
       "goarch": "amd64",
       "libc": "musl",
+      "zigarch": "x86_64",
       "runner": "ubuntu-24.04",
       "filename": "libmace_processor.so"
     },
@@ -63,6 +64,7 @@
       "goos": "linux",
       "goarch": "arm64",
       "libc": "musl",
+      "zigarch": "aarch64",
       "runner": "ubuntu-24.04-arm",
       "filename": "libmace_processor.so"
     }

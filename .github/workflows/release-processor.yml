@@ -43,12 +43,14 @@ jobs:
           version: '0.13.0'
 
       - name: Build the shared library
+        # Windows runners default to PowerShell, which cannot run these steps.
+        shell: bash
         env:
           CGO_ENABLED: '1'
           GOOS: ${{ matrix.target.goos }}
           GOARCH: ${{ matrix.target.goarch }}
           CC: ${{ matrix.target.libc == 'musl' && 'zig cc -target' || 'cc' }}
-          CGO_CFLAGS: ${{ matrix.target.libc == 'musl' && format('-target {0}-{1}-linux-musl', matrix.target.goarch, matrix.target.goos) || '' }}
+          CGO_CFLAGS: ${{ matrix.target.libc == 'musl' && format('-target {0}-linux-musl', matrix.target.zigarch) || '' }}
         run: |
           set -euo pipefail
           mkdir -p "dist/${{ matrix.target.target }}"

@@ -15,6 +15,7 @@ type releaseTarget struct {
 	GOOS     string `json:"goos"`
 	GOARCH   string `json:"goarch"`
 	Libc     string `json:"libc"`
+	Zigarch  string `json:"zigarch"`
 	Runner   string `json:"runner"`
 	Filename string `json:"filename"`
 }
@@ -70,6 +71,21 @@ func TestProcessorReleaseTargetsMatchTheirGoPlatform(t *testing.T) {
 	for _, target := range loadReleaseTargets(t).Targets {
 		if target.Target != target.GOOS+"-"+target.GOARCH+libcSuffix(target.Libc) {
 			t.Errorf("target %q does not describe %s/%s (%s)", target.Target, target.GOOS, target.GOARCH, target.Libc)
+		}
+	}
+}
+
+// Zig names architectures differently from Go, so a musl target must carry the
+// spelling its cross compiler expects.
+func TestMuslTargetsCarryTheZigArchitectureName(t *testing.T) {
+	expected := map[string]string{"amd64": "x86_64", "arm64": "aarch64"}
+
+	for _, target := range loadReleaseTargets(t).Targets {
+		if target.Libc != "musl" {
+			continue
+		}
+		if target.Zigarch != expected[target.GOARCH] {
+			t.Errorf("target %q zig architecture = %q, want %q", target.Target, target.Zigarch, expected[target.GOARCH])
 		}
 	}
 }
