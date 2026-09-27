@@ -183,7 +183,7 @@ jobs:
         run: |
           set -euo pipefail
           # sha256sum separates the hash and the path with two spaces.
-          jq --rawfile checksums checksums.txt --arg version "${PROCESSOR_TAG#processor/}" '
+          jq --rawfile checksums checksums.txt --arg version "${PROCESSOR_TAG#processor/v}" '
             ($checksums | split("\n")
              | map(select(length > 0) | split("  ") | {(.[1] | ltrimstr("./")): .[0]})
              | add) as $digests
