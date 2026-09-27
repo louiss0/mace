@@ -292,8 +292,7 @@ func (p *Processor) ProcessFileInDir(path string, importRootDir string) (Result,
 	if err != nil {
 		return Result{}, validationErrorf("unable to resolve workspace %q", importRootDir)
 	}
-	relativePath, err := filepath.Rel(absoluteRoot, absolutePath)
-	if err != nil || relativePath == ".." || strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) {
+	if !isWithinRoot(absoluteRoot, absolutePath) {
 		return Result{}, validationErrorf("entry file escapes workspace: %q", path)
 	}
 
@@ -1037,11 +1036,7 @@ func resolveBoundedPath(importBaseDir string, importRootDir string, importPath s
 		return "", validationErrorf("unable to resolve path %q", importPath)
 	}
 
-	relativePath, err := filepath.Rel(absoluteRoot, absolutePath)
-	if err != nil {
-		return "", validationErrorf("unable to resolve path %q", importPath)
-	}
-	if relativePath == ".." || strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) {
+	if !isWithinRoot(absoluteRoot, absolutePath) {
 		return "", validationErrorf("import path %q escapes root: root=%q, base=%q, resolved=%q", importPath, formatImportRoot(importRootDir), importBaseDir, resolvedPath)
 	}
 
@@ -1057,12 +1052,22 @@ func resolveBoundedPath(importBaseDir string, importRootDir string, importPath s
 	if err != nil {
 		return "", validationErrorf("unable to resolve import path %q", importPath)
 	}
-	resolvedRelative, err := filepath.Rel(resolvedRoot, resolvedFile)
-	if err != nil || resolvedRelative == ".." || strings.HasPrefix(resolvedRelative, ".."+string(filepath.Separator)) {
+	if !isWithinRoot(resolvedRoot, resolvedFile) {
 		return "", validationErrorf("import path %q escapes root: root=%q, base=%q, resolved=%q", importPath, formatImportRoot(importRootDir), importBaseDir, resolvedFile)
 	}
 
 	return resolvedFile, nil
+}
+
+// isWithinRoot reports whether an absolute candidate stays inside an absolute
+// root. Parent-relative paths are allowed when they still resolve inside.
+func isWithinRoot(root string, candidate string) bool {
+	relative, err := filepath.Rel(root, candidate)
+	if err != nil {
+		return false
+	}
+
+	return relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
 func resolveBoundedRemotePath(importBaseDir string, importRootDir string, importPath string, resolvedPath string) (string, error) {
