@@ -148,7 +148,8 @@ jobs:
         with:
           path: artifacts
           pattern: processor-*
-          merge-multiple: true
+          # Each variant must keep its own directory so a missing target is visible.
+          merge-multiple: false
 
       - name: Reject a partial release
         run: |
@@ -168,7 +169,7 @@ jobs:
           cp "artifacts/darwin-amd64/processor.h" stage/processor.h
           jq -r '.targets[] | [.target, .filename] | @tsv' processor-targets.json | while read -r target filename; do
             mkdir -p "stage/$target"
-            cp "artifacts/$target/$filename" "stage/$target/$filename"
+            cp "artifacts/processor-$target/$filename" "stage/$target/$filename"
           done
           # Generated from the workspace root so every recorded path is already
           # stage/<target>/<filename>, which is what the manifest looks up.
