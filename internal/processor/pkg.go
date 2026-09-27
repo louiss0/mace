@@ -158,11 +158,22 @@ func NewWithContext(operation context.Context, input map[string]Value) *Processo
 	return instance
 }
 
+// DefaultEvaluationTimeout bounds every evaluation that does not arrive with
+// its own deadline, including callers that pass a context without one.
+const DefaultEvaluationTimeout = 30 * time.Second
+
+// operationContext derives the context for a single evaluation. The earliest
+// deadline wins so a caller-supplied deadline can shorten, but never remove,
+// the default evaluation budget.
 func (p *Processor) operationContext() (context.Context, context.CancelFunc) {
-	if p.operation != nil {
-		return context.WithCancel(p.operation)
+	parent := p.operation
+	if parent == nil {
+		parent = context.Background()
 	}
-	return context.WithTimeout(context.Background(), 30*time.Second)
+	if deadline, ok := parent.Deadline(); ok && time.Until(deadline) < DefaultEvaluationTimeout {
+		return context.WithCancel(parent)
+	}
+	return context.WithTimeout(parent, DefaultEvaluationTimeout)
 }
 
 var getwd = os.Getwd

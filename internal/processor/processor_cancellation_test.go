@@ -21,6 +21,41 @@ func TestCancelledOperationReturnsBeforeEvaluating(t *testing.T) {
 	}
 }
 
+func TestOperationWithoutADeadlineStillGetsTheDefaultEvaluationTimeout(t *testing.T) {
+	instance := NewWithContext(context.Background(), nil)
+
+	operation, cancel := instance.operationContext()
+	defer cancel()
+
+	deadline, ok := operation.Deadline()
+	if !ok {
+		t.Fatal("expected an operation without a deadline to receive the default timeout")
+	}
+	if remaining := time.Until(deadline); remaining > DefaultEvaluationTimeout {
+		t.Fatalf("default deadline is %v away, want at most %v", remaining, DefaultEvaluationTimeout)
+	}
+}
+
+func TestCallerDeadlineShorterThanTheDefaultIsPreserved(t *testing.T) {
+	operation, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	callerDeadline, _ := operation.Deadline()
+
+	derived, cancelDerived := NewWithContext(operation, nil).operationContext()
+	defer cancelDerived()
+
+	derivedDeadline, ok := derived.Deadline()
+	if !ok {
+		t.Fatal("expected the caller deadline to be preserved")
+	}
+	if remaining := time.Until(derivedDeadline); remaining > 50*time.Millisecond {
+		t.Fatalf("derived deadline is %v away, want at most the caller deadline", remaining)
+	}
+	if !derivedDeadline.After(callerDeadline) && !derivedDeadline.Equal(callerDeadline) {
+		t.Fatalf("derived deadline %v does not extend the caller deadline %v", derivedDeadline, callerDeadline)
+	}
+}
+
 func TestDeadlineCancelsStalledRemoteImport(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
 		<-request.Context().Done()
