@@ -46,15 +46,34 @@ type nativeRequest struct {
 	cancel    context.CancelFunc
 }
 
-var handles = struct {
-	sync.RWMutex
+// A handle registry maps opaque numeric handles to the Go state behind them.
+// Go memory never crosses the C boundary: every exported call resolves its
+// handle here under one lock, and strings are copied out into C memory.
+type handleRegistry struct {
+	mutex    sync.RWMutex
 	next     uint64
 	results  map[uint64]*nativeResult
 	values   map[uint64]nativeValue
 	requests map[uint64]nativeRequest
-}{results: make(map[uint64]*nativeResult), values: make(map[uint64]nativeValue), requests: make(map[uint64]nativeRequest)}
+	limit    uint64
+	overflow uint64
+}
 
-func registerValue(value processor.Value, owner *nativeResult) uint64 {
+func newHandleRegistry(limit uint64) *handleRegistry {
+	return &handleRegistry{
+		results:  make(map[uint64]*nativeResult),
+		values:   make(map[uint64]nativeValue),
+		requests: make(map[uint64]nativeRequest),
+		limit:    limit,
+	}
+}
+
+func (registry *handleRegistry) live() uint64 {
+	return uint64(len(registry.results) + len(registry.values) + len(registry.requests))
+}
+
+// addValue registers a value and its descendants. The caller holds the write lock.
+func (registry *handleRegistry) addValue(value processor.Value, owner *nativeResult) uint64 {
 	entry := nativeValue{
 		kind:    value.Kind,
 		text:    value.String,
@@ -74,50 +93,163 @@ func registerValue(value processor.Value, owner *nativeResult) uint64 {
 		}
 		slices.Sort(entry.keys)
 		for _, key := range entry.keys {
-			entry.children = append(entry.children, registerValue(value.Record[key], owner))
+			entry.children = append(entry.children, registry.addValue(value.Record[key], owner))
 		}
 	case processor.ValueArray:
 		for _, child := range value.Array {
-			entry.children = append(entry.children, registerValue(child, owner))
+			entry.children = append(entry.children, registry.addValue(child, owner))
 		}
 	}
 
-	handles.next++
-	id := handles.next
-	handles.values[id] = entry
-	owner.handles = append(owner.handles, id)
-	return id
+	registry.next++
+	registry.values[registry.next] = entry
+	owner.handles = append(owner.handles, registry.next)
+
+	return registry.next
 }
 
-func registerResult(output map[string]processor.Value, failure error) C.uint64_t {
-	handles.Lock()
-	defer handles.Unlock()
+// addResult stores a finished evaluation. Once the live handle budget is spent it
+// returns one shared result carrying ErrTooManyLiveHandles instead of growing, so
+// an embedder that never frees results fails on every call rather than exhausting
+// the host's memory.
+func (registry *handleRegistry) addResult(output map[string]processor.Value, failure error) uint64 {
+	registry.mutex.Lock()
+	defer registry.mutex.Unlock()
+
+	if failure == nil && registry.live() >= registry.limit {
+		return registry.overflowResult()
+	}
 
 	result := &nativeResult{failure: failure}
 	if failure == nil {
-		result.root = registerValue(processor.Value{Kind: processor.ValueRecord, Record: output}, result)
+		result.root = registry.addValue(processor.Value{Kind: processor.ValueRecord, Record: output}, result)
 	}
-	handles.next++
-	id := handles.next
-	handles.results[id] = result
-	return C.uint64_t(id)
+	registry.next++
+	registry.results[registry.next] = result
+
+	return registry.next
 }
+
+// overflowResult reuses a single handle for every call made past the budget. The
+// caller holds the write lock.
+func (registry *handleRegistry) overflowResult() uint64 {
+	if registry.overflow != 0 {
+		return registry.overflow
+	}
+
+	registry.next++
+	registry.overflow = registry.next
+	registry.results[registry.overflow] = &nativeResult{failure: ErrTooManyLiveHandles}
+
+	return registry.overflow
+}
+
+func (registry *handleRegistry) result(id uint64) (*nativeResult, bool) {
+	registry.mutex.RLock()
+	defer registry.mutex.RUnlock()
+
+	owned, ok := registry.results[id]
+
+	return owned, ok
+}
+
+func (registry *handleRegistry) resultRoot(id uint64) uint64 {
+	owned, ok := registry.result(id)
+	if !ok {
+		return 0
+	}
+
+	return owned.root
+}
+
+func (registry *handleRegistry) freeResult(id uint64) {
+	registry.mutex.Lock()
+	defer registry.mutex.Unlock()
+
+	owned, ok := registry.results[id]
+	if !ok {
+		return
+	}
+	if registry.overflow == id {
+		registry.overflow = 0
+	}
+	for _, handle := range owned.handles {
+		delete(registry.values, handle)
+	}
+	delete(registry.results, id)
+}
+
+func (registry *handleRegistry) value(id uint64) (nativeValue, bool) {
+	registry.mutex.RLock()
+	defer registry.mutex.RUnlock()
+
+	entry, ok := registry.values[id]
+
+	return entry, ok
+}
+
+func (registry *handleRegistry) addRequest(request nativeRequest) uint64 {
+	registry.mutex.Lock()
+	defer registry.mutex.Unlock()
+
+	registry.next++
+	registry.requests[registry.next] = request
+
+	return registry.next
+}
+
+func (registry *handleRegistry) request(id uint64) (nativeRequest, bool) {
+	registry.mutex.RLock()
+	defer registry.mutex.RUnlock()
+
+	owned, ok := registry.requests[id]
+
+	return owned, ok
+}
+
+func (registry *handleRegistry) cancelRequest(id uint64) {
+	if owned, ok := registry.request(id); ok {
+		owned.cancel()
+	}
+}
+
+func (registry *handleRegistry) freeRequest(id uint64) {
+	registry.mutex.Lock()
+	owned, ok := registry.requests[id]
+	delete(registry.requests, id)
+	registry.mutex.Unlock()
+
+	if ok {
+		owned.cancel()
+	}
+}
+
+// liveHandleLimit bounds the registry so a caller that leaks results or requests
+// fails loudly instead of growing until the host runs out of memory. A single
+// evaluation of a large configuration stays well inside this budget.
+const liveHandleLimit = 1_000_000
+
+// ErrTooManyLiveHandles reports that the registry's budget is exhausted, which
+// means the embedder is not releasing results and requests.
+var ErrTooManyLiveHandles = errors.New("too many live processor handles; free results and requests")
+
+var handles = newHandleRegistry(liveHandleLimit)
 
 func evaluate(operation context.Context, input *C.char, workspace *C.char, injection *C.char, file bool) C.uint64_t {
 	if input == nil {
-		return registerResult(nil, errors.New("missing source or path"))
+		return C.uint64_t(handles.addResult(nil, errors.New("missing source or path")))
 	}
 
 	root, err := os.Getwd()
 	if err != nil {
-		return registerResult(nil, err)
+		return C.uint64_t(handles.addResult(nil, err))
 	}
 	if workspace != nil {
 		root = C.GoString(workspace)
 	}
 	root, err = filepath.Abs(root)
 	if err != nil {
-		return registerResult(nil, err)
+		return C.uint64_t(handles.addResult(nil, err))
 	}
 
 	var inputRecord map[string]processor.Value
@@ -125,7 +257,7 @@ func evaluate(operation context.Context, input *C.char, workspace *C.char, injec
 		var parseErr error
 		inputRecord, parseErr = processor.ParseInputRecord(C.GoString(injection))
 		if parseErr != nil {
-			return registerResult(nil, parseErr)
+			return C.uint64_t(handles.addResult(nil, parseErr))
 		}
 	}
 	instance := processor.NewWithContext(operation, inputRecord)
@@ -140,7 +272,7 @@ func evaluate(operation context.Context, input *C.char, workspace *C.char, injec
 	} else {
 		result, err = instance.ProcessInDir(C.GoString(input), root)
 	}
-	return registerResult(result.Output, err)
+	return C.uint64_t(handles.addResult(result.Output, err))
 }
 
 //export mace_abi_major
@@ -168,41 +300,23 @@ func mace_request_new(timeout C.uint32_t) C.uint64_t {
 		timeout = 30_000
 	}
 	operation, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Millisecond)
-	handles.Lock()
-	defer handles.Unlock()
-	handles.next++
-	id := handles.next
-	handles.requests[id] = nativeRequest{operation: operation, cancel: cancel}
-	return C.uint64_t(id)
+	return C.uint64_t(handles.addRequest(nativeRequest{operation: operation, cancel: cancel}))
 }
 
 //export mace_request_cancel
 func mace_request_cancel(request C.uint64_t) {
-	handles.RLock()
-	owned, ok := handles.requests[uint64(request)]
-	handles.RUnlock()
-	if ok {
-		owned.cancel()
-	}
+	handles.cancelRequest(uint64(request))
 }
 
 //export mace_request_free
 func mace_request_free(request C.uint64_t) {
-	handles.Lock()
-	owned, ok := handles.requests[uint64(request)]
-	delete(handles.requests, uint64(request))
-	handles.Unlock()
-	if ok {
-		owned.cancel()
-	}
+	handles.freeRequest(uint64(request))
 }
 
 func processWithRequest(request C.uint64_t, input *C.char, workspace *C.char, injection *C.char, file bool) C.uint64_t {
-	handles.RLock()
-	owned, ok := handles.requests[uint64(request)]
-	handles.RUnlock()
+	owned, ok := handles.request(uint64(request))
 	if !ok {
-		return registerResult(nil, errors.New("invalid processor request"))
+		return C.uint64_t(handles.addResult(nil, errors.New("invalid processor request")))
 	}
 	return evaluate(owned.operation, input, workspace, injection, file)
 }
@@ -219,19 +333,13 @@ func mace_process_file_with_request(request C.uint64_t, path *C.char, workspace 
 
 //export mace_result_root
 func mace_result_root(result C.uint64_t) C.uint64_t {
-	handles.RLock()
-	defer handles.RUnlock()
-	if owned := handles.results[uint64(result)]; owned != nil {
-		return C.uint64_t(owned.root)
-	}
-	return 0
+	return C.uint64_t(handles.resultRoot(uint64(result)))
 }
 
 //export mace_result_error
 func mace_result_error(result C.uint64_t) *C.char {
-	handles.RLock()
-	defer handles.RUnlock()
-	if owned := handles.results[uint64(result)]; owned != nil && owned.failure != nil {
+	owned, ok := handles.result(uint64(result))
+	if ok && owned.failure != nil {
 		return C.CString(owned.failure.Error())
 	}
 	return nil
@@ -256,116 +364,86 @@ func describeFailure(failure error) (string, string, diagnostic.Range) {
 
 //export mace_result_error_code
 func mace_result_error_code(result C.uint64_t) *C.char {
-	handles.RLock()
-	defer handles.RUnlock()
-	if owned := handles.results[uint64(result)]; owned != nil {
+	if owned, ok := handles.result(uint64(result)); ok {
 		_, code, _ := describeFailure(owned.failure)
 		if code != "" {
 			return C.CString(code)
 		}
 	}
+
 	return nil
 }
 
 //export mace_result_error_kind
 func mace_result_error_kind(result C.uint64_t) *C.char {
-	handles.RLock()
-	defer handles.RUnlock()
-	if owned := handles.results[uint64(result)]; owned != nil {
+	if owned, ok := handles.result(uint64(result)); ok {
 		kind, _, _ := describeFailure(owned.failure)
 		if kind != "" {
 			return C.CString(kind)
 		}
 	}
+
 	return nil
 }
 
 //export mace_result_error_line
 func mace_result_error_line(result C.uint64_t) C.uint32_t {
-	handles.RLock()
-	defer handles.RUnlock()
-	if owned := handles.results[uint64(result)]; owned != nil {
-		_, _, span := describeFailure(owned.failure)
-		return C.uint32_t(span.Start.Line)
-	}
-	return 0
+	return C.uint32_t(failureRange(uint64(result)).Start.Line)
 }
 
 //export mace_result_error_column
 func mace_result_error_column(result C.uint64_t) C.uint32_t {
-	handles.RLock()
-	defer handles.RUnlock()
-	if owned := handles.results[uint64(result)]; owned != nil {
-		_, _, span := describeFailure(owned.failure)
-		return C.uint32_t(span.Start.Column)
-	}
-	return 0
+	return C.uint32_t(failureRange(uint64(result)).Start.Column)
 }
 
 //export mace_result_error_end_line
 func mace_result_error_end_line(result C.uint64_t) C.uint32_t {
-	handles.RLock()
-	defer handles.RUnlock()
-	if owned := handles.results[uint64(result)]; owned != nil {
-		_, _, span := describeFailure(owned.failure)
-		return C.uint32_t(span.End.Line)
-	}
-	return 0
+	return C.uint32_t(failureRange(uint64(result)).End.Line)
 }
 
 //export mace_result_error_end_column
 func mace_result_error_end_column(result C.uint64_t) C.uint32_t {
-	handles.RLock()
-	defer handles.RUnlock()
-	if owned := handles.results[uint64(result)]; owned != nil {
-		_, _, span := describeFailure(owned.failure)
-		return C.uint32_t(span.End.Column)
+	return C.uint32_t(failureRange(uint64(result)).End.Column)
+}
+
+func failureRange(id uint64) diagnostic.Range {
+	owned, ok := handles.result(id)
+	if !ok {
+		return diagnostic.Range{}
 	}
-	return 0
+
+	_, _, span := describeFailure(owned.failure)
+
+	return span
 }
 
 //export mace_result_free
 func mace_result_free(result C.uint64_t) {
-	handles.Lock()
-	defer handles.Unlock()
-	if owned := handles.results[uint64(result)]; owned != nil {
-		for _, id := range owned.handles {
-			delete(handles.values, id)
-		}
-		delete(handles.results, uint64(result))
-	}
-}
-
-func findValue(id C.uint64_t) nativeValue {
-	return handles.values[uint64(id)]
+	handles.freeResult(uint64(result))
 }
 
 //export mace_value_kind
 func mace_value_kind(id C.uint64_t) C.uint32_t {
-	handles.RLock()
-	defer handles.RUnlock()
-	return C.uint32_t(findValue(id).kind)
+	entry, _ := handles.value(uint64(id))
+	return C.uint32_t(entry.kind)
 }
 
 //export mace_value_int
 func mace_value_int(id C.uint64_t) C.int64_t {
-	handles.RLock()
-	defer handles.RUnlock()
-	return C.int64_t(findValue(id).integer)
+	entry, _ := handles.value(uint64(id))
+	return C.int64_t(entry.integer)
 }
 
 //export mace_value_float
 func mace_value_float(id C.uint64_t) C.double {
-	handles.RLock()
-	defer handles.RUnlock()
-	return C.double(findValue(id).decimal)
+	entry, _ := handles.value(uint64(id))
+	return C.double(entry.decimal)
 }
 
 //export mace_value_boolean
 func mace_value_boolean(id C.uint64_t) C.uint8_t {
-	handles.RLock()
-	defer handles.RUnlock()
-	if findValue(id).boolean {
+	entry, _ := handles.value(uint64(id))
+	if entry.boolean {
 		return 1
 	}
 	return 0
@@ -373,33 +451,25 @@ func mace_value_boolean(id C.uint64_t) C.uint8_t {
 
 //export mace_value_string
 func mace_value_string(id C.uint64_t) *C.char {
-	handles.RLock()
-	defer handles.RUnlock()
-	if id == 0 {
-		return nil
-	}
-	return C.CString(findValue(id).text)
+	entry, _ := handles.value(uint64(id))
+	return C.CString(entry.text)
 }
 
 //export mace_value_string_length
 func mace_value_string_length(id C.uint64_t) C.uint64_t {
-	handles.RLock()
-	defer handles.RUnlock()
-	return C.uint64_t(len(findValue(id).text))
+	entry, _ := handles.value(uint64(id))
+	return C.uint64_t(len(entry.text))
 }
 
 //export mace_value_record_length
 func mace_value_record_length(id C.uint64_t) C.uint64_t {
-	handles.RLock()
-	defer handles.RUnlock()
-	return C.uint64_t(len(findValue(id).keys))
+	entry, _ := handles.value(uint64(id))
+	return C.uint64_t(len(entry.keys))
 }
 
 //export mace_value_record_key
 func mace_value_record_key(id C.uint64_t, index C.uint64_t) *C.char {
-	handles.RLock()
-	defer handles.RUnlock()
-	entry := findValue(id)
+	entry, _ := handles.value(uint64(id))
 	if index >= C.uint64_t(len(entry.keys)) {
 		return nil
 	}
@@ -408,9 +478,7 @@ func mace_value_record_key(id C.uint64_t, index C.uint64_t) *C.char {
 
 //export mace_value_record_key_length
 func mace_value_record_key_length(id C.uint64_t, index C.uint64_t) C.uint64_t {
-	handles.RLock()
-	defer handles.RUnlock()
-	entry := findValue(id)
+	entry, _ := handles.value(uint64(id))
 	if index >= C.uint64_t(len(entry.keys)) {
 		return 0
 	}
@@ -419,9 +487,7 @@ func mace_value_record_key_length(id C.uint64_t, index C.uint64_t) C.uint64_t {
 
 //export mace_value_record_value
 func mace_value_record_value(id C.uint64_t, index C.uint64_t) C.uint64_t {
-	handles.RLock()
-	defer handles.RUnlock()
-	entry := findValue(id)
+	entry, _ := handles.value(uint64(id))
 	if entry.kind != processor.ValueRecord || index >= C.uint64_t(len(entry.children)) {
 		return 0
 	}
@@ -430,9 +496,7 @@ func mace_value_record_value(id C.uint64_t, index C.uint64_t) C.uint64_t {
 
 //export mace_value_array_length
 func mace_value_array_length(id C.uint64_t) C.uint64_t {
-	handles.RLock()
-	defer handles.RUnlock()
-	entry := findValue(id)
+	entry, _ := handles.value(uint64(id))
 	if entry.kind != processor.ValueArray {
 		return 0
 	}
@@ -441,9 +505,7 @@ func mace_value_array_length(id C.uint64_t) C.uint64_t {
 
 //export mace_value_array_item
 func mace_value_array_item(id C.uint64_t, index C.uint64_t) C.uint64_t {
-	handles.RLock()
-	defer handles.RUnlock()
-	entry := findValue(id)
+	entry, _ := handles.value(uint64(id))
 	if entry.kind != processor.ValueArray || index >= C.uint64_t(len(entry.children)) {
 		return 0
 	}

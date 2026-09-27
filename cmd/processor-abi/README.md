@@ -34,6 +34,12 @@ pointers returned from getters are independent C allocations: read their
 reported byte length where available and always release them with
 `mace_string_free`. Do not free value handles individually.
 
+The registry that backs the handles holds at most `liveHandleLimit` entries. A
+caller that stops freeing results and requests does not grow the process until
+it is killed: every later evaluation fails with a `mace_result_error` of
+"too many live processor handles". Recover by releasing handles; the overflow
+result is a single shared handle, so the failure is bounded.
+
 Use `mace_request_new(timeout_ms)` and the `_with_request` entrypoints for
 per-call deadlines or cancellation from another thread. The default deadline
 is 30 seconds. The request must be freed after its result; cancelled calls
@@ -42,6 +48,14 @@ reads, import resolution, and every value evaluation share the request's
 deadline, so a long evaluation stops at the next expression checkpoint. A
 synchronous local-file read is the remaining stage that cannot be interrupted
 mid-call.
+
+## Remote imports are not a sandbox
+
+The workspace check bounds the entry file and every local import after
+symlinks resolve. HTTP(S) imports are deliberately outside that check, so a
+`.mace` file can name any URL, including a cloud metadata endpoint, and the
+host will issue the request. Treat an untrusted `.mace` file as untrusted
+network input, not merely as untrusted data.
 
 ## Releasing processor artifacts
 

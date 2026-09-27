@@ -476,8 +476,11 @@ not a published processor release yet.
 The CLI's `json` command now treats its working directory as the workspace
 root. An entry file and its local imports must remain inside that root after
 symlinks resolve. HTTP(S) imports remain available; this check does not make
-configuration evaluation a network sandbox. Each LSP document analysis gets
-its own 30-second deadline; the language server itself remains long-lived.
+configuration evaluation a network sandbox. A `.mace` file can therefore name
+any URL, including a cloud metadata endpoint, and `mace` will issue the
+request. Evaluate untrusted configuration with that in mind. Each LSP document
+analysis gets its own 30-second deadline; the language server itself remains
+long-lived.
 
 ## Development
 
