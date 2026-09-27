@@ -62,6 +62,27 @@ jobs:
         with:
           python-version: '3.12'
 
+      # The C smoke test is the only check that proves the exported symbols are
+      # reachable and correctly shaped through a real C toolchain on this target.
+      - name: Verify the C ABI from a C program
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target.target }}
+          LIBRARY: ${{ github.workspace }}/dist/${{ matrix.target.target }}/${{ matrix.target.filename }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ matrix.target.goos }}" == "windows" ]]; then
+            cc=clang
+            smoke=abi_smoke.exe
+            "$cc" cmd/processor-abi/tests/abi_smoke.c -Icmd/processor-abi "$LIBRARY" -o "dist/$TARGET/$smoke"
+            "dist/$TARGET/$smoke"
+          else
+            cc=gcc
+            smoke=abi_smoke
+            "$cc" cmd/processor-abi/tests/abi_smoke.c -Icmd/processor-abi "$LIBRARY" -o "dist/$TARGET/$smoke"
+            DYLD_LIBRARY_PATH="$PWD/dist/$TARGET" LD_LIBRARY_PATH="$PWD/dist/$TARGET" "dist/$TARGET/$smoke"
+          fi
+
       - name: Verify the library reports the expected ABI
         env:
           MACE_PROCESSOR_LIBRARY: ${{ github.workspace }}/dist/${{ matrix.target.target }}/${{ matrix.target.filename }}

@@ -14,6 +14,8 @@ typedef uint64_t mace_handle;
 
 enum mace_value_type {
     MACE_UNKNOWN = 0,
+    /* Reserved. A null output field is dropped before the ABI, so no successful
+       evaluation returns MACE_NULL. Bindings may keep decoding it defensively. */
     MACE_NULL = 1,
     MACE_STRING = 2,
     MACE_INT = 3,
