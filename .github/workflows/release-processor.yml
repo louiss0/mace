@@ -51,9 +51,11 @@ jobs:
           CGO_ENABLED: '1'
           GOOS: ${{ matrix.target.goos }}
           GOARCH: ${{ matrix.target.goarch }}
-          # clang is used on Windows so the compiler matches the runner's
-          # architecture; an x64 gcc cannot assemble an arm64 cgo object.
-          CC: ${{ matrix.target.libc == 'musl' && 'musl-gcc' || (startsWith(matrix.target.goos, 'windows') && 'clang' || 'cc') }}
+          # musl targets link with musl-gcc. Windows arm64 needs clang told to
+          # target the mingw runtime, because the runner's default gcc is x64.
+          CC: ${{ matrix.target.libc == 'musl' && 'musl-gcc' || (matrix.target.goarch == 'arm64' && startsWith(matrix.target.goos, 'windows') && 'clang' || 'cc') }}
+          CGO_CFLAGS: ${{ matrix.target.goarch == 'arm64' && startsWith(matrix.target.goos, 'windows') && '--target=aarch64-w64-windows-gnu' || '' }}
+          CGO_LDFLAGS: ${{ matrix.target.goarch == 'arm64' && startsWith(matrix.target.goos, 'windows') && '--target=aarch64-w64-windows-gnu' || '' }}
         run: |
           set -euo pipefail
           mkdir -p "dist/${{ matrix.target.target }}"
@@ -82,6 +84,9 @@ jobs:
           if [[ "${{ matrix.target.goos }}" == "windows" ]]; then
             clang cmd/processor-abi/tests/abi_smoke_windows.c -Icmd/processor-abi -o "dist/$TARGET/abi_smoke.exe"
             "dist/$TARGET/abi_smoke.exe" "$LIBRARY"
+          elif [[ "${{ matrix.target.libc }}" == "musl" ]]; then
+            musl-gcc cmd/processor-abi/tests/abi_smoke.c -Icmd/processor-abi "$LIBRARY" -static -o "dist/$TARGET/abi_smoke"
+            "dist/$TARGET/abi_smoke"
           else
             gcc cmd/processor-abi/tests/abi_smoke.c -Icmd/processor-abi "$LIBRARY" -o "dist/$TARGET/abi_smoke"
             DYLD_LIBRARY_PATH="$PWD/dist/$TARGET" LD_LIBRARY_PATH="$PWD/dist/$TARGET" "dist/$TARGET/abi_smoke"
