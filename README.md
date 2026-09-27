@@ -225,6 +225,10 @@ Evaluates a Mace file and prints the computed output block as JSON.
 mace json .&#x2f;config.mace
 ```
 
+Evaluation defaults to a 30-second deadline. Use a positive `--timeout`
+duration (for example, `--timeout 45s`) to override it for one evaluation.
+A timed-out remote import is cancelled instead of blocking the CLI.
+
 You can provide runtime parse input with `--input` using a Mace record literal:
 
 ```bash
@@ -470,7 +474,8 @@ releases remain separate.
 The CLI's `json` command now treats its working directory as the workspace
 root. An entry file and its local imports must remain inside that root after
 symlinks resolve. HTTP(S) imports remain available; this check does not make
-configuration evaluation a network sandbox.
+configuration evaluation a network sandbox. Each LSP document analysis gets
+its own 30-second deadline; the language server itself remains long-lived.
 
 ## Development
 

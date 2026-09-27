@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/samber/lo"
 	protocol "github.com/tliron/glsp/protocol_3_16"
@@ -682,7 +683,9 @@ func analyzeDocumentAtInRoot(text string, documentPath string, importRootDir str
 	return snapshot
 }
 
-func analyzeDocumentAtInRootContext(context context.Context, text string, documentPath string, importRootDir string) (analysisSnapshot, error) {
+func analyzeDocumentAtInRootContext(operation context.Context, text string, documentPath string, importRootDir string) (analysisSnapshot, error) {
+	context, cancel := context.WithTimeout(operation, 30*time.Second)
+	defer cancel()
 	snapshot := analysisSnapshot{}
 	snapshot.importRootDir = importRootDir
 	snapshot.text = text
@@ -767,7 +770,7 @@ func analyzeDocumentAtInRootContext(context context.Context, text string, docume
 		return snapshot, err
 	}
 
-	processorInstance := processor.New()
+	processorInstance := processor.NewWithContext(context, nil)
 	result, processErr := processorInstance.ProcessInScope(text, importBaseDir, importRootDir)
 	if err := context.Err(); err != nil {
 		return snapshot, err

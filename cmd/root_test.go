@@ -2,8 +2,11 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -160,6 +163,27 @@ int value = 1;
 	})
 
 	Describe("json", func() {
+		It("requires a positive timeout override", func() {
+			path := writeMaceFile("[output = 'data']\n{ enabled: true, }")
+			for _, duration := range []string{"0s", "-1s"} {
+				command := newRootCommand(&bytes.Buffer{}, &bytes.Buffer{})
+				command.SetArgs([]string{"json", path, "--timeout", duration})
+				tAssert.ErrorContains(command.Execute(), "positive")
+			}
+		})
+
+		It("stops an HTTP import at the configured deadline", func() {
+			server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+				<-request.Context().Done()
+			}))
+			defer server.Close()
+			path := writeMaceFile("|===|\nfrom '" + server.URL + "/schema.mace' import Age;\n|===|\n[output = 'data']\n{ age: 42, }")
+
+			command := newRootCommand(&bytes.Buffer{}, &bytes.Buffer{})
+			command.SetArgs([]string{"json", path, "--timeout", "100ms"})
+			tAssert.ErrorIs(command.Execute(), context.DeadlineExceeded)
+		})
+
 		It("prints evaluated output as JSON", func() {
 			path := writeMaceFile(`|===|
 int base = 2 + 2;

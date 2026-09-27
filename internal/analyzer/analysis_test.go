@@ -3,10 +3,13 @@ package analyzer
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/louiss0/mace/internal/lexer"
 	"github.com/louiss0/mace/internal/parser/ast"
@@ -69,6 +72,26 @@ func requireDiagnosticCode(diagnostic protocol.Diagnostic) string {
 }
 
 var _ = Describe("LSP analysis", func() {
+	It("cancels a stalled remote import within one analysis deadline", func() {
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			select {
+			case <-request.Context().Done():
+			case <-time.After(2 * time.Second):
+				_, _ = writer.Write([]byte("alias Age: int;"))
+			}
+		}))
+		defer server.Close()
+		workspace := GinkgoT().TempDir()
+		operation, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
+		input := "|===|\nfrom '" + server.URL + "/schema.mace' import Age;\n|===|\n[output = 'data']\n{ age: 42, }"
+
+		started := time.Now()
+		_, err := analyzeDocumentAtInRootContext(operation, input, filepath.Join(workspace, "document.mace"), workspace)
+		tAssert.ErrorIs(err, context.DeadlineExceeded)
+		tAssert.Less(time.Since(started), time.Second)
+	})
+
 	It("stops completion analysis when its context is cancelled", func() {
 		requestContext, cancel := context.WithCancel(context.Background())
 		cancel()

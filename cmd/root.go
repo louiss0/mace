@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/louiss0/mace/codec"
 	"github.com/louiss0/mace/internal/formatter"
@@ -73,22 +75,29 @@ func newVersionCommand() *cobra.Command {
 
 func newJSONCommand() *cobra.Command {
 	var inputLiteral string
+	var timeout time.Duration
 
 	command := &cobra.Command{
 		Use:   "json <path>",
 		Short: "Evaluate a Mace file and print JSON output",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
-			processorInstance := processor.New()
+			if timeout <= 0 {
+				return errors.New("timeout must be positive")
+			}
+			operation, cancel := context.WithTimeout(command.Context(), timeout)
+			defer cancel()
+
+			var inputRecord map[string]processor.Value
 			if inputLiteral != "" {
-				inputRecord, err := processor.ParseInputRecord(inputLiteral)
+				var err error
+				inputRecord, err = processor.ParseInputRecord(inputLiteral)
 				if err != nil {
 					return err
 				}
-				processorInstance = processor.NewWithInput(inputRecord)
 			}
 
-			result, err := processorInstance.ProcessFileInDir(args[0], cliActivationDir)
+			result, err := processor.NewWithContext(operation, inputRecord).ProcessFileInDir(args[0], cliActivationDir)
 			if err != nil {
 				return err
 			}
@@ -101,6 +110,7 @@ func newJSONCommand() *cobra.Command {
 	}
 
 	command.Flags().StringVar(&inputLiteral, "input", "", "Mace record literal used for parse = input")
+	command.Flags().DurationVar(&timeout, "timeout", 30*time.Second, "Positive per-evaluation deadline (e.g. 45s or 500ms)")
 
 	return command
 }
