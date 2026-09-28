@@ -12,7 +12,7 @@ export CC=gcc
 export GOTRACEBACK=crash
 
 go version
-ldd --version 2>&1 | head -n 1
+ldd --version 2>&1 | head -n 1 || true
 
 run_under_gdb_on_failure() {
 	local name="$1"
