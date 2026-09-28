@@ -14,6 +14,8 @@ export GOTRACEBACK=crash
 go version
 ldd --version 2>&1 | head -n 1 || true
 
+failures=()
+
 run_under_gdb_on_failure() {
 	local name="$1"
 	shift
@@ -24,14 +26,13 @@ run_under_gdb_on_failure() {
 	local status=$?
 	set -e
 	if [[ $status -ne 0 ]]; then
+		failures+=("$name (exit $status)")
 		echo "$name failed with exit $status; collecting all thread backtraces" >&2
 		gdb --quiet --batch --return-child-result \
 			-ex 'set pagination off' \
 			-ex run \
 			-ex 'thread apply all backtrace full' \
 			--args "$@" || true
-		echo "::endgroup::"
-		return "$status"
 	fi
 	echo "::endgroup::"
 }
@@ -43,9 +44,16 @@ go build -buildvcs=false -buildmode=c-shared \
 gcc cmd/processor-abi/tests/musl_trivial_smoke.c \
 	"$output/libtrivial.so" \
 	-o "$output/trivial_smoke"
+gcc cmd/processor-abi/tests/musl_dlopen_smoke.c \
+	-ldl \
+	-o "$output/dlopen_smoke"
 readelf -d "$output/libtrivial.so" | grep NEEDED || true
 echo "::endgroup::"
-run_under_gdb_on_failure "trivial Go c-shared call" "$output/trivial_smoke"
+run_under_gdb_on_failure "trivial Go c-shared startup-linked call" "$output/trivial_smoke"
+run_under_gdb_on_failure \
+	"trivial Go c-shared dlopen call" \
+	"$output/dlopen_smoke" \
+	"$output/libtrivial.so"
 
 echo "::group::build processor c-shared library"
 go build -buildvcs=false -buildmode=c-shared \
@@ -65,3 +73,9 @@ echo "::endgroup::"
 
 run_under_gdb_on_failure "processor ABI-major call" "$output/abi_major_smoke"
 run_under_gdb_on_failure "complete processor C ABI" "$output/abi_smoke"
+
+if [[ ${#failures[@]} -ne 0 ]]; then
+	printf 'musl diagnostic failures:\n' >&2
+	printf '  - %s\n' "${failures[@]}" >&2
+	exit 1
+fi
