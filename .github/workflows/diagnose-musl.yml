@@ -1,0 +1,40 @@
+name: Diagnose processor musl
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - diagnose-musl
+    paths:
+      - '.github/workflows/diagnose-musl.yml'
+      - 'cmd/processor-abi/**'
+      - 'go.mod'
+      - 'go.sum'
+  pull_request:
+    paths:
+      - '.github/workflows/diagnose-musl.yml'
+      - 'cmd/processor-abi/**'
+      - 'go.mod'
+      - 'go.sum'
+
+permissions:
+  contents: read
+
+jobs:
+  alpine-amd64:
+    name: Native Alpine amd64 C ABI
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Exercise trivial and processor c-shared libraries under musl
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --cap-add=SYS_PTRACE \
+            --security-opt seccomp=unconfined \
+            --volume "$PWD:/src" \
+            --workdir /src \
+            golang:1.25.5-alpine \
+            sh -c 'apk add --no-cache bash binutils build-base gdb git && bash cmd/processor-abi/tests/musl_smoke.sh'
