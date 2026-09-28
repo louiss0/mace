@@ -470,9 +470,9 @@ current C ABI, ownership rules, and local build instructions are in
 [`cmd/processor-abi/README.md`](cmd/processor-abi/README.md). Processor
 artifacts are built and published for five platform variants under their own
 `processor/vX.Y.Z` tag, separately from the `vX.Y.Z` CLI release. musl and
-Windows arm64 are not published yet. **musl is excluded because of an
-unresolved segfault in the shared library**; the failure report and
-reproduction are in
+Windows arm64 are not published yet. **musl is excluded because Go's
+`c-shared` output segfaults during startup and cannot be loaded dynamically by
+musl**; the root-cause report and native Alpine reproduction are in
 [`cmd/processor-abi/musl-segfault.md`](cmd/processor-abi/musl-segfault.md). The
 reasons are also recorded in
 [`processor-targets.json`](processor-targets.json).

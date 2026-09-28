@@ -2,8 +2,8 @@
   "abiMajor": 1,
   "library": "mace_processor",
   "unsupported": {
-    "linux-amd64-musl": "UNRESOLVED SEGFAULT: the library builds with musl-gcc, but the first C program to call it dies with SIGSEGV (exit 139). Cause unknown. See cmd/processor-abi/musl-segfault.md. Do not ship until fixed.",
-    "linux-arm64-musl": "UNRESOLVED SEGFAULT: the library builds with musl-gcc, but the first C program to call it dies with SIGSEGV (exit 139). Cause unknown. See cmd/processor-abi/musl-segfault.md. Do not ship until fixed.",
+    "linux-amd64-musl": "UNSUPPORTED GO C-SHARED RUNTIME: startup-linked libraries segfault in runtime.argv_index and dlopen rejects Go's initial-exec TLS. See cmd/processor-abi/musl-segfault.md. Do not ship until a released Go toolchain passes both loading paths.",
+    "linux-arm64-musl": "UNSUPPORTED GO C-SHARED RUNTIME: startup-linked libraries segfault in runtime.argv_index and dlopen rejects Go's initial-exec TLS. See cmd/processor-abi/musl-segfault.md. Do not ship until a released Go toolchain passes both loading paths.",
     "windows-arm64": "The windows-11-arm runner has no aarch64 mingw sysroot, so cgo cannot find stdlib.h for a cross build. Needs a cross toolchain."
   },
   "targets": [

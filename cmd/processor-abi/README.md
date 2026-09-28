@@ -80,17 +80,18 @@ Five variants are published. Three platforms are deliberately excluded, and
 
 | Platform | Why it is not published |
 | --- | --- |
-| `linux-amd64-musl`, `linux-arm64-musl` | The library builds with `musl-gcc`, but a C program that calls it **segfaults**. The cause is not yet understood, so no musl artifact may ship. |
+| `linux-amd64-musl`, `linux-arm64-musl` | Go 1.25.5 `c-shared` output is incompatible with musl: startup-linked callers segfault because the runtime receives invalid constructor arguments, while `dlopen` rejects Go's initial-exec TLS. |
 | `windows-arm64` | The `windows-11-arm` runner has no aarch64 mingw sysroot, so cgo cannot resolve `stdlib.h` for a cross build. A cross toolchain is required first. |
 
-The musl segfault is the important one. It was found by the C smoke test in
-CI, not by inspection, and it is unresolved: it is not yet known whether the
-fault is in this ABI or in the musl build. **[`musl-segfault.md`](musl-segfault.md)
-records the full failure, the reproduction, and what is ruled out.** Until that
-is answered, do not add musl back to the target list, and do not publish a
-hand-built musl library.
+The musl failure was found by the C smoke test in CI and reproduced with a
+one-function Go library on native Alpine. It is an upstream Go `c-shared`
+runtime/toolchain limitation, not a processor ABI defect.
+**[`musl-segfault.md`](musl-segfault.md) records the backtraces, the separate
+`dlopen` failure, and the upstream Go issues.** Do not add musl back until a
+released Go toolchain passes both startup-linked and dynamically loaded tests.
 
 **Migration status:** The release gate exists and has published five of the
 eight intended variants. `linux-amd64-musl`, `linux-arm64-musl`, and
-`windows-arm64` are excluded and documented above. The musl segfault must be
-resolved before musl can ship; see [`musl-segfault.md`](musl-segfault.md).
+`windows-arm64` are excluded and documented above. Go's two musl `c-shared`
+limitations must be resolved upstream before musl can ship; see
+[`musl-segfault.md`](musl-segfault.md).

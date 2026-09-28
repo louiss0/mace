@@ -129,12 +129,10 @@ func TestProcessorReleaseTargetsUseTheSharedLibraryName(t *testing.T) {
 	}
 }
 
-// musl is excluded because a c-shared library built with musl-gcc segfaults a
-// plain C caller. That is unresolved, so musl must stay out of the release and
-// the reason must stay written down. Re-enabling it is only correct once
-// cmd/processor-abi/musl-segfault.md is resolved and the C smoke test passes on
-// a musl runner.
-func TestMuslStaysExcludedUntilItsSegfaultIsUnderstood(t *testing.T) {
+// musl is excluded because Go's c-shared runtime cannot initialize or load
+// safely with musl. Re-enabling it is only correct once the startup-linked and
+// dynamically loaded smoke tests both pass on a native musl runner.
+func TestMuslStaysExcludedUntilGoCSharedSupportsIt(t *testing.T) {
 	targets := loadReleaseTargets(t)
 
 	for _, target := range targets.Targets {
@@ -156,15 +154,23 @@ func TestMuslStaysExcludedUntilItsSegfaultIsUnderstood(t *testing.T) {
 }
 
 // The failure write-up is what a future maintainer will read first, so it has
-// to keep the reproduction and the unresolved status.
-func TestMuslSegfaultIsDocumented(t *testing.T) {
+// to preserve the reproduction, root cause, and separate dlopen blocker.
+func TestMuslSegfaultDiagnosisIsDocumented(t *testing.T) {
 	document, err := os.ReadFile("musl-segfault.md")
 	if err != nil {
 		t.Fatalf("the musl segfault must be documented: %v", err)
 	}
 
 	report := string(document)
-	for _, required := range []string{"exit code 139", "Segmentation fault", "musl-gcc", "abi_smoke.c", "What is NOT known"} {
+	for _, required := range []string{
+		"exit code 139",
+		"Segmentation fault",
+		"runtime.argv_index",
+		"initial-exec TLS resolves to dynamic definition",
+		"dlopen",
+		"golang/go#13492",
+		"golang/go#54805",
+	} {
 		if !strings.Contains(report, required) {
 			t.Errorf("musl-segfault.md must mention %q", required)
 		}

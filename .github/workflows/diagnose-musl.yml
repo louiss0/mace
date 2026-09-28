@@ -1,21 +1,15 @@
 name: Diagnose processor musl
 
+# This diagnostic intentionally fails while stock Go cannot produce a usable
+# musl c-shared library. Run it manually when evaluating a newer Go toolchain.
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - diagnose-musl
-    paths:
-      - '.github/workflows/diagnose-musl.yml'
-      - 'cmd/processor-abi/**'
-      - 'go.mod'
-      - 'go.sum'
-  pull_request:
-    paths:
-      - '.github/workflows/diagnose-musl.yml'
-      - 'cmd/processor-abi/**'
-      - 'go.mod'
-      - 'go.sum'
+    inputs:
+      go_image:
+        description: Alpine-based Go image to evaluate
+        required: true
+        default: golang:1.25.5-alpine
+        type: string
 
 permissions:
   contents: read
@@ -29,6 +23,8 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Exercise trivial and processor c-shared libraries under musl
+        env:
+          GO_IMAGE: ${{ inputs.go_image }}
         run: |
           set -euo pipefail
           docker run --rm \
@@ -36,5 +32,5 @@ jobs:
             --security-opt seccomp=unconfined \
             --volume "$PWD:/src" \
             --workdir /src \
-            golang:1.25.5-alpine \
+            "$GO_IMAGE" \
             sh -c 'apk add --no-cache bash binutils build-base gdb git && bash cmd/processor-abi/tests/musl_smoke.sh'
