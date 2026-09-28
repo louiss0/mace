@@ -37,7 +37,7 @@ run_under_gdb_on_failure() {
 }
 
 echo "::group::build trivial c-shared library"
-go build -buildmode=c-shared \
+go build -buildvcs=false -buildmode=c-shared \
 	-o "$output/libtrivial.so" \
 	./cmd/processor-abi/testdata/musl-trivial
 gcc cmd/processor-abi/tests/musl_trivial_smoke.c \
@@ -48,7 +48,7 @@ echo "::endgroup::"
 run_under_gdb_on_failure "trivial Go c-shared call" "$output/trivial_smoke"
 
 echo "::group::build processor c-shared library"
-go build -buildmode=c-shared \
+go build -buildvcs=false -buildmode=c-shared \
 	-o "$output/libmace_processor.so" \
 	./cmd/processor-abi
 readelf -d "$output/libmace_processor.so" | grep NEEDED || true
