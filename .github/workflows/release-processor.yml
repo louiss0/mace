@@ -191,7 +191,7 @@ jobs:
             | .targets = [
                 .targets[]
                 | .asset = "mace-processor-\(.target).\(.filename | split(".") | last)"
-                | .artifact = "mace-processor/\(.asset)"
+                | .artifact = .asset
                 | .sha256 = $digests["stage/\(.target)/\(.asset)"]
               ]
           ' processor-targets.json > processor-manifest.json
