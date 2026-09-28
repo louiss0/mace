@@ -28,6 +28,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.targets.outputs.tag }}
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -99,9 +101,29 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       targets: ${{ steps.read.outputs.targets }}
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Resolve the existing processor tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag }}"
+          if [[ -z "$tag" ]]; then
+            tag="${GITHUB_REF_NAME}"
+          fi
+          if [[ ! "$tag" =~ ^processor/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "The release requires an existing processor/vMAJOR.MINOR.PATCH tag." >&2
+            exit 1
+          fi
+          git rev-parse "refs/tags/$tag^{commit}" > /dev/null
+          git checkout --detach "$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       # An empty or unreadable target list would silently produce a zero-job
       # matrix, so this fails loudly instead of publishing nothing.
@@ -122,6 +144,10 @@ jobs:
   publish:
     needs: [targets, build]
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
+      manifest_sha256: ${{ steps.manifest.outputs.sha256 }}
     permissions:
       contents: write
       id-token: write
@@ -129,23 +155,26 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.targets.outputs.tag }}
+          fetch-depth: 0
 
       - name: Resolve the release tag
         id: tag
         shell: bash
         run: |
           set -euo pipefail
-          tag="${{ inputs.tag }}"
-          if [[ -z "$tag" ]]; then
-            # A shallow tag checkout does not always carry a local tag ref.
-            tag="${GITHUB_REF_NAME}"
-          fi
-          if [[ ! "$tag" =~ ^processor/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "The release requires an existing processor/vMAJOR.MINOR.PATCH tag." >&2
+          tag="${{ needs.targets.outputs.tag }}"
+          tag_commit="$(git rev-parse "refs/tags/$tag^{commit}")"
+          checked_out_commit="$(git rev-parse HEAD)"
+          if [[ "$checked_out_commit" != "$tag_commit" ]]; then
+            echo "Checked out $checked_out_commit, but $tag points to $tag_commit." >&2
             exit 1
           fi
+          version="${tag#processor/v}"
           echo "PROCESSOR_TAG=$tag" >> "$GITHUB_ENV"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Download every variant
         uses: actions/download-artifact@v4
@@ -184,6 +213,7 @@ jobs:
           cp stage/checksums.txt .
 
       - name: Build the release manifest
+        id: manifest
         run: |
           set -euo pipefail
           # sha256sum separates the hash and the path with two spaces.
@@ -200,6 +230,8 @@ jobs:
               ]
           ' processor-targets.json > processor-manifest.json
           jq -e '[.targets[] | select(.sha256 == null or .sha256 == "")] | length == 0' processor-manifest.json > /dev/null
+          manifest_sha256="$(sha256sum processor-manifest.json | cut -d ' ' -f 1)"
+          echo "sha256=$manifest_sha256" >> "$GITHUB_OUTPUT"
           cat processor-manifest.json
 
       - name: Attest the build provenance
@@ -220,3 +252,94 @@ jobs:
             checksums.txt \
             stage/processor.h \
             stage/*/*
+
+  update-bindings:
+    name: Open bindings processor update
+    needs: [publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Load the cross-repository token
+        id: load_secrets
+        uses: 1password/load-secrets-action@v4
+        with:
+          export-env: false
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          GH_GENERAL_TOKEN: ${{ vars.CROSS_REPOSITORY_TOKEN_REFERENCE }}
+
+      - name: Checkout bindings
+        uses: actions/checkout@v5
+        with:
+          repository: louiss0/mace-bindings
+          token: ${{ steps.load_secrets.outputs.GH_GENERAL_TOKEN }}
+          path: mace-bindings
+          fetch-depth: 0
+
+      - name: Pin the verified processor release
+        id: pin
+        working-directory: mace-bindings
+        env:
+          PROCESSOR_TAG: ${{ needs.publish.outputs.tag }}
+          PROCESSOR_VERSION: ${{ needs.publish.outputs.version }}
+          MANIFEST_SHA256: ${{ needs.publish.outputs.manifest_sha256 }}
+        run: |
+          set -euo pipefail
+          pin="tools/native/processor.json"
+          jq \
+            --arg version "$PROCESSOR_VERSION" \
+            --arg release "$PROCESSOR_TAG" \
+            --arg manifest_sha256 "$MANIFEST_SHA256" \
+            '.version = $version | .release = $release | .manifestSha256 = $manifest_sha256' \
+            "$pin" > "$pin.tmp"
+          mv "$pin.tmp" "$pin"
+          echo "branch=chore/processor-v${PROCESSOR_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify the release through the bindings staging path
+        working-directory: mace-bindings
+        run: |
+          set -euo pipefail
+          node tools/native/stage-release.mjs
+          node --test tools/release/native-manifest.test.cjs
+
+      - name: Push the bindings update branch
+        id: push
+        working-directory: mace-bindings
+        env:
+          BRANCH: ${{ steps.pin.outputs.branch }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin "$BRANCH" || true
+          git checkout -B "$BRANCH"
+          git add tools/native/processor.json
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git commit -m "chore(native): update processor to ${{ needs.publish.outputs.version }}"
+          git push --force-with-lease origin "$BRANCH"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Open the bindings update pull request
+        if: steps.push.outputs.changed == 'true'
+        working-directory: mace-bindings
+        env:
+          GH_TOKEN: ${{ steps.load_secrets.outputs.GH_GENERAL_TOKEN }}
+          BRANCH: ${{ steps.pin.outputs.branch }}
+          PROCESSOR_TAG: ${{ needs.publish.outputs.tag }}
+        run: |
+          set -euo pipefail
+          existing="$(gh pr list --repo louiss0/mace-bindings --head "$BRANCH" --json number --jq '.[0].number // empty')"
+          if [[ -n "$existing" ]]; then
+            echo "Bindings update PR #$existing already exists."
+            exit 0
+          fi
+          gh pr create \
+            --repo louiss0/mace-bindings \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore(native): update processor to ${PROCESSOR_TAG}" \
+            --body "Pins the verified ${PROCESSOR_TAG} release. Bindings CI will stage and test every published target. musl and Windows arm64 remain excluded as documented by the processor release."
