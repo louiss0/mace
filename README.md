@@ -469,13 +469,34 @@ separate, cgo-built shared library rather than invoking the `mace` CLI. The
 current C ABI, ownership rules, and local build instructions are in
 [`cmd/processor-abi/README.md`](cmd/processor-abi/README.md). Processor
 artifacts are built and published for five platform variants under their own
-`processor/vX.Y.Z` tag, separately from the `vX.Y.Z` CLI release. musl and
-Windows arm64 are not published yet. **musl is excluded because Go's
-`c-shared` output segfaults during startup and cannot be loaded dynamically by
-musl**; the root-cause report and native Alpine reproduction are in
-[`cmd/processor-abi/musl-segfault.md`](cmd/processor-abi/musl-segfault.md). The
-reasons are also recorded in
+`processor/vX.Y.Z` tag, separately from the `vX.Y.Z` CLI release. The canonical
+platform list and exclusions are recorded in
 [`processor-targets.json`](processor-targets.json).
+
+### musl support
+
+The processor library does not support musl, so `linux-amd64-musl` and
+`linux-arm64-musl` artifacts are not published. A native Alpine diagnostic
+proved this is caused by two upstream Go `c-shared` limitations rather than the
+Mace ABI:
+
+- Startup-linked callers terminate with `Segmentation fault` (exit code 139) in
+  `runtime.argv_index` because musl does not supply the glibc-specific
+  constructor arguments expected by Go. This is tracked by
+  [`golang/go#13492`](https://github.com/golang/go/issues/13492).
+- Runtime loading fails in `dlopen` with
+  `initial-exec TLS resolves to dynamic definition`. This is tracked by
+  [`golang/go#54805`](https://github.com/golang/go/issues/54805).
+
+Supplying safe constructor arguments would only address the first failure; the
+official Python, Node, and Dart bindings still require dynamic loading. Keep
+musl excluded until a released Go toolchain passes the startup-linked,
+`dlopen`, complete C ABI, and installed-package tests on native musl for both
+architectures. The reproducible diagnostic is available through the
+**Diagnose processor musl** workflow.
+
+Windows arm64 is also not published because the current runner has no usable
+aarch64 MinGW sysroot for cgo.
 
 The CLI's `json` command now treats its working directory as the workspace
 root. An entry file and its local imports must remain inside that root after

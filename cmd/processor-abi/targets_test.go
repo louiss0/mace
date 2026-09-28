@@ -137,7 +137,7 @@ func TestMuslStaysExcludedUntilGoCSharedSupportsIt(t *testing.T) {
 
 	for _, target := range targets.Targets {
 		if target.Libc == "musl" {
-			t.Errorf("musl target %q is published again; resolve cmd/processor-abi/musl-segfault.md first", target.Target)
+			t.Errorf("musl target %q is published again; resolve the limitation documented in README.md first", target.Target)
 		}
 	}
 
@@ -145,26 +145,23 @@ func TestMuslStaysExcludedUntilGoCSharedSupportsIt(t *testing.T) {
 	if !ok {
 		t.Fatal("linux-amd64-musl must stay recorded as unsupported")
 	}
-	if !strings.Contains(strings.ToLower(documented), "segfault") {
-		t.Errorf("the unsupported reason must state the segfault, got %q", documented)
+	if !strings.Contains(documented, "README.md#musl-support") {
+		t.Errorf("the unsupported reason must link to the root README, got %q", documented)
 	}
 	if _, ok := targets.Unsupported["linux-arm64-musl"]; !ok {
 		t.Error("linux-arm64-musl must stay recorded as unsupported")
 	}
 }
 
-// The failure write-up is what a future maintainer will read first, so it has
-// to preserve the reproduction, root cause, and separate dlopen blocker.
-func TestMuslSegfaultDiagnosisIsDocumented(t *testing.T) {
-	document, err := os.ReadFile("musl-segfault.md")
+func TestRootReadmeDocumentsMuslLimitation(t *testing.T) {
+	document, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
 	if err != nil {
-		t.Fatalf("the musl segfault must be documented: %v", err)
+		t.Fatalf("the musl limitation must be documented in the root README: %v", err)
 	}
 
 	report := string(document)
 	for _, required := range []string{
-		"exit code 139",
-		"Segmentation fault",
+		"musl support",
 		"runtime.argv_index",
 		"initial-exec TLS resolves to dynamic definition",
 		"dlopen",
@@ -172,7 +169,7 @@ func TestMuslSegfaultDiagnosisIsDocumented(t *testing.T) {
 		"golang/go#54805",
 	} {
 		if !strings.Contains(report, required) {
-			t.Errorf("musl-segfault.md must mention %q", required)
+			t.Errorf("README.md must mention %q", required)
 		}
 	}
 }

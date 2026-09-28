@@ -73,25 +73,8 @@ bindings' staging script, updates the pinned manifest digest on a bot branch,
 and opens a `mace-bindings` pull request. That pull request triggers the
 bindings' full platform CI before the pin reaches its main branch.
 
-## Platforms that are not built
+## Platform support
 
-Five variants are published. Three platforms are deliberately excluded, and
-`processor-targets.json` records the reason for each under `unsupported`:
-
-| Platform | Why it is not published |
-| --- | --- |
-| `linux-amd64-musl`, `linux-arm64-musl` | Go 1.25.5 `c-shared` output is incompatible with musl: startup-linked callers segfault because the runtime receives invalid constructor arguments, while `dlopen` rejects Go's initial-exec TLS. |
-| `windows-arm64` | The `windows-11-arm` runner has no aarch64 mingw sysroot, so cgo cannot resolve `stdlib.h` for a cross build. A cross toolchain is required first. |
-
-The musl failure was found by the C smoke test in CI and reproduced with a
-one-function Go library on native Alpine. It is an upstream Go `c-shared`
-runtime/toolchain limitation, not a processor ABI defect.
-**[`musl-segfault.md`](musl-segfault.md) records the backtraces, the separate
-`dlopen` failure, and the upstream Go issues.** Do not add musl back until a
-released Go toolchain passes both startup-linked and dynamically loaded tests.
-
-**Migration status:** The release gate exists and has published five of the
-eight intended variants. `linux-amd64-musl`, `linux-arm64-musl`, and
-`windows-arm64` are excluded and documented above. Go's two musl `c-shared`
-limitations must be resolved upstream before musl can ship; see
-[`musl-segfault.md`](musl-segfault.md).
+Five variants are currently published. The canonical supported and unsupported
+platform lists live in [`processor-targets.json`](../../processor-targets.json),
+and the root [`README.md`](../../README.md) explains the exclusions.
