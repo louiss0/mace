@@ -83,12 +83,12 @@ Five variants are published. Three platforms are deliberately excluded, and
 
 The musl segfault is the important one. It was found by the C smoke test in
 CI, not by inspection, and it is unresolved: it is not yet known whether the
-fault is in this ABI or in the musl build. Until that is answered, do not add
-musl back to the target list, and do not publish a hand-built musl library.
-The bindings are expected to report a clear "unsupported platform" error on
-these platforms rather than attempting a download.
+fault is in this ABI or in the musl build. **[`musl-segfault.md`](musl-segfault.md)
+records the full failure, the reproduction, and what is ruled out.** Until that
+is answered, do not add musl back to the target list, and do not publish a
+hand-built musl library.
 
 **Migration status:** The release gate exists and has published five of the
 eight intended variants. `linux-amd64-musl`, `linux-arm64-musl`, and
-`windows-arm64` are excluded and documented above; the musl segfault must be
-resolved before musl can ship.
+`windows-arm64` are excluded and documented above. The musl segfault must be
+resolved before musl can ship; see [`musl-segfault.md`](musl-segfault.md).

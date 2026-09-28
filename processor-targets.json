@@ -2,8 +2,8 @@
   "abiMajor": 1,
   "library": "mace_processor",
   "unsupported": {
-    "linux-amd64-musl": "A c-shared library built with musl-gcc segfaults when a C program calls it. Cause not yet understood; do not ship until reproduced and fixed.",
-    "linux-arm64-musl": "A c-shared library built with musl-gcc segfaults when a C program calls it. Cause not yet understood; do not ship until reproduced and fixed.",
+    "linux-amd64-musl": "UNRESOLVED SEGFAULT: the library builds with musl-gcc, but the first C program to call it dies with SIGSEGV (exit 139). Cause unknown. See cmd/processor-abi/musl-segfault.md. Do not ship until fixed.",
+    "linux-arm64-musl": "UNRESOLVED SEGFAULT: the library builds with musl-gcc, but the first C program to call it dies with SIGSEGV (exit 139). Cause unknown. See cmd/processor-abi/musl-segfault.md. Do not ship until fixed.",
     "windows-arm64": "The windows-11-arm runner has no aarch64 mingw sysroot, so cgo cannot find stdlib.h for a cross build. Needs a cross toolchain."
   },
   "targets": [

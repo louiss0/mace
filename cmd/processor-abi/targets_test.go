@@ -129,6 +129,48 @@ func TestProcessorReleaseTargetsUseTheSharedLibraryName(t *testing.T) {
 	}
 }
 
+// musl is excluded because a c-shared library built with musl-gcc segfaults a
+// plain C caller. That is unresolved, so musl must stay out of the release and
+// the reason must stay written down. Re-enabling it is only correct once
+// cmd/processor-abi/musl-segfault.md is resolved and the C smoke test passes on
+// a musl runner.
+func TestMuslStaysExcludedUntilItsSegfaultIsUnderstood(t *testing.T) {
+	targets := loadReleaseTargets(t)
+
+	for _, target := range targets.Targets {
+		if target.Libc == "musl" {
+			t.Errorf("musl target %q is published again; resolve cmd/processor-abi/musl-segfault.md first", target.Target)
+		}
+	}
+
+	documented, ok := targets.Unsupported["linux-amd64-musl"]
+	if !ok {
+		t.Fatal("linux-amd64-musl must stay recorded as unsupported")
+	}
+	if !strings.Contains(strings.ToLower(documented), "segfault") {
+		t.Errorf("the unsupported reason must state the segfault, got %q", documented)
+	}
+	if _, ok := targets.Unsupported["linux-arm64-musl"]; !ok {
+		t.Error("linux-arm64-musl must stay recorded as unsupported")
+	}
+}
+
+// The failure write-up is what a future maintainer will read first, so it has
+// to keep the reproduction and the unresolved status.
+func TestMuslSegfaultIsDocumented(t *testing.T) {
+	document, err := os.ReadFile("musl-segfault.md")
+	if err != nil {
+		t.Fatalf("the musl segfault must be documented: %v", err)
+	}
+
+	report := string(document)
+	for _, required := range []string{"exit code 139", "Segmentation fault", "musl-gcc", "abi_smoke.c", "What is NOT known"} {
+		if !strings.Contains(report, required) {
+			t.Errorf("musl-segfault.md must mention %q", required)
+		}
+	}
+}
+
 func TestProcessorReleaseTargetsAgreeWithTheBuiltLibrary(t *testing.T) {
 	targets := loadReleaseTargets(t)
 

@@ -470,8 +470,11 @@ current C ABI, ownership rules, and local build instructions are in
 [`cmd/processor-abi/README.md`](cmd/processor-abi/README.md). Processor
 artifacts are built and published for five platform variants under their own
 `processor/vX.Y.Z` tag, separately from the `vX.Y.Z` CLI release. musl and
-Windows arm64 are not published yet; the reasons, including an unresolved
-segfault in the musl build, are listed in
+Windows arm64 are not published yet. **musl is excluded because of an
+unresolved segfault in the shared library**; the failure report and
+reproduction are in
+[`cmd/processor-abi/musl-segfault.md`](cmd/processor-abi/musl-segfault.md). The
+reasons are also recorded in
 [`processor-targets.json`](processor-targets.json).
 
 The CLI's `json` command now treats its working directory as the workspace
