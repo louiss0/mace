@@ -66,12 +66,14 @@ is the canonical list of supported variants and is verified by
 builds each variant on its native runner, compiles and runs the C smoke test
 plus `abi_test.py` against the freshly built library, and refuses to publish
 unless every listed variant uploads successfully. The published release
-contains `processor-manifest.json` (version, target, artifact path, SHA-256)
-plus `checksums.txt`, and every staged artifact carries a build-provenance
-attestation. After publication, the workflow verifies the release through the
-bindings' staging script, updates the pinned manifest digest on a bot branch,
-and opens a `mace-bindings` pull request. That pull request triggers the
-bindings' full platform CI before the pin reaches its main branch.
+contains `processor.h` once as a target-independent asset,
+`processor-manifest.json` (version, header metadata, target, artifact path,
+SHA-256) plus `checksums.txt`, and every staged artifact carries a
+build-provenance attestation. After publication, the workflow verifies the
+release through the bindings' staging script, updates the pinned manifest
+digest and canonical header on a bot branch, and opens a `mace-bindings` pull
+request. That pull request triggers the bindings' full platform CI before the
+pin reaches its main branch.
 
 ## Platform support
 

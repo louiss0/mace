@@ -148,6 +148,7 @@ jobs:
       tag: ${{ steps.tag.outputs.tag }}
       version: ${{ steps.tag.outputs.version }}
       manifest_sha256: ${{ steps.manifest.outputs.sha256 }}
+      header_sha256: ${{ steps.manifest.outputs.header_sha256 }}
     permissions:
       contents: write
       id-token: write
@@ -222,6 +223,11 @@ jobs:
              | map(select(length > 0) | split("  ") | {(.[1] | ltrimstr("./")): .[0]})
              | add) as $digests
             | .version = $version
+            | .header = {
+                "asset": "processor.h",
+                "artifact": "processor.h",
+                "sha256": $digests["stage/processor.h"]
+              }
             | .targets = [
                 .targets[]
                 | .asset = "mace-processor-\(.target).\(.filename | split(".") | last)"
@@ -229,9 +235,16 @@ jobs:
                 | .sha256 = $digests["stage/\(.target)/\(.asset)"]
               ]
           ' processor-targets.json > processor-manifest.json
-          jq -e '[.targets[] | select(.sha256 == null or .sha256 == "")] | length == 0' processor-manifest.json > /dev/null
+          jq -e '
+            .header.artifact == "processor.h"
+            and .header.sha256 != null
+            and .header.sha256 != ""
+            and ([.targets[] | select(.sha256 == null or .sha256 == "")] | length == 0)
+          ' processor-manifest.json > /dev/null
           manifest_sha256="$(sha256sum processor-manifest.json | cut -d ' ' -f 1)"
+          header_sha256="$(jq -r '.header.sha256' processor-manifest.json)"
           echo "sha256=$manifest_sha256" >> "$GITHUB_OUTPUT"
+          echo "header_sha256=$header_sha256" >> "$GITHUB_OUTPUT"
           cat processor-manifest.json
 
       - name: Attest the build provenance
@@ -296,6 +309,21 @@ jobs:
           mv "$pin.tmp" "$pin"
           echo "branch=chore/processor-v${PROCESSOR_VERSION}" >> "$GITHUB_OUTPUT"
 
+      - name: Stage the verified processor header
+        working-directory: mace-bindings
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROCESSOR_TAG: ${{ needs.publish.outputs.tag }}
+          PROCESSOR_HEADER_SHA256: ${{ needs.publish.outputs.header_sha256 }}
+        run: |
+          set -euo pipefail
+          gh release download "$PROCESSOR_TAG" \
+            --repo louiss0/mace \
+            --pattern processor.h \
+            --output tools/native/processor.h \
+            --clobber
+          printf '%s  %s\n' "$PROCESSOR_HEADER_SHA256" tools/native/processor.h | sha256sum -c -
+
       - name: Verify the release through the bindings staging path
         working-directory: mace-bindings
         run: |
@@ -314,7 +342,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin "$BRANCH" || true
           git checkout -B "$BRANCH"
-          git add tools/native/processor.json
+          git add tools/native/processor.json tools/native/processor.h
           if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0

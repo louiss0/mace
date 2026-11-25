@@ -31,6 +31,30 @@ func TestProcessorReleaseOpensAVerifiedBindingsUpdate(t *testing.T) {
 	}
 }
 
+func TestProcessorReleasePublishesTheCanonicalHeader(t *testing.T) {
+	contents, err := os.ReadFile("../../.github/workflows/release-processor.yml")
+	if err != nil {
+		t.Fatalf("unable to read processor release workflow: %v", err)
+	}
+	workflow := string(contents)
+
+	required := []string{
+		"| .header = {",
+		"\"artifact\": \"processor.h\",",
+		"$digests[\"stage/processor.h\"]",
+		"header_sha256:",
+		"PROCESSOR_HEADER_SHA256",
+		"--pattern processor.h",
+		"tools/native/processor.h",
+		"git add tools/native/processor.json tools/native/processor.h",
+	}
+	for _, fragment := range required {
+		if !strings.Contains(workflow, fragment) {
+			t.Errorf("release-processor.yml must contain %q", fragment)
+		}
+	}
+}
+
 func TestBindingsUpdateKeepsMuslOutOfThePublishedMatrix(t *testing.T) {
 	targets := loadReleaseTargets(t)
 	for _, target := range targets.Targets {
