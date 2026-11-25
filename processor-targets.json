@@ -20,7 +20,7 @@
       "goos": "darwin",
       "goarch": "arm64",
       "libc": "system",
-      "runner": "macos-14",
+      "runner": "macos-15",
       "filename": "libmace_processor.dylib"
     },
     {
